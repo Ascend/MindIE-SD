@@ -11,6 +11,10 @@ from mindiesd.compilation.passes.register_pattern_to_pass import register_patter
 
 class SamplePass(PatternBase):
     @staticmethod
+    def name():
+        return __class__.__name__
+
+    @staticmethod
     def inputs():
         x = torch.empty(2, 2, device="meta")
         y = torch.empty(2, 2, device="meta")

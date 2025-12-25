@@ -20,12 +20,21 @@ def activate_pattern_once():
     def activate_pattern():
         from ..compiliation_config import CompilationConfig
         from .register_pattern_to_pass import register_pattern_to_pass
-        if CompilationConfig.fusion_patterns.enable_rms_norm:
-            from ..patterns import RMSNormPattern
-            register_pattern_to_pass(RMSNormPattern)
-        if CompilationConfig.fusion_patterns.enable_rope:
-            from ..patterns import RopePattern
-            register_pattern_to_pass(RopePattern)
+        import importlib
+
+        pattern_registry = {
+            "enable_rms_norm": ("RMSNormPatternGroup", "..patterns"),
+            "enable_rope": ("RopePatternGroup", "..patterns"),
+            "enable_adalayernorm": ("AdaLayerNormPatternGroup", "..patterns"),
+            "enable_fast_gelu": ("GELUPatternGroup", "..patterns")
+        }
+
+        fusion_config = CompilationConfig.fusion_patterns
+        for config_key, (pattern_group_name, pattern_module) in pattern_registry.items():
+            if getattr(fusion_config, config_key, False):
+                patterns_module = importlib.import_module(pattern_module, package=__package__)
+                pattern_group = getattr(patterns_module, pattern_group_name)
+                register_pattern_to_pass(pattern_group)
 
     if not once_flag.is_set():
         with threading.Lock():

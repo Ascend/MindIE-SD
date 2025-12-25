@@ -37,6 +37,7 @@ class TestQuantization(unittest.TestCase):
         self.assertEqual(QuantAlgorithm.INT8, 'INT8')
         self.assertEqual(QuantAlgorithm.MIXED_PERCISION, 'MIXED_PERCISION')
         self.assertEqual(QuantAlgorithm.NO_QUANT, 'NO_QUANT')
+        self.assertEqual(QuantAlgorithm.W8A8_MXFP8, 'W8A8_MXFP8')
 
     def test_quant_mode_descriptor(self):
         desc = QuantModeDescriptor()

@@ -34,7 +34,7 @@ link_directories($ENV{ASCEND_HOME_PATH}/lib64)
 if(NOT "$ENV{ASCEND_CUSTOM_PATH}" STREQUAL "")
     set(ASCEND_PATH $ENV{ASCEND_CUSTOM_PATH})
 else()
-    set(ASCEND_PATH "/usr/local/Ascend/ascend-toolkit/latest")
+    set(ASCEND_PATH $ENV{ASCEND_TOOLKIT_HOME})
 endif()
 set(ACL_INCLUDE_DIRS ${ASCEND_PATH}/include)
 include_directories(
@@ -46,10 +46,6 @@ add_library(PTAExtensionOPS SHARED
     ./plugin/register_ops.cpp
     ./plugin/rope.cpp
     ./plugin/la.cpp
-    ./plugin/matmulv2.cpp
-    ./plugin/batchmatmulv3.cpp
-    ./plugin/batchmatmulv2.cpp
-    ./plugin/batchmatmulv3duo.cpp
     ./plugin/adalayernorm.cpp
     ./plugin/find_op_path.cpp
     ./plugin/la_preprocess.cpp

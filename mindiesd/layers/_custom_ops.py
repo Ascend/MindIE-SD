@@ -9,9 +9,10 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-from typing import Tuple
+from typing import Tuple, List, Optional
 import torch
 from . import register_ops
+from ..utils import ParametersInvalid
 
 
 def rope(
@@ -138,148 +139,219 @@ def attention_preprocess_fake(
     return out_query, out_key, out_value
 
 
-def batch_matmul_v2(
-    input_x1: torch.Tensor,
-    input_x2: torch.Tensor,
-    bias: torch.Tensor = None,
-    offset_w: torch.Tensor = None,
-    adj_x1: bool = False,
-    adj_x2: bool = False,
-    offset_x: int = 0
-) -> torch.Tensor:
-    return getattr(torch.ops.mindie, "batchmatmulv2_mindie_sd")(
-        input_x1=input_x1,
-        input_x2=input_x2,
-        bias=bias,
-        offset_w=offset_w,
-        adj_x1=adj_x1,
-        adj_x2=adj_x2,
-        offset_x=offset_x
+def rain_fusion_attention(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    select_idx: torch.Tensor,
+    select_num_idx: torch.Tensor,
+    blockshape: List[int],
+    attn_mask: Optional[torch.Tensor] = None,
+    actual_seq_qlen: Optional[List[int]] = None,
+    actual_seq_kvlen: Optional[List[int]] = None,
+    block_table: Optional[torch.Tensor] = None,
+    q_input_layout: str = 'TND',
+    kv_input_layout: str = 'TND',
+    head_num: int = 1,
+    mask_type: int = 0,
+    scale: float = 1.0,
+    inner_precise: int = 1,
+    block_size: int = 0
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    return getattr(torch.ops.mindie, "rainfusionattention_mindie_sd")(
+        query=query,
+        key=key,
+        value=value,
+        select_idx=select_idx,
+        select_num_idx=select_num_idx,
+        blockshape=blockshape,
+        attn_mask=attn_mask,
+        actual_seq_qlen=actual_seq_qlen,
+        actual_seq_kvlen=actual_seq_kvlen,
+        block_table=block_table,
+        q_input_layout=q_input_layout,
+        kv_input_layout=kv_input_layout,
+        head_num=head_num,
+        mask_type=mask_type,
+        scale=scale,
+        inner_precise=inner_precise,
+        block_size=block_size
     )
 
 
-@register_ops.register_mindie_fake_op("batchmatmulv2_mindie_sd")
-def batch_matmul_v2_fake(
-    input_x1: torch.Tensor,
-    input_x2: torch.Tensor,
-    bias: torch.Tensor = None,
-    offset_w: torch.Tensor = None,
-    adj_x1: bool = False,
-    adj_x2: bool = False,
-    offset_x: int = 0
-) -> torch.Tensor:
-    batch = input_x1.shape[0]
-    m = input_x1.shape[1] if not adj_x1 else input_x1.shape[2]
-    if input_x2.dim() == 2:
-        n = input_x2.shape[0] if adj_x2 else input_x2.shape[1]
+@register_ops.register_mindie_fake_op("rainfusionattention_mindie_sd")
+def rain_fusion_attention_fake(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    select_idx: torch.Tensor,
+    select_num_idx: torch.Tensor,
+    blockshape: List[int],
+    attn_mask: Optional[torch.Tensor] = None,
+    actual_seq_qlen: Optional[List[int]] = None,
+    actual_seq_kvlen: Optional[List[int]] = None,
+    block_table: Optional[torch.Tensor] = None,
+    q_input_layout: str = 'TND',
+    kv_input_layout: str = 'TND',
+    head_num: int = 1,
+    mask_type: int = 0,
+    scale: float = 1.0,
+    inner_precise: int = 1,
+    block_size: int = 0
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    softmax_lse = torch.empty(
+        [query.shape[0], query.shape[1], query.shape[2]],
+        device=query.device, dtype=query.dtype
+    )
+    output = torch.empty_like(query)
+    return output, softmax_lse
+
+
+def sparse_block_estimate(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    actual_seq_lengths: Optional[List[int]] = None,
+    actual_seq_lengths_kv: Optional[List[int]] = None,
+    input_layout: str = 'BNSD',
+    stride: int = 8,
+    sparse_size: int = 128,
+    num_heads: int = 1,
+    num_key_value_heads: int = 1,
+    scale_value: float = 1.0,
+    threshold: float = 1.0,
+    causal: bool = False,
+    keep_sink: bool = True,
+    keep_recent: bool = True,
+    row_sparse: float = 1.0
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    return getattr(torch.ops.mindie, "sparse_block_estimate_mindie_sd")(
+        query=query,
+        key=key,
+        actual_seq_lengths=actual_seq_lengths,
+        actual_seq_lengths_kv=actual_seq_lengths_kv,
+        input_layout=input_layout,
+        stride=stride,
+        sparse_size=sparse_size,
+        num_heads=num_heads,
+        num_key_value_heads=num_key_value_heads,
+        scale_value=scale_value,
+        threshold=threshold,
+        causal=causal,
+        keep_sink=keep_sink,
+        keep_recent=keep_recent,
+        row_sparse=row_sparse
+    )
+
+
+@register_ops.register_mindie_fake_op("sparse_block_estimate_mindie_sd")
+def sparse_block_estimate_fake(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    actual_seq_lengths: Optional[List[int]] = None,
+    actual_seq_lengths_kv: Optional[List[int]] = None,
+    input_layout: str = 'BNSD',
+    stride: int = 8,
+    sparse_size: int = 128,
+    num_heads: int = 1,
+    num_key_value_heads: int = 1,
+    scale_value: float = 1.0,
+    threshold: float = 1.0,
+    causal: bool = False,
+    keep_sink: bool = True,
+    keep_recent: bool = True,
+    row_sparse: float = 1.0
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    b, nq, s, d = 0, 0, 0, 0
+    if input_layout == "BNSD":
+        b, nq, s, d = query.shape
+    elif input_layout == "BSND":
+        b, s, nq, d = query.shape
     else:
-        n = input_x2.shape[1] if adj_x2 else input_x2.shape[2]
-    output_shape = [batch, m, n]
-    return torch.empty(output_shape, device=input_x1.device, dtype=input_x1.dtype)
+        raise ParametersInvalid(f"The input_layout only support 'BNSD' and 'BSND' now, but got {input_layout}")
+    seqlen_sparse = int((s + sparse_size - 1) / sparse_size)
+    seqlen_sparse_align32 = (seqlen_sparse + 31) / 32 * 32
+    sparse_mask_shape = (b, nq, seqlen_sparse, seqlen_sparse_align32)
+    sparse_count_table_shape = (b, nq, seqlen_sparse)
+
+    sparse_mask = torch.empty(
+        sparse_mask_shape,
+        device=query.device, dtype=torch.int8
+    )
+    sparse_count_table = torch.empty(
+        sparse_count_table_shape,
+        device=query.device, dtype=torch.int32
+    )
+    return sparse_mask, sparse_count_table
 
 
-def batch_matmul_v3(
-    x1: torch.Tensor,
-    x2: torch.Tensor,
-    bias: torch.Tensor = None,
-    offset_w: torch.Tensor = None,
-    adj_x1: bool = False,
-    adj_x2: bool = False,
-    offset_x: int = 0,
-    enable_hf32: bool = False
+def block_sparse_attention(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    sparse_mask: torch.Tensor,
+    sparse_count_table: torch.Tensor,
+    input_layout: str = 'BNSD',
+    sparse_size: int = 128,
+    num_heads: int = 1,
+    num_key_value_heads: int = 1,
+    scale_value: float = 1.0,
+    causal: bool = False,
+    inner_precise: int = 1,
+    pre_tokens: int = 214748647,
+    next_tokens: int = 214748647,
+    actual_seq_lengths: Optional[List[int]] = None,
+    actual_seq_lengths_kv: Optional[List[int]] = None,
 ) -> torch.Tensor:
-    return getattr(torch.ops.mindie, "batchmatmulv3_mindie_sd")(
-        x1=x1,
-        x2=x2,
-        bias=bias,
-        offset_w=offset_w,
-        adj_x1=adj_x1,
-        adj_x2=adj_x2,
-        offset_x=offset_x,
-        enable_hf32=enable_hf32
+    return getattr(torch.ops.mindie, "block_sparse_attention")(
+        query=query,
+        key=key,
+        value=value,
+        sparse_mask=sparse_mask,
+        sparse_count_table=sparse_count_table,
+        input_layout=input_layout,
+        sparse_size=sparse_size,
+        num_heads=num_heads,
+        num_key_value_heads=num_key_value_heads,
+        scale_value=scale_value,
+        causal=causal,
+        inner_precise=inner_precise,
+        pre_tokens=pre_tokens,
+        next_tokens=next_tokens,
+        actual_seq_lengths=actual_seq_lengths,
+        actual_seq_lengths_kv=actual_seq_lengths_kv
     )
 
 
-@register_ops.register_mindie_fake_op("batchmatmulv3_mindie_sd")
-def batch_matmul_v3_fake(
-    x1: torch.Tensor,
-    x2: torch.Tensor,
-    bias: torch.Tensor = None,
-    offset_w: torch.Tensor = None,
-    adj_x1: bool = False,
-    adj_x2: bool = False,
-    offset_x: int = 0,
-    enable_hf32: bool = False
+@register_ops.register_mindie_fake_op("block_sparse_attention")
+def block_sparse_attention_fake(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    sparse_mask: torch.Tensor,
+    sparse_count_table: torch.Tensor,
+    input_layout: str = 'BNSD',
+    sparse_size: int = 128,
+    num_heads: int = 1,
+    num_key_value_heads: int = 1,
+    scale_value: float = 1.0,
+    causal: bool = False,
+    inner_precise: int = 1,
+    pre_tokens: int = 214748647,
+    next_tokens: int = 214748647,
+    actual_seq_lengths: Optional[List[int]] = None,
+    actual_seq_lengths_kv: Optional[List[int]] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    output = torch.empty_like(query)
+    return output
+
+
+@register_ops.register_mindie_fake_op("adaln_mindie_sd")
+def adaln_mindie_sd_fake(
+    x: torch.Tensor,
+    scale: torch.Tensor,
+    shift: torch.Tensor,
+    weight: torch.Tensor | None = None,
+    bias: torch.Tensor | None = None,
+    epsilon: float = 1e-05
 ) -> torch.Tensor:
-    batch = x1.shape[0]
-    m = x1.shape[1] if not adj_x1 else x1.shape[2]
-    if x2.dim() == 2:
-        n = x2.shape[0] if adj_x2 else x2.shape[1]
-    else:
-        n = x2.shape[1] if adj_x2 else x2.shape[2]
-    output_shape = [batch, m, n]
-    return torch.empty(output_shape, device=x1.device, dtype=x1.dtype)
-
-
-def batch_matmul_v3_duo(
-    x1: torch.Tensor,
-    x2: torch.Tensor,
-    bias: torch.Tensor = None,
-    offset_w: torch.Tensor = None
-) -> torch.Tensor:
-    return getattr(torch.ops.mindie, "batchmatmulv3duo_mindie_sd")(
-        x1=x1,
-        x2=x2,
-        bias=bias,
-        offset_w=offset_w
-    )
-
-
-@register_ops.register_mindie_fake_op("batchmatmulv3duo_mindie_sd")
-def batch_matmul_v3_duo_fake(
-    x1: torch.Tensor,
-    x2: torch.Tensor,
-    bias: torch.Tensor = None,
-    offset_w: torch.Tensor = None
-) -> torch.Tensor:
-    batch = x1.shape[0]
-    m = x1.shape[1]
-    n = x2.shape[2]
-    output_shape = [batch, m, n]
-    return torch.empty(output_shape, device=x1.device, dtype=x1.dtype)
-
-
-def matmul_v2(
-    input_x1: torch.Tensor,
-    input_x2: torch.Tensor,
-    bias: torch.Tensor = None,
-    offset_w: torch.Tensor = None,
-    transpose_x1: bool = False,
-    transpose_x2: bool = False,
-    offset_x: int = 0
-) -> torch.Tensor:
-    return getattr(torch.ops.mindie, "matmulv2_mindie_sd")(
-        input_x1=input_x1,
-        input_x2=input_x2,
-        bias=bias,
-        offset_w=offset_w,
-        transpose_x1=transpose_x1,
-        transpose_x2=transpose_x2,
-        offset_x=offset_x
-    )
-
-
-@register_ops.register_mindie_fake_op("matmulv2_mindie_sd")
-def matmul_v2_fake(
-    input_x1: torch.Tensor,
-    input_x2: torch.Tensor,
-    bias: torch.Tensor = None,
-    offset_w: torch.Tensor = None,
-    transpose_x1: bool = False,
-    transpose_x2: bool = False,
-    offset_x: int = 0
-) -> torch.Tensor:
-    m = input_x1.shape[1] if transpose_x1 else input_x1.shape[0]
-    n = input_x2.shape[0] if transpose_x2 else input_x2.shape[1]
-    output_shape = [m, n]
-    return torch.empty(output_shape, device=input_x1.device, dtype=input_x1.dtype)
+    return torch.empty_like(x)

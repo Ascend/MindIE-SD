@@ -15,6 +15,7 @@
 
 ## Latest News
 
+-   12/25/2025：vLLM Omni x MindIE SD 实现 Qwen-Image-Edit-2511 / Qwen-Image-Layered 昇腾原生高性能推理
 -   11/30/2025：MindIE SD 正式宣布开源并面向公众开放！[会议日历](https://meeting.ascend.osinfra.cn/?sig=sig-MindIE-SD)
 
 ## 架构介绍及关键特性
@@ -91,3 +92,6 @@
 | Wan2.1 | 8 | CFG=2, Ulysses=4, VAE | 832\*480 | √ | √ | √ | 76.4 | ***7.34x**|
 
 注：\* 号表示最优加速效果
+
+## 联系我们
+![](./docs/figures/contact-us.jpg)

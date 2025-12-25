@@ -17,7 +17,7 @@ import json
 import torch
 import torch.nn as nn
 from mindiesd.quantization.config import QuantConfig, LayerQuantConfig
-from mindiesd.quantization.layer import W8A8QuantBaseLinear, WeightQuantLinear, QuantFA
+from mindiesd.quantization.layer import W8A8QuantBaseLinear, WeightQuantLinear, QuantFA, W8A8MXFP8QuantLinear
 from mindiesd.quantization.mode import QuantAlgorithm
 from mindiesd.quantization.quantize import smooth_quantize_w8a8, smooth_quantize, quantize
 from mindiesd.quantization.quantize import weight_quantize, w8a16_quantize, add_fa3
@@ -68,6 +68,17 @@ class TestSmoothQuantize(unittest.TestCase):
             "0.linear.bias": torch.ones(out_features, dtype=torch.float32),
             "0.div.mul_scale": torch.ones(out_features, dtype=torch.float32)
         }
+        self.weights3 = {
+            "0.weight": torch.ones(out_features, in_features, dtype=torch.int8),
+            "0.weight_scale": torch.ones(out_features, out_features, dtype=torch.float32),
+            "0.bias": torch.ones(out_features, dtype=torch.float32)
+        }
+        self.weights4 = {
+            "0.linear.weight": torch.ones(out_features, in_features, dtype=torch.int8),
+            "0.linear.weight_scale": torch.ones(out_features, out_features, dtype=torch.float32),
+            "0.linear.bias": torch.ones(out_features, dtype=torch.float32),
+            "0.div.mul_scale": torch.ones(out_features, dtype=torch.float32)
+        }
 
     def test_smooth_quantize_w8a8_with_linear(self):
         layer = nn.Linear(10, 10)
@@ -97,6 +108,20 @@ class TestSmoothQuantize(unittest.TestCase):
         quant_layer, is_modified = smooth_quantize_w8a8("0", layer, cfg, create_mock_handler(self.weights))
         self.assertEqual(quant_layer, layer)
         self.assertFalse(is_modified)
+
+    def test_smooth_quantize_w8a8_mxfp8_with_linear(self):
+        layer = nn.Linear(10, 10)
+        cfg = QuantConfig(quant_algo=QuantAlgorithm.W8A8_MXFP8)
+        quant_layer, is_modified = smooth_quantize_w8a8("0", layer, cfg, create_mock_handler(self.weights3))
+        self.assertIsInstance(quant_layer, W8A8MXFP8QuantLinear)
+        self.assertTrue(is_modified)
+
+    def test_smooth_quantize_w8a8_mxfp8_with_anti_linear(self):
+        layer = nn.Linear(10, 10)
+        cfg = QuantConfig(quant_algo=QuantAlgorithm.W8A8_MXFP8)
+        quant_layer, is_modified = smooth_quantize_w8a8("0", layer, cfg, create_mock_handler(self.weights4))
+        self.assertIsInstance(quant_layer, W8A8MXFP8QuantLinear)
+        self.assertTrue(is_modified)
 
     def test_smooth_quantize_with_supported_algo(self):
         layer = nn.Linear(10, 10)

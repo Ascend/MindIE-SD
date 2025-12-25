@@ -12,9 +12,13 @@
 
 
 __all__ = [
-    'RMSNormPattern',
-    'RopePattern'
+    'RMSNormPatternGroup',
+    'RopePatternGroup',
+    'AdaLayerNormPatternGroup',
+    'GELUPatternGroup',
 ]
 
-from .rms_norm_pattern import RMSNormPattern
-from .rope_pattern import RopePattern
+from .rms_norm_pattern import RMSNormPatternGroup
+from .rope_pattern import RopePatternGroup
+from .adalayernorm_pattern import AdaLayerNormPatternGroup
+from .gelu_pattern import GELUPatternGroup

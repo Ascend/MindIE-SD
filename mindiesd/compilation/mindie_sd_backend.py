@@ -18,23 +18,23 @@ import torch
 import torch.fx as fx
 from torch._dynamo.backends.common import aot_autograd
 from torch._inductor.freezing import freeze
-from torch._inductor.decomposition import select_decomp_table
+from ._custom_decomposition import select_custom_decomp_table
 
 try:
     from torch.fx.passes.graph_transform_observer import GraphTransformObserver
 except ImportError:
     class GraphTransformObserver:
-        def __init__(self, graph_module, name, subsystem=None, log_url=None):
-            self.graph_module = graph_module
-            self.name = name
+        def __init__(self, gm, passname, subsystem=None, log_url=None):
+            self.gm = gm
+            self.passname = passname
             self.subsystem = subsystem
             self.log_url = log_url
         
         def apply_gm_pass(self, pass_obj):
-            pass_obj(self.graph_module)
+            pass_obj(self.gm)
         
         def apply_graph_pass(self, pass_func):
-            pass_func(self.graph_module.graph)
+            pass_func(self.gm.graph)
 
 from .compiliation_config import CompilationConfig
 
@@ -83,8 +83,8 @@ class MindieSDBackend:
     @classmethod
     def apply_redundant_node_elimination_pass(cls, graph: fx.GraphModule, inputs):
         GraphTransformObserver(
-            graph_module=graph,
-            name="redundant_node_elimination_pass",
+            gm=graph,
+            passname="redundant_node_elimination_pass",
             subsystem="redundant_node_elimination_pass",
             log_url=CompilationConfig.graph_log_url,
         ).apply_gm_pass(ReduandantNodeEliminationPass())
@@ -96,8 +96,8 @@ class MindieSDBackend:
     def apply_pattern_match_passes(cls, graph: fx.GraphModule, inputs):
         activate_pattern_once()
         GraphTransformObserver(
-            graph_module=graph,
-            name="pattern_match_pass",
+            gm=graph,
+            passname="pattern_match_pass",
             subsystem="pattern_match_passes",
             log_url=CompilationConfig.graph_log_url,
         ).apply_gm_pass(patterns)
@@ -108,8 +108,8 @@ class MindieSDBackend:
     @classmethod
     def apply_decompose_auto_functionalized_pass(cls, graph: fx.GraphModule):
         GraphTransformObserver(
-            graph_module=graph,
-            name="decompose_auto_functionalized",
+            gm=graph,
+            passname="decompose_auto_functionalized",
             subsystem="decompose_auto_functionalized_pass",
             log_url=CompilationConfig.graph_log_url,
         ).apply_graph_pass(decompose_auto_functionalized)
@@ -164,8 +164,7 @@ class MindieSDBackend:
             else:
                 return graph_rewrite_after_freezing(fx_graph, inputs)
 
-        # Use the default decomposition table to decompose operators.
-        decompositions = select_decomp_table()
+        decompositions = select_custom_decomp_table()
         # Use AOT Autograd to handle the forward compilation.
         return aot_autograd(
             fw_compiler=compile_inner,

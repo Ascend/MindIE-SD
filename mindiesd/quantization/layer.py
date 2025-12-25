@@ -424,3 +424,51 @@ class QuantFA(nn.Module):
         value = self.quant3.forward([value, self.v_scale2, self.kv_offset2])[0]
         return self.quant_attn.forward(
             [query, key, value, seq_len, self.qk_scale, self.fa3_offset, self.fa3_v_scale, self.fa3_offset])[0]
+
+
+class W8A8MXFP8QuantLinear(W8A8QuantBaseLinear):
+    def __init__(self, in_features, out_features, bias=True, weights=None, prefix=None, **kwargs):
+        super().__init__(in_features, out_features, bias, weights, prefix, **kwargs)
+
+        self.is_dynamic = True
+        self._init_dynamic_quant_param(prefix, weights, **kwargs)
+
+    def quant_matmul(self, x):
+        if x.dtype != self.dtype:
+            x = x.to(self.dtype)
+
+        if self.mul_scale is not None:
+            x1, input_scale = torch_npu.npu_dynamic_mx_quant(x * self.mul_scale, dst_type=torch_npu.float8_e4m3fn)
+        else:
+            x1, input_scale = torch_npu.npu_dynamic_mx_quant(x, dst_type=torch_npu.float8_e4m3fn)
+
+        if self.bias.dtype != torch.float32:
+            self.bias = self.bias.to(torch.float32)
+
+        x2 = self.weight
+        if x2.dtype != torch_npu.float8_e4m3fn:
+            x2 = torch_npu.npu_dtype_cast(x2, torch_npu.float8_e4m3fn)
+        x2 = x2.transpose(0, 1)
+
+        output = torch_npu.npu_quant_matmul(
+                            x1,
+                            x2,
+                            self.weight_scale,
+                            scale_dtype=torch_npu.float8_e8m0fnu,
+                            pertoken_scale=input_scale,
+                            pertoken_scale_dtype=torch_npu.float8_e8m0fnu,
+                            bias=self.bias,
+                            output_dtype=self.dtype,
+                            group_sizes=[1, 1, 32],
+                            )
+        return output
+
+    def _init_dynamic_quant_param(self, prefix=None, weights=None, **kwargs):
+        weight_scale = get_quant_weight(weights, f'{prefix}.weight_scale')
+        weight_scale = weight_scale.reshape(weight_scale.shape[0], -1, 2)
+        self.register_buffer("weight_scale", weight_scale, persistent=False)
+
+        weight = get_quant_weight(weights, f'{prefix}.weight')
+        if kwargs.get('use_nz', False):
+            weight = torch_npu.npu_format_cast(weight.npu(), 29)
+        self.register_buffer("weight", weight, persistent=False)

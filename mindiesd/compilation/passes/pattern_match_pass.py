@@ -11,13 +11,14 @@
 # See the Mulan PSL v2 for more details.
 
 import logging
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple, Optional, Sequence
 import re
 import torch
 import torch._inductor.pattern_matcher as pm
 from torch._inductor.pattern_matcher import PatternMatcherPass
 
 from .gm_pass_base import GraphModulePass
+from .._custom_decomposition import select_custom_decomp_table
 
 logger = logging.getLogger(__name__)
 
@@ -77,14 +78,33 @@ class PatternMatchPass(GraphModulePass):
 
         self.pattern_replacements[name] = (pattern, replacement)
         logger.debug("Registering pattern: %s", name)
-        try:
-            if not hasattr(pm, "fwd_only"):
+
+        if not hasattr(pm, "fwd_only"):
+            if IS_TORCH_21:
                 pm.fwd_only = inference_graph
+            else:
+                logger.warning("fwd_only not available in current torch version")
+
+        def fwd_only_with_custom_decomp(
+            fn: Callable[..., Any],
+            args: Sequence[Any],
+            *,
+            run_functional_passes: bool = True,
+            get_decomp_fn: Optional[Callable[..., Any]] = select_custom_decomp_table,
+        ) -> torch.fx.GraphModule:
+            return pm.fwd_only(
+                fn=fn,
+                args=args,
+                run_functional_passes=run_functional_passes,
+                get_decomp_fn=get_decomp_fn
+            )
+
+        try:
             pm.register_replacement(
                 pattern,
                 replacement,
                 example_inputs,
-                pm.fwd_only,
+                fwd_only_with_custom_decomp,
                 self.pattern_pass.patterns,
             )
             logger.debug("Successfully register pattern: %s", name)
@@ -96,4 +116,3 @@ class PatternMatchPass(GraphModulePass):
                 )
             else:
                 raise e
-

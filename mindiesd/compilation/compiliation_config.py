@@ -14,8 +14,10 @@ import dataclasses
 
 @dataclasses.dataclass(frozen=False)
 class FusionPatterns:
-    enable_rms_norm: bool = False
+    enable_rms_norm: bool = True
     enable_rope: bool = True
+    enable_adalayernorm: bool = True
+    enable_fast_gelu: bool = True
 
 
 class CompilationConfig:
