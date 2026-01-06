@@ -23,6 +23,7 @@ SAFEOPEN_FILE_PERMISSION = 0o640
 CONFIG_FILE_PERMISSION = 0o640
 MODELDATA_FILE_PERMISSION = 0o640
 MODELDATA_DIR_PERMISSION = 0o750
+BINARY_FILE_PERMISSION = 0o755
 
 FLAG_OS_MAP = {
     'r': os.O_RDONLY, 'r+': os.O_RDWR,
@@ -124,15 +125,14 @@ def check_owner(path: str):
 
 
 def check_max_permission(file_path: str, permission_mode=0o640):
-    # check permission
-    file_mode = os.stat(file_path).st_mode & 0o777 # use 777 as mask to get 3-digit octal number
-    # transeform file_mode into binary patten,remove the head '0b' string,expand to 9 bits
-    file_mode_bin = bin(file_mode)[2:].zfill(9)
-    # transeform permission_mode into binary patten,remove the head '0b' string,expand to 9 bits
-    max_mode_bin = bin(permission_mode)[2:].zfill(9)
-    for i in range(9): # 9 means 9-bit binary number, checking every bit
-        if file_mode_bin[i] > max_mode_bin[i]:
-            logger.warning(f"The permission of {os.path.relpath(file_path)} is higher than {oct(permission_mode)}.")
+    current_permissions = os.stat(file_path).st_mode & 0o777
+    required_permissions = permission_mode & 0o777
+    for i in range(3):
+        cur_perm = (current_permissions >> (i * 3)) & 0o7
+        max_perm = (required_permissions >> (i * 3)) & 0o7
+        if (cur_perm | max_perm) != max_perm:
+            err_msg = f"The permission of {os.path.relpath(file_path)} is higher than {oct(required_permissions)}."
+            raise PermissionError(err_msg)
 
 
 def check_file_safety(file_path: str, max_file_size=MAX_FILE_SIZE, is_check_file_size=True, permission_mode=0o640):

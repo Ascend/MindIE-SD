@@ -22,7 +22,7 @@ if len(current_path.parents) < 2:
 ops_path = current_path.parents[1] / "plugin"
 ops_path = file_utils.standardize_path(str(ops_path))
 ops_file = os.path.join(ops_path, "libPTAExtensionOPS.so")
-file_utils.check_file_safety(ops_file, permission_mode=file_utils.MODELDATA_FILE_PERMISSION)
+file_utils.check_file_safety(ops_file, permission_mode=file_utils.BINARY_FILE_PERMISSION)
 torch.ops.load_library(ops_file)
 
 
