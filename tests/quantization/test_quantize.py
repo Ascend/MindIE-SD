@@ -17,10 +17,10 @@ import json
 import torch
 import torch.nn as nn
 from mindiesd.quantization.config import QuantConfig, LayerQuantConfig
-from mindiesd.quantization.layer import W8A8QuantBaseLinear, WeightQuantLinear, QuantFA, W8A8MXFP8QuantLinear
+from mindiesd.quantization.layer import W8A8QuantBaseLinear, WeightQuantLinear, FP8RotateQuantFA, W8A8MXFP8QuantLinear
 from mindiesd.quantization.mode import QuantAlgorithm
 from mindiesd.quantization.quantize import smooth_quantize_w8a8, smooth_quantize, quantize
-from mindiesd.quantization.quantize import weight_quantize, w8a16_quantize, add_fa3
+from mindiesd.quantization.quantize import weight_quantize, w8a16_quantize, add_fa_quant
 from mindiesd.quantization.quantize import get_cfg_and_weights
 from mindiesd.utils import ParametersInvalid, ConfigError
 
@@ -312,37 +312,31 @@ class TestWeightQuantize(unittest.TestCase):
         self.assertTrue(is_modified)
 
 
-class TestAddFA3(unittest.TestCase):
+class TestAddFAQuant(unittest.TestCase):
     def setUp(self):
         self.weights = {
-            "test_layer.fa_q.scale": torch.ones(8, 1, dtype=torch.float16),
-            "test_layer.fa_k.scale": torch.ones(8, 1, dtype=torch.float16),
-            "test_layer.fa_v.scale": torch.ones(8, 1, dtype=torch.float16),
-            "test_layer.fa_q.offset": torch.ones(8, 1, dtype=torch.float16),
-            "test_layer.fa_k.offset": torch.ones(8, 1, dtype=torch.float16),
-            "test_layer.fa_v.offset": torch.ones(8, 1, dtype=torch.float16)
+            "test_layer.q_rot": torch.randn(128, 128, dtype=torch.float16),
+            "test_layer.k_rot": torch.randn(128, 128, dtype=torch.float16),
         }
 
-    def test_add_fa3_with_valid_layer(self):
+    def test_add_fa_quant_with_valid_layer(self):
         # 创建一个具有必要属性的模拟层
         class MockLayer(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.heads = 8
-                self.inner_dim = 64
 
         layer = MockLayer()
-        cfg = QuantConfig(quant_algo=QuantAlgorithm.FAQUANT)
-        add_fa3(layer, cfg, "test_layer", create_mock_handler(self.weights))
-        self.assertTrue(hasattr(layer, 'fa3'))
-        self.assertIsInstance(layer.fa3, QuantFA)
+        cfg = QuantConfig(quant_algo=QuantAlgorithm.FP8_DYNAMIC)
+        add_fa_quant(layer, cfg, "test_layer", create_mock_handler(self.weights))
+        self.assertTrue(hasattr(layer, 'fa_quant'))
+        self.assertIsInstance(layer.fa_quant, FP8RotateQuantFA)
 
-    def test_add_fa3_with_invalid_layer(self):
+    def test_add_fa_quant_with_invalid_layer(self):
         # 创建一个没有必要属性的层
         layer = nn.Linear(10, 10)
         cfg = QuantConfig(quant_algo=QuantAlgorithm.FAQUANT)
-        add_fa3(layer, cfg, "test_layer", self.weights)
-        self.assertFalse(hasattr(layer, 'fa3'))
+        add_fa_quant(layer, cfg, "test_layer", self.weights)
+        self.assertFalse(hasattr(layer, 'fa_quant'))
 
 
 class TestGetCfgAndWeights(unittest.TestCase):
