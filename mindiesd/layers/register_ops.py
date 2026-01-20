@@ -39,7 +39,7 @@ def _load_mindie_ops_library() -> None:
     
     file_utils.check_file_safety(
         ops_file,
-        permission_mode=file_utils.MODELDATA_FILE_PERMISSION
+        permission_mode=file_utils.BINARY_FILE_PERMISSION
     )
     torch.ops.load_library(ops_file)
 
