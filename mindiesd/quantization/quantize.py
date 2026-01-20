@@ -291,6 +291,7 @@ def quantize(model, quant_des_path, **kwargs):
         return model
 
     modified_layers = []
+    rank = int(os.getenv("RANK", 0))
 
     for name, layer in model.named_modules():
         # 跳过回退层
@@ -322,8 +323,9 @@ def quantize(model, quant_des_path, **kwargs):
                 modified_layers.append((name, quant_layer))
         elif layer_quant_mode.contains_fa_quantization():
             add_fa_quant(layer, layer_quant_cfg, name, quant_weights)
-            logger.info(f"FA Quant layer name:%s, Quant class name:%s, Quant algo:%s.",
-                        name, layer.__class__.__name__, layer_quant_cfg.quant_algo)
+            if rank == 0:
+                logger.info(f"FA Quant layer name:%s, Quant class name:%s, Quant algo:%s.",
+                            name, layer.__class__.__name__, layer_quant_cfg.quant_algo)
 
     # 执行改图
     modify_graph(model, modified_layers)
