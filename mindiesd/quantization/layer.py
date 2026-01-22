@@ -464,7 +464,8 @@ class FP8RotateQuantFA(nn.Module):
                                                             value_quant_mode=7,
                                                             dequant_scale_query=q_scale,
                                                             dequant_scale_key=k_scale,
-                                                            dequant_scale_value=v_scale
+                                                            dequant_scale_value=v_scale,
+                                                            out_dtype=query.dtype
                                                             )[0]
         
         if x.shape[2] != s:
