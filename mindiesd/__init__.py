@@ -24,7 +24,8 @@ __all__ = [
     'TimestepManager',
     'TimestepPolicyConfig',
     'QuantFA',
-    'sparse_attention'
+    'sparse_attention',
+    'fast_layernorm'
 ]
 
 from .cache_agent import CacheConfig, CacheAgent
@@ -35,7 +36,8 @@ from .layers import (
     rotary_position_embedding,
     get_activation_layer,
     RMSNorm,
-    sparse_attention
+    sparse_attention,
+    fast_layernorm
 )
 from .quantization import quantize, TimestepManager, TimestepPolicyConfig, QuantFA
 from .env import set_environment_variables

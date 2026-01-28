@@ -14,6 +14,7 @@ import torch
 import torch.nn as nn
 import torch_npu
 from ..utils.exception import ParametersInvalid
+from . import _custom_ops as ops
 
 
 class RMSNorm(nn.Module):
@@ -36,3 +37,53 @@ class RMSNorm(nn.Module):
             variance = hidden_states.pow(2).mean(-1, keepdim=True)
             hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
             return self.weight * hidden_states.to(input_dtype)
+
+
+def check_input_params(layernorm, x, impl_mode, fused):
+    if not isinstance(layernorm, torch.nn.LayerNorm):
+        raise ParametersInvalid(f"The type of input layernorm must be torch.nn.LayerNorm, but got {type(layernorm)}.")
+    if not isinstance(fused, bool):
+        raise ParametersInvalid(f"The data type of input fused must be bool, but got {type(fused)}.")
+    if impl_mode not in [0, 1, 2]:
+        raise ParametersInvalid(f"Expected impl_mode to be in [0, 1, 2], but now got [{impl_mode}]")
+    if impl_mode == 2:
+        if not (
+            x.dtype == torch.float16
+            and (layernorm.weight is None or layernorm.weight.dtype == torch.float16)
+            and (layernorm.bias is None or layernorm.bias.dtype == torch.float16)
+        ):
+            raise ParametersInvalid(f"only support all input dtype float16!")
+
+
+def fast_layernorm(
+    norm: torch.nn.LayerNorm, 
+    x: torch.Tensor,
+    impl_mode: int = 0,
+    fused: bool = True) -> torch.Tensor:
+    """
+    Args:
+        norm (torch.nn.LayerNorm):
+            The LayerNorm module.
+        x (torch.Tensor):
+            Tensor to apply LayerNorm. x must be 3-dimensional.
+            The supported layout: [B,S,H].
+        impl_mode (int):
+            Specifies the compute mode for the kernel. The value must be in [0, 1, 2]. The default value is 0.
+            0 indicates the high-precision mode, 1 indicates the high-performance mode, and 2 indicates the
+            float16 mode. The float16 mode is supported only when all inputs are float16.
+        fused (bool): 
+            If fused is True, can enable different layernorm mode by specifying 'impl_mode'.
+    """
+    check_input_params(norm, x, impl_mode, fused)
+    if fused:
+        out = ops.layernorm(
+            x=x, 
+            normalized_shape=list(norm.normalized_shape),
+            weight=norm.weight, 
+            bias=norm.bias, 
+            eps=norm.eps,
+            impl_mode=impl_mode
+        )[0]
+    else:
+        out = norm(x)
+    return out

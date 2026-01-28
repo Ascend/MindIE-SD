@@ -10,6 +10,7 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 from typing import Tuple, List, Optional
+import math
 import torch
 from . import register_ops
 from ..utils import ParametersInvalid
@@ -355,3 +356,51 @@ def adaln_mindie_sd_fake(
     epsilon: float = 1e-05
 ) -> torch.Tensor:
     return torch.empty_like(x)
+
+
+def layernorm(
+    x: torch.Tensor,
+    normalized_shape: List[int],
+    weight: torch.Tensor | None = None,
+    bias: torch.Tensor | None = None,
+    eps: float = 1e-05,
+    impl_mode: int = 0
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    return getattr(torch.ops.mindie, "layernorm")(
+        input=x,
+        normalized_shape=normalized_shape,
+        weight=weight,
+        bias=bias,
+        eps=eps,
+        impl_mode=impl_mode
+    )
+
+
+@register_ops.register_mindie_fake_op("layernorm")
+def layernorm_fake(
+    x: torch.Tensor,
+    normalized_shape: List[int],
+    weight: torch.Tensor | None = None,
+    bias: torch.Tensor | None = None,
+    eps: float = 1e-05,
+    impl_mode: int = 0
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    output = torch.empty_like(x)
+
+    norm_ndim = len(normalized_shape)
+    input_ndim = x.dim()
+    begin_axis = input_ndim - norm_ndim
+
+    M = math.prod(x.shape[:begin_axis])
+
+    acc_dtype = torch.float64 if x.dtype == torch.float64 else torch.float32
+
+    if M <= 0:
+        mean_shape = [M]
+    else:
+        mean_shape = list(x.shape[:begin_axis]) + [1] * norm_ndim
+
+    mean_out = torch.empty(mean_shape, dtype=acc_dtype, device=x.device)
+    rstd_out = torch.empty(mean_shape, dtype=acc_dtype, device=x.device)
+
+    return output, mean_out, rstd_out

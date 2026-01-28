@@ -19,6 +19,7 @@
 #include "rainfusionattention.h"
 #include "block_sparse_attention.h"
 #include "sparse_block_estimate.h"
+#include "layernorm.h"
 
 
 TORCH_LIBRARY(mindie, m)
@@ -54,6 +55,8 @@ TORCH_LIBRARY(mindie, m)
         float threshold=1, bool causal=True, bool keep_sink=True,  \
         bool keep_recent=True, float row_sparse=1) \
         -> (Tensor, Tensor)");
+    m.def("layernorm(Tensor input, int[] normalized_shape, Tensor? weight=None, Tensor? bias=None, float eps=1e-05, \
+        int impl_mode=0) -> (Tensor, Tensor, Tensor)");
 }
 
 
@@ -66,4 +69,5 @@ TORCH_LIBRARY_IMPL(mindie, PrivateUse1, m)
     m.impl("rainfusionattention_mindie_sd", &rainfusionattention_mindie_sd_impl_npu);
     m.impl("block_sparse_attention", &block_sparse_attention_impl_npu);
     m.impl("sparse_block_estimate_mindie_sd", &sparse_block_estimate_mindie_sd_impl_npu);
+    m.impl("layernorm", &layernorm_mindie_sd_impl_npu);
 }
