@@ -73,8 +73,8 @@ class CacheAgent:
             raise ConfigError(f"The 'block_end' must >= 'block_start', "
                 f"but got {self._config.block_end} and {self._config.block_start}.")
         if self._config.method == "dit_block_cache":
-            if self._config.block_end >= self._config.blocks_count:
-                raise ConfigError(f"The 'block_end' must < 'blocks_count', "
+            if self._config.block_end > self._config.blocks_count:
+                raise ConfigError(f"The 'block_end' must <= 'blocks_count', "
                     f"but got {self._config.block_end} and {self._config.blocks_count}.")
         if self._config.step_start >= self._config.steps_count or \
             self._config.step_end == self._config.step_start:
