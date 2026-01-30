@@ -15,6 +15,7 @@ from pathlib import Path
 
 import torch
 from ..utils import ParametersInvalid, file_utils
+from ..utils.get_platform import get_npu_device, NPUDevice
 
 current_path = Path(__file__).resolve()
 if len(current_path.parents) < 2:
@@ -24,6 +25,7 @@ ops_path = file_utils.standardize_path(str(ops_path))
 ops_file = os.path.join(ops_path, "libPTAExtensionOPS.so")
 file_utils.check_file_safety(ops_file, permission_mode=file_utils.BINARY_FILE_PERMISSION)
 torch.ops.load_library(ops_file)
+npu_device = get_npu_device()
 
 
 def check_input_params(layernorm, x, scale, shift, fused):
@@ -97,10 +99,16 @@ def layernorm_scale_shift(
         else:
             weight = None
             bias = None
-        out = torch.ops.mindie.adaln_mindie_sd(
-            x=x, scale=scale, shift=shift,
-            weight=weight, bias=bias, epsilon=layernorm.eps
-            )
+        if npu_device == NPUDevice.A5:
+            out = torch.ops.mindie.adaln_v2_mindie_sd(
+                x=x, scale=scale, shift=shift,
+                weight=weight, bias=bias, epsilon=layernorm.eps
+                )[0]
+        else:
+            out = torch.ops.mindie.adaln_mindie_sd(
+                x=x, scale=scale, shift=shift,
+                weight=weight, bias=bias, epsilon=layernorm.eps
+                )
     else:
         if scale.dim() == 2:
             scale = scale[:, None]

@@ -346,6 +346,24 @@ def block_sparse_attention_fake(
     return output
 
 
+def adaln_mindie_sd(
+    x: torch.Tensor,
+    scale: torch.Tensor,
+    shift: torch.Tensor,
+    weight: torch.Tensor | None = None,
+    bias: torch.Tensor | None = None,
+    epsilon: float = 1e-05
+) -> torch.Tensor:
+    return getattr(torch.ops.mindie, "adaln_mindie_sd")(
+        x=x,
+        scale=scale,
+        shift=shift,
+        weight=weight,
+        bias=bias,
+        epsilon=epsilon
+    )
+
+
 @register_ops.register_mindie_fake_op("adaln_mindie_sd")
 def adaln_mindie_sd_fake(
     x: torch.Tensor,
@@ -404,3 +422,36 @@ def layernorm_fake(
     rstd_out = torch.empty(mean_shape, dtype=acc_dtype, device=x.device)
 
     return output, mean_out, rstd_out
+
+
+def adaln_v2_mindie_sd(
+    x: torch.Tensor,
+    scale: torch.Tensor,
+    shift: torch.Tensor,
+    weight: torch.Tensor | None = None,
+    bias: torch.Tensor | None = None,
+    epsilon: float = 1e-05
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    return getattr(torch.ops.mindie, "adaln_v2_mindie_sd")(
+        x=x,
+        scale=scale,
+        shift=shift,
+        weight=weight,
+        bias=bias,
+        epsilon=epsilon
+    )
+
+
+@register_ops.register_mindie_fake_op("adaln_v2_mindie_sd")
+def adaln_v2_mindie_sd_fake(
+    x: torch.Tensor,
+    scale: torch.Tensor,
+    shift: torch.Tensor,
+    weight: torch.Tensor | None = None,
+    bias: torch.Tensor | None = None,
+    epsilon: float = 1e-05
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    b, s, _ = x.shape
+    mean_out = torch.empty((b, s, 1), dtype=x.dtype, device=x.device)
+    rstd_out = torch.empty((b, s, 1), dtype=x.dtype, device=x.device)
+    return torch.empty_like(x), mean_out, rstd_out

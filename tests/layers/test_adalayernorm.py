@@ -20,6 +20,8 @@ sys.path.append('../')
 from device import DEVICE_ID
 from mindiesd import layernorm_scale_shift
 from mindiesd.utils import ParametersInvalid
+from mindiesd.utils.get_platform import NPUDevice, get_npu_device
+from unittest.mock import Mock
 
 class TestAdaLayerNorm(unittest.TestCase):
     def setUp(self):
@@ -250,6 +252,44 @@ class TestAdaLayerNorm(unittest.TestCase):
         out_non_fused = out_non_fused.reshape(1, -1).to(torch.float32)
         self.assertGreater(torch.cosine_similarity(out_non_fused, out_fused)[0], 2**-7)
 
+
+    @torch.no_grad()
+    def test_layernorm_scale_shift_3d_use_affine_and_a5(self):
+        device = "npu"
+        batch_size = 1
+        sentence_length = 1024
+        hidden_size = 128
+        layernorm = nn.LayerNorm(128, self.norm_eps, elementwise_affine=True).to(device)
+
+        x = torch.randn([batch_size, sentence_length, hidden_size], dtype=torch.float32).to(device)
+        scale = torch.randn([batch_size, hidden_size], dtype=torch.float32).to(device)
+        shift = torch.randn([batch_size, hidden_size], dtype=torch.float32).to(device)
+        
+        origin_ops_v2 = torch.ops.mindie.adaln_v2_mindie_sd
+        origin_ops_v1 = torch.ops.mindie.adaln_mindie_sd
+        ops_mock_v2 = Mock()
+        ops_mock_v1 = Mock()
+        
+        def mock_ops_v2(*args, **kwargs):
+            ops_mock_v2()
+            return origin_ops_v2(*args, **kwargs)
+        
+        def mock_ops_v1(*args, **kwargs):
+            ops_mock_v1()
+            return origin_ops_v1(*args, **kwargs)
+        
+        torch.ops.mindie.adaln_v2_mindie_sd = mock_ops_v2
+        torch.ops.mindie.adaln_mindie_sd = mock_ops_v1
+        try:
+            out = layernorm_scale_shift(layernorm, x, scale, shift, fused=True)
+            if get_npu_device() == NPUDevice.A5:
+                ops_mock_v2.assert_called_once()
+            else:
+                ops_mock_v1.assert_called_once()
+        finally:
+            torch.ops.mindie.adaln_v2_mindie_sd = origin_ops_v2
+            torch.ops.mindie.adaln_mindie_sd = origin_ops_v1
+           
 
 if __name__ == "__main__":
     torch_npu.npu.set_device(DEVICE_ID)

@@ -26,4 +26,13 @@ at::Tensor adaln_mindie_sd_impl_npu(
     const c10::optional<at::Tensor> &bias_opt,
     const c10::optional<double> &epsilon_opt
 );
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor> adaln_v2_mindie_sd_impl_npu(
+    const at::Tensor &x,
+    const at::Tensor &scale,
+    const at::Tensor &shift,
+    const c10::optional<at::Tensor> &weight_opt,
+    const c10::optional<at::Tensor> &bias_opt,
+    const c10::optional<double> &epsilon_opt
+);
 #endif // ADALN_MINDIE_SD_IMPL_H
