@@ -30,6 +30,8 @@ def get_npu_device() -> NPUDevice:
             PLATFORM = NPUDevice.Duo
         elif "910" in soc:
             PLATFORM = NPUDevice.A5 if "910_95" in soc else NPUDevice.A2
+        elif "950" in soc:
+            PLATFORM = NPUDevice.A5
         else:
             PLATFORM = NPUDevice.UNDEFINED
     return PLATFORM
