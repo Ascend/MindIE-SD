@@ -504,7 +504,7 @@ class W8A8MXFP8QuantLinear(W8A8QuantBaseLinear):
         output = torch_npu.npu_quant_matmul(
                             x1,
                             x2,
-                            self.weight_scale,
+                            self.weight_scale.transpose(0, 1),
                             scale_dtype=torch_npu.float8_e8m0fnu,
                             pertoken_scale=input_scale,
                             pertoken_scale_dtype=torch_npu.float8_e8m0fnu,
