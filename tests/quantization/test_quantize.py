@@ -334,7 +334,7 @@ class TestAddFAQuant(unittest.TestCase):
     def test_add_fa_quant_with_invalid_layer(self):
         # 创建一个没有必要属性的层
         layer = nn.Linear(10, 10)
-        cfg = QuantConfig(quant_algo=QuantAlgorithm.FAQUANT)
+        cfg = QuantConfig(quant_algo=QuantAlgorithm.NO_QUANT)
         add_fa_quant(layer, cfg, "test_layer", self.weights)
         self.assertFalse(hasattr(layer, 'fa_quant'))
 

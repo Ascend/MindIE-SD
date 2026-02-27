@@ -11,6 +11,7 @@
 # See the Mulan PSL v2 for more details.
 
 from abc import ABC, abstractmethod
+import math
 import torch
 import torch.nn as nn
 import torch_npu
@@ -258,7 +259,7 @@ class FP8RotateQuantFA(nn.Module):
         layout = kwargs.get("layout", "BNSD")
 
         from ..layers.quant.block_quant import fa_block_quant_preprocess
-        
+
         q, q_scale = fa_block_quant_preprocess(query, block_size=128,
                                                dst_type=torch_npu.float8_e4m3fn, layout=layout)
         k, k_scale = fa_block_quant_preprocess(key, block_size=256,
