@@ -16,25 +16,6 @@ from . import register_ops
 from ..utils import ParametersInvalid
 
 
-def rope(
-    x: torch.Tensor,
-    cos: torch.Tensor,
-    sin: torch.Tensor,
-    mode: int
-) -> torch.Tensor:
-    return getattr(torch.ops.mindiesd, "rope")(x, cos, sin, mode)
-
-
-@register_ops.register_mindie_fake_op("rope")
-def rope_fake(
-    x: torch.Tensor,
-    cos: torch.Tensor,
-    sin: torch.Tensor,
-    mode: int
-) -> torch.Tensor:
-    return torch.empty_like(x)
-
-
 def laser_attention(
     query: torch.Tensor,
     key: torch.Tensor,

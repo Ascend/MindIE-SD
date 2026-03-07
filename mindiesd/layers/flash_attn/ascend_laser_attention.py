@@ -70,7 +70,7 @@ class AscendLaserAttention(AttentionOperateBase):
     @staticmethod
     def la_postprocess_output(attention_out, dtype, qseqlen, head_dim):
         if dtype != attention_out.dtype:
-            attention_out = attention_out.to(dtype)
+            attention_out = attention_out.to(torch.float16).to(dtype)
         attention_out = attention_out[:, :, :qseqlen, :head_dim]
         return attention_out
 

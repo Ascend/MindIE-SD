@@ -43,15 +43,17 @@ fi
 
 clean_build_dirs() {
     local dirs_to_remove=(
-        "${BUILD_DIR}/custom_project"
+        "${BUILD_DIR}/bdist.linux-aarch64"
         "${BUILD_DIR}/custom_project_tik"
+        "${BUILD_DIR}/lib"
+        "${BUILD_DIR}/output"
     )
 
     echo "About to delete the following build-related directories: "
     for dir in "${dirs_to_remove[@]}"; do
         echo "  - $dir"
     done
-    
+
     for dir in "${dirs_to_remove[@]}"; do
         if [[ -d "$dir" ]]; then
             rm -rf "$dir"

@@ -15,12 +15,15 @@
 
 #include "torch_npu/csrc/framework/utils/OpAdapter.h"
 #include "torch_npu/csrc/core/npu/NPUFormat.h"
+#include "pytorch_npu_helper.h"
 #include "la_preprocess.h"
 
 using namespace at;
 
 namespace {
 constexpr int EXPECTED_TENSOR_DIMENSION = 4;
+constexpr std::string_view LAPREPROCESS_NAME = "aclnnLaPreprocess";
+
 }
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor>la_preprocess_mindie_sd_impl_npu(
@@ -33,7 +36,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor>la_preprocess_mindie_sd_impl_npu(
     TORCH_CHECK(query.dim() == EXPECTED_TENSOR_DIMENSION, "Query must be 4D tensor");
     TORCH_CHECK(key.dim() == EXPECTED_TENSOR_DIMENSION, "Key must be 4D tensor");
     TORCH_CHECK(value.dim() == EXPECTED_TENSOR_DIMENSION, "Value must be 4D tensor");
-    
+
     auto batch_size = query.sizes()[0];
     auto q_seq_len = query.sizes()[1];
     auto k_seq_len = key.sizes()[1];
@@ -46,23 +49,15 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor>la_preprocess_mindie_sd_impl_npu(
     auto v_padded_seq_len = (v_seq_len + align_len - 1) / align_len * align_len;
     auto options = query.options().dtype(at::kHalf);
     auto format = at_npu::native::get_npu_format(query);
-    
+
     at::Tensor out_query = at_npu::native::empty_with_format(
         {batch_size, head_num, q_padded_seq_len, head_dim}, options, format);
     at::Tensor out_key = at_npu::native::empty_with_format(
         {batch_size, head_num, k_padded_seq_len, head_dim}, options, format);
     at::Tensor out_value = at_npu::native::empty_with_format(
         {batch_size, head_num, v_padded_seq_len, head_dim}, options, format);
-    at_npu::native::OpCommand cmd;
-    cmd.Name("LaPreprocess")
-       .Input(query, "query")
-       .Input(key, "key")
-       .Input(value, "value")
-       .Output(out_query, "out_query")
-       .Output(out_key, "out_key")
-       .Output(out_value, "out_value")
-       .Attr("align_len", static_cast<int64_t>(align_len))
-       .Run();
 
+    EXEC_NPU_CMD<LAPREPROCESS_NAME>(query, key, value, align_len,
+        out_query, out_key, out_value);
     return std::make_tuple(out_query, out_key, out_value);
 }

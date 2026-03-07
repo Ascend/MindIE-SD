@@ -12,7 +12,6 @@
 
 #include <torch/library.h>
 
-#include "rope.h"
 #include "la.h"
 #include "adalayernorm.h"
 #include "la_preprocess.h"
@@ -24,7 +23,6 @@
 
 TORCH_LIBRARY(mindiesd, m)
 {
-    m.def("rope(Tensor query, Tensor key, Tensor value, int mode) -> Tensor");
     m.def(
         "la(Tensor query, Tensor key, Tensor value, \
         Tensor? atten_mask=None, Tensor? alibi_mask=None, Tensor? \
@@ -65,7 +63,6 @@ TORCH_LIBRARY(mindiesd, m)
 
 TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m)
 {
-    m.impl("rope", &rope_mindie_sd_impl_npu);
     m.impl("la", &la_mindie_sd_impl_npu);
     m.impl("adaln", &adaln_mindie_sd_impl_npu);
     m.impl("adaln_v2", &adaln_v2_mindie_sd_impl_npu);
