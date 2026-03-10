@@ -16,7 +16,7 @@ import time
 import torch
 
 from .common import AttentionParam, lru_cache_by_attn_param
-from .attention_operate import device_duo_op, device_800_op, AttentionOperateBase
+from .attention_operate import device_duo_op, device_800_op, device_a5_op, AttentionOperateBase
 from .prompt_flash_attn import PromptFlashAttention
 from .fused_attn_score import FlashAttentionScore
 from .ascend_laser_attention import AscendLaserAttention
@@ -76,6 +76,8 @@ def get_attention_function(attn_param, op_type, layout):
         op_registry = device_duo_op.get_all()
     elif npu_device == NPUDevice.A2:
         op_registry = device_800_op.get_all()
+    elif npu_device == NPUDevice.A5:
+        op_registry = device_a5_op.get_all()
     else:
         raise ParametersInvalid("Platform invalid. Please check env.")
 
@@ -106,6 +108,8 @@ def get_attention_function_runtime(attn_param, query, key, value, attn_mask=None
         all_op = device_duo_op.get_all()
     elif npu_device == NPUDevice.A2:
         all_op = device_800_op.get_all()
+    elif npu_device == NPUDevice.A5:
+        all_op = device_a5_op.get_all()
     else:
         raise ParametersInvalid("Platform invalid.")
 

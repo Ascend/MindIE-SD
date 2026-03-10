@@ -18,6 +18,7 @@ PLATFORM = None
 class NPUDevice(Enum):
     UNDEFINED = auto()
     A2 = auto()
+    A5 = auto()
     Duo = auto()
 
 
@@ -28,7 +29,9 @@ def get_npu_device() -> NPUDevice:
         if "310" in soc:
             PLATFORM = NPUDevice.Duo
         elif "910" in soc:
-            PLATFORM = NPUDevice.A2
+            PLATFORM = NPUDevice.A5 if "910_95" in soc else NPUDevice.A2
+        elif "950" in soc:
+            PLATFORM = NPUDevice.A5
         else:
             PLATFORM = NPUDevice.UNDEFINED
     return PLATFORM

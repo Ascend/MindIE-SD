@@ -14,7 +14,6 @@ import torch
 from packaging.version import Version
 
 from mindiesd.layers._custom_ops import (
-    rope,
     laser_attention,
     laser_attention_preprocess,
 )
@@ -26,25 +25,6 @@ from mindiesd.compilation import MindieSDBackend
 
 
 class TestCustomOps(unittest.TestCase):
-    
-    def test_rope_fake_shape(self):
-       
-        class RopeModel(torch.nn.Module):
-            def forward(self, x, cos, sin, mode):
-                return rope(x, cos, sin, mode)
-        
-        x = torch.randn(2, 64, 8, 16, dtype=torch.bfloat16, device="npu")
-        cos = torch.randn(1, 64, 1, 16, dtype=torch.bfloat16, device="npu")
-        sin = torch.randn(1, 64, 1, 16, dtype=torch.bfloat16, device="npu")
-        mode = 0
-        
-        model = RopeModel()
-        compiled_model = torch.compile(model, backend=MindieSDBackend())
-        
-        output_original = model(x, cos, sin, mode)
-        output_compiled = compiled_model(x, cos, sin, mode)
-        
-        self.assertEqual(output_original.shape, output_compiled.shape)
     
     def test_laser_attention_fake_shape(self):
         

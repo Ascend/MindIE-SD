@@ -41,18 +41,16 @@ function build_ops(){
     ori_path=${PWD}
     cd ${current_script_dir}
     rm -rf vendors
-    source ${current_script_dir}/build_ascendc_ops.sh
+    source ${current_script_dir}/build_ascendc_ops.sh -n 'laser_attention;la_preprocess;block_sparse_attention;sparse_block_estimate' -c 'ascend910;ascend910b;ascend910_93'
     source ${current_script_dir}/build_tik_ops.sh
     rm -rf ${current_script_dir}/vendors/aie_ascendc/bin
     rm -rf ${current_script_dir}/vendors/customize/bin
-    rm -rf ${current_script_dir}/vendors/aie_ascendc/op_api
-    cd ${ori_path}
+    cd ${current_script_dir}
 }
 
 copy_ops() {
-    dir_path=$(dirname "$PWD")
-    SRC_DIR="${dir_path}/build/vendors"
-    DST_DIR="${dir_path}/mindiesd/ops/vendors"
+    SRC_DIR="${current_script_dir}/vendors"
+    DST_DIR="${current_script_dir}/../mindiesd/ops/vendors"
 
     echo "Source directory: $SRC_DIR"
     echo "Destination directory: $DST_DIR"

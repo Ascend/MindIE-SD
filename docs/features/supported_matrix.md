@@ -26,20 +26,26 @@
  | CogVideoX-5B |     ✖️    |          ✖️           |  ✅️    |
  | HunyuanDit |     ✖️    |          ✖️           |  ✅️    |
  | HunyuanVideo |     ✖️    |          ✖️           |  ✅️    |
+ | HunyuanVideo-1.5 |     ✖️    |          ✖️           |  ✅️    |
+ | Hunyuan3D-2.1 |     ✖️    |          ✖️           |  ✅️    |
  | Wan2.1 |     ✖️    |          ✖️           |  ✅️    |
  | Wan2.2 |     ✖️    |          ✖️           |  ✅️    |
- | Flux.1-dev |     ✅️    |          ✅️           |  ✅️    |
+ | FLUX.1-dev |     ✅️    |          ✅️           |  ✅️    |
+ | FLUX.2-dev |     ✖️    |          ✅️           |  ✅️    |
  | Qwen-Image |     ✅️    |          ✖️           |  ✅️    |
  | Qwen-Image-Edit |     ✅️    |          ✖️           |  ✅️    |
  | Qwen-Image-Edit-2509 |     ✅️    |          ✖️           |  ✅️    |
+ | Z-Image |     ✖️    |          ✖️           |  ✅️    |
+ | Z-Image-Turbo |     ✅️    |          ✖️           |  ✅️    |
 
 ## 📚 vLLM Omni 特性&模型性能
  |   模型     |  硬件  | Cache   | 并行 | 稀疏FA | 量化 | 融合算子 | 说明 |
  |:----------:|:----:|:-------:|:--:|:----:|:--:|:---------:|:--:| 
- | Flux.1-dev |  A2  |    ✅️    | ✅️  |  ✖️   | ✅️ |   ✅️    |    |
+ | FLUX.1-dev |  A2  |    ✅️    | ✅️  |  ✖️   | ✅️ |   ✅️    |    |
  | Qwen-Image |  A2  |    ✅️    | ✅️  |  ✖️   | ✖️ |   ✅️    |    |
  | Qwen-Image-Edit |  A2  |    ✅️    | ✅️  |  ✖️   | ✖️ |   ✅️    |    |
  | Qwen-Image-Edit-2509 |  A2  |    ✅️    | ✅️  |  ✖️   | ✖️ |   ✅️    |    |
+ | Z-Image-Turbo |  A2  |    ✅️    | ✖️  |  ✖️   | ✖️ |   ✅️    |    |
 
 说明：
 A2代表Atlas 800I A2，默认使用的版本算力313T，内存64 GB。
@@ -47,7 +53,8 @@ A2代表Atlas 800I A2，默认使用的版本算力313T，内存64 GB。
 ## 📚 Cache DiT + diffusers 特性&模型性能
  |   模型     |  硬件  | Cache   | 并行 | 稀疏FA | 量化 | 融合算子 | 说明 |
  |:----------:|:----:|:-------:|:--:|:----:|:--:|:---------:|:--:| 
- | Flux.1-dev |  A2  |    ✅️    | ✅️  |  ✖️   | ✅️ |   ✅️    |    |
+ | FLUX.1-dev |  A2  |    ✅️    | ✅️  |  ✖️   | ✅️ |   ✅️    |    |
+ | FLUX.2-dev |  A2  |    ✖️    | ✅️  |  ✖️   | ✖️ |   ✅️    |    |
 
 ## 📚 魔乐社区的特性叠加&模型性能
  |   模型     |  硬件  | Cache   | 并行 | 稀疏FA | 量化 | 融合算子 | 说明 |
@@ -69,13 +76,18 @@ A2代表Atlas 800I A2，默认使用的版本算力313T，内存64 GB。
  | [CogVideoX-2B](https://modelers.cn/models/MindIE/CogVideoX) |  A2 A3  |    ✅️    | ✅️  |  ✖️   | ✖️ |   ✅️    |    |
  | [CogVideoX-5B](https://modelers.cn/models/MindIE/CogVideoX) |  A2 A3  |    ✅️    | ✅️  |  ✖️   | ✖️ |   ✅️    |    |
  | [FLUX.1-dev](https://modelers.cn/models/MindIE/FLUX.1-dev) |  A2 A3  |    ✅️    | ✅️  |  ✖️   | ✅️ |   ✅️    |    |
+ | [FLUX.2-dev](https://modelers.cn/models/MindIE/FLUX.2-dev) |  A2 A3  |    ✅️    | ✅️  |  ✖️   | ✅️ |   ✅️    |    |
  | [HunyuanDit](https://modelers.cn/models/MindIE/hunyuan_dit) |  A2 A3  |    ✅️    | ✖️  |  ✖️   | ✖️ |   ✅️    |    |
  | [HunyuanVideo](https://modelers.cn/models/MindIE/hunyuan_video) |  A2 A3  |    ✅️    | ✅️  |  ✖️   | ✅️ |   ✅️    |    |
+ | [HunyuanVideo-1.5](https://modelers.cn/models/MindIE/HunyuanVideo-1.5) |  A2 A3  |    ✅️    | ✅️  |  ✅️   | ✅️ |   ✅️    |    |
+ | [Hunyuan3D-2.1](https://modelers.cn/models/MindIE/Hunyuan3D-2.1) |  A2 A3  |    ✅️    | ✅️  |  ✖️   | ✅️ |   ✅️    |    |
  | [Wan2.1](https://modelers.cn/models/MindIE/Wan2.1) |  A2 A3  |    ✅️    | ✅️  |  ✅️   | ✅️ |   ✅️    |    |
  | [Wan2.2](https://modelers.cn/models/MindIE/Wan2.2) |  A2 A3  |    ✅️    | ✅️  |  ✅️   | ✅️ |   ✅️    |    |
  | [Qwen-Image](https://modelers.cn/models/MindIE/Qwen-Image) |  A2 A3  |    ✅️    | ✅️  |  ✖️   | ✅️ |   ✅️    |    |
  | [Qwen-Image-Edit](https://modelers.cn/models/MindIE/Qwen-Image-Edit) |  A2 A3  |    ✅️    | ✅️  |  ✖️   | ✅️ |   ✅️    |    |
  | [Qwen-Image-Edit-2509](https://modelers.cn/models/MindIE/Qwen-Image-Edit-2509) |  A2 A3  |    ✅️    | ✅️  |  ✖️   | ✅️ |   ✅️    |    |
+ | [Z-Image](https://modelers.cn/models/MindIE/Z-Image) |  A2 A3  |    ✖️    | ✖️  |  ✖️   | ✖️ |   ✖️    |    |
+ | [Z-Image-Turbo](https://modelers.cn/models/MindIE/Z-Image-Turbo) |  A2 A3  |    ✖️    | ✖️  |  ✖️   | ✖️ |   ✅️    |    |
 
  说明：
  A2代表Atlas 800I A2，默认使用的版本算力313T，内存64 GB。
