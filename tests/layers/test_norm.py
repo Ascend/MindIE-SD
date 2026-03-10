@@ -9,14 +9,12 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-
+import os
 import unittest
-import sys
-
-sys.path.append('../')
-from tests.utils.utils.norm import PatchGroupNorm3d
+from utils.utils.norm import PatchGroupNorm3d
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestAttentionLayer(unittest.TestCase):
     def test_patch_group_norm3d(self):
         """

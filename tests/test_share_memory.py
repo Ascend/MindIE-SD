@@ -40,6 +40,7 @@ os.environ["ZMQ_DISABLE_IPV6"] = "1"
 os.environ["ASCEND_SIMULATOR"] = "1"
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestShareMemoryManager(unittest.TestCase):
 
     def setUp(self):
@@ -109,6 +110,7 @@ class TestShareMemoryManager(unittest.TestCase):
         ])
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestGetShareMemoryManager(unittest.TestCase):
 
     def setUp(self):
@@ -149,6 +151,7 @@ class TestGetShareMemoryManager(unittest.TestCase):
         self.assertEqual(manager.base_port, 7777)
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestMemoryShareTo(unittest.TestCase):
 
     def setUp(self):
@@ -185,6 +188,7 @@ class TestMemoryShareTo(unittest.TestCase):
         self.assertEqual(next(result_module.parameters()).device, torch.device("cpu"))
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestCheckDeviceDtype(unittest.TestCase):
 
     def test_check_device_dtype_npu_match(self):
@@ -203,6 +207,7 @@ class TestCheckDeviceDtype(unittest.TestCase):
             _check_device_and_dtype(module, target_device, torch.int32)
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestAllInOnePipeline(unittest.TestCase):
     def test_full_pipeline(self):
         manager = init_share_memory(

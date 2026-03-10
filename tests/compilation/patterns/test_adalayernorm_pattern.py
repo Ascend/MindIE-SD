@@ -1,9 +1,12 @@
+import os
 import unittest
 import torch
 import time
 
 from mindiesd.compilation import MindieSDBackend
 
+
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class AdaLayerNormZeroPatternDiffusersModel(torch.nn.Module):
     # Reference: https://github.com/huggingface/diffusers/blob/v0.36.0/src/diffusers/models/normalization.py#L131
     def __init__(self, embedding_dim: int, epsilon: float = 1e-06) -> None:
@@ -19,6 +22,8 @@ class AdaLayerNormZeroPatternDiffusersModel(torch.nn.Module):
         out = self.norm(x) * (1 + scale[:, None]) + shift[:, None]
         return out
 
+
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestAdaLayerNormPatternCompilationCase(unittest.TestCase):
     def _run_test_and_measure_time(self, model, x, scale, shift):
         compiled_model = torch.compile(model, backend=MindieSDBackend())

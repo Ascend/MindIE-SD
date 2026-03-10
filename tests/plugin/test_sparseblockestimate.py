@@ -13,11 +13,12 @@
 import unittest
 import torch
 import torch_npu
-import sys
 import os
 import math
 import numpy as np
-torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
+
+if os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU":
+    torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
 
 
 def softmax_flash(src, inmax=None, insum=None, update=False):
@@ -144,6 +145,7 @@ def sparse_estimate_cpu(query, key, causal, blocksize=128, stride=8, threshold=0
     return mask
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestSparseBlockEstimate(unittest.TestCase):
     def setUp(self):
         np.random.seed(0)

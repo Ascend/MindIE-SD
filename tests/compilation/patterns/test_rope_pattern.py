@@ -1,3 +1,4 @@
+import os
 import unittest
 import torch
 import time
@@ -29,6 +30,8 @@ class RopePatternModelDiffusersFlux(torch.nn.Module):
         x_out = (x.float() * cos + x_rotated.float() * sin).to(x.dtype)
         return x_out
 
+
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestRopeCompilationCase(unittest.TestCase):
     def _run_test_and_measure_time(self, model, x, cos, sin):
         # 关键：用自定义后端编译模型，自动触发 replace_pattern

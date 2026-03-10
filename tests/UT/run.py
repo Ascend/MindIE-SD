@@ -14,9 +14,17 @@ import unittest
 import os
 import re
 import sys
+import torch
 from importlib import import_module
 sys.path.append('./')
 
+from unittest.mock import MagicMock
+sys.modules['torch_npu'] = MagicMock()
+sys.modules['torch_npu'].npu.get_device_name.return_value = 'Ascend'
+sys.modules['torch_npu'].__spec__ = "None"
+sys.modules['torch_npu'].npu.device_count = MagicMock(return_value=0)
+sys.modules['torch_npu'].npu.is_available = MagicMock(return_value=False)
+torch.npu = sys.modules['torch_npu'].npu
 
 def load_tests_from_files(folder_path):
     test_suite = unittest.TestSuite()

@@ -15,7 +15,7 @@ import os
 from typing import Dict, Callable
 import torch
 from torch.library import Library
-from ..utils import file_utils, ParametersInvalid
+from ..utils import file_utils, ParametersInvalid, is_npu_available
 
 
 MINDIE_NS = "mindiesd"  # 固定命名空间，与 torch.ops.mindiesd 对应
@@ -44,7 +44,8 @@ def _load_mindie_ops_library() -> None:
     torch.ops.load_library(ops_file)
 
 
-_load_mindie_ops_library()
+if is_npu_available():
+    _load_mindie_ops_library()
 
 
 def check_mindie_operator_exists(op_name: str) -> bool:
@@ -113,6 +114,11 @@ def register_mindie_fake_op(op_name: str):
     Returns:
         Decorator function that registers the fake implementation.
     """
+    if not is_npu_available():
+        def dummy_decorator(func):
+            return func
+        return dummy_decorator
+    
     if not check_mindie_operator_exists(op_name):
         raise RuntimeError(
             f"MindIE operator {MINDIE_NS}::{op_name} not found! "

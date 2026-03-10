@@ -17,13 +17,14 @@ from mindiesd.layers._custom_ops import (
     laser_attention,
     laser_attention_preprocess,
 )
-
+import os
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from mindiesd.compilation import MindieSDBackend
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestCustomOps(unittest.TestCase):
     
     def test_laser_attention_fake_shape(self):

@@ -9,7 +9,7 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-
+import os
 import importlib
 import unittest
 from unittest import mock
@@ -47,6 +47,7 @@ def create_mock_handler(mock_data):
     return MockSafeTensorHandler(mock_data)
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestSmoothQuantize(unittest.TestCase):
     def setUp(self):
         in_features = 10
@@ -138,6 +139,7 @@ class TestSmoothQuantize(unittest.TestCase):
         self.assertFalse(is_modified)
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestQuantize(unittest.TestCase):
     def setUp(self):
         in_features = 10
@@ -257,6 +259,7 @@ class TestQuantize(unittest.TestCase):
             quantized_model = quantize(model, "path/to/quant_des.json")
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestWeightQuantize(unittest.TestCase):
     def setUp(self):
         in_features = 8
@@ -312,6 +315,7 @@ class TestWeightQuantize(unittest.TestCase):
         self.assertTrue(is_modified)
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestAddFAQuant(unittest.TestCase):
     def setUp(self):
         self.weights = {
@@ -339,6 +343,7 @@ class TestAddFAQuant(unittest.TestCase):
         self.assertFalse(hasattr(layer, 'fa_quant'))
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestGetCfgAndWeights(unittest.TestCase):
     def setUp(self):
         self.quant_des_path = "path/to/quant_des.json"

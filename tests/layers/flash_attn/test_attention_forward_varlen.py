@@ -7,20 +7,21 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-
+import os
 import unittest
 import time
 import sys
 import torch
 import torch_npu
-sys.path.append('../')
+
 from mindiesd import attention_forward_varlen
 from mindiesd.utils.exception import ParametersInvalid
-from tests.utils.utils.precision_compare import data_compare
+from utils.utils.precision_compare import data_compare
 
 MAX_TOKEN = 2147483647
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestAttentionForwardVarlen(unittest.TestCase):
     def setUp(self):
         if not torch_npu.npu.is_available():

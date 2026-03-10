@@ -9,19 +9,18 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-
+import os
 import unittest
-import sys
 import torch
 import torch_npu
 import torch.nn as nn
 
-sys.path.append('../')
 from device import DEVICE_ID
 from mindiesd import fast_layernorm
 from mindiesd.utils import ParametersInvalid
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestLayerNorm(unittest.TestCase):
     def setUp(self):
         device = "npu"

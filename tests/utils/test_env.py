@@ -21,6 +21,7 @@ from mindiesd.utils.env import EnvVar, parser_env_to_dict, VALID_LOG_LEVELS
 MINDIE_LOG_LEVEL = "MINDIE_LOG_LEVEL"
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
 class TestEnvs(unittest.TestCase):
     def test_parser_env_to_dict_case1(self):
         """测试正常配置" sd:info; debug"，解析sd的日志等级功能"""

@@ -15,12 +15,8 @@ from io import StringIO
 import unittest
 import logging
 import importlib
-from unittest.mock import MagicMock
 
 sys.path.append('../')
-sys.modules['torch_npu'] = MagicMock()
-sys.modules['torch_npu'].npu.get_device_name.return_value = 'Ascend'
-sys.modules['torch_npu'].__spec__ = "None"
 
 
 class TestLog(unittest.TestCase):

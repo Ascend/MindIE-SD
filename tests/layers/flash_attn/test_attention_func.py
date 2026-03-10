@@ -9,18 +9,17 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-
+import os
 import unittest
 
 import sys
-sys.path.append('../')
-
 import torch
 
 from mindiesd.layers.flash_attn.common import AttentionParam
 from mindiesd.layers.flash_attn.attention_func import get_attention_function_runtime
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestAttentionFunction(unittest.TestCase):
     def test_attention_device_valid(self):
         """设备获取为910时,返回非空结果"""

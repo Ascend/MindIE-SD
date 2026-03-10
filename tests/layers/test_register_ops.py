@@ -15,13 +15,14 @@ from unittest.mock import patch, MagicMock, Mock, ANY
 from packaging.version import Version
 
 from mindiesd.layers import register_ops
-
+import os
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from mindiesd.compilation import MindieSDBackend
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestRegisterOps(unittest.TestCase):
     
     def setUp(self):

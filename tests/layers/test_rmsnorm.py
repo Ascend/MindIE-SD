@@ -9,16 +9,14 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-
+import os
 import unittest
-import sys
 import torch
 import torch.nn as nn
 from mindiesd import RMSNorm
 
-sys.path.append('../')
 
-
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestRMSNorm(unittest.TestCase):
     def setUp(self):
         torch.manual_seed(42)

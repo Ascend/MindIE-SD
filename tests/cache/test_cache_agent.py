@@ -11,6 +11,7 @@
 # See the Mulan PSL v2 for more details.
 
 import unittest
+import os
 import sys
 
 sys.path.append('../')
@@ -19,6 +20,7 @@ from mindiesd.cache_agent import CacheAgent, CacheConfig
 from mindiesd.utils.exception import ConfigError, ParametersInvalid
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
 class TestCacheConfig(unittest.TestCase):
     def test_valid_config(self):
         config = CacheConfig(

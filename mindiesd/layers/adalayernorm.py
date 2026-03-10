@@ -18,14 +18,6 @@ from ..utils import ParametersInvalid, file_utils
 from ..utils.get_platform import get_npu_device, NPUDevice
 from . import _custom_ops as ops
 
-current_path = Path(__file__).resolve()
-if len(current_path.parents) < 2:
-    raise ParametersInvalid("The parents level is insufficient.")
-ops_path = current_path.parents[1] / "plugin"
-ops_path = file_utils.standardize_path(str(ops_path))
-ops_file = os.path.join(ops_path, "libPTAExtensionOPS.so")
-file_utils.check_file_safety(ops_file, permission_mode=file_utils.BINARY_FILE_PERMISSION)
-torch.ops.load_library(ops_file)
 npu_device = get_npu_device()
 
 

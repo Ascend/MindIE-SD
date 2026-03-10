@@ -9,7 +9,7 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-
+import os
 import unittest
 from unittest import mock
 from unittest.mock import patch
@@ -54,6 +54,7 @@ def mock_npu_quant_matmul(*args, **kwargs):
     return output
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestQuantLinearFloat16(unittest.TestCase):
     def setUp(self):
         self.stream = torch_npu.npu.current_stream()
@@ -287,6 +288,7 @@ class TestQuantLinearFloat16(unittest.TestCase):
         self.assertEqual(linear.mul_scale.shape, (in_features,))
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestQuantLinearBFloat16(unittest.TestCase):
     def setUp(self):
         self.stream = torch_npu.npu.current_stream()
@@ -350,8 +352,7 @@ class TestQuantLinearBFloat16(unittest.TestCase):
 
 
 
-
-
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestWeightQuantLinearBFloat16(unittest.TestCase):
     def setUp(self):
         self.stream = torch_npu.npu.current_stream()
@@ -437,6 +438,7 @@ class TestWeightQuantLinearBFloat16(unittest.TestCase):
         self.assertIsInstance(output, torch.Tensor)
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestWeightQuantLinearFloat(unittest.TestCase):
     def setUp(self):
         self.stream = torch_npu.npu.current_stream()

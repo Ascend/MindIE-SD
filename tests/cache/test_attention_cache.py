@@ -10,6 +10,7 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 import unittest
+import os
 import sys
 
 sys.path.append('../')
@@ -17,6 +18,7 @@ sys.path.append('../')
 from mindiesd.cache_agent import CacheAgent, CacheConfig
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
 class TestAttentionCache(unittest.TestCase):
     def test_cache_func(self):
         result = [0, 1, 2, 3, 4,

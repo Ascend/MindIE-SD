@@ -10,11 +10,9 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-
-
+import os
 import functools
 import unittest
-import sys
 import math
 from typing import Optional
 import numpy as np
@@ -28,11 +26,10 @@ import torch_npu
 from device import DEVICE_ID
 torch_npu.npu.set_device(DEVICE_ID)
 
-sys.path.append('../')
 from mindiesd.utils import ModelInitError, ParametersInvalid
-from tests.utils.utils.embedding import RotaryEmbedding, TimestepEmbedder, SizeEmbedder, \
+from utils.utils.embedding import RotaryEmbedding, TimestepEmbedder, SizeEmbedder, \
     CombinedTimestepTextProjEmbeddings, PositionEmbedding2D, PatchEmbed, RotaryPositionEmbedding
-from tests.utils.utils.precision_compare import data_compare
+from utils.utils.precision_compare import data_compare
 
 
 ACTIVATION_FUNCTIONS = {
@@ -637,6 +634,7 @@ class HunyuanDiTRoPE(nn.Module):
         return xq_out
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestEmbedding(unittest.TestCase):
     def test_rotary_embedding(self):
         """

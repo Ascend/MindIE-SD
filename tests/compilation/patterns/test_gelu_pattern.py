@@ -1,3 +1,4 @@
+import os
 import unittest
 import time
 import torch
@@ -14,6 +15,7 @@ class GeluPatternModel(torch.nn.Module):
         return self.gelu(x)
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestGeluCompilationCase(unittest.TestCase):
     def _run_test_and_measure_time(self, model, x):
         compiled_model = torch.compile(model, backend=MindieSDBackend())

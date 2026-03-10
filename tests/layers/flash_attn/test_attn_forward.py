@@ -13,20 +13,17 @@
 import unittest
 from unittest.mock import patch
 import os
-import sys
 import time
 
 import torch
-
-sys.path.append('../')
-
 from device import DEVICE_ID
 from mindiesd.layers.flash_attn.common import AttentionParam
 from mindiesd.layers.flash_attn.attention_forward import attention_forward
 from mindiesd.utils.exception import ParametersInvalid
-from tests.utils.utils.precision_compare import data_compare
+from utils.utils.precision_compare import data_compare
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestAttentionFunc(unittest.TestCase):
     def test_attn_forward_no_fused_bsnd(self):
         attention_shape = [2, 32, 16, 64]
