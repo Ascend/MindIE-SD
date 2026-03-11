@@ -17,7 +17,7 @@ import json
 import torch
 import torch.nn as nn
 from mindiesd.quantization.config import QuantConfig, LayerQuantConfig
-from mindiesd.quantization.layer import W8A8QuantBaseLinear, WeightQuantLinear, FP8RotateQuantFA, W8A8MXFP8QuantLinear
+from mindiesd.quantization.layer import W8A8QuantBaseLinear, WeightQuantLinear, FP8RotateQuantFA, W8A8MXFP8QuantLinear, W4A4QuantLinear
 from mindiesd.quantization.mode import QuantAlgorithm
 from mindiesd.quantization.quantize import smooth_quantize_w8a8, smooth_quantize, quantize
 from mindiesd.quantization.quantize import weight_quantize, w8a16_quantize, add_fa_quant
@@ -86,6 +86,13 @@ class TestSmoothQuantize(unittest.TestCase):
         cfg = QuantConfig()
         quant_layer, is_modified = smooth_quantize_w8a8("0", layer, cfg, create_mock_handler(self.weights))
         self.assertIsInstance(quant_layer, W8A8QuantBaseLinear)
+        self.assertTrue(is_modified)
+    
+    def test_smooth_quantize_w4a4_with_linear(self):
+        layer = nn.Linear(10, 10)
+        cfg = QuantConfig(quant_algo=QuantAlgorithm.W4A4_DYNAMIC)
+        quant_layer, is_modified = smooth_quantize_w8a8("0", layer, cfg, create_mock_handler(self.weights))
+        self.assertIsInstance(quant_layer, W4A4QuantLinear)
         self.assertTrue(is_modified)
 
     def test_smooth_quantize_w8a8_with_anti_linear(self):

@@ -93,6 +93,9 @@ class W8A8QuantBaseLinear(ABC, nn.Module):
             self.register_buffer("mul_scale", mul_scale, persistent=False)
         else:
             self.mul_scale = None
+    
+    def pack_weight(self, weight, **kwargs):
+        return weight
 
     @abstractmethod
     def quant_matmul(self, x):
@@ -146,6 +149,7 @@ class W8A8QuantBaseLinear(ABC, nn.Module):
         if self.bias is not None:
             self.bias = self.bias.to(self.dtype)
         weight = get_quant_weight(weights, f'{prefix}.weight')
+        weight = self.pack_weight(weight, **kwargs)
         if kwargs.get('use_nz', False):
             weight = torch_npu.npu_format_cast(weight.npu(), 29).T
         else:
@@ -190,6 +194,30 @@ class W8A8QuantLinear(W8A8QuantBaseLinear):
             output = torch_npu.npu_quant_matmul(x_int8, self.weight, self.weight_scale,
                                                 pertoken_scale=input_scale, output_dtype=self.dtype,
                                                 bias=self.bias)
+        return output
+
+
+class W4A4QuantLinear(W8A8QuantBaseLinear):
+    def __init__(self, in_features, out_features, bias=True, weights=None, prefix=None, **kwargs):
+        super().__init__(in_features, out_features, bias, weights, prefix, **kwargs)
+        self.is_dynamic = True
+        self._init_dynamic_quant_param(prefix, weights, **kwargs)
+    
+    def pack_weight(self, weight, **kwargs):
+        weight.data = torch_npu.npu_convert_weight_to_int4pack(weight.data.to(torch.int32).npu())
+        return weight
+
+    def quant_matmul(self, x):
+        if x.dtype != self.dtype:
+            x = x.to(self.dtype)
+
+        x, pertoken_scale = torch_npu.npu_dynamic_quant(x, dst_type=torch.quint4x2)
+        pertoken_scale = pertoken_scale.reshape(-1, 1)
+        pertoken_scale = pertoken_scale.squeeze(-1)
+        output = torch_npu.npu_quant_matmul(
+            x, self.weight, self.weight_scale.data.view(-1), 
+            pertoken_scale=pertoken_scale, bias=None, output_dtype=self.dtype
+            )
         return output
 
 

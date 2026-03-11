@@ -25,6 +25,7 @@ class QuantAlgorithm(StrEnum):
     W8A8 = "W8A8"
     W8A8_TIMESTEP = "W8A8_TIMESTEP"
     W8A8_DYNAMIC = "W8A8_DYNAMIC"
+    W4A4_DYNAMIC = "W4A4_DYNAMIC"
     W8A8_MXFP8 = "W8A8_MXFP8"
     W8A16 = "W8A16"
     W4A16 = "W4A16"
@@ -47,6 +48,7 @@ W8A8_LIST = [
     QuantAlgorithm.W8A8,
     QuantAlgorithm.W8A8_TIMESTEP,
     QuantAlgorithm.W8A8_DYNAMIC,
+    QuantAlgorithm.W4A4_DYNAMIC,
     QuantAlgorithm.W8A8_PER_CHANNEL,
     QuantAlgorithm.W8A8_PER_TENSOR,
     QuantAlgorithm.W8A8_PER_CHANNEL_PER_TOKEN,
@@ -168,6 +170,7 @@ class QuantMode():
             QuantAlgorithm.W8A8: QuantMode.use_smooth_quant(per_token=False, per_channel=False),
             QuantAlgorithm.W8A8_TIMESTEP: QuantMode.use_smooth_quant(per_token=False, per_channel=False),
             QuantAlgorithm.W8A8_DYNAMIC: QuantMode.use_smooth_quant(per_token=False, per_channel=False),
+            QuantAlgorithm.W4A4_DYNAMIC: QuantMode.use_smooth_quant(per_token=True, per_channel=True),
             QuantAlgorithm.W8A8_PER_CHANNEL_PER_TOKEN: QuantMode.use_smooth_quant(per_token=True, per_channel=True),
             QuantAlgorithm.W8A8_PER_TENSOR_PER_TOKEN: QuantMode.use_smooth_quant(per_token=True, per_channel=False),
             QuantAlgorithm.FP8_DYNAMIC: QuantMode.from_descriptor(QuantModeDescriptor(use_fa_quant=True)),
