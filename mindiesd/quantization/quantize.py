@@ -20,9 +20,10 @@ import torch.nn as nn
 import safetensors
 from .mode import QuantAlgorithm
 from .config import QuantConfig, LayerQuantConfig, TimestepPolicyConfig
-from .mode import W8A8_LIST
+from .mode import W4A4_LIST,W8A8_LIST
 from .utils import replace_rank_suffix, get_quant_weight, extract_constructor_args, MAX_WEIGHT_SIZE
-from .layer import W4A4QuantLinear, W8A8QuantLinear, W8A8TimeStepQuantLinear, WeightQuantLinear, FP8RotateQuantFA, W8A8MXFP8QuantLinear
+from .layer import (W4A4QuantLinear, W4A4MXFP4DualQuantLinear, W8A8QuantLinear, W8A8TimeStepQuantLinear,
+                    WeightQuantLinear, FP8RotateQuantFA, W8A8MXFP8QuantLinear)
 from ..utils import ParametersInvalid, ConfigError
 from ..utils import file_utils
 from ..utils.logs.logging import logger
@@ -97,6 +98,10 @@ def smooth_quantize_w8a8(name, layer, cfg, quant_weights, **kwargs):
         quant_map = OrderedDict([(nn.Linear, W8A8MXFP8QuantLinear)])
     elif cfg.quant_algo == QuantAlgorithm.W4A4_DYNAMIC:
         quant_map = OrderedDict([(nn.Linear, W4A4QuantLinear)])
+    elif cfg.quant_algo == QuantAlgorithm.W4A4_MXFP4_DUALSCALE:
+        quant_map = OrderedDict([(nn.Linear, W4A4MXFP4DualQuantLinear)])
+    elif cfg.quant_algp == QuantAlgorithm.W4A4_MXFP4_SVD:
+        raise ParametersInvalid("SVD Quant algorithm not supported!")
     else:
         quant_map = OrderedDict([(nn.Linear, W8A8QuantLinear)])
 
@@ -122,7 +127,8 @@ def smooth_quantize_w8a8(name, layer, cfg, quant_weights, **kwargs):
     else:
         init_params[bias] = False
 
-    if cfg.quant_algo in [QuantAlgorithm.W8A8_DYNAMIC, QuantAlgorithm.W8A8_MXFP8, QuantAlgorithm.W4A4_DYNAMIC]:
+    if cfg.quant_algo in [QuantAlgorithm.W8A8_DYNAMIC, QuantAlgorithm.W8A8_MXFP8, QuantAlgorithm.W4A4_DYNAMIC,
+                          QuantAlgorithm.W4A4_MXFP4_DUALSCALE]:
         init_params['is_dynamic'] = True
 
     init_params['weights'] = quant_weights
@@ -142,7 +148,7 @@ def smooth_quantize_w8a8(name, layer, cfg, quant_weights, **kwargs):
 
 
 def smooth_quantize(name, layer, cfg, quant_weights, **kwargs):
-    if cfg.quant_algo in W8A8_LIST:
+    if cfg.quant_algo in W8A8_LIST or cfg.quant_algo in W4A4_LIST:
         return smooth_quantize_w8a8(name, layer, cfg, quant_weights, **kwargs)
     return layer, False
 
