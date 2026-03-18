@@ -27,6 +27,10 @@ __all__ = [
     'fast_layernorm'
 ]
 
+
+from .env import set_environment_variables
+set_environment_variables()
+
 from .cache_agent import CacheConfig, CacheAgent
 from .layers import (
     layernorm_scale_shift,
@@ -39,7 +43,3 @@ from .layers import (
     fast_layernorm
 )
 from .quantization import quantize, TimestepManager, TimestepPolicyConfig
-from .env import set_environment_variables
-
-
-set_environment_variables()

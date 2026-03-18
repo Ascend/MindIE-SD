@@ -21,15 +21,15 @@
 
 ## 🚀 架构介绍及关键特性
 
-MindIE SD 架构和关键特性详见[架构介绍](docs/architecture.md)。
-MindIE SD 支持🤗 [魔乐社区](https://modelers.cn/models?name=MindIE&page=1&size=16) 🤗 vLLM Omni 🤗 Cache Dit 等框架/社区，现已支持主流扩散模型，对于部分 diffusers 模型进行了昇腾硬件亲和的加速改造，详见[模型/框架支持情况](docs/features/supported_matrix.md)，模型也支持手动改造，详见 examples。
+MindIE SD 架构和关键特性详见[架构介绍](docs/zh/architecture.md)。
+MindIE SD 支持🤗 [魔乐社区](https://modelers.cn/models?name=MindIE&page=1&size=16) 🤗 vLLM Omni 🤗 Cache Dit 等框架/社区，现已支持主流扩散模型，对于部分 diffusers 模型进行了昇腾硬件亲和的加速改造，详见[模型/框架支持情况](docs/zh/features/supported_matrix.md)，模型也支持手动改造，详见 examples。
 
 
 ## ⚡️ 快速开始
 
 本章节以 **Wan2.1** 模型为例，展示如何使用 MindIE SD 进行文本生成视频，关于该模型的更多推理内容请参见 [Modelers - MindIE/Wan2.1](https://modelers.cn/models/MindIE/Wan2.1)。
 
-1.  源码编译安装 MindIE SD（镜像 / 软件包安装方式详见 [developer_guide](docs/developer_guide.md)）
+1.  源码编译安装 MindIE SD（镜像 / 软件包安装方式详见 [developer_guide](docs/zh/developer_guide.md)）
     ```bash	 
     git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD	 
     python setup.py bdist_wheel 
@@ -59,7 +59,7 @@ MindIE SD 支持🤗 [魔乐社区](https://modelers.cn/models?name=MindIE&page=
 
 下面以 Wan2.1 模型为例，展示在 Atlas 800I A2 (1\*64G) 机器上单卡和多卡实现不同加速特性的加速效果。
 
-其中Cache表示使用[AttentionCache](./docs/features/cache.md#attentioncache)特性, TP表示使用[Tensor Parallel](./docs/features/parallelism.md#张量并行)特性, FA稀疏表示使用FA稀疏中的[RainFusion特性](./docs/features/sparse_quantization.md#fa稀疏)，CFG表示使用[CFG并行](./docs/features/parallelism.md#cfg并行)特性，Ulysses表示使用[Ulysses并行](./docs/features/parallelism.md#ulysses-sequence-parallel)加速特性，模型生成的视频的H\*W为832\*480, sample_steps为50。
+其中Cache表示使用[AttentionCache](./docs/zh/features/cache.md#attentioncache)特性, TP表示使用[Tensor Parallel](./docs/zh/features/parallelism.md#张量并行)特性, FA稀疏表示使用FA稀疏中的[RainFusion特性](./docs/zh/features/sparse_quantization.md#fa稀疏)，CFG表示使用[CFG并行](./docs/zh/features/parallelism.md#cfg并行)特性，Ulysses表示使用[Ulysses并行](./docs/zh/features/parallelism.md#ulysses-sequence-parallel)加速特性，模型生成的视频的H\*W为832\*480, sample_steps为50。
 
 ### 单卡加速效果
 
@@ -68,7 +68,7 @@ MindIE SD 支持🤗 [魔乐社区](https://modelers.cn/models?name=MindIE&page=
 | Baseline | + Cache 加速比1.6 | + Cache 加速比2.0 | + Cache 加速比2.4 |
 |:---:|:---:|:---:|:---:|
 | 860.2s | 631.7s 1.36x | 541.8s 1.59x | 516.9s ***1.66x** |
-| ![](./docs/figures/单卡base%20+%20高性能FA算子.gif) | ![](./docs/figures/单卡%20+%20高性能FA算子%20+%20开启attentioncache+加速比为1.6.gif) | ![](./docs/figures/单卡%20+%20高性能FA算子%20+%20开启attentioncache+加速比为2.0.gif) | ![](./docs/figures/单卡%20+%20高性能FA算子%20+%20开启attentioncache+加速比为2.4.gif) |
+| ![](./docs/zh/figures/单卡base%20+%20高性能FA算子.gif) | ![](./docs/zh/figures/单卡%20+%20高性能FA算子%20+%20开启attentioncache+加速比为1.6.gif) | ![](./docs/zh/figures/单卡%20+%20高性能FA算子%20+%20开启attentioncache+加速比为2.0.gif) | ![](./docs/zh/figures/单卡%20+%20高性能FA算子%20+%20开启attentioncache+加速比为2.4.gif) |
 
 ### 并行策略效果
 
@@ -110,5 +110,5 @@ MindIE SD 支持🤗 [魔乐社区](https://modelers.cn/models?name=MindIE&page=
 ```
 
 ## 💖 联系我们
-![](./docs/figures/contact-us.jpg)
-![](./docs/figures/contact-us-MindIESD.jpg)
+![](./docs/zh/figures/contact-us.jpg)
+![](./docs/zh/figures/contact-us-MindIESD.jpg)

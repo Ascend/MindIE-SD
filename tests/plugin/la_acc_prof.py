@@ -18,7 +18,6 @@ from multiprocessing import Process, Queue
 import torch
 import torch_npu
 
-sys.path.append('../')
 from mindiesd.layers.flash_attn.attention_forward import attention_forward
 
 BATCH_SIZE_MIN = 1         # 1 is min batch_size

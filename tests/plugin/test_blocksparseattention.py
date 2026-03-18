@@ -10,7 +10,7 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-
+import os
 import unittest
 import torch
 import torch.nn as nn
@@ -19,7 +19,9 @@ import numpy as np
 from math import sqrt
 
 # 加载自定义库
-torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
+if os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU":
+    torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
+
 
 def ref_compare(golden:torch.Tensor, actual:torch.Tensor, err):
     golden = golden.to(torch.float32)
@@ -84,6 +86,8 @@ def block_sparse_attention_cpu(query, key, value, smask, causal=False, blocksize
 
     return output
 
+
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestBsaMindieSd(unittest.TestCase):
     def setUp(self):
         np.random.seed(10)

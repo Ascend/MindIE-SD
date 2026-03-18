@@ -9,6 +9,7 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
+import os
 import unittest
 from enum import IntFlag
 
@@ -17,6 +18,7 @@ from mindiesd.quantization.mode import QuantModeDescriptor
 from mindiesd.utils import ParametersInvalid
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
 class TestQuantization(unittest.TestCase):
 
     def test_quant_algo(self):
@@ -140,6 +142,7 @@ class TestQuantization(unittest.TestCase):
         self.assertEqual(mode_dict["weight_only_precision"], 'int4')
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
 class TestFromDescriptor(unittest.TestCase):
     def test_quantize_weights_only(self):
         desc = QuantModeDescriptor(quantize_weights=True)

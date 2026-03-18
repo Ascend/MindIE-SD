@@ -11,6 +11,7 @@
 # See the Mulan PSL v2 for more details.
 
 import unittest
+import os
 import sys
 
 sys.path.append('../')
@@ -19,6 +20,7 @@ from mindiesd.cache_agent import CacheAgent, CacheConfig
 from mindiesd.utils.exception import ParametersInvalid, ModelExecError
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
 class TestDiTBlockCache(unittest.TestCase):
     def test_cache_func_one_output_with_one_input(self):
         """测试1个输入,1个输出场景"""

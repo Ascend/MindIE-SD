@@ -9,6 +9,7 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
+import os
 import unittest
 import sys
 import numpy as np
@@ -87,6 +88,8 @@ EXPERT_DICT_REDUNDANT = {
     3: list(range(240, 324))  # 第3组: 240-323
 }
 
+
+@unittest.skipIf(True, "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestEplbScheduler(unittest.TestCase):
     def test_A2A_algo(self):
         result = eplb_greedy(RESPONSE, "A2A", EXPERT_DICT, world_size=4, expert_num=320)

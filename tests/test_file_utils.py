@@ -51,6 +51,7 @@ def create_dir(dir_path, size=file_utils.MAX_FILENUM_PER_DIR + 1):
             f.write("\n")
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
 class TestFileUtils(unittest.TestCase):
 
     def setUp(self):

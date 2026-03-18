@@ -15,7 +15,30 @@ import os
 import re
 import sys
 from importlib import import_module
-sys.path.append('./')
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(script_dir)
+sys.path.append(script_dir)
+sys.path.append(parent_dir)
+custom_op_path1 = os.path.join(parent_dir, "mindiesd/ops/vendors/aie_ascendc")
+custom_op_path2 = os.path.join(parent_dir, "mindiesd/ops/vendors/customize")
+old_custom_op_path = os.environ.get("ASCEND_CUSTOM_OPP_PATH", "")
+new_custom_op_path = f"{custom_op_path1}:{custom_op_path2}:{old_custom_op_path}"
+os.environ["ASCEND_CUSTOM_OPP_PATH"] = new_custom_op_path
+
+if os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU":
+    try:
+        import torch_npu
+    except Exception as e:
+        import torch
+        from unittest.mock import MagicMock
+        from importlib.util import spec_from_loader
+        torch_npu = MagicMock()
+        torch_npu.__spec__ = spec_from_loader('torch_npu', loader=None)
+        torch_npu.npu.device_count = MagicMock(return_value=0)
+        torch_npu.npu.is_available = MagicMock(return_value=False)
+        sys.modules['torch_npu'] = torch_npu
+        torch.npu = torch_npu.npu
 
 
 def load_tests_from_files(folder_path):

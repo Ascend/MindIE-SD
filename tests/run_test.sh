@@ -12,6 +12,43 @@ export MINDIE_LOG_TO_STDOUT=true
 
 set -e
 
+export MINDIE_TEST_MODE="ALL"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --cpu_only)
+            export MINDIE_TEST_MODE="CPU"
+            echo "Run only CPU-compatible tests."
+            shift
+            ;;
+        --npu_only)
+            export MINDIE_TEST_MODE="NPU"
+            echo "Run only NPU-dependent tests."
+            shift
+            ;;
+        --all)
+            export MINDIE_TEST_MODE="ALL"
+            echo "Run all tests (default behavior)."
+            shift
+            ;;
+        --help)
+            echo "Usage:  bash run_test.sh [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --cpu_only       Run only CPU-compatible tests."
+            echo "  --npu_only       Run only NPU-dependent tests."
+            echo "  --all            Run all tests (default behavior)."
+            echo "  --help           Show this help message and exit."
+            exit 0
+            ;;
+        *)            
+            echo "Unknown option: $1"
+            echo "Use --help for usage information."
+            exit 1
+            ;;
+    esac
+done
+
 if command -v python3 &> /dev/null; then
     python_command=python3
 else

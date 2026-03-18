@@ -10,19 +10,18 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-
+import os
 import unittest
-import sys
 import torch
 import torch.nn as nn
 import torch_npu
 
-sys.path.append('../')
 from device import DEVICE_ID
 from mindiesd.layers.activation import get_activation_layer, GELU
 from mindiesd.utils import ParametersInvalid
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestActivation(unittest.TestCase):
     def test_get_activation_layer_valid(self):
         func = get_activation_layer('gelu')

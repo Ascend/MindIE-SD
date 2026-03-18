@@ -9,21 +9,21 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-
+import os
 import unittest
-import sys
 import torch
 import torch_npu
 import torch.nn as nn
 
-sys.path.append('../')
 from device import DEVICE_ID
-from tests.utils.utils.precision_compare import data_compare
+from utils.utils.precision_compare import data_compare
 from mindiesd import layernorm_scale_shift
 from mindiesd.utils import ParametersInvalid
 from mindiesd.utils.get_platform import NPUDevice, get_npu_device
 from unittest.mock import Mock
 
+
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestAdaLayerNorm(unittest.TestCase):
     def setUp(self):
         self.norm_eps = 1e-5

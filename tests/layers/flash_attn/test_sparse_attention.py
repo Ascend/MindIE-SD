@@ -12,17 +12,16 @@
 
 import unittest
 from unittest.mock import patch
-
-import sys
+import os
 import torch
 import torch_npu
-sys.path.append('../')
 
 from device import DEVICE_ID
 from mindiesd.layers.flash_attn.sparse_flash_attn import sparse_attention
-from tests.utils.utils.precision_compare import data_compare
+from utils.utils.precision_compare import data_compare
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestSparseAttention(unittest.TestCase):
     def setUp(self):
         self.device = torch.device("npu:0")

@@ -36,6 +36,7 @@ def create_mock_handler(mock_data):
     return MockSafeTensorHandler(mock_data)
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
 class TestGetInitParams(unittest.TestCase):
 
     def test_extract_constructor_args(self):
@@ -58,6 +59,7 @@ class TestGetInitParams(unittest.TestCase):
         self.assertEqual(extract_constructor_args(obj, SampleClass), expected_params_with_class)
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
 class TestReplaceRankSuffix(unittest.TestCase):
 
     def test_no_rank_suffix(self):
@@ -140,6 +142,7 @@ class TestReplaceRankSuffix(unittest.TestCase):
         self.assertEqual(rank, 2)
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
 class TestGetQuantWeight(unittest.TestCase):
     """测试get_quant_weight函数所有分支"""
 
@@ -166,6 +169,7 @@ class TestGetQuantWeight(unittest.TestCase):
         self.assertIn("Critical parameter missing: missing_key.", str(cm.exception))
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
 class TestTimestepManager(unittest.TestCase):
 
     def test_set_and_get(self):

@@ -9,19 +9,17 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-
+import os
 import unittest
-import sys
 import torch
-
-sys.path.append('../')
 
 from mindiesd.layers.rope import rotary_position_embedding
 from mindiesd.utils import ParametersInvalid
-from tests.utils.utils.embedding import RotaryPositionEmbedding
-from tests.utils.utils.precision_compare import data_compare
+from utils.utils.embedding import RotaryPositionEmbedding
+from utils.utils.precision_compare import data_compare
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestRope(unittest.TestCase):
 
     def test_x_type(self):

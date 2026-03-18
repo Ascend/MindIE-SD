@@ -9,7 +9,7 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-
+import os
 import sys
 import unittest
 from typing import Dict, List
@@ -21,6 +21,7 @@ from mindiesd.quantization.mode import QuantAlgorithm, QuantMode
 sys.path.append('../')
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
 class TestQuantConfig(unittest.TestCase):
 
     def test_parse_from_dict(self):
@@ -46,6 +47,7 @@ class TestQuantConfig(unittest.TestCase):
         self.assertEqual(config_dict['quant_algo'], QuantAlgorithm.W8A8)
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
 class TestLayerQuantConfig(unittest.TestCase):
 
     def test_init(self):
@@ -92,6 +94,7 @@ class TestLayerQuantConfig(unittest.TestCase):
         self.assertIsInstance(config.quantized_layers['layer1'], QuantConfig)
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
 class TestTimeStepPolicyConfig(unittest.TestCase):
     def setUp(self):
         """在每个测试方法前创建一个新的配置实例"""

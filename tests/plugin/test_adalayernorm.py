@@ -10,16 +10,18 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-
+import os
 import unittest
 import torch
 import torch.nn as nn
 import torch_npu
 
 # 加载自定义库
-torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
+if os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU":
+    torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestAdaLayerNorm(unittest.TestCase):
     def setUp(self):
         # 设置NPU设备

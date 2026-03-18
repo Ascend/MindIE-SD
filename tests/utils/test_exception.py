@@ -19,6 +19,7 @@ from mindiesd.utils import (ParametersInvalid, ConfigError,
     TorchError, ModelInitError, ModelExecError)
 
 
+@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
 class TestException(unittest.TestCase):
     def test_parameter_exception(self):
         value_string = "Test parameter exception!"
