@@ -80,6 +80,14 @@ class TestSmoothQuantize(unittest.TestCase):
             "0.linear.bias": torch.ones(out_features, dtype=torch.float32),
             "0.div.mul_scale": torch.ones(out_features, dtype=torch.float32)
         }
+        in_features_w4a4 = 8
+        out_features_w4a4 = 8
+        self.weights5 = {
+            "0.linear.weight": torch.ones(out_features_w4a4, in_features_w4a4, dtype=torch.int8),
+            "0.linear.weight_scale": torch.ones(out_features_w4a4, out_features_w4a4, dtype=torch.float32),
+            "0.linear.bias": torch.ones(out_features_w4a4, dtype=torch.float32),
+            "0.div.mul_scale": torch.ones(out_features_w4a4, dtype=torch.float32)
+        }
 
     def test_smooth_quantize_w8a8_with_linear(self):
         layer = nn.Linear(10, 10)
@@ -89,9 +97,9 @@ class TestSmoothQuantize(unittest.TestCase):
         self.assertTrue(is_modified)
     
     def test_smooth_quantize_w4a4_with_linear(self):
-        layer = nn.Linear(10, 10)
+        layer = nn.Linear(8, 8)
         cfg = QuantConfig(quant_algo=QuantAlgorithm.W4A4_DYNAMIC)
-        quant_layer, is_modified = smooth_quantize_w8a8("0", layer, cfg, create_mock_handler(self.weights))
+        quant_layer, is_modified = smooth_quantize_w8a8("0", layer, cfg, create_mock_handler(self.weights5))
         self.assertIsInstance(quant_layer, W4A4QuantLinear)
         self.assertTrue(is_modified)
 

@@ -100,7 +100,7 @@ def smooth_quantize_w8a8(name, layer, cfg, quant_weights, **kwargs):
         quant_map = OrderedDict([(nn.Linear, W4A4QuantLinear)])
     elif cfg.quant_algo == QuantAlgorithm.W4A4_MXFP4_DUALSCALE:
         quant_map = OrderedDict([(nn.Linear, W4A4MXFP4DualQuantLinear)])
-    elif cfg.quant_algp == QuantAlgorithm.W4A4_MXFP4_SVD:
+    elif cfg.quant_algo == QuantAlgorithm.W4A4_MXFP4_SVD:
         raise ParametersInvalid("SVD Quant algorithm not supported!")
     else:
         quant_map = OrderedDict([(nn.Linear, W8A8QuantLinear)])
