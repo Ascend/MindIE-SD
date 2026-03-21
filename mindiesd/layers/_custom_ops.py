@@ -16,6 +16,25 @@ from . import register_ops
 from ..utils import ParametersInvalid
 
 
+def rope(
+    x: torch.Tensor,
+    cos: torch.Tensor,
+    sin: torch.Tensor,
+    mode: int
+) -> torch.Tensor:
+    return getattr(torch.ops.mindiesd, "rope")(x, cos, sin, mode)
+
+
+@register_ops.register_mindie_fake_op("rope")
+def rope_fake(
+    x: torch.Tensor,
+    cos: torch.Tensor,
+    sin: torch.Tensor,
+    mode: int
+) -> torch.Tensor:
+    return torch.empty_like(x)
+
+
 def laser_attention(
     query: torch.Tensor,
     key: torch.Tensor,
@@ -401,36 +420,3 @@ def layernorm_fake(
     rstd_out = torch.empty(mean_shape, dtype=x.dtype, device=x.device)
 
     return output, mean_out, rstd_out
-
-
-def adaln_v2(
-        x: torch.Tensor,
-        scale: torch.Tensor,
-        shift: torch.Tensor,
-        weight: torch.Tensor | None = None,
-        bias: torch.Tensor | None = None,
-        epsilon: float = 1e-05
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    return getattr(torch.ops.mindiesd, "adaln_v2")(
-        x=x,
-        scale=scale,
-        shift=shift,
-        weight=weight,
-        bias=bias,
-        epsilon=epsilon
-    )
-
-
-@register_ops.register_mindie_fake_op("adaln_v2")
-def adaln_v2_fake(
-    x: torch.Tensor,
-    scale: torch.Tensor,
-    shift: torch.Tensor,
-    weight: torch.Tensor | None = None,
-    bias: torch.Tensor | None = None,
-    epsilon: float = 1e-05
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    b, s, _ = x.shape
-    mean_out = torch.empty((b, s, 1), dtype=x.dtype, device=x.device)
-    rstd_out = torch.empty((b, s, 1), dtype=x.dtype, device=x.device)
-    return torch.empty_like(x), mean_out, rstd_out

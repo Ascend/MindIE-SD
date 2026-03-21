@@ -9,7 +9,7 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-import os
+
 import torch
 
 from .common import AttentionParam
@@ -67,15 +67,8 @@ def attention_forward(query, key, value, attn_mask=None, scale=None, fused=True,
     if opt_mode == "static":
         attn_func = get_attention_function_static(attn_param)
     elif opt_mode == "manual":
-        supported_fa_types = {"prompt_flash_attn", "fused_attn_score", "ascend_laser_attention"}
-        op_type_env = os.getenv("MINDIE_SD_FA_TYPE")
-        op_type = op_type_env or kwargs.get("op_type", "fused_attn_score")
-        if op_type not in supported_fa_types:
-            raise ParametersInvalid(
-                f"Unsupported FA type: '{op_type}'. "
-                f"Supported values: {supported_fa_types}")
+        op_type = kwargs.get("op_type", "prompt_flash_attn")
         layout = kwargs.get("layout", "BNSD")
-
         attn_func = get_attention_function(attn_param, op_type, layout)
     elif opt_mode == "runtime":
         attn_func = get_attention_function_runtime(attn_param, query, key, value, attn_mask, scale)

@@ -14,8 +14,10 @@ import os
 from pathlib import Path
 
 import torch
-import torch_npu
 from ..utils import ParametersInvalid, file_utils
+from . import _custom_ops as ops
+
+
 
 
 def check_input_params(x, cos, sin, rotated_mode, head_first, fused):
@@ -89,9 +91,9 @@ def rotary_position_embedding(x: torch.Tensor,
 
     match rotated_mode:
         case "rotated_half":
-            mode = "half"
+            mode = 0
         case "rotated_interleaved":
-            mode = "interleave"
+            mode = 1
         case _:
             raise ParametersInvalid(f"Unsupported rotated_mode: {rotated_mode}. The supported "
                                     "rotated_mode must be 'rotated_half' or 'rotated_interleaved'")
@@ -99,9 +101,8 @@ def rotary_position_embedding(x: torch.Tensor,
     x_in = x.to(cos.dtype)
 
     if fused:
-        x_out = torch_npu.npu_rotary_mul(x_in, cos, sin, mode)
-
-    elif mode == "interleave":
+        x_out = ops.rope(x_in, cos, sin, mode)
+    elif mode:
         # Used for HunyuanDiT, OpenSora, Flux, CogVideox
         x_real, x_imag = x_in.reshape(*x_in.shape[:-1], -1, 2).unbind(-1)  # [B, S, H, D//2]
         x_rotated = torch.stack([-x_imag, x_real], dim=-1).flatten(3)

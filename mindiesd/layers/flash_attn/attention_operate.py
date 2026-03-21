@@ -81,7 +81,6 @@ class AttnOpRegistry:
 
 device_duo_op = AttnOpRegistry()
 device_800_op = AttnOpRegistry()
-device_a5_op = AttnOpRegistry()
 
 
 def register_op_duo(name: str):
@@ -95,14 +94,6 @@ def register_op_duo(name: str):
 def register_op_800(name: str):
     def decorator(obj):
         device_800_op.register(name, obj)
-        return obj
-
-    return decorator
-
-
-def register_op_a5(name: str):
-    def decorator(obj):
-        device_a5_op.register(name, obj)
         return obj
 
     return decorator

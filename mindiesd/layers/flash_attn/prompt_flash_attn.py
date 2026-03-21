@@ -12,13 +12,12 @@
 
 import torch
 import torch_npu
-from .attention_operate import AttentionOperateBase, register_op_duo, register_op_800, register_op_a5
+from .attention_operate import AttentionOperateBase, register_op_duo, register_op_800
 from .common import AttentionParam
 
 
 @register_op_duo("prompt_flash_attn")
 @register_op_800("prompt_flash_attn")
-@register_op_a5("prompt_flash_attn")
 class PromptFlashAttention(AttentionOperateBase):
     supported_layout = ["BNSD", "BSND", "BSH"]
     supported_dtype = [torch.float16, torch.bfloat16, torch.int8]

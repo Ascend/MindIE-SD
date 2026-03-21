@@ -14,13 +14,9 @@
 
 #include "torch_npu/csrc/framework/utils/OpAdapter.h"
 #include "torch_npu/csrc/core/npu/NPUFormat.h"
-#include "pytorch_npu_helper.h"
 #include "block_sparse_attention.h"
 
 using namespace at;
-
-constexpr std::string_view BLOCK_SPARSE_ATTENTION_NAME = "aclnnBlockSparseAttention";
-
 
 at::Tensor block_sparse_attention_impl_npu(
     const at::Tensor &query, const at::Tensor &key, const at::Tensor &value,
@@ -38,21 +34,29 @@ at::Tensor block_sparse_attention_impl_npu(
         at_npu::native::get_npu_format(query));
 
     int64_t sparseMode = 0;
-    const char* inputLayoutPtr = input_layout.c_str();
 
-    c10::optional<at::Tensor> nulltensor = c10::nullopt;
-    auto actSeqLen = actual_seq_lengths.value_or(at::IntArrayRef{});
-    auto actSeqLenKv = actual_seq_lengths_kv.value_or(at::IntArrayRef{});
-
-    EXEC_NPU_CMD<BLOCK_SPARSE_ATTENTION_NAME>(query, key, value,
-        nulltensor, nulltensor,
-        actSeqLen, actSeqLenKv,
-        nulltensor, nulltensor, nulltensor, nulltensor, nulltensor,
-        sparse_mask, sparse_count_table,
-        num_heads, scale_value,
-        pre_tokens, next_tokens, inputLayoutPtr, num_key_value_heads,
-        sparseMode, inner_precise, sparse_size, causal,
-        attention_out);
+    at_npu::native::OpCommand cmd;
+    cmd.Name("BlockSparseAttention")
+            .Input(query, "query")
+            .Input(key, "key")
+            .Input(value, "value")
+            .Input().Input().Input()
+            .Input().Input().Input()
+            .Input().Input().Input()
+            .Input(sparse_mask, "sparse_mask")
+            .Input(sparse_count_table, "sparse_count_table")
+            .Output(attention_out, "attention_out")
+            .Attr("num_heads", num_heads)
+            .Attr("scale_value", static_cast<float>(scale_value))
+            .Attr("pre_tokens", pre_tokens)
+            .Attr("next_tokens", next_tokens)
+            .Attr("input_layout", input_layout)
+            .Attr("num_key_value_heads", num_key_value_heads)
+            .Attr("sparse_mode", sparseMode)
+            .Attr("inner_precise", inner_precise)
+            .Attr("sparse_size", sparse_size)
+            .Attr("causal", causal)
+            .Run();
 
     return attention_out;
 }

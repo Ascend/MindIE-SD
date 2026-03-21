@@ -21,8 +21,6 @@ from device import DEVICE_ID
 from tests.utils.utils.precision_compare import data_compare
 from mindiesd import layernorm_scale_shift
 from mindiesd.utils import ParametersInvalid
-from mindiesd.utils.get_platform import NPUDevice, get_npu_device
-from unittest.mock import Mock
 
 class TestAdaLayerNorm(unittest.TestCase):
     def setUp(self):
@@ -248,44 +246,6 @@ class TestAdaLayerNorm(unittest.TestCase):
 
         result, _, max_err = data_compare(out_fused.cpu(), out_non_fused.cpu())
         self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
-
-
-    @torch.no_grad()
-    def test_layernorm_scale_shift_3d_use_affine_and_a5(self):
-        device = "npu"
-        batch_size = 1
-        sentence_length = 1024
-        hidden_size = 128
-        layernorm = nn.LayerNorm(128, self.norm_eps, elementwise_affine=True).to(device)
-
-        x = torch.randn([batch_size, sentence_length, hidden_size], dtype=torch.float32).to(device)
-        scale = torch.randn([batch_size, hidden_size], dtype=torch.float32).to(device)
-        shift = torch.randn([batch_size, hidden_size], dtype=torch.float32).to(device)
-        
-        origin_ops_v2 = torch.ops.mindiesd.adaln_v2
-        origin_ops_v1 = torch.ops.mindiesd.adaln
-        ops_mock_v2 = Mock()
-        ops_mock_v1 = Mock()
-        
-        def mock_ops_v2(*args, **kwargs):
-            ops_mock_v2()
-            return origin_ops_v2(*args, **kwargs)
-        
-        def mock_ops_v1(*args, **kwargs):
-            ops_mock_v1()
-            return origin_ops_v1(*args, **kwargs)
-        
-        torch.ops.mindiesd.adaln_v2 = mock_ops_v2
-        torch.ops.mindiesd.adaln = mock_ops_v1
-        try:
-            out = layernorm_scale_shift(layernorm, x, scale, shift, fused=True)
-            if get_npu_device() == NPUDevice.A5:
-                ops_mock_v2.assert_called_once()
-            else:
-                ops_mock_v1.assert_called_once()
-        finally:
-            torch.ops.mindiesd.adaln_v2 = origin_ops_v2
-            torch.ops.mindiesd.adaln = origin_ops_v1
 
 
 if __name__ == "__main__":

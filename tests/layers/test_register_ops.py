@@ -34,6 +34,10 @@ class TestRegisterOps(unittest.TestCase):
             return 'mindiesd.layers.register_ops._native_register_fake'
         else:
             return 'mindiesd.layers.register_ops._lib.impl'
+
+    def test_check_mindie_operator_exists_existing(self):
+        result = register_ops.check_mindie_operator_exists("rope")
+        self.assertTrue(result)
     
     def test_check_mindie_operator_exists_nonexistent(self):
         result = register_ops.check_mindie_operator_exists(f"{self.test_op_base}nonexistent")

@@ -11,7 +11,6 @@
 # See the Mulan PSL v2 for more details.
 
 from abc import ABC, abstractmethod
-import math
 import torch
 import torch.nn as nn
 import torch_npu
@@ -243,58 +242,6 @@ class W8A8TimeStepQuantLinear(W8A8QuantBaseLinear):
         return output
 
 
-class FP8RotateQuantFA(nn.Module):
-    def __init__(self, prefix=None, weights=None):
-        super().__init__()
-
-        q_rot = get_quant_weight(weights, f'{prefix}.q_rot')
-        self.register_buffer("q_rot", q_rot, persistent=False)
-        k_rot = get_quant_weight(weights, f'{prefix}.k_rot')
-        self.register_buffer("k_rot", k_rot, persistent=False)
-
-    def forward(self, query, key, value, **kwargs):
-        query = torch.matmul(query, self.q_rot)
-        key = torch.matmul(key, self.k_rot)
-
-        layout = kwargs.get("layout", "BNSD")
-
-        from ..layers.quant.block_quant import fa_block_quant_preprocess
-
-        q, q_scale = fa_block_quant_preprocess(query, block_size=128,
-                                               dst_type=torch_npu.float8_e4m3fn, layout=layout)
-        k, k_scale = fa_block_quant_preprocess(key, block_size=256,
-                                               dst_type=torch_npu.float8_e4m3fn, layout=layout)
-        v, v_scale = fa_block_quant_preprocess(value, block_size=256,
-                                               dst_type=torch_npu.float8_e4m3fn, layout=layout)
-
-        if layout == "BNSD":
-            _, n, s, d = query.shape
-        elif layout == "BSND":
-            _, s, n, d = query.shape
-    
-        x = torch_npu.npu_fused_infer_attention_score_v2(q, k, v, input_layout=layout,
-                                                            num_query_heads=n,
-                                                            softmax_scale=1.0 / math.sqrt(d),
-                                                            pre_tokens=2147483647,
-                                                            next_tokens=2147483647, 
-                                                            query_quant_mode=7,
-                                                            key_quant_mode=7,
-                                                            value_quant_mode=7,
-                                                            dequant_scale_query=q_scale,
-                                                            dequant_scale_key=k_scale,
-                                                            dequant_scale_value=v_scale,
-                                                            out_dtype=query.dtype
-                                                            )[0]
-        
-        if x.shape[2] != s:
-            if layout == "BNSD":
-                x = x[:, :, :s, :]
-            elif layout == "BSND":
-                x = x[:, :s, :, :]
-
-        return x
-
-
 class W8A8MXFP8QuantLinear(W8A8QuantBaseLinear):
     def __init__(self, in_features, out_features, bias=True, weights=None, prefix=None, **kwargs):
         super().__init__(in_features, out_features, bias, weights, prefix, **kwargs)
@@ -315,14 +262,14 @@ class W8A8MXFP8QuantLinear(W8A8QuantBaseLinear):
             self.bias = self.bias.to(torch.float32)
 
         x2 = self.weight
-        if x2.dtype != torch.float8_e4m3fn:
+        if x2.dtype != torch_npu.float8_e4m3fn:
             x2 = torch_npu.npu_dtype_cast(x2, torch_npu.float8_e4m3fn)
         x2 = x2.transpose(0, 1)
 
         output = torch_npu.npu_quant_matmul(
                             x1,
                             x2,
-                            self.weight_scale.transpose(0, 1),
+                            self.weight_scale,
                             scale_dtype=torch_npu.float8_e8m0fnu,
                             pertoken_scale=input_scale,
                             pertoken_scale_dtype=torch_npu.float8_e8m0fnu,

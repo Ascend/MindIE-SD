@@ -14,15 +14,9 @@
 
 #include "torch_npu/csrc/framework/utils/OpAdapter.h"
 #include "torch_npu/csrc/core/npu/NPUFormat.h"
-#include "pytorch_npu_helper.h"
 #include "la.h"
 
 using namespace at;
-using npu_preparation = at_npu::native::OpPreparation;
-namespace {
-constexpr std::string_view LASERATTENTIONOP_NAME = "aclnnLaserAttention";
-}
-
 
 std::tuple<at::Tensor, at::Tensor> la_mindie_sd_impl_npu(
     const at::Tensor &query, const at::Tensor &key, const at::Tensor &value,
@@ -42,17 +36,41 @@ std::tuple<at::Tensor, at::Tensor> la_mindie_sd_impl_npu(
 
     at::Tensor softmax_log_max_sum =
         at_npu::native::empty_with_format({query.sizes()[0], query.sizes()[1], query.sizes()[2]},
-        query.options().dtype(at::kFloat),
-        at_npu::native::get_npu_format(query)
-    );
+        query.options(), at_npu::native::get_npu_format(query));
 
-    at::Tensor attention_out = at_npu::native::empty_with_format(query.sizes(),
-        query.options().dtype(at::kFloat),
-        at_npu::native::get_npu_format(query)
-    );
+    at::Tensor attention_out =
+        at_npu::native::empty_with_format(query.sizes(), query.options(),
+        at_npu::native::get_npu_format(query));
 
-    EXEC_NPU_CMD<LASERATTENTIONOP_NAME>(query, key, value, atten_mask, alibi_mask, drop_mask,
-        scale_value, head_num, input_layout, keep_prob, pre_tokens, next_tokens,
-        is_highPrecision, softmax_log_max_sum, attention_out);
+    at_npu::native::OpCommand cmd;
+
+    cmd.Name("AscendLaserAttention")
+            .Input(query, "query")
+            .Input(key, "key")
+            .Input(value, "value");
+
+    if (atten_mask.defined()) {
+        cmd.Input(atten_mask, "atten_mask");
+    }
+
+    if (alibi_mask.defined()) {
+        cmd.Input(alibi_mask, "alibi_mask");
+    }
+
+    if (drop_mask.defined()) {
+        cmd.Input(drop_mask, "drop_mask");
+    }
+
+    cmd.Output(softmax_log_max_sum, "softmax_log_max_sum")
+    .Output(attention_out, "attention_out")
+    .Attr("scale_value", static_cast<float>(scale_value))
+    .Attr("head_num", head_num)
+    .Attr("input_layout", input_layout)
+    .Attr("keep_prob", static_cast<float>(keep_prob))
+    .Attr("pre_tokens", pre_tokens)
+    .Attr("next_tokens", next_tokens)
+    .Attr("is_highPrecision", is_highPrecision)
+    .Run();
+
     return std::tuple<at::Tensor, at::Tensor>(softmax_log_max_sum, attention_out);
 }

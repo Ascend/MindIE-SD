@@ -12,13 +12,12 @@
 
 import torch
 import torch_npu
-from .attention_operate import AttentionOperateBase, register_op_800, register_op_a5
+from .attention_operate import AttentionOperateBase, register_op_800
 from .common import AttentionParam
 MAX_TOKEN = 2147483647
 
 
 @register_op_800("fused_attn_score")
-@register_op_a5("fused_attn_score")
 class FlashAttentionScore(AttentionOperateBase):
     supported_layout = ["BNSD", "BSND", "BSH"]
     supported_dtype = [torch.float16, torch.bfloat16, torch.float32]

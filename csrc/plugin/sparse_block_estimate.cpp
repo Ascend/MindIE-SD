@@ -17,7 +17,6 @@
 #include <algorithm>
 #include "torch_npu/csrc/framework/utils/OpAdapter.h"
 #include "torch_npu/csrc/core/npu/NPUFormat.h"
-#include "pytorch_npu_helper.h"
 #include "sparse_block_estimate.h"
 
 using namespace at;
@@ -26,7 +25,6 @@ constexpr int DIM_INDEX_0 = 0;
 constexpr int DIM_INDEX_1 = 1;
 constexpr int DIM_INDEX_2 = 2;
 constexpr int DIM_INDEX_3 = 3;
-constexpr std::string_view SPARSEBLOCKESTIMATE_NAME = "aclnnSparseBlockEstimate";
 }
 std::tuple<at::Tensor, at::Tensor> sparse_block_estimate_mindie_sd_impl_npu(
     const at::Tensor &query, const at::Tensor &key,
@@ -38,11 +36,6 @@ std::tuple<at::Tensor, at::Tensor> sparse_block_estimate_mindie_sd_impl_npu(
 {
     TORCH_CHECK(num_heads != 0, "num_heads must be nonzero.");
     TORCH_CHECK(sparse_size != 0, "sparse_size must be nonzero.");
-
-    auto actSeqLen = actual_seq_lengths.value_or(at::IntArrayRef{});
-    auto actSeqLenKv = actual_seq_lengths_kv.value_or(at::IntArrayRef{});
-    const char* inputLayoutPtr = input_layout.c_str();
-
     int64_t b;
     int64_t nq;
     int64_t s;
@@ -77,10 +70,26 @@ std::tuple<at::Tensor, at::Tensor> sparse_block_estimate_mindie_sd_impl_npu(
         at_npu::native::empty_with_format({b, nq, seqlenSparse}, query.options().dtype(c10::ScalarType::Int),
         at_npu::native::get_npu_format(query));
 
-    EXEC_NPU_CMD<SPARSEBLOCKESTIMATE_NAME>(query, key, actSeqLen,
-        actSeqLenKv, inputLayoutPtr, stride, sparse_size,
-        num_heads, num_key_value_heads, scale_value,
-        threshold, causal, keep_sink, keep_recent, row_sparse, sparse_mask, sparse_count_table);
+    at_npu::native::OpCommand cmd;
+
+    cmd.Name("SparseBlockEstimate")
+            .Input(query, "query")
+            .Input(key, "key")
+            .Input().Input()
+            .Output(sparse_mask, "sparse_mask")
+            .Output(sparse_count_table, "sparse_count_table")
+            .Attr("input_layout", input_layout)
+            .Attr("stride", stride)
+            .Attr("sparse_size", sparse_size)
+            .Attr("num_heads", num_heads)
+            .Attr("num_key_value_heads", num_key_value_heads)
+            .Attr("scale_value", static_cast<float>(scale_value))
+            .Attr("threshold", static_cast<float>(threshold))
+            .Attr("causal", causal)
+            .Attr("keep_sink", keep_sink)
+            .Attr("keep_recent", keep_recent)
+            .Attr("row_sparse", static_cast<float>(row_sparse))
+            .Run();
 
     return std::tuple<at::Tensor, at::Tensor>(sparse_mask, sparse_count_table);
 }
