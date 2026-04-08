@@ -1,37 +1,42 @@
-# MindIE-SD
+# MindIE SD
 
-## Description
+MindIE SD is an Ascend-focused inference acceleration toolkit for Stable Diffusion and related multimodal generation workloads.
 
-昇腾SD类模型推理引擎
+## Highlights
 
-## Software Architecture
+- Ascend-friendly custom operators and fused kernels
+- Quantization, sparse quantization, cache, and parallel execution features
+- `torch.compile` integration for graph-level acceleration
 
-Software architecture description
+## Quick start
 
-## Installation
+Complete the environment preparation and MindIE SD installation first, then install model-specific dependencies and run an example:
 
-1. xxxx
-2. xxxx
-3. xxxx
+```bash
+git clone https://modelers.cn/MindIE/Wan2.1.git
+cd Wan2.1
+pip install -r requirements.txt
+```
 
-## Instructions
+## Documentation
 
-1. xxxx
-2. xxxx
-3. xxxx
+- English overview: [docs/en/README.md](docs/en/README.md)
+- English quick start: [docs/en/quick_start.md](docs/en/quick_start.md)
+- English installation guide: [docs/en/installing_guide.md](docs/en/installing_guide.md)
+- English user guide: [docs/en/menu_user_manual.md](docs/en/menu_user_manual.md)
+- English architecture: [docs/en/architecture.md](docs/en/architecture.md)
+- English environment variables: [docs/en/environment_variable_configuration.md](docs/en/environment_variable_configuration.md)
+- English support matrix: [docs/en/features/supported_matrix.md](docs/en/features/supported_matrix.md)
+- English cache features: [docs/en/features/cache.md](docs/en/features/cache.md)
+- English parallelism features: [docs/en/features/parallelism.md](docs/en/features/parallelism.md)
+- English sparse quantization: [docs/en/features/sparse_quantization.md](docs/en/features/sparse_quantization.md)
+- Chinese overview: [docs/zh/index.md](docs/zh/index.md)
+- Chinese quick start: [docs/zh/quick_start.md](docs/zh/quick_start.md)
+- Chinese installation guide: [docs/zh/installing_guide.md](docs/zh/installing_guide.md)
+- Chinese architecture: [docs/zh/architecture.md](docs/zh/architecture.md)
 
-## Contribution
+## Community and governance
 
-1. Fork the repository
-2. Create Feat_xxx branch
-3. Commit your code
-4. Create Pull Request
-
-## Gitee Feature
-
-1. You can use Readme\_XXX.md to support different languages, such as Readme\_en.md, Readme\_zh.md
-2. Gitee blog [blog.gitee.com](https://blog.gitee.com)
-3. Explore open source project [https://gitee.com/explore](https://gitee.com/explore)
-4. The most valuable open source project [GVP](https://gitee.com/gvp)
-5. The manual of Gitee [https://gitee.com/help](https://gitee.com/help)
-6. The most popular members  [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+- Contributing: [contributing.md](contributing.md)
+- Code of conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- Governance: [docs/en/community/governance.md](docs/en/community/governance.md)
