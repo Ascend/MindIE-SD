@@ -412,7 +412,7 @@ class W4A4MXFP4DualQuantLinear(W8A8QuantBaseLinear):
         weight = get_quant_weight(weights, f'{prefix}.weight')
         weight = torch_npu.npu_dtype_cast(weight.npu(), torch_npu.float4_e2m1fn_x2)
         if kwargs.get('use_nz', False):
-            weight = torch_npu.npu_format_cast(weight.view(torch.int8), 29, torch.int8)
+            weight = torch_npu.npu_format_cast(weight.view(torch.int8), 29, customize_dtype=torch.int8)
         self.register_buffer("weight", weight, persistent=False)
 
 
