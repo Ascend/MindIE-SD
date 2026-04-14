@@ -101,26 +101,26 @@ def sparse_attention(
     scale = head_dim ** -0.5 if scale is None else scale
 
     if sparse_type == "rf_v2":
-        q, k, v, qkv_pool = do_tensor_rearrange_pooling(
+        q_rf, k_rf, v_rf, qkv_pool = do_tensor_rearrange_pooling(
             q, k, v, txt_len, block_size, latent_shape_q, latent_shape_k, input_layout
         )
         select_idx, select_num_idx = get_blockwise_mask(
                 qkv_pool, txt_len, sparsity, scale, block_size, latent_shape_q, latent_shape_k, input_layout)
 
         if input_layout == "BSND":
-            q_seq, kv_seq = q.shape[1], k.shape[1]
+            q_seq, kv_seq = q_rf.shape[1], k_rf.shape[1]
             layout = "TND"
-            q = q.reshape(-1, head_num, head_dim)
-            k = k.reshape(-1, head_num, head_dim)
-            v = v.reshape(-1, head_num, head_dim)
+            q_rf = q_rf.reshape(-1, head_num, head_dim)
+            k_rf = k_rf.reshape(-1, head_num, head_dim)
+            v_rf = v_rf.reshape(-1, head_num, head_dim)
         else:
-            q_seq, kv_seq = q.shape[2], k.shape[2]
+            q_seq, kv_seq = q_rf.shape[2], k_rf.shape[2]
             layout = input_layout
         actual_seq_lengths = [q_seq for _ in range(batch)]
         actual_seq_lengths_kv = [kv_seq for _ in range(batch)]
 
         out = rain_fusion_attention(
-            q, k, v,
+            q_rf, k_rf, v_rf,
             scale=scale,
             head_num=head_num,
             input_layout=layout,
@@ -164,4 +164,6 @@ def sparse_attention(
             pre_tockens=MAX_TOKEN,
             next_tockens=MAX_TOKEN,
             head_num=head_num)[0]
+    else:
+        raise ParametersInvalid(f"sparse_type must be None, 'rf_v2' or 'ada_bsa', but got {sparse_type}.")
     return out

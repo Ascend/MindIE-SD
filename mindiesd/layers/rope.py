@@ -87,14 +87,14 @@ def rotary_position_embedding(x: torch.Tensor,
     if cos.dim() == 2 and sin.dim() == 2:    # 2: SD输入dim
         cos, sin = reshape_for_broadcast(x, cos, sin, head_first=head_first)
 
-    match rotated_mode:
-        case "rotated_half":
-            mode = "half"
-        case "rotated_interleaved":
-            mode = "interleave"
-        case _:
-            raise ParametersInvalid(f"Unsupported rotated_mode: {rotated_mode}. The supported "
-                                    "rotated_mode must be 'rotated_half' or 'rotated_interleaved'")
+    mode = None
+    if rotated_mode == "rotated_half":
+        mode = "half"
+    elif rotated_mode == "rotated_interleaved":
+        mode = "interleave"
+    else:
+        raise ParametersInvalid(f"Unsupported rotated_mode: {rotated_mode}. The supported "
+                                "rotated_mode must be 'rotated_half' or 'rotated_interleaved'")
 
     x_in = x.to(cos.dtype)
 

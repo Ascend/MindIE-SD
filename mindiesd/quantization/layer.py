@@ -299,6 +299,8 @@ class FP8RotateQuantFA(nn.Module):
             _, n, s, d = query.shape
         elif layout == "BSND":
             _, s, n, d = query.shape
+        else:
+            raise ValueError(f"Unsupported layout: {layout}, expected 'BNSD' or 'BSND'.")
     
         x = torch_npu.npu_fused_infer_attention_score_v2(q, k, v, input_layout=layout,
                                                             num_query_heads=n,

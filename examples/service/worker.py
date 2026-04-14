@@ -136,6 +136,7 @@ class GeneratorWorker:
             "offload_model": request.offload_model
         }
         logging.info(f"request: {request_info}")
+        img = None
         if request.image is not None:
             img = Image.open(request.image).convert("RGB")
             logging.info(f"Input image: {request.image}")
@@ -170,6 +171,8 @@ class GeneratorWorker:
                 offload_model=request.offload_model
             )
         else:
+            if img is None:
+                raise ValueError("Image is required for i2v generation.")
             video = self.pipe.generate(
                 request.prompt,
                 img,
