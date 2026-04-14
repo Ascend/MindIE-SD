@@ -57,9 +57,10 @@ fi
 
 current_directory=$(dirname "$(readlink -f "$0")")
 
-${python_command} -m coverage run --branch --source=../mindiesd ${current_directory}/run.py 2>&1 | tee ${current_directory}/run.log
+${python_command} -m coverage run --rcfile ${current_directory}/../.coveragerc ${current_directory}/run.py 2>&1 | tee ${current_directory}/run.log
 
-${python_command} -m coverage report
-${python_command} -m coverage xml -o ${current_directory}/coverage.xml
+${python_command} -m coverage report --rcfile ${current_directory}/../.coveragerc
+${python_command} -m coverage xml --rcfile ${current_directory}/../.coveragerc -o ${current_directory}/coverage.xml
+${python_command} -m coverage html --rcfile ${current_directory}/../.coveragerc -d ${current_directory}/htmlcov
 
 ${python_command} ${current_directory}/scripts/unittest_summary.py ${current_directory}/run.log

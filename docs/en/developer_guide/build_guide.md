@@ -21,14 +21,14 @@ For MindIE image acquisition, refer to the [image installation guide](https://gi
 
    ```bash
    git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
-   python setup.py bdist_wheel
+   python -m build --wheel --no-isolation
    ```
 
    > **Note**
    > If `wheel` or related build dependencies are missing, install them first:
    >
    > ```bash
-   > pip install wheel
+   > pip install build wheel
    > ```
 
 2. Install MindIE SD.

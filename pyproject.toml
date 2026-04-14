@@ -1,0 +1,118 @@
+[build-system]
+requires = ["setuptools>=65.5", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mindiesd"
+dynamic = ["version", "dependencies"]
+description = "MindIE Stable Diffusion inference engine for Ascend NPUs"
+readme = "README.en.md"
+requires-python = ">=3.10"
+license = { text = "Mulan PSL v2" }
+authors = [{ name = "Huawei Technologies Co., Ltd." }]
+keywords = ["ascend", "diffusion", "mindie", "npu", "stable-diffusion"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Homepage = "https://gitcode.com/Ascend/MindIE-SD"
+Repository = "https://gitcode.com/Ascend/MindIE-SD"
+Documentation = "https://gitcode.com/Ascend/MindIE-SD/tree/master/docs"
+Issues = "https://gitcode.com/Ascend/MindIE-SD/issues"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = { attr = "mindiesd._version.__version__" }
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+include = ["mindiesd", "mindiesd.*"]
+
+[tool.setuptools.package-data]
+mindiesd = ["plugin/*.so", "ops/**/*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = [
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM", "G"]
+ignore = [
+    "B007",
+    "B905",
+    "E731",
+    "F403",
+    "F405",
+    "UP009",
+    "UP032",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"mindiesd/__init__.py" = ["E402", "I001"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+follow_imports = "silent"
+check_untyped_defs = true
+warn_unused_configs = true
+show_error_codes = true
+
+[tool.markdownlint]
+default = true
+MD004 = false
+MD007 = false
+MD009 = false
+MD013 = false
+MD014 = false
+MD020 = false
+MD021 = false
+MD024 = false
+MD025 = false
+MD033 = false
+MD034 = false
+MD036 = false
+MD042 = false
+MD043 = false
+MD044 = false
+MD045 = false
+MD046 = false
+MD048 = false
+MD049 = false
+MD050 = false
+MD051 = false
+MD052 = false
+MD053 = false
+MD055 = false
+MD056 = false
+MD057 = false
+MD059 = false
+
+[tool.markdownlint.MD003]
+style = "atx"
+
+[tool.markdownlint.MD029]
+style = "ordered"
+
+[tool.markdownlint.MD010]
+spaces_per_tab = 4
+
+[tool.pytest.ini_options]
+testpaths = ["tests/UT"]

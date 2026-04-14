@@ -15,6 +15,7 @@
 
 import os
 import logging
+import runpy
 import subprocess
 import shutil
 from setuptools import setup, find_packages
@@ -22,21 +23,22 @@ from setuptools.command.build_py import build_py as _build_py
 from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
 
 os.environ["SOURCE_DATE_EPOCH"] = "315532800"
-MINDIE_SD_VERSION_DEFAULT = "2.3.0"
 VERSION_ENV = "MINDIE_SD_VERSION_OVERRIDE"
+VERSION_FILE = os.path.join(os.path.abspath(os.path.dirname(__file__)), "mindiesd", "_version.py")
 
 
 def get_mindiesd_version():
-    mindiesd_version = ""
     version = os.environ.get(VERSION_ENV, None)
     if version:
         logging.info(f"MINDIE_SD_VERSION_OVERRIDE is: {version}")
-        mindiesd_version = mindiesd_version + version
     else:
-        logging.info(f"MINDIE_SD_VERSION_DEFAULT is: {MINDIE_SD_VERSION_DEFAULT}")
-        mindiesd_version = mindiesd_version + MINDIE_SD_VERSION_DEFAULT
+        version_ns = runpy.run_path(VERSION_FILE)
+        version = version_ns.get("__version__")
+        if not version:
+            raise RuntimeError(f"Failed to get version from {VERSION_FILE}")
+        logging.info(f"Repository version is: {version}")
 
-    mindiesd_version = mindiesd_version.replace("T", "post")
+    mindiesd_version = version.replace("T", "post")
     return mindiesd_version
 
 
@@ -128,4 +130,3 @@ if __name__ == "__main__":
             "bdist_wheel": BDistWheel
         }
     )
-

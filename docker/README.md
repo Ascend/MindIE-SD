@@ -16,7 +16,7 @@ The SD-specific changes are limited to:
 
 - copying the `MindIE-SD` source tree into the image
 - installing the workspace `requirements.txt`
-- running `python3.11 setup.py build_py`
+- running `python3.11 -m build --wheel --no-isolation`
 - exposing `/workspace/MindIE-SD` as the working directory
 
 Build example:

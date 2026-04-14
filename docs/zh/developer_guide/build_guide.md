@@ -21,14 +21,14 @@ MindIE镜像获取请参见[镜像安装方式](https://gitcode.com/Ascend/MindI
 
     ```bash
     git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
-    python setup.py bdist_wheel
+    python -m build --wheel --no-isolation
     ```
 
     > **说明：** 
     >若环境中没有wheel等依赖，请用户使用以下命令自行安装。
     >
     >```bash
-    >pip install wheel
+    >pip install build wheel
     >```
 
 2. 安装MindIE SD。
