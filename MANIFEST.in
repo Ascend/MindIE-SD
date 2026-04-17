@@ -1,0 +1,10 @@
+recursive-include mindiesd *.so
+recursive-include mindiesd *.py
+recursive-include mindiesd/ops *
+
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude *.pyo
+global-exclude .DS_Store
+global-exclude *.swp
+global-exclude *.swo

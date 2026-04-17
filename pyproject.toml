@@ -33,7 +33,6 @@ include-package-data = true
 
 [tool.setuptools.dynamic]
 version = { attr = "version.__version__" }
-dependencies = { file = ["requirements.txt"] }
 
 [tool.setuptools.packages.find]
 include = ["mindiesd", "mindiesd.*"]

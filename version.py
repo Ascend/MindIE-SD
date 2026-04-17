@@ -13,4 +13,4 @@
 
 import os
 
-__version__ = os.environ.get("MINDIE_SD_VERSION_OVERRIDE", "2.3.0").replace("T", "post")
+__version__ = os.environ.get("MINDIE_SD_VERSION_OVERRIDE", "3.0.0").replace("T", "post")

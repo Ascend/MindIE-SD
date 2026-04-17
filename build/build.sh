@@ -13,8 +13,16 @@
 set -e
 BUILD_DIR=$(dirname $(readlink -f $0))
 PROJ_ROOT_DIR=${BUILD_DIR}/..
+export OUTPUT_DIR=$PROJ_ROOT_DIR/output
+
+if [ ! -d "$OUTPUT_DIR" ];then
+    mkdir -p $OUTPUT_DIR
+fi
+
+AFT_PATH=${PROJ_ROOT_DIR}
 chmod a-w $BUILD_DIR/*
 
+rm -rf ${PROJ_ROOT_DIR}/dist/*
 cd ${PROJ_ROOT_DIR}
 
 PYTHON_VERSION=""
@@ -29,39 +37,34 @@ else
     exit 1
 fi
 
-if [ -n "$PROJ_ROOT_DIR" ] && [ -d "${PROJ_ROOT_DIR}/csrc/ops" ]; then
-    source ${PROJ_ROOT_DIR}/build/build_ops.sh ${PROJ_ROOT_DIR}/build
-elif [ -n "$PROJ_ROOT_DIR" ]; then
-    echo "Waring: The path of custom op operators $PROJ_ROOT_DIR/csrc/ops does not exist."
+if [ -n "$MINDIE_SD_VERSION_OVERRIDE" ]; then
+    MindIESDVersion=$MINDIE_SD_VERSION_OVERRIDE
+    echo "Using MINDIE_SD_VERSION_OVERRIDE: $MindIESDVersion"
+else
+    MindIESDVersion="3.0.0"
+    echo "Using default version: $MindIESDVersion"
+fi
+MindIESDVersion=$(echo $MindIESDVersion | sed -E 's/([0-9]+)\.([0-9]+)\.RC([0-9]+)\.([0-9]+)/\1.\2rc\3.post\4/')
+MindIESDWheelVersion=$(echo $MindIESDVersion | sed -s 's!.T!.alpha!')
+MindIESDVersion=$(echo $MindIESDVersion | sed -s 's!.T!+t!')
+echo "MindIESDVersion $MindIESDVersion"
+echo "MindIESDWheelVersion $MindIESDWheelVersion"
+
+python3 setup.py bdist_wheel
+
+# "aarch64" / "x86_64"
+ARCH=$(uname -m)
+if [[ "${ARCH}" != "aarch64" && "${ARCH}" != "x86_64" ]]; then
+    echo "It is not system of aarch64 or x86_64"
+    exit 1
 fi
 
-if [ -n "$PROJ_ROOT_DIR" ] && [ -d "${PROJ_ROOT_DIR}/csrc/plugin" ]; then
-    source ${PROJ_ROOT_DIR}/build/build_plugin.sh ${PROJ_ROOT_DIR}/build
-elif [ -n "$PROJ_ROOT_DIR" ]; then
-    echo "Waring: The path of op plugins $PROJ_ROOT_DIR/csrc/plugin does not exist."
-fi
+rm -rf $OUTPUT_DIR/*
+mkdir -p $OUTPUT_DIR/Ascend-mindie-sd_${MindIESDVersion}_${PYTHON_VERSION}_linux_${ARCH}
+cp ${PROJ_ROOT_DIR}/dist/mindie*.whl ${OUTPUT_DIR}/Ascend-mindie-sd_${MindIESDVersion}_${PYTHON_VERSION}_linux_${ARCH}
+cp ${PROJ_ROOT_DIR}/requirements.txt ${OUTPUT_DIR}/Ascend-mindie-sd_${MindIESDVersion}_${PYTHON_VERSION}_linux_${ARCH}
 
-clean_build_dirs() {
-    local dirs_to_remove=(
-        "${BUILD_DIR}/bdist.linux-aarch64"
-        "${BUILD_DIR}/custom_project_tik"
-        "${BUILD_DIR}/lib"
-        "${BUILD_DIR}/output"
-    )
-
-    echo "About to delete the following build-related directories: "
-    for dir in "${dirs_to_remove[@]}"; do
-        echo "  - $dir"
-    done
-
-    for dir in "${dirs_to_remove[@]}"; do
-        if [[ -d "$dir" ]]; then
-            rm -rf "$dir"
-        else
-            echo "Directory does not exist, skipping: $dir"
-        fi
-    done
-}
-
-clean_build_dirs
-cd ${PROJ_ROOT_DIR}
+cd $OUTPUT_DIR
+tar_package_name="Ascend-mindie-sd_${MindIESDVersion}_${PYTHON_VERSION}_linux_${ARCH}.tar.gz"
+tar czf $tar_package_name ./Ascend-mindie-sd_${MindIESDVersion}_${PYTHON_VERSION}_linux_${ARCH} --owner=0 --group=0
+rm -rf ./Ascend-mindie-sd_${MindIESDVersion}_${PYTHON_VERSION}_linux_${ARCH}

@@ -14,6 +14,7 @@
 # See the Mulan PSL v2 for more details.
 
 import os
+import sys
 import logging
 import runpy
 import subprocess
@@ -21,6 +22,8 @@ import shutil
 from setuptools import setup, find_packages
 from setuptools.command.build_py import build_py as _build_py
 from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
+
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 os.environ["SOURCE_DATE_EPOCH"] = "315532800"
 VERSION_FILE = os.path.join(os.path.abspath(os.path.dirname(__file__)), "version.py")
@@ -34,6 +37,23 @@ def get_mindiesd_version():
 
     logging.info(f"Build version is: {version}")
     return version
+
+
+def get_python_version():
+    """获取 Python 版本字符串，如 py310"""
+    try:
+        major = sys.version_info.major
+        minor = sys.version_info.minor
+        
+        if major is None or minor is None:
+            raise RuntimeError("Cannot get Python version: version info is None")
+        
+        python_version = f"py{major}{minor}"
+        logging.info(f"Python version is: {python_version}")
+        return python_version
+    except Exception as e:
+        logging.error(f"Failed to get Python version: {e}")
+        raise RuntimeError("Cannot get Python version. Please ensure Python is properly installed.") from e
 
 
 def copy_so_files(src_dir, dest_dir):
@@ -57,43 +77,110 @@ def ensure_plugin_init():
     
     os.makedirs(plugin_dir, exist_ok=True)   
     if not os.path.isfile(init_file):
-        with open(init_file, 'w') as f:
-            pass
+        open(init_file, 'a').close()
     else:
         os.remove(init_file)
-        with open(init_file, 'w') as f:
-            pass
+        open(init_file, 'a').close()
+
+
+def run_script(script_path, args=None, cwd=None):
+    """执行 shell 脚本"""
+    cmd = ['bash', script_path]
+    if args:
+        cmd.extend(args)
+    
+    logging.info(f">>> Running script: {' '.join(cmd)}")
+    try:
+        subprocess.check_call(
+            cmd, 
+            cwd=cwd,
+            stderr=subprocess.STDOUT
+        )
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Script failed with return code {e.returncode}")
+        raise RuntimeError(f"Script execution failed: {script_path}") from e
+
+
+def clean_build_dirs(build_dir):
+    """清理构建目录"""
+    dirs_to_remove = [
+        os.path.join(build_dir, "bdist.linux-aarch64"),
+        os.path.join(build_dir, "bdist.linux-x86_64"),
+        os.path.join(build_dir, "custom_project_tik"),
+        os.path.join(build_dir, "lib"),
+        os.path.join(build_dir, "output"),
+    ]
+    
+    logging.info("About to delete the following build-related directories:")
+    for dir_path in dirs_to_remove:
+        logging.info(f"  - {dir_path}")
+    
+    for dir_path in dirs_to_remove:
+        if os.path.isdir(dir_path):
+            shutil.rmtree(dir_path)
+        else:
+            logging.info(f"Directory does not exist, skipping: {dir_path}")
 
 
 class CustomBuildPy(_build_py):
     def run(self):
-        # 1. 进入 build 目录执行构建脚本
-        logging.info(">>> Running build.sh to compile shared libraries...")
-        build_script_path = os.path.join(os.path.abspath(os.getcwd()), 'build')
-        try:
-            subprocess.check_call(
-                ['bash', './build.sh'], 
-                cwd=build_script_path, 
-                stderr=subprocess.STDOUT
-                )
-        except subprocess.CalledProcessError as e:
-            logging.error(f"Build script failed with return code {e.returncode}")
-            logging.error(f"Build script output: {e.output if hasattr(e, 'output') else 'No output captured'}")
-            raise RuntimeError(f"Build script execution failed with return code {e.returncode}") from e  
-
-        # 2. 把生成的 .so 文件移动到 Python 包目录 mindiesd/plugin
-        source_dir = os.path.join(build_script_path, 'build')
-        destination_dir = os.path.join(os.path.abspath(os.getcwd()), 'mindiesd', 'plugin')
-        copy_so_files(source_dir, destination_dir)
+        proj_root = os.path.abspath(os.getcwd())
+        build_dir = os.path.join(proj_root, 'build')
         
-        # 3. 继续默认 build_py 流程
+        logging.info("=" * 60)
+        logging.info("Starting MindIE-SD Build Process")
+        logging.info(f"Project root: {proj_root}")
+        logging.info(f"Build directory: {build_dir}")
+        logging.info("=" * 60)
+        
+        get_python_version()
+        
+        for script in os.listdir(build_dir):
+            script_path = os.path.join(build_dir, script)
+            if os.path.isfile(script_path):
+                os.chmod(script_path, 0o444)
+        
+        try:
+            ops_dir = os.path.join(proj_root, 'csrc', 'ops')
+            if os.path.isdir(ops_dir):
+                logging.info("=" * 60)
+                logging.info("Building Ascend operators...")
+                logging.info("=" * 60)
+                build_ops_script = os.path.join(build_dir, 'build_ops.sh')
+                run_script(build_ops_script, args=[build_dir], cwd=build_dir)
+            else:
+                logging.warning(f"The path of custom op operators {ops_dir} does not exist.")
+            
+            plugin_dir = os.path.join(proj_root, 'csrc', 'plugin')
+            if os.path.isdir(plugin_dir):
+                logging.info("=" * 60)
+                logging.info("Building PyTorch plugins...")
+                logging.info("=" * 60)
+                build_plugin_script = os.path.join(build_dir, 'build_plugin.sh')
+                run_script(build_plugin_script, args=[build_dir], cwd=build_dir)
+            else:
+                logging.warning(f"The path of op plugins {plugin_dir} does not exist.")
+            
+            clean_build_dirs(build_dir)
+            
+            source_dir = os.path.join(build_dir, 'build')
+            destination_dir = os.path.join(proj_root, 'mindiesd', 'plugin')
+            copy_so_files(source_dir, destination_dir)
+            
+            logging.info("=" * 60)
+            logging.info("Build completed successfully!")
+            logging.info("=" * 60)
+            
+        except Exception as e:
+            logging.error(f"Build failed: {e}")
+            raise
+        
         super().run()
 
 
 class BDistWheel(_bdist_wheel):
     def finalize_options(self):
         super().finalize_options()
-        # 标记为二进制 wheel，否则会生成 py3-none-any
         self.root_is_pure = False
 
 
