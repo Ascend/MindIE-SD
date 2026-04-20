@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import torch
 from device import DEVICE_ID
 from mindiesd.layers.flash_attn.common import AttentionParam
-from mindiesd.layers.flash_attn.attention_forward import attention_forward
+from mindiesd.layers.flash_attn.attention_forward import attention_forward, get_manual_attention_op_type
 from mindiesd.utils.exception import ParametersInvalid
 from utils.utils.precision_compare import data_compare
 
@@ -248,6 +248,35 @@ class TestAttentionFunc(unittest.TestCase):
             out_fused_env = attention_forward(
             query, key, value, head_first=True, opt_mode="manual", layout="BNSD")
         os.environ.pop("MINDIE_SD_FA_TYPE", None)
+
+
+class TestAttentionForwardFallback(unittest.TestCase):
+    @patch("mindiesd.layers.flash_attn.attention_forward.logger.debug")
+    def test_manual_la_fallback_when_q_seqlen_lt_2048(self, mock_logger_debug):
+        attn_param = AttentionParam(2, 16, 64, 1024, 4096, torch.float16, False)
+
+        op_type = get_manual_attention_op_type(attn_param, "ascend_laser_attention")
+
+        self.assertEqual(op_type, "fused_attn_score")
+        mock_logger_debug.assert_called_once()
+
+    @patch("mindiesd.layers.flash_attn.attention_forward.logger.debug")
+    def test_manual_la_fallback_when_kv_seqlen_lt_2048(self, mock_logger_debug):
+        attn_param = AttentionParam(2, 16, 64, 4096, 1024, torch.float16, False)
+
+        op_type = get_manual_attention_op_type(attn_param, "ascend_laser_attention")
+
+        self.assertEqual(op_type, "fused_attn_score")
+        mock_logger_debug.assert_called_once()
+
+    @patch("mindiesd.layers.flash_attn.attention_forward.logger.debug")
+    def test_manual_la_fallback_when_head_first_true(self, mock_logger_debug):
+        attn_param = AttentionParam(2, 16, 64, 1024, 1024, torch.float16, True)
+
+        op_type = get_manual_attention_op_type(attn_param, "ascend_laser_attention")
+
+        self.assertEqual(op_type, "fused_attn_score")
+        mock_logger_debug.assert_called_once()
 
 
 if __name__ == '__main__':

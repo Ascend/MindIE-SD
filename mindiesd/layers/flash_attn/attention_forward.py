@@ -16,6 +16,9 @@ from .common import AttentionParam
 from .attention_func import (
     attention_math, get_attention_function, get_attention_function_static, get_attention_function_runtime)
 from ...utils.exception import ParametersInvalid
+from ...utils.logs.logging import logger
+
+ASCEND_LASER_ATTENTION_MIN_SEQLEN = 2048
 
 
 def attention_forward(query, key, value, attn_mask=None, scale=None, fused=True, head_first=False, **kwargs):
@@ -75,6 +78,7 @@ def attention_forward(query, key, value, attn_mask=None, scale=None, fused=True,
                 f"Unsupported FA type: '{op_type}'. "
                 f"Supported values: {supported_fa_types}")
         layout = kwargs.get("layout", "BNSD")
+        op_type = get_manual_attention_op_type(attn_param, op_type)
 
         attn_func = get_attention_function(attn_param, op_type, layout)
     elif opt_mode == "runtime":
@@ -105,3 +109,21 @@ def check_input_params(input_params):
         raise ParametersInvalid(f"The data type of input attn_mask must be torch.Tensor, but got {type(attn_mask)}.")
     if scale is not None and not isinstance(scale, float):
         raise ParametersInvalid(f"The data type of input scale must be float, but got {type(scale)}.")
+
+
+def get_manual_attention_op_type(attn_param, op_type):
+    if op_type != "ascend_laser_attention":
+        return op_type
+
+    if (attn_param.q_seqlen < ASCEND_LASER_ATTENTION_MIN_SEQLEN or
+            attn_param.kv_seqlen < ASCEND_LASER_ATTENTION_MIN_SEQLEN):
+        logger.debug(
+            "Warning: fall back 'ascend_laser_attention' to 'fused_attn_score' because "
+            "q_seqlen=%s or kv_seqlen=%s is smaller than %s.",
+            attn_param.q_seqlen,
+            attn_param.kv_seqlen,
+            ASCEND_LASER_ATTENTION_MIN_SEQLEN,
+        )
+        return "fused_attn_score"
+
+    return op_type
