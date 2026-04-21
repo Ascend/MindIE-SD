@@ -372,8 +372,8 @@ class TestMapper:
                 "tests/layers/flash_attn/test_attn_forward.py",
                 "tests/layers/test_custom_ops.py",
             ],
-            "csrc/ops/ascendc/op_kernel/block_sparse_attention.cpp": [
-                "tests/plugin/test_blocksparseattention.py",
+            "csrc/ops/ascendc/op_kernel/ada_block_sparse_attention.cpp": [
+                "tests/plugin/test_adablocksparseattention.py",
                 "tests/layers/flash_attn/test_sparse_attention.py",
                 "tests/layers/test_custom_ops.py",
             ],
@@ -388,8 +388,8 @@ class TestMapper:
                 "tests/layers/flash_attn/test_attention_func.py",
                 "tests/layers/test_custom_ops.py",
             ],
-            "csrc/plugin/block_sparse_attention.cpp": [
-                "tests/plugin/test_blocksparseattention.py",
+            "csrc/plugin/ada_block_sparse_attention.cpp": [
+                "tests/plugin/test_adablocksparseattention.py",
                 "tests/layers/flash_attn/test_sparse_attention.py",
                 "tests/layers/test_custom_ops.py",
             ],
@@ -581,7 +581,7 @@ class TestMapper:
         # 常见的插件测试映射
         plugin_test_mapping = {
             "la": ["test_la.py", "test_la_preprocess.py"],
-            "block_sparse_attention": ["test_blocksparseattention.py"],
+            "ada_block_sparse_attention": ["test_adablocksparseattention.py"],
             "sparse_block_estimate": ["test_sparseblockestimate.py"],
             "adalayernorm": ["test_adalayernorm.py"],
             "layernorm": ["test_layernorm.py"],

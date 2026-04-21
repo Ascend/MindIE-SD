@@ -59,7 +59,7 @@ def ada_block_sparse_attention(
     actual_seq_lengths_kv=None,
     sparse_size=128
 ):
-    out = ops.block_sparse_attention(
+    out = ops.ada_block_sparse_attention(
         query,
         key,
         value,

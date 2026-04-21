@@ -16,7 +16,7 @@
 #include "adalayernorm.h"
 #include "la_preprocess.h"
 #include "rainfusionattention.h"
-#include "block_sparse_attention.h"
+#include "ada_block_sparse_attention.h"
 #include "sparse_block_estimate.h"
 #include "layernorm.h"
 
@@ -42,7 +42,7 @@ TORCH_LIBRARY(mindiesd, m)
         int[]? actual_seq_kvlen=None, Tensor? block_table=None, str q_input_layout='TND', str kv_input_layout='TND', \
         int head_num=1, int mask_type=0, float scale=1.0, \
         int inner_precise=1, int block_size=0) -> (Tensor, Tensor)");
-    m.def("block_sparse_attention(Tensor query, Tensor key,  \
+    m.def("ada_block_sparse_attention(Tensor query, Tensor key,  \
         Tensor value, Tensor sparse_mask, Tensor sparse_count_table,  \
         str input_layout='BNSD', int sparse_size=128, int num_heads=1, \
         int num_key_value_heads=1, float scale_value=1,  \
@@ -68,7 +68,7 @@ TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m)
     m.impl("adaln_v2", &adaln_v2_mindie_sd_impl_npu);
     m.impl("la_preprocess", &la_preprocess_mindie_sd_impl_npu);
     m.impl("rainfusionattention", &rainfusionattention_mindie_sd_impl_npu);
-    m.impl("block_sparse_attention", &block_sparse_attention_impl_npu);
+    m.impl("ada_block_sparse_attention", &ada_block_sparse_attention_impl_npu);
     m.impl("sparse_block_estimate", &sparse_block_estimate_mindie_sd_impl_npu);
     m.impl("layernorm", &layernorm_mindie_sd_impl_npu);
 }

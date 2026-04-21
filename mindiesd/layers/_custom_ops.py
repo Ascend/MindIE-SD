@@ -266,7 +266,7 @@ def sparse_block_estimate_fake(
     return sparse_mask, sparse_count_table
 
 
-def block_sparse_attention(
+def ada_block_sparse_attention(
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
@@ -284,7 +284,7 @@ def block_sparse_attention(
     actual_seq_lengths: Optional[List[int]] = None,
     actual_seq_lengths_kv: Optional[List[int]] = None,
 ) -> torch.Tensor:
-    return getattr(torch.ops.mindiesd, "block_sparse_attention")(
+    return getattr(torch.ops.mindiesd, "ada_block_sparse_attention")(
         query=query,
         key=key,
         value=value,
@@ -304,8 +304,8 @@ def block_sparse_attention(
     )
 
 
-@register_ops.register_mindie_fake_op("block_sparse_attention")
-def block_sparse_attention_fake(
+@register_ops.register_mindie_fake_op("ada_block_sparse_attention")
+def ada_block_sparse_attention_fake(
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
