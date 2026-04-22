@@ -285,6 +285,12 @@ class FP8RotateQuantFA(nn.Module):
         key = torch.matmul(key, self.k_rot)
 
         layout = kwargs.get("layout", "BNSD")
+        if layout == "BNSD":
+            _, n, s, d = query.shape
+        elif layout == "BSND":
+            _, s, n, d = query.shape
+        else:
+            raise ValueError(f"Unsupported layout: {layout}, expected 'BNSD' or 'BSND'.")
 
         from ..layers.quant.block_quant import fa_block_quant_preprocess
 
@@ -295,14 +301,7 @@ class FP8RotateQuantFA(nn.Module):
         v, v_scale = fa_block_quant_preprocess(value, block_size=256,
                                                dst_type=torch_npu.float8_e4m3fn, layout=layout)
 
-        if layout == "BNSD":
-            _, n, s, d = query.shape
-        elif layout == "BSND":
-            _, s, n, d = query.shape
-        else:
-            raise ValueError(f"Unsupported layout: {layout}, expected 'BNSD' or 'BSND'.")
-    
-        x = torch_npu.npu_fused_infer_attention_score_v2(q, k, v, input_layout=layout,
+        x = torch_npu.npu_fused_infer_attention_score_v2(q, k, v, input_layout="BNSD",
                                                             num_query_heads=n,
                                                             softmax_scale=1.0 / math.sqrt(d),
                                                             pre_tokens=2147483647,
@@ -315,12 +314,12 @@ class FP8RotateQuantFA(nn.Module):
                                                             dequant_scale_value=v_scale,
                                                             out_dtype=query.dtype
                                                             )[0]
-        
+
         if x.shape[2] != s:
-            if layout == "BNSD":
-                x = x[:, :, :s, :]
-            elif layout == "BSND":
-                x = x[:, :s, :, :]
+            x = x[:, :, :s, :]
+
+        if layout == "BSND":
+            x = x.transpose(1, 2)
 
         return x
 
