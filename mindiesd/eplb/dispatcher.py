@@ -31,7 +31,7 @@ class DispatcherBase(nn.Module):
 
         self.ep_rank = ep_rank
         self.ep_size = ep_size
-        self.init_expert_map() 
+        self.init_expert_map()
 
     def init_expert_map(self):
         device_indices_map = torch.arange(
@@ -48,13 +48,13 @@ class DispatcherBase(nn.Module):
 
     def set_device_map(self, device_indices_map: torch.Tensor):
         self.device_indices_map.copy_(device_indices_map)
-    
+
     def set_local_expert_map(self, local_expert_indices_map: torch.Tensor):
         self.local_expert_indices_map.copy_(local_expert_indices_map)
 
     def get_device_indices(self, indices_expert: torch.Tensor):
         return self.device_indices_map[indices_expert]
-        
+
     def get_local_expert_indices(self, indices_expert: torch.Tensor):
         return self.local_expert_indices_map[indices_expert]
 
@@ -62,7 +62,7 @@ class DispatcherBase(nn.Module):
 class DynamicDispatcher(DispatcherBase):
     def __init__(self, routed_expert_num, weight1, weight2, ep_rank, ep_size):
         super().__init__(routed_expert_num, weight1, weight2, ep_rank, ep_size)
-        
+
         self.register_buffer('update_valid_tensor', torch.zeros(1, dtype=torch.int32))
 
         self.update_flag = False
@@ -75,12 +75,12 @@ class DynamicDispatcher(DispatcherBase):
         self.weight1_list_cpu = [t.pin_memory() for t in self.weight1_list]
         self.weight2_list_cpu = [t.pin_memory() for t in self.weight2_list]
 
-        self.local_expert_list = [self.local_expert_num * ep_rank + i for i in range(self.local_expert_num)] 
+        self.local_expert_list = [self.local_expert_num * ep_rank + i for i in range(self.local_expert_num)]
         self.expert_trans_tensor = None
-    
+
     def get_expert_trans_tensor(self):
         return self.expert_trans_tensor
-    
+
     def check_consistency(self):
         check_tensor = self.update_valid_tensor.clone()
         dist.all_reduce(check_tensor, op=dist.ReduceOp.MIN)
@@ -95,7 +95,7 @@ class DynamicDispatcher(DispatcherBase):
         local_expert_list = kwargs['local_expert_list']
         expert_trans_tensor = kwargs['expert_trans_tensor']
         layer_idx = kwargs['layer_idx']
-        
+
         with self.update_lock:
             self.module_state = {
                 'weight1': weight1,
@@ -117,11 +117,11 @@ class DynamicDispatcher(DispatcherBase):
             self.local_expert_num = len(self.module_state['weight1'])
             self.update_flag = False
         result = (
-            self.module_state['weight1'], 
-            self.module_state['weight2'], 
-            self.local_expert_num, 
-            self.device_indices_map, 
-            self.local_expert_indices_map, 
+            self.module_state['weight1'],
+            self.module_state['weight2'],
+            self.local_expert_num,
+            self.device_indices_map,
+            self.local_expert_indices_map,
             self.local_expert_list
         )
         return result

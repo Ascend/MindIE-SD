@@ -96,7 +96,7 @@ if(NOT EXISTS "${Python3_LIBRARIES}")
     message(STATUS "Python library ${Python3_LIBRARIES} not found, trying alternate suffix...")
     string(REGEX MATCH "(\\.[^.]+)$" PYLIB_NAME_EXT "${Python3_LIBRARY_NAME}")
     string(REGEX REPLACE "(\\.[^.]+)$" "" PYLIB_NAME_WE "${Python3_LIBRARY_NAME}")
-    
+
     if(PYLIB_NAME_EXT STREQUAL ".so")
         set(Python3_LIBRARIES "${Python3_LIBRARY_DIRS}/${PYLIB_NAME_WE}.a")
     elseif(PYLIB_NAME_EXT STREQUAL ".a")
@@ -113,15 +113,15 @@ if(NOT EXISTS "${Python3_LIBRARIES}")
 else()
     message(STATUS "Found Python library: ${Python3_LIBRARIES}")
 endif()
-include_directories(${Python3_INCLUDE_DIRS})  
-link_directories(${Python3_LIBRARY_DIRS})   
+include_directories(${Python3_INCLUDE_DIRS})
+link_directories(${Python3_LIBRARY_DIRS})
 
-target_link_libraries(PTAExtensionOPS PUBLIC 
-  c10 
-  torch 
-  torch_cpu 
-  torch_npu 
-  ascendcl 
+target_link_libraries(PTAExtensionOPS PUBLIC
+  c10
+  torch
+  torch_cpu
+  torch_npu
+  ascendcl
   ${Python3_LIBRARIES}
   ${ASCEND_PATH}/lib64/libascendcl.so
   ${ASCEND_PATH}/lib64/libnnopbase.so

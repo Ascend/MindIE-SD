@@ -1,4 +1,4 @@
-# 动态EPLB加速特性
+# 动态EPLB
 
 ## DyEPLB
 
@@ -17,8 +17,8 @@
 - **注意事项**
 
   - 由于DyEPLB方案是无侵入式的，对于全局同步点检查、权重更新的位置可根据模型具体实现方案和FPA算法场景自行选择
-  - all_gather下的全量EP情况可以提前全局同步点检查适配自定义算子(如torch_npu.npu_moe_init_routing_v2)，从而达到替换权重时避免破坏token连续性的目的
-  - 建议权重更新模块在两次Matmul之前，使得FPA算法收益最大化；由于涉及到H2D的数据传输，与offload方案同时使用时可能会存在带宽风险，需要自行调整两者执行时机避免相互阻塞；目前权重更新的过程中会无法避免的产生额外的专家权重显存占用，从而提高峰值显存，方案中FPA算法提供了EX模式降低专家布局改变规模解决。
+  - all_gather下的全量EP情况可以提前全局同步点检查适配自定义算子（如torch_npu.npu_moe_init_routing_v2），从而达到替换权重时避免破坏token连续性的目的
+  - 建议权重更新模块在两次Matmul之前，使得FPA算法收益最大化；由于涉及到H2D的数据传输，与offload方案同时使用时可能会存在带宽风险，需要自行调整两者执行时机避免相互阻塞；目前权重更新的过程中会无法避免的产生额外的专家权重显存占用，从而提高峰值显存，方案中FPA算法提供了EX模式降低专家布局改变规模解决该问题。
 
 <br>
 
@@ -113,7 +113,7 @@
   - weight2：DOWN权重
   - rank_in_group：ep通信组组内编号
   - ep_size：ep数
-  
+
   返回值：无
 - construct_expert_info_transfer_pool
   参数说明：
@@ -123,20 +123,20 @@
   - ip：与服务端配置的ip需一致
   - port：与服务端配置的port需一致
   - auth_key：multiprocess秘钥，默认读取环境变量EPLB_AUTH_KEY，未配置缺省为secret_key
-  
+
   返回值：无
 - get_expert_trans_tensor
   all_gather下的EP场景下使用，用于变换矩阵的获取
 - collect_expert_load
-  参数说明： 
+  参数说明：
   - expanded_indices：专家对应的token cumsum的值，可使用npu_moe_init_routing输出值作为输入
-  
+
   返回值说明：无返回值
 - check_consistency
   接口内部额外增加了一次all_gather通信，用于rank间同步状态的检查
 - update_module_weight_and_map
   参数说明：无
-  返回值说明： 
+  返回值说明：
   - weight1：UP权重
   - weight2：DOWN权重
   - local_expert_num：本地专家个数，服务冗余专家情况

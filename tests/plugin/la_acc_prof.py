@@ -148,7 +148,7 @@ def test(test_acc, configurations, output_file='acc_output_results.csv'):
 
     if not (test_acc and output_file):
         return
-    
+
     with open(output_file, mode='w', newline='') as csvfile:
         fieldnames = [
             BATCH_SIZE, HEAD_NUM, Q_SEQLEN, KV_SEQLEN, HEAD_DIM, DTYPE,

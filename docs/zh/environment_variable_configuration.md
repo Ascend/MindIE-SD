@@ -2,7 +2,7 @@
 
 安装完成后，安装路径下提供进程级环境变量设置脚本“set_env.sh“，以自动完成环境变量设置，该脚本包含如[表1 环境变量](#table_environment0001)所示中的LD_LIBRARY_PATH和ASCEND_CUSTOM_OPP_PATH，用户进程结束后自动失效。
 
-**表 1**  工环境变量<a id="table_environment0001"></a>
+**表 1**  环境变量<a id="table_environment0001"></a>
 
 |环境变量|说明|
 |--|--|

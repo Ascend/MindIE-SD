@@ -24,12 +24,12 @@ class AttentionOperateBase(ABC):
         "BSH": "forward_attn_bsh"}
     supported_layout = None
     supported_dtype = None
-    
+
     @classmethod
     @abstractmethod
     def is_supported_shape(cls, attn_param: AttentionParam) -> bool:
         pass
-    
+
     @classmethod
     def is_supported_layout(cls, layout: str) -> bool:
         if cls.supported_layout is None:
@@ -41,7 +41,7 @@ class AttentionOperateBase(ABC):
         if cls.supported_dtype is None:
             raise ParametersInvalid("The supported_dtype is not initialized in subclasses.")
         return dtype in cls.supported_dtype
-    
+
     @classmethod
     @abstractmethod
     def forward_attn_bnsd(cls, attn_param, query, key, value, mask=None, scale=None) -> None:

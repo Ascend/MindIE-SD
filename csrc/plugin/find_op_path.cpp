@@ -10,7 +10,7 @@
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PSL v2 for more details.
  */
- 
+
 #define __FILENAME__ (strrchr("/" __FILE__, '/') + 1)
 #include <ATen/Tensor.h>
 #include <torch_npu/csrc/framework/utils/CalcuOpUtil.h>

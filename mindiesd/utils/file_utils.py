@@ -75,7 +75,7 @@ def standardize_path(path: str, max_path_length=MAX_PATH_LENGTH, check_link=True
         path (str): 未标准化路径
         max_path_length (int): 文件路径最大长度
         check_link (bool): 是否校验软链接
-    Return: 
+    Return:
         path (str): 标准化后的绝对路径
     """
     check_path_is_none(path)

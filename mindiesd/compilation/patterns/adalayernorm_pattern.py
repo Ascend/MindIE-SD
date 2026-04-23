@@ -25,7 +25,7 @@ def create(dtype, epsilon=1e-6):
         @staticmethod
         def name():
             return __class__.__name__ + f"-{dtype}"
-        
+
         @staticmethod
         def inputs():
             x = torch.empty(2, 2, 2, dtype=dtype, device="meta")
@@ -37,13 +37,13 @@ def create(dtype, epsilon=1e-6):
         def pattern(x, scale, shift):
             # Reference:
             # github.com/huggingface/diffusers/blob/v0.36.0/src/diffusers/models/normalization.py#L131
-            
+
             def func(x, scale, shift):
                 ln_out = torch.nn.LayerNorm(
-                    x.shape[-1], 
+                    x.shape[-1],
                     elementwise_affine=False,
-                    eps=epsilon, 
-                    dtype=x.dtype, 
+                    eps=epsilon,
+                    dtype=x.dtype,
                     device=x.device)(x)
 
                 out = ln_out * (1 + scale[:, None]) + shift[:, None]
@@ -54,7 +54,7 @@ def create(dtype, epsilon=1e-6):
         @staticmethod
         def replacement(x, scale, shift):
             norm = torch.nn.LayerNorm(x.shape[-1], eps=epsilon, dtype=x.dtype, device=x.device)
-            
+
             def func(x, scale, shift):
                 return mindiesd.layernorm_scale_shift(
                     layernorm=norm,

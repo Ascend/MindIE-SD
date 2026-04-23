@@ -32,12 +32,12 @@ class TestLayerNorm(unittest.TestCase):
         out_npu = fast_layernorm(self.layernorm_have_param, self.x, 0).reshape(1, -1)
         origin = self.layernorm_have_param(self.x).reshape(1, -1)
         self.assertGreater(torch.cosine_similarity(out_npu, origin)[0], 2**-7)
-    
+
     def test_layernorm_non_param(self):
         out_npu = fast_layernorm(self.layernorm_non_param, self.x, 0).reshape(1, -1)
         origin = self.layernorm_non_param(self.x).reshape(1, -1)
         self.assertGreater(torch.cosine_similarity(out_npu, origin)[0], 2**-7)
-    
+
     def test_impl_mode(self):
         with self.assertRaises(ParametersInvalid):
             out = fast_layernorm(self.layernorm_have_param, self.x, 5)

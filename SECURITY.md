@@ -24,49 +24,49 @@
 - 本项目涉及Python whl包安装，为避免其他用户直接访问和修改Python代码引起代码篡改、伪造等风险，建议用户设置Python为仅安装用户可修改和使用。
 - 使用Linux自带的ASLR（Address Space Layout Randomization）和KASLR（Kernel Address Space Layout Randomization）机制进行安全编译。
     - ASLR，开启后可以增强漏洞攻击防护能力，开启方式为：
-        
+
         ```shell
         echo 2 > /proc/sys/kernel/randomize_va_space
         ```
 
     - KASLR，开启后可以增加针对内核漏洞的攻击难度，开启方式如下所示：
     1. 使用以下示例命令查看内核配置文件。
-        
+
         ```shell
         vi /boot/config-$(uname -r)
         ```
 
         如果存在以下行则表示支持KASLR。
-        
+
         ```shell
         CONFIG_RANDOMIZE_BASE=y
-        ```   
+        ```
 
     2. 打开配置文件/etc/default/grub，在GRUB_CMDLINE_LINUX_DEFAULT所在行添加kaslr参数，示例如下所示。
-        
+
         ```shell
         GRUB_CMDLINE_LINUX_DEFAULT="kaslr"
-        ```  
+        ```
 
     3. 使用以下命令更新grub配置。
-        
+
         ```shell
         sudo update-grub
-        ```  
+        ```
 
     4. 使用以下命令重启系统后即开启KASLR功能。
-       
+
         ```shell
         sudo reboot
-        ```  
+        ```
 
 - 为阻止缓冲区溢出攻击，建议使用ASLR技术，通过对堆、栈、共享库映射等线性区布局的随机化，增加攻击者预测目的地址的难度，防止攻击者直接定位攻击代码位置。该技术可作用于堆、栈、内存映射区（mmap基址、shared libraries、vdso页）。
     1. 确保当前用户拥有“/proc/sys/kernel/randomize_va_space”文件的写权限。
     2. 开启缓冲区溢出安全保护。
-        
+
         ```shell
         echo 2 >/proc/sys/kernel/randomize_va_space
-        ```  
+        ```
 
 ## 数据安全声明
 
@@ -148,15 +148,15 @@
         make -j$(nproc)
         sudo make install
         cd ..
-        ```  
-    
+        ```
+
     2. 获取PyTorch源码（克隆仓库并初始化子模块）。
 
         ```shell
         git clone https://github.com/pytorch/pytorch.git --depth=1 -b v2.9.0
         cd pytorch
         git submodule sync && git submodule update --init --depth=1 --recursive
-        ```  
+        ```
 
     3. 导出环境变量
 
@@ -165,23 +165,23 @@
         export LD_LIBRARY_PATH=$OPENSSL_ROOT_DIR/lib:$LD_LIBRARY_PATH
         export USE_GLOO=1
         export USE_GLOO_WITH_OPENSSL=1
-        ```  
+        ```
 
     4. 构建Python包
 
         ```shell
         python3 setup.py bdist_wheel
-        ```  
+        ```
 
 - 步骤2 安装Pytorch。支持TLS需要安装torch 2.1.0a0+git7bcf7da版本。
 
     ```shell
     cd dist
     pip install --ignore-installed torch-2.1.0a0+git7bcf7da-cp311-cp311-linux_aarch.whl
-    ```  
+    ```
 
 - 步骤3 编译安装Gloo
-    
+
     ```shell
     git config --global http.sslVerify false
     git clone https://github.com/pytorch/gloo.git
@@ -190,13 +190,13 @@
     make -j$(nproc)
     sudo make install
     export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-    ```  
+    ```
 
 - 步骤4 开启GLOO TLS
-    
+
     ```shell
     export GLOO_DEVICE_TRANSPORT=TCP_TLS
     export GLOO_DEVICE_TRANSPORT_TCP_TLS_PKEY=/path/to/tls_ca/server.key.pem
     export GLOO_DEVICE_TRANSPORT_TCP_TLS_CERT=/path/to/tls_ca/server.pem
     export GLOO_DEVICE_TRANSPORT_TCP_TLS_CA_FILE=/path/to/tls_ca/ca.pem
-    ```  
+    ```

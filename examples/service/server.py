@@ -32,13 +32,13 @@ class Engine:
     def __init__(self, world_size: int, args):
         if not ray.is_initialized():
             ray.init(resources={"NPU": 8})
-        
+
         num_workers = world_size
         self.workers = [
             GeneratorWorker.remote(args, rank=rank, world_size=world_size)
             for rank in range(num_workers)
         ]
-        
+
     async def generate(self, request: GeneratorRequest):
         results = ray.get([
             worker.generate.remote(request)
@@ -64,10 +64,10 @@ if __name__ == "__main__":
 
     args = _parse_args()
     args.world_size = 8
-    
+
     engine = Engine(
         world_size=args.world_size,
         args=args
     )
-    
+
     uvicorn.run(app, host="0.0.0.0", port=6000)

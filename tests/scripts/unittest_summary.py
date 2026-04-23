@@ -50,18 +50,18 @@ def file_summary(log_file):
                 total_tests += int(test_summary_match.group(1))
                 total_time += float(test_summary_match.group(2))
                 continue
-            
+
             # Parse fail summary
             fail_summary_match = fail_summary_re.search(line)
             if fail_summary_match:
                 parse_fail_summary(fail_summary_match.group(1), failure_error_count)
                 continue
-            
+
             # Parse detailed error and fail information
             error_fail_match = error_fail_re.search(line)
             if error_fail_match:
                 error_fail_details.append(line.strip())
-    
+
     # Print aggregated results
     summary = (
         f"Total tests run: {total_tests}\n"
@@ -81,4 +81,3 @@ if __name__ == "__main__":
 
     file_summary(args.file)
 
-    

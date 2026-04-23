@@ -28,10 +28,10 @@ class WeightQuantLinear(nn.Module):
         self.dtype = kwargs.get('dtype', torch.bfloat16)
         self.input_feature = in_features
         self.output_feature = out_features
-    
+
         weight_scale = get_quant_weight(weights, f'{prefix}.weight_scale').T.to(self.dtype)
         self.register_buffer("weight_scale", weight_scale, persistent=False)
-        
+
         weight = get_quant_weight(weights, f'{prefix}.weight')
         if kwargs.get('use_nz', False):
             weight = torch_npu.npu_format_cast(weight, 29).T
@@ -42,7 +42,7 @@ class WeightQuantLinear(nn.Module):
             if kwargs.get('is_w4', False):
                 weight = torch_npu.npu_convert_weight_to_int4pack(weight.npu().to(torch.int32))
         self.register_buffer("weight", weight, persistent=False)
-        
+
         if bias:
             bias = get_quant_weight(weights, f'{prefix}.bias')
             if self.dtype == torch.bfloat16:
@@ -93,7 +93,7 @@ class W8A8QuantBaseLinear(ABC, nn.Module):
             self.register_buffer("mul_scale", mul_scale, persistent=False)
         else:
             self.mul_scale = None
-    
+
     def pack_weight(self, weight, **kwargs):
         return weight
 
@@ -132,7 +132,7 @@ class W8A8QuantBaseLinear(ABC, nn.Module):
             input_scale = input_scale.repeat(1, weight.data.shape[1])
 
         self.register_buffer("input_scale", input_scale, persistent=False)
-        
+
         input_offset = get_quant_weight(weights, f'{prefix}.input_offset').to(torch.int8)
         if input_offset.dim() == 1:
             input_offset = input_offset.repeat(weight.data.shape[1])
@@ -140,7 +140,7 @@ class W8A8QuantBaseLinear(ABC, nn.Module):
             input_offset = input_offset.repeat(1, weight.data.shape[1])
 
         self.register_buffer("input_offset", input_offset, persistent=False)
-        
+
     def _init_dynamic_quant_param(self, prefix=None, weights=None, **kwargs):
         weight_scale = get_quant_weight(weights, f'{prefix}.weight_scale').squeeze().to(self.dtype)
         if self.dtype == torch.float16:
@@ -162,7 +162,7 @@ class W8A8QuantLinear(W8A8QuantBaseLinear):
         super().__init__(in_features, out_features, bias, weights, prefix, **kwargs)
 
         self.is_dynamic = kwargs.get('is_dynamic', False)
-        
+
         if not self.is_dynamic:
             self._init_static_quant_param(prefix, weights, **kwargs)
         else:
@@ -182,8 +182,8 @@ class W8A8QuantLinear(W8A8QuantBaseLinear):
                 x_int8 = torch_npu.npu_quantize(x, scales=self.input_scale,
                     zero_points=self.input_offset, dtype=torch.qint8, axis=-1)
 
-            output = torch_npu.npu_quant_matmul(x_int8, self.weight.T, self.deq_scale, 
-                                                bias=self.quant_bias, 
+            output = torch_npu.npu_quant_matmul(x_int8, self.weight.T, self.deq_scale,
+                                                bias=self.quant_bias,
                                                 output_dtype=self.dtype)
         else:
             if self.mul_scale is not None:
@@ -202,7 +202,7 @@ class W4A4QuantLinear(W8A8QuantBaseLinear):
         super().__init__(in_features, out_features, bias, weights, prefix, **kwargs)
         self.is_dynamic = True
         self._init_dynamic_quant_param(prefix, weights, **kwargs)
-    
+
     def pack_weight(self, weight, **kwargs):
         weight.data = torch_npu.npu_convert_weight_to_int4pack(weight.data.to(torch.int32).npu())
         return weight
@@ -215,7 +215,7 @@ class W4A4QuantLinear(W8A8QuantBaseLinear):
         pertoken_scale = pertoken_scale.reshape(-1, 1)
         pertoken_scale = pertoken_scale.squeeze(-1)
         output = torch_npu.npu_quant_matmul(
-            x, self.weight, self.weight_scale.data.view(-1), 
+            x, self.weight, self.weight_scale.data.view(-1),
             pertoken_scale=pertoken_scale, bias=None, output_dtype=self.dtype
             )
         return output
@@ -232,7 +232,7 @@ class W8A8TimeStepQuantLinear(W8A8QuantBaseLinear):
         self._init_dynamic_quant_param(prefix, weights, **kwargs)
         # 最后使用的是n k的权重
         self._init_static_quant_param(prefix, weights, **kwargs)
-        
+
         TimestepManager.set_timestep_idx_max(self.input_scale.shape[0])
 
     def quant_matmul(self, x):
@@ -305,7 +305,7 @@ class FP8RotateQuantFA(nn.Module):
                                                             num_query_heads=n,
                                                             softmax_scale=1.0 / math.sqrt(d),
                                                             pre_tokens=2147483647,
-                                                            next_tokens=2147483647, 
+                                                            next_tokens=2147483647,
                                                             query_quant_mode=7,
                                                             key_quant_mode=7,
                                                             value_quant_mode=7,

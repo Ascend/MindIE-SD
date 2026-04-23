@@ -39,7 +39,7 @@ def create(dtype, epsilon=1e-6):
             hidden_states = torch.empty(2, 2, 2, 2, dtype=dtype, device="meta")
             weight = torch.empty(2, dtype=dtype, device="meta")
             return [hidden_states, weight]
-        
+
         @staticmethod
         def pattern(hidden_states, weight):
             def func(hidden_states, weight):
@@ -64,14 +64,14 @@ def create(dtype, epsilon=1e-6):
                         torch.ops.aten.mul.Tensor(mul, arg1_1);  mul = arg1_1 = None
                     _to_copy: "bf16[1, 4096, 24, 128]" = \
                         torch.ops.aten._to_copy.default(mul_1,
-                            dtype = torch.bfloat16, 
-                            layout = torch.strided, 
+                            dtype = torch.bfloat16,
+                            layout = torch.strided,
                             device = device(type='npu', index=0));  mul_1 = None
                     return (_to_copy,)
                 '''
                 input_dtype = hidden_states.dtype
                 last_dim = hidden_states.dim() - 1
-                
+
                 hidden_states_fp32 = _dtype_cast_func(hidden_states, torch.float32)
                 variance = hidden_states_fp32.pow(2).mean(last_dim, keepdim=True)
 
@@ -79,12 +79,12 @@ def create(dtype, epsilon=1e-6):
                     variance_eps = torch.ops.aten.add.Scalar(variance, _eps_in_bf16)
                     hidden_states_mul = hidden_states_fp32 * torch.rsqrt(variance_eps)
                     hidden_states_mul_cast = torch.ops.aten._to_copy.default(
-                        hidden_states_mul, 
-                        dtype=input_dtype, 
-                        layout=torch.strided, 
+                        hidden_states_mul,
+                        dtype=input_dtype,
+                        layout=torch.strided,
                         device=hidden_states.device
                     )
-                        
+
                     result = hidden_states_mul_cast * weight
                 else:
                     variance_eps = torch.ops.aten.add.Scalar(variance, _eps_in_fp32)
@@ -92,14 +92,14 @@ def create(dtype, epsilon=1e-6):
                     hidden_states_mul_weight = hidden_states_mul * weight
 
                     result = torch.ops.aten._to_copy.default(
-                        hidden_states_mul_weight, 
-                        dtype=input_dtype, 
-                        layout=torch.strided, 
+                        hidden_states_mul_weight,
+                        dtype=input_dtype,
+                        layout=torch.strided,
                         device=hidden_states.device
                     )
 
                 return result
-                
+
             return func(hidden_states, weight)
 
         @staticmethod

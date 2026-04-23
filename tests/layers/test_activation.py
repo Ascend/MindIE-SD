@@ -26,11 +26,11 @@ class TestActivation(unittest.TestCase):
     def test_get_activation_layer_valid(self):
         func = get_activation_layer('gelu')
         self.assertIsInstance(func, nn.Module)
-    
+
     def test_get_activation_layer_invalid(self):
         with self.assertRaises(ParametersInvalid):
             func = get_activation_layer('test')
-    
+
     def test_gelu(self):
         tensor = torch.randn(size=(1, 2, 3)).to(f"npu:{DEVICE_ID}")
         gelu = GELU(approximate="test")

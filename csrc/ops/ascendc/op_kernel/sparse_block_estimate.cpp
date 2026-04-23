@@ -10,7 +10,7 @@
  * See the Mulan PSL v2 for more details.
  */
 
- 
+
 #include "kernel_operator.h"
 #include "sparse_block_estimate.h"
 

@@ -105,13 +105,13 @@ class TestTimeStepPolicyConfig(unittest.TestCase):
         # 注册单个时间步的策略
         self.config.register(10, "static")  # 使用"static"而不是"fixed"
         self.assertEqual(self.config.get_strategy(10), "static")
-        
+
         # 注册时间步范围
         self.config.register([20, 30, 40], "dynamic")  # 使用"dynamic"而不是"adaptive"
         self.assertEqual(self.config.get_strategy(20), "dynamic")
         self.assertEqual(self.config.get_strategy(30), "dynamic")
         self.assertEqual(self.config.get_strategy(40), "dynamic")
-        
+
         # 测试默认策略
         self.assertEqual(self.config.get_strategy(5), "dynamic")
 

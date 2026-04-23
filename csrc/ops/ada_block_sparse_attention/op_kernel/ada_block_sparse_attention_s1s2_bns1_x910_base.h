@@ -146,7 +146,7 @@ struct BSAComputeParam {
     uint32_t singleProcessSInnerSize;
     uint32_t singleProcessSInnerBmmTail;
     uint32_t mm1SingleCoreN;
-    
+
     int64_t tensorAOffset;
     int64_t tensorBCoreOffset;
     uint32_t attentionOutOffset;
@@ -155,7 +155,7 @@ struct BSAComputeParam {
     uint32_t batchNOffset;
     uint32_t multiSeqOffset;
     uint32_t multiSeqOffsetBSNDOut;
-    
+
     int32_t actualSeqLengthPerBatch = 0;
     int32_t actualSeqLengthKVPerBatch = 0;
     uint32_t sparseBlockCount;
@@ -240,7 +240,7 @@ public:
         uint32_t baseK           = bmmLocalInfo.GetValue(ii++);
         uint32_t baseN           = bmmLocalInfo.GetValue(ii++);
         uint32_t Kb              = bmmLocalInfo.GetValue(ii++);
-       
+
         // bmm1 row direction corresponds to the k axis and D axis; col direction corresponds to the N axis and S2 axis.
         // The offset of the current useN block in the single block in the S2 direction.
         uint32_t copyXthRowOfKvConcat = col * baseN;
@@ -271,7 +271,7 @@ public:
             baseColOffsetInSingle = row * baseK; // headDim
             CopyND2NZ(dst[copyFinishRowCnt * colElementCnt], src[curKvOffset], baseRowOffsetInSingle,
                 baseColOffsetInSingle, copyRowCnt, useK, Kb, 1, 0, 1, true, useN);
- 
+
             copyFinishRowCnt += copyRowCnt;
             copyXthRowOfKvConcat += copyRowCnt;
         }
@@ -313,7 +313,7 @@ public:
                 copyRowCnt = useK - copyFinishRowCnt;
             }
             curKvOffset = isLayoutBSH == 1 ? realkvS2Offset * kvHeadNum * kvD :  realkvS2Offset * kvD;
-         
+
             GlobalTensor<T> src;  // Pseudo quantization scenarios are also dequantized for fp16, and storage to GM.
             src.SetGlobalBuffer((__gm__ T *)gm);
             LocalTensor<T> dst = bMatrix.template ReinterpretCast<T>();
@@ -460,7 +460,7 @@ protected:
 
     SoftMaxTiling softmaxFlashTilingData;
     SoftMaxTiling softmaxFlashTilingDataNew;
-    
+
     uint32_t MultiHeadQ = 0;
     uint32_t MultiHeadKV = 0;
     int64_t seqListOffset = 0;
@@ -700,7 +700,7 @@ __aicore__ inline void AdaBlockSparseAttentionS1s2Bns1X910Base<BSAT>::Init(__gm_
     InitTensorSize();
 
     pipe = tPipe;
-        
+
     queryGm.SetGlobalBuffer((__gm__ T*)query);
     sparseMaskGm.SetGlobalBuffer((__gm__ int8_t*)sparseMask);
     sparseBlockCountGm.SetGlobalBuffer((__gm__  int32_t*)sparseCount);
@@ -710,7 +710,7 @@ __aicore__ inline void AdaBlockSparseAttentionS1s2Bns1X910Base<BSAT>::Init(__gm_
     currentValue = value_ptr;
     keyGm.SetGlobalBuffer((__gm__ KV_T*)currentKey);
     valueGm.SetGlobalBuffer((__gm__ KV_T*)currentValue);
-    
+
     if constexpr (USE_BLOCK_SPARE) {
         mm.SetUserDefInfo(reinterpret_cast<uint64_t>(gmTiling));
         bmm2.SetUserDefInfo(reinterpret_cast<uint64_t>(gmTiling));

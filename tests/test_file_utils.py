@@ -63,7 +63,7 @@ class TestFileUtils(unittest.TestCase):
         self.path_test_path_length = TEST_PATH
         for _ in range(file_utils.MAX_PATH_LENGTH):
             self.path_test_path_length += "/a"
-        
+
         self.path_test_link = TEST_PATH_LINK
         if not os.path.exists(self.path_test_link):
             os.symlink(os.path.join(os.getcwd(), "test_file"), self.path_test_link)
@@ -72,7 +72,7 @@ class TestFileUtils(unittest.TestCase):
 
         self.path_test_file_size = TEST_PATH_FILE_SIZE
         create_file(self.path_test_file_size)
-        
+
         self.path_test_filenum_per_dir = TEST_PATH_FILENUM_PER_DIR
         create_dir(self.path_test_filenum_per_dir)
 
@@ -84,10 +84,10 @@ class TestFileUtils(unittest.TestCase):
         self.path_test_under_dir_file = os.path.join(self.path_test_under_dir, "test.txt")
         create_file(self.path_test_under_dir_file, size=1)
         self.string_io = StringIO()
- 
+
     def enable_log_capture(self):
         """修改logger中的stream为StringIO,进行日志捕获"""
-        
+
         for handler in logger.handlers:
             if handler.__class__ is logging.StreamHandler:
                 handler.stream = self.string_io
@@ -120,7 +120,7 @@ class TestFileUtils(unittest.TestCase):
             logger.error(e)
             flag = False
         self.assertTrue(flag)
-    
+
     def test_check_file_safety(self):
         error_nums = 0
         test_path = [
@@ -174,7 +174,7 @@ class TestFileUtils(unittest.TestCase):
 
         # when file permission is 0o440, smaller than MAX_PERMISSION
         os.chmod(self.path_test_file_permission, 0o440)
-        
+
         file_utils.check_max_permission(self.path_test_file_permission, file_utils.CONFIG_FILE_PERMISSION)
         self.assertNotIn("WARNING", self.string_io.getvalue().rstrip('\n'))
         # 清空StringIO

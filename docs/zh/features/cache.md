@@ -1,9 +1,9 @@
-# 以存代算加速特性
+# 以存代算
 
 ## DitCache
 
 - **背景**
-  
+
   DiT模型在推理过程中会循环迭代T个步骤，每个步骤t都会完整的计算所有的block，而每个block都包含大量的计算操作（如下图所示）。但相邻步骤之间的latent很相似，导致推理过程中反复计算几乎相同的中间结果，造成计算冗余，推理速度慢。
 
   ![](../figures/ditcache-image-1.png)
@@ -11,13 +11,13 @@
 <br>
 
 - **原理**
-  
+
   基于相邻迭代采样步骤间、或相邻block间的激活相似性，复用模型局部特征，跳过指定的DiTBlock，减少冗余计算，实现模型推理加速。
 
 <br>
 
 - **优化方法**
-  
+
   通过搜索脚本，根据加速比计算需要跳过的最少block数，然后从起止block开始遍历，在所有可能的组合中，找到MSE损失最小的配置作为最优解。其核心优化点在于：当缓存命中时，直接复用stepN中特定block区间的计算结果到stepM，从而将整个DiTBlock序列的正向传播计算变成一次简单的张量读取操作。
 
     ![](../figures/ditcache-image-2.png)
@@ -36,7 +36,7 @@
       ```
 
   2. 在模型初始化的方法中初始化CacheConfig。
-    
+
       ```python
       config = CacheConfig(
               method="dit_block_cache",
@@ -51,13 +51,13 @@
       ```
 
   3. 在Transformer的init方法中初始化cache变量。
-    
+
       ```python
       self.cache = None
       ```
 
   4. 初始化CacheAgent并赋值给block。
-    
+
       ```python
       cache_agent = CacheAgent(config)
       # 使能ditcache
@@ -65,7 +65,7 @@
       ```
 
   5. 在Transformer的forward方法中使用apply方法使能cache进行推理，其中apply方法第一个入参为block，其余参数与原始代码保持一致
-    
+
       ```python
       for index_block, block in enumerate(self.transformer_blocks):
         # 使能ditcache
@@ -84,12 +84,12 @@
 <br>
 
 - **示例**
-  
+
   具体示例详情请参见examples下的[cache目录](../../../examples/cache/cache.py)。
 
 ---
 
-## AttentionCache 
+## AttentionCache
 
 - **背景**
 
@@ -119,13 +119,13 @@
 - **优化流程**
 
   1. 调用CacheConfig和CacheAgent接口。
-    
+
       ```python
       from mindiesd import CacheConfig, CacheAgent
       ```
 
   2. 初始化CacheConfig，对于attention_cache、block_start和block_end，可采用默认值。
-    
+
       ```python
       config = CacheConfig(
                   method="attention_cache",
@@ -138,13 +138,13 @@
       ```
 
   3. 在Transformer的block模块的init方法中初始化cache变量
-   
+
       ```python
       self.cache = None
       ```
 
   4. 初始化CacheAgent并赋值给block
-    
+
       ```python
       cache_agent = CacheAgent(config)
       # 对block里的attention部分进行cache
@@ -153,7 +153,7 @@
       ```
 
   5. 在Transformer的block模块的forward方法中使用apply方法使能cache进行推理，其中方法第一个入参为原始执行推理的方法，其余参数与原代码保持一致
-    
+
       ```python
       # 使能attention cache
       attn_output = self.cache.apply(
@@ -168,7 +168,7 @@
 
 - **FAQ**
 
-  Q：Qwen-Image-Edit-2509在开启AttentionCache后推理报错：RuntimeError: NPU out of memory. 
+  Q：Qwen-Image-Edit-2509在开启AttentionCache后推理报错：RuntimeError: NPU out of memory.
 
   A：开启AttentionCache会增加对显存的消耗，单卡显存容易不足，推荐使用八卡推理。
 

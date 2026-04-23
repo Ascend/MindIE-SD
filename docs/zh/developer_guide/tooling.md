@@ -15,7 +15,7 @@ sphinx-build -b html docs docs/_build/html
 
 ## 开发镜像构建
 
-仓库提供了基于 910B aarch64 环境的开发镜像定义文件 `docker/Dockerfile_910b_aarch64.ubuntu`。本地构建镜像可使用：
+仓库提供了基于Atlas 800I A2 推理服务器的AArch64环境的开发镜像定义文件 `docker/Dockerfile_910b_aarch64.ubuntu`。本地构建镜像可使用：
 
 ```bash
 docker build --network=host -f docker/Dockerfile_910b_aarch64.ubuntu -t mindiesd:910b-aarch64-head .

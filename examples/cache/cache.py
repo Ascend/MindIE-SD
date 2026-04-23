@@ -39,10 +39,10 @@ def custom_op(
 ):
     def decorator(func):
         return func
-    
+
     if fn is not None:
         return decorator(fn)
-    
+
     return decorator
 
 
@@ -57,12 +57,12 @@ def register_fake(
 ):
     def decorator(func):
         return func
-    
+
     if fn is not None:
         return decorator(fn)
-    
+
     return decorator
-    
+
 torch.library.custom_op = custom_op
 torch.library.register_fake = register_fake
 
@@ -84,7 +84,7 @@ def read_prompts(file_path):
 def _parse_args():
     """解析命令行参数"""
     parser = argparse.ArgumentParser(description="使用 Qwen-Image-Edit-2509 模型生成编辑图像")
-    
+
     # 模型配置
     parser.add_argument("--model_path", type=str, default="/home/weight/Qwen-Image-Edit-2509/",
                         help="模型本地路径")
@@ -92,7 +92,7 @@ def _parse_args():
                         help="模型数据类型")
     parser.add_argument("--device", type=str, default="npu", help="运行设备（npu/cuda/cpu）")
     parser.add_argument("--device_id", type=int, default=0, help="设备ID（如昇腾芯片索引）")
-    
+
     # 输入配置（多图支持，用逗号分隔路径）
     parser.add_argument("--img_paths", type=str, required=True,
                         help="输入图像路径（多图用逗号分隔，如 'img1.png,img2.png'）")
@@ -100,7 +100,7 @@ def _parse_args():
                         help="提示词文件路径（每行一个提示词）")
     parser.add_argument("--negative_prompt_file", type=str, default=None,
                         help="负面提示词文件路径（每行一个）")
-    
+
     # 推理配置
     parser.add_argument("--num_inference_steps", type=int, default=40,
                         help="推理步数")
@@ -112,7 +112,7 @@ def _parse_args():
                         help="随机种子（确保 reproducibility）")
     parser.add_argument("--num_images_per_prompt", type=int, default=1,
                         help="每个提示词生成的图像数量")
-    
+
     # 输出配置
     parser.add_argument("--output_dir", type=str, default="output_images",
                         help="生成图像保存目录")
@@ -141,21 +141,21 @@ def _parse_args():
 
 def main():
     args = _parse_args()
-    
+
     # 创建输出目录
     os.makedirs(args.output_dir, exist_ok=True)
-    
+
     # 设备配置
     device = f"{args.device}:{args.device_id}"
     torch.npu.set_device(args.device_id)  # 昇腾设备绑定
     logger.warning(f"使用设备: {device}")
-    
+
     # 数据类型配置
     torch_dtype = torch.bfloat16 if args.torch_dtype == "bfloat16" else torch.float32
-    
+
     # 加载模型
     logger.warning(f"从 {args.model_path} 加载模型...")
-    
+
     transformer = QwenImageTransformer2DModel.from_pretrained(
         os.path.join(args.model_path, 'transformer'),
         torch_dtype=torch_dtype,
@@ -177,18 +177,18 @@ def main():
         args.model_path,
         transformer=transformer,
         torch_dtype=torch_dtype,
-        device_map=None,  
-        low_cpu_mem_usage=True  
+        device_map=None,
+        low_cpu_mem_usage=True
     )
-    
+
     # VAE优化配置（避免显存溢出）
     pipeline.vae.use_slicing = True
     pipeline.vae.use_tiling = True
-    
+
     # 移动模型到目标设备
     pipeline.to(device)
     pipeline.set_progress_bar_config(disable=None)  # 显示进度条
-    
+
     # 加载并预处理输入图像（多图支持，转换为RGB）
     img_path_list = [p.strip() for p in args.img_paths.split(",")]
     images = []
@@ -214,12 +214,12 @@ def main():
         pipeline.transformer.cache_cond = CacheAgent(cache_config) if COND_CACHE else None
         pipeline.transformer.cache_uncond = CacheAgent(cache_config) if UNCOND_CACHE else None
         logger.warning("启用缓存配置")
-    
+
     # 读取提示词和负面提示词
     prompts = read_prompts(args.prompt_file)
     neg_prompts = read_prompts(args.negative_prompt_file) if args.negative_prompt_file else [" "] * len(prompts)
     logger.warning(f"加载完成 {len(prompts)} 个提示词")
-    
+
     # 推理循环
     total_time = 0.0
     for prompt_idx, (prompt, neg_prompt) in enumerate(zip(prompts, neg_prompts)):
@@ -234,19 +234,19 @@ def main():
             "num_inference_steps": args.num_inference_steps,
             "num_images_per_prompt": args.num_images_per_prompt,
         }
-        
+
         # 执行推理并计时
         torch.npu.synchronize()  # 昇腾设备同步
         start_time = time.time()
-        
+
         with torch.inference_mode():
             output = pipeline(**inputs)
-        
+
         torch.npu.synchronize()
         end_time = time.time()
         infer_time = end_time - start_time
         logger.warning(f"提示词 {prompt_idx + 1}/{len(prompts)} 推理完成，耗时: {infer_time:.2f}秒")
-        
+
         # 保存生成结果
         for img_idx, img in enumerate(output.images):
             save_path = os.path.join(
@@ -255,11 +255,11 @@ def main():
             )
             img.save(save_path)
             logger.warning(f"图像保存至: {save_path}")
-        
+
         # 累计时间（跳过前3次预热）
         if prompt_idx >= 3:
             total_time += infer_time
-    
+
     # 计算平均时间（排除前3次）
     if len(prompts) > 3:
         avg_time = total_time / (len(prompts) - 3)

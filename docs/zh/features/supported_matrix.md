@@ -1,6 +1,6 @@
 # 模型/框架支持情况
 
-当前，MindIE SD支持vLLM Omni框架、Cache Dit框架和魔乐社区等。理论上，MindIE SD支持任何多模态模型的推理加速，此处仅列出了我们支持的典型模型的特性叠加情况。
+当前，MindIE SD支持vLLM Omni框架、Cache DiT框架和魔乐社区等。理论上，MindIE SD支持任何多模态模型的推理加速，此处仅列出了我们支持的典型模型的特性叠加情况。
 
 ## 模型支持情况
 
@@ -46,7 +46,7 @@
  | Qwen-Image-Edit-2509 |  Atlas 800I A2服务器  |    ✅️    | ✅️  |  ✖️   | ✖️ |   ✅️    |
  | Z-Image-Turbo |  Atlas 800I A2服务器  |    ✅️    | ✖️  |  ✖️   | ✖️ |   ✅️    |
 
->**说明：**  
+>**说明：**
 >Atlas 800I A2服务器默认使用的版本算力313T，内存64 GB。
 
 ## Cache DiT + diffusers 特性&模型性能
@@ -59,7 +59,7 @@
 ## 魔乐社区的特性叠加&模型性能
 
  |   模型     |  硬件  | Cache   | 并行 | 稀疏FA | 量化 | 融合算子 | 说明 |
- |:----------:|:----:|:-------:|:--:|:----:|:--:|:---------:|:--:| 
+ |:----------:|:----:|:-------:|:--:|:----:|:--:|:---------:|:--:|
  | [Stable Diffusion 1.5](https://modelers.cn/models/MindIE/stable_diffusion_v1.5) |  <ul><li>Atlas 800I A2 服务器</li><li>Atlas 300I DUO 推理卡</li></ul>  |    ✅️    | ✅️  |  ✖️   | ✖️ |   ✅️    |  无  |
  | [Stable Diffusion 2.1](https://modelers.cn/models/MindIE/stable_diffusion_2.1) |  <ul><li>Atlas 800I A2 服务器</li><li>Atlas 300I DUO 推理卡</li></ul>  |    ✅️    | ✅️  |  ✖️   | ✖️ |   ✅️    |  无  |
  | [Stable Diffusion XL](https://modelers.cn/models/MindIE/stable-diffusion-xl)  |  <ul><li>Atlas 800I A2 服务器</li><li>Atlas 800I A3 超节点服务器</li><li>Atlas 300I DUO 推理卡</li></ul>  |    ✅️    | ✅️  |  ✖️   | ✖️ |   ✅️    |  无  |
@@ -90,7 +90,7 @@
  | [Z-Image](https://modelers.cn/models/MindIE/Z-Image) |  <ul><li>Atlas 800I A2 服务器</li><li>Atlas 800I A3 超节点服务器</li></ul>  |    ✖️    | ✖️  |  ✖️   | ✖️ |   ✖️    |  无  |
  | [Z-Image-Turbo](https://modelers.cn/models/MindIE/Z-Image-Turbo) |  <ul><li>Atlas 800I A2 服务器</li><li>Atlas 800I A3 超节点服务器</li></ul>  |    ✖️    | ✖️  |  ✖️   | ✖️ |   ✅️    |  无  |
 
->**说明：**  
+>[!NOTE]说明
 >
 >- Atlas 300I DUO 推理卡默认使用算力280T，内存48 GB。
 >- Atlas 800I A2 服务器默认使用算力313T，内存64 GB。

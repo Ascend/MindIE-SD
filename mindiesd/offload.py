@@ -36,7 +36,7 @@ def enable_offload(model, blocks, min_reserved_blocks_count=2):
         RuntimeError: 当 NPU 相关资源初始化失败时抛出。
         TypeError: 当输入参数类型不符合要求时抛出。
         ValueError: 当输入参数值不符合要求时抛出。
-    
+
     Note:
         1. 该函数会注册两个 hook：
            - 前向预 Hook：在 block 前向计算前，将其后续 block 的权重从 CPU 异步拷贝到 NPU。
@@ -88,17 +88,17 @@ def enable_offload(model, blocks, min_reserved_blocks_count=2):
     """
     if not isinstance(model, torch.nn.Module):
         raise TypeError(f"model must be torch.nn.Module type, current type: {type(model).__name__}")
-    
+
     if not isinstance(blocks, ModuleList):
         raise TypeError(f"blocks must be ModuleList, current type: {type(blocks).__name__}")
-    
+
     if not blocks:
         raise ValueError("blocks cannot be empty list")
-    
+
     for i, block in enumerate(blocks):
         if not isinstance(block, torch.nn.Module):
             raise TypeError(f"blocks[{i}] must be torch.nn.Module type, current type: {type(block).__name__}")
-    
+
     if not isinstance(min_reserved_blocks_count, int):
         raise TypeError(
             f"min_reserved_blocks_count must be int type, current type: "
@@ -106,7 +106,7 @@ def enable_offload(model, blocks, min_reserved_blocks_count=2):
         )
     if min_reserved_blocks_count < 0:
         raise ValueError(f"min_reserved_blocks_count must be >= 0, current value: {min_reserved_blocks_count}")
-    
+
     if min_reserved_blocks_count >= len(blocks):
         raise ValueError(
             f"min_reserved_blocks_count must be < len(blocks), "
@@ -129,7 +129,7 @@ def enable_offload(model, blocks, min_reserved_blocks_count=2):
         if to_device_index < len(model.blocks):
             with torch.npu.stream(model.h2d_stream):
                 model.h2d_stream.wait_event(forward_event)
-                
+
                 for _, p in itertools.chain(
                     model.blocks[to_device_index].named_parameters(),
                     model.blocks[to_device_index].named_buffers()
@@ -139,7 +139,7 @@ def enable_offload(model, blocks, min_reserved_blocks_count=2):
                         p.data.copy_(p.p_cpu, non_blocking=True)
                     else:
                         p.data.untyped_storage().copy_(p.p_cpu.untyped_storage(), non_blocking=True)
-                
+
                 model.event[to_device_index].record()
         torch.npu.current_stream().wait_event(model.event[block.index])
 
@@ -149,7 +149,7 @@ def enable_offload(model, blocks, min_reserved_blocks_count=2):
             forward_event = torch.npu.Event()
             with torch.npu.stream(model.d2h_stream):
                 model.d2h_stream.wait_event(forward_event)
-                
+
                 for _, p in itertools.chain(block.named_parameters(), block.named_buffers()):
                     p.data.untyped_storage().resize_(0)
         torch.npu.current_stream().wait_stream(model.d2h_stream)
@@ -169,10 +169,10 @@ def enable_offload(model, blocks, min_reserved_blocks_count=2):
                         p.p_cpu.copy_(p.data, non_blocking=True)
                     else:
                         p.p_cpu.untyped_storage().copy_(p.data.untyped_storage(), non_blocking=True)
-                    
+
                     setattr(p, "storage_size", storage_size)
                     setattr(p, "is_slice_tensor", is_slice_tensor)
-                    
+
                     p.data.untyped_storage().resize_(0)
     torch.npu.current_stream().wait_stream(model.h2d_stream)
 

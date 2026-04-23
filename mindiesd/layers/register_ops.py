@@ -23,7 +23,7 @@ MINDIE_NS = "mindiesd"  # 固定命名空间，与 torch.ops.mindiesd 对应
 
 def _load_mindie_ops_library() -> None:
     """Load the MindIE custom operator shared library.
-    
+
     Raises:
         ParametersInvalid: If the parent directory level is insufficient.
         FileNotFoundError: If the operator SO file is not found.
@@ -32,11 +32,11 @@ def _load_mindie_ops_library() -> None:
     current_path = Path(__file__).resolve()
     if len(current_path.parents) < 2:
         raise ParametersInvalid("Insufficient parent directory levels to locate plugin folder.")
-    
+
     ops_path = current_path.parents[1] / "plugin"
     ops_path = file_utils.standardize_path(str(ops_path))
     ops_file = os.path.join(ops_path, "libPTAExtensionOPS.so")
-    
+
     file_utils.check_file_safety(
         ops_file,
         permission_mode=file_utils.BINARY_FILE_PERMISSION
@@ -50,10 +50,10 @@ if is_npu_available():
 
 def check_mindie_operator_exists(op_name: str) -> bool:
     """Check if a MindIE operator is registered in PyTorch.
-    
+
     Args:
         op_name: Full name of the operator (e.g. "rope", "la")
-    
+
     Returns:
         True if the operator exists, False otherwise.
     """
@@ -67,7 +67,7 @@ def check_mindie_operator_exists(op_name: str) -> bool:
 if torch.__version__.startswith("2.1"):
     # PyTorch 2.1 使用 Library.impl
     _lib = Library(MINDIE_NS, "IMPL")
-    
+
     def _compatible_register_fake(op_name: str):
         """Compatibility wrapper for PyTorch 2.1 fake registration."""
         def decorator(fake_func: Callable):
@@ -83,7 +83,7 @@ if torch.__version__.startswith("2.1"):
                     for k, v in kwargs.items()
                 }
                 return fake_func(*args, **kwargs)
-            
+
             _lib.impl(op_name, wrapper, "Meta")
             return fake_func
         return decorator
@@ -93,7 +93,7 @@ else:
         from torch.library import register_fake as _native_register_fake
     except ImportError:
         from torch.library import impl_abstract as _native_register_fake
-    
+
     def _compatible_register_fake(op_name: str):
         """Compatibility wrapper for PyTorch 2.2+ fake registration."""
         return _native_register_fake(op_name)
@@ -102,15 +102,15 @@ else:
 
 def register_mindie_fake_op(op_name: str):
     """Decorator to register a fake implementation for a MindIE operator.
-    
+
     Usage:
         @register_mindie_fake_op("rope")
         def rope_fake(x, cos, sin, mode):
             ...
-    
+
     Args:
         op_name: Full name of the operator (e.g. "rope", "la")
-    
+
     Returns:
         Decorator function that registers the fake implementation.
     """
@@ -118,11 +118,11 @@ def register_mindie_fake_op(op_name: str):
         def dummy_decorator(func):
             return func
         return dummy_decorator
-    
+
     if not check_mindie_operator_exists(op_name):
         raise RuntimeError(
             f"MindIE operator {MINDIE_NS}::{op_name} not found! "
             "Ensure the SO library is loaded and the operator is registered with TORCH_LIBRARY."
         )
-    
+
     return _compatible_register_fake(f"{MINDIE_NS}::{op_name}")

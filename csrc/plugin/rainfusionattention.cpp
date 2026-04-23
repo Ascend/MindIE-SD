@@ -56,7 +56,7 @@ std::tuple<at::Tensor, at::Tensor> rainfusionattention_mindie_sd_impl_npu(
         at_npu::native::get_npu_format(query));
     at::Tensor softmaxLse = at_npu::native::empty_with_format({query.sizes()[0], query.sizes()[1], query.sizes()[2]},
         query.options(), at_npu::native::get_npu_format(query));
-    
+
     EXEC_NPU_CMD<RAINFUSIONATTENTIONOP_NAME>(query, key, value, select_idx, select_num_idx, blockshape,
         attenMask, actualSeqLengths, actualSeqLengthsKv, blockTable, qlayoutPtr, kvlayoutPtr,
         head_num, mask_type, scale, inner_precise, block_size, attentionOut, softmaxLse);

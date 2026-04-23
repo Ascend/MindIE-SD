@@ -39,7 +39,7 @@ class ExpertLoadCollector(nn.Module):
         expanded_buffer = torch_npu.npu_moe_compute_expert_tokens(indices_expert, self.routed_expert_num)
         with self.buffer_lock:
             self.expert_group_list.add_(expanded_buffer)
-        
+
         if self.task_transfer:
             self.task_transfer.profile_emit_task()
 

@@ -1,4 +1,3 @@
-
 # 编译特性
 
 ## 简介
@@ -43,6 +42,6 @@ class FluxSingleTransformerBlock(nn.Module):
 
 ## 问题定位技巧
 
-- 相关的定位手段与Pytorch的compile一致，[mindie_sd_backend.py](../../../mindiesd/compilation/mindie_sd_backend.py)中定义了日志模块，开启后，可以观察到pattern使能前后的图变化情况。配合torch.compile缩小范围，可以识别pattern失效的原因。
+- 相关的定位手段与PyTorch的compile一致，[mindie_sd_backend.py](../../../mindiesd/compilation/mindie_sd_backend.py)中定义了日志模块，开启后，可以观察到pattern使能前后的图变化情况。配合torch.compile缩小范围，可以识别pattern失效的原因。
 - 通过控制compile的范围，可以有效控制问题定位的范围。
-- 其他定位手段可以参考[Pytorch](https://docs.pytorch.org/docs/main/generated/torch.compile.html)官网。
+- 其他定位手段可以参考[PyTorch](https://docs.pytorch.org/docs/main/generated/torch.compile.html)官网。

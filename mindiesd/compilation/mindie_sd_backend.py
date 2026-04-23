@@ -29,10 +29,10 @@ except ImportError:
             self.passname = passname
             self.subsystem = subsystem
             self.log_url = log_url
-        
+
         def apply_gm_pass(self, pass_obj):
             pass_obj(self.gm)
-        
+
         def apply_graph_pass(self, pass_func):
             pass_func(self.gm.graph)
 

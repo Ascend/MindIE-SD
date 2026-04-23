@@ -56,10 +56,10 @@ def check_input_params(layernorm, x, scale, shift, fused):
 
 
 def layernorm_scale_shift(
-    layernorm: torch.nn.LayerNorm, 
-    x: torch.Tensor, 
-    scale: torch.Tensor, 
-    shift: torch.Tensor, 
+    layernorm: torch.nn.LayerNorm,
+    x: torch.Tensor,
+    scale: torch.Tensor,
+    shift: torch.Tensor,
     fused: bool = True) -> torch.Tensor:
     """
     Apply AdaLayerNorm to input tensors:
@@ -77,7 +77,7 @@ def layernorm_scale_shift(
         shift (torch.Tensor):
             Adaptive offset parameter. shift must be 2 or 3-dimensional.
             The supported layout: [B, H], [B, 1, H].
-        fused (bool): 
+        fused (bool):
             If fused is True, using high-performance AdaLayerNorm operator.
 
     Returns:
@@ -103,11 +103,11 @@ def layernorm_scale_shift(
             )[0]
         else:
             out = ops.adaln(
-                x=x, 
-                scale=scale, 
+                x=x,
+                scale=scale,
                 shift=shift,
-                weight=weight, 
-                bias=bias, 
+                weight=weight,
+                bias=bias,
                 epsilon=layernorm.eps
             )
     else:
@@ -116,5 +116,5 @@ def layernorm_scale_shift(
         if shift.dim() == 2:
             shift = shift[:, None]
         out = layernorm(x) * (1 + scale) + shift
-        
+
     return out

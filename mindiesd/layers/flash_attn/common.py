@@ -22,7 +22,7 @@ attn_cache = OrderedDict()
 
 def lru_cache_by_attn_param(maxsize=None):
     def decorator(func):
-        
+
         @wraps(func)
         def wrapper(attn_param, *args, **kwargs):
             cache_key = attn_param.to_hash()

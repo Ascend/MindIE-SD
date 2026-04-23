@@ -94,14 +94,14 @@ def attention_preprocess_fake(
     q_seq_len = query.shape[1] if query.dim() == 4 else query.shape[0]
     k_seq_len = key.shape[1] if key.dim() == 4 else key.shape[0]
     v_seq_len = value.shape[1] if value.dim() == 4 else value.shape[0]
-    
+
     def pad_length(length):
         return (length + align_len - 1) // align_len * align_len
-    
+
     q_padded_seq_len = pad_length(q_seq_len)
     k_padded_seq_len = pad_length(k_seq_len)
     v_padded_seq_len = pad_length(v_seq_len)
-    
+
     def create_padded_tensor(tensor, padded_seq_len):
         if tensor.dim() == 4:
             return torch.empty(
@@ -113,11 +113,11 @@ def attention_preprocess_fake(
                 [padded_seq_len, head_num, head_dim],
                 device=tensor.device, dtype=tensor.dtype
             )
-    
+
     out_query = create_padded_tensor(query, q_padded_seq_len)
     out_key = create_padded_tensor(key, k_padded_seq_len)
     out_value = create_padded_tensor(value, v_padded_seq_len)
-    
+
     return out_query, out_key, out_value
 
 
@@ -336,11 +336,11 @@ def adaln(
     epsilon: float = 1e-05
 ) -> torch.Tensor:
     return getattr(torch.ops.mindiesd, "adaln")(
-        x=x, 
-        scale=scale, 
+        x=x,
+        scale=scale,
         shift=shift,
-        weight=weight, 
-        bias=bias, 
+        weight=weight,
+        bias=bias,
         epsilon=epsilon
     )
 

@@ -217,7 +217,7 @@ class OpensoraSizeEmbedder(OpenSoraTimestepEmbedder):
     @property
     def dtype(self):
         return next(self.parameters()).dtype
-    
+
     def forward(self, s, bs):
         if s.ndim == 1:
             s = s[:, None]
@@ -356,13 +356,13 @@ class OpenSoraPositionEmbedding2D(nn.Module):
         half_dim = dim // 2
         inv_freq = 1.0 / (10000 ** (torch.arange(0, half_dim, 2).float() / half_dim))
         self.register_buffer("inv_freq", inv_freq, persistent=False)
-    
+
     def forward(self, x: torch.Tensor, h: int, w: int, scale: Optional[float] = 1.0):
         s_hw = h * w
         base_size = round(s_hw ** 0.5)
         grid_size = (h, w)
         return self._get_cached_emb(x, grid_size, base_size, scale)
-    
+
     @functools.lru_cache(maxsize=512)
     def _get_cached_emb(self, x, grid_size, base_size: Optional[int] = None, scale=1.0):
         device = x.device
@@ -382,7 +382,7 @@ class OpenSoraPositionEmbedding2D(nn.Module):
         emb_h = self._get_sin_cos_emb(grid_h)
         emb_w = self._get_sin_cos_emb(grid_w)
         return torch.concat([emb_h, emb_w], dim=-1).unsqueeze(0).to(dtype)
-    
+
     def _get_sin_cos_emb(self, t: torch.Tensor):
         out = torch.einsum("i,d->id", t, self.inv_freq)
         emb_cos = torch.cos(out)
@@ -421,7 +421,7 @@ class HunyuanDitPatchEmbed(nn.Module):
     @property
     def dtype(self):
         return next(self.parameters()).dtype
-    
+
     def forward(self, x):
         x_dtype = x.dtype
         x = self.proj(x.to(self.dtype))
@@ -488,7 +488,7 @@ class SD3PatchEmbed(nn.Module):
     @property
     def dtype(self):
         return next(self.parameters()).dtype
-    
+
     def cropped_pos_embed(self, height, width):
         """Crops positional embeddings for SD3 compatibility."""
         if self.pos_embed_max_size is None:
@@ -511,7 +511,7 @@ class SD3PatchEmbed(nn.Module):
         spatial_pos_embed = spatial_pos_embed[:, top: top + height, left: left + width, :]
         spatial_pos_embed = spatial_pos_embed.reshape(1, -1, spatial_pos_embed.shape[-1])
         return spatial_pos_embed
-    
+
     def forward(self, latent):
         if self.pos_embed_max_size is not None:
             height, width = latent.shape[-2:]
@@ -647,9 +647,9 @@ class TestEmbedding(unittest.TestCase):
             RotaryEmbedding(dim=256, freqs_for="unsupported_freqs")
         except ModelInitError:
             flag = True
-        
+
         self.assertTrue(flag)
-    
+
     @torch.no_grad()
     def test_time_step_embedder(self):
         devices = ["npu", "cpu"]
@@ -659,7 +659,7 @@ class TestEmbedding(unittest.TestCase):
             for size in sizes:
                 for max_value in max_values:
                     t = torch.randint(0, max_value + 1, (256,)).to(device)
-                    
+
                     test1_timestepembedder = HunyuanDitTimestepEmbedder(hidden_size=256).to(device)
                     test2_timestepembedder = OpenSoraTimestepEmbedder(hidden_size=256).to(device)
                     timestepembedder = TimestepEmbedder(hidden_size=256, size=size).to(device)
@@ -691,7 +691,7 @@ class TestEmbedding(unittest.TestCase):
             for size in sizes:
                 for max_value in max_values:
                     s = torch.randint(0, max_value + 1, (256,)).to(device)
-                    
+
                     test_size_embedder = OpensoraSizeEmbedder(hidden_size=256).to(device)
                     size_embedder = SizeEmbedder(hidden_size=256, size=size).to(device)
 
@@ -706,7 +706,7 @@ class TestEmbedding(unittest.TestCase):
                     embedding = embedding.reshape(1, -1).to(torch.float32)
                     result, _, max_err = data_compare(embedding.cpu(), embedding_test.cpu())
                     self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
-    
+
     @torch.no_grad()
     def test_combined_timestep_text_porj_embedder(self):
         devices = ["npu", "cpu"]

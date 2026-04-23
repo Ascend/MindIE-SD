@@ -23,8 +23,8 @@ def fa_block_quant_preprocess(input_tensor, block_size=128, dst_type=torch_npu.f
         input_tensor (torch.Tensor): Input tensor to be quantized.
         block_size (int, optional): Block size for quantization. Support 128/256/512. Default: 128.
         dst_type (torch.dtype, optional): Target quantization data type. Default: torch_npu.float8_e4m3fn.
-        **kwargs: 
-            layout (str): Tensor layout format, supports 'BNSD' (Batch, Num_heads, Seq_len, Dim) 
+        **kwargs:
+            layout (str): Tensor layout format, supports 'BNSD' (Batch, Num_heads, Seq_len, Dim)
                          or 'BSND' (Batch, Seq_len, Num_heads, Dim).
 
     Returns:

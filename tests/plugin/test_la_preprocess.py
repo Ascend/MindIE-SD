@@ -51,10 +51,10 @@ class TestLaPreprocessMindieSd(unittest.TestCase):
 
         padded_qseqlen = self._get_padded_length(self.qseqlen, self.align_len)
         padded_kvseqlen = self._get_padded_length(self.kvseqlen, self.align_len)
-        
+
         expected_query_shape = (self.batch, self.head_num, padded_qseqlen, self.head_dim)
         expected_kv_shape = (self.batch, self.head_num, padded_kvseqlen, self.head_dim)
-        
+
         self.assertEqual(out_query.shape, expected_query_shape)
         self.assertEqual(out_key.shape, expected_kv_shape)
         self.assertEqual(out_value.shape, expected_kv_shape)
@@ -63,11 +63,11 @@ class TestLaPreprocessMindieSd(unittest.TestCase):
         out_query1, out_key1, out_value1 = torch.ops.mindiesd.la_preprocess(
             self.query, self.key, self.value, self.align_len
         )
-        
+
         out_query2, out_key2, out_value2 = torch.ops.mindiesd.la_preprocess(
             self.query, self.key, self.value, self.align_len
         )
-        
+
         self.assertTrue(torch.allclose(out_query1, out_query2))
         self.assertTrue(torch.allclose(out_key1, out_key2))
         self.assertTrue(torch.allclose(out_value1, out_value2))
@@ -77,7 +77,7 @@ class TestLaPreprocessMindieSd(unittest.TestCase):
         out_query, out_key, out_value = torch.ops.mindiesd.la_preprocess(
             self.query, self.key, self.value, align_len_512
         )
-        
+
         padded_qseqlen = self._get_padded_length(self.qseqlen, align_len_512)
         expected_shape = (self.batch, self.head_num, padded_qseqlen, self.head_dim)
         self.assertEqual(out_query.shape, expected_shape)
@@ -86,11 +86,11 @@ class TestLaPreprocessMindieSd(unittest.TestCase):
         query_fp16 = self.query.to(torch.float16)
         key_fp16 = self.key.to(torch.float16)
         value_fp16 = self.value.to(torch.float16)
-        
+
         out_query, out_key, out_value = torch.ops.mindiesd.la_preprocess(
             query_fp16, key_fp16, value_fp16, self.align_len
         )
-        
+
         self.assertEqual(out_query.dtype, torch.float16)
         self.assertEqual(out_key.dtype, torch.float16)
         self.assertEqual(out_value.dtype, torch.float16)
@@ -99,13 +99,13 @@ class TestLaPreprocessMindieSd(unittest.TestCase):
         processed_query, processed_key, processed_value = torch.ops.mindiesd.la_preprocess(
             self.query, self.key, self.value, self.align_len
         )
-        
+
         scale_value = self.head_dim ** -0.5
         _, attention_out = torch.ops.mindiesd.la(
             processed_query, processed_key, processed_value, None, None, None,
             scale_value, self.head_num, "BNSD", 1.0, 2147483647, 1, True
         )
-        
+
         expected_shape = (self.batch, self.head_num, self.qseqlen, self.head_dim)
         self.assertEqual(attention_out.shape, expected_shape)
 
@@ -114,7 +114,7 @@ class TestLaPreprocessMindieSd(unittest.TestCase):
         out_query, out_key, out_value = torch.ops.mindiesd.la_preprocess(
             self.query, self.key, self.value, self.align_len
         )
-        
+
         # 算子会将bfloat16转换为float16
         self.assertEqual(out_query.dtype, torch.float16)
         self.assertEqual(out_key.dtype, torch.float16)
@@ -124,7 +124,7 @@ class TestLaPreprocessMindieSd(unittest.TestCase):
         out_query, out_key, out_value = torch.ops.mindiesd.la_preprocess(
             self.query, self.key, self.value, self.align_len
         )
-        
+
         # 验证格式转换: BSND -> BNSD
         self.assertEqual(out_query.shape[0], self.batch)  # Batch
         self.assertEqual(out_query.shape[1], self.head_num)  # Head num
@@ -134,7 +134,7 @@ class TestLaPreprocessMindieSd(unittest.TestCase):
         out_query, out_key, out_value = torch.ops.mindiesd.la_preprocess(
             self.query, self.key, self.value, self.align_len
         )
-        
+
         self.assertTrue(out_query.is_contiguous())
         self.assertTrue(out_key.is_contiguous())
         self.assertTrue(out_value.is_contiguous())
@@ -143,7 +143,7 @@ class TestLaPreprocessMindieSd(unittest.TestCase):
         out_query, out_key, out_value = torch.ops.mindiesd.la_preprocess(
             self.query, self.key, self.value, self.align_len
         )
-        
+
         self.assertEqual(out_query.device.type, 'npu')
         self.assertEqual(out_key.device.type, 'npu')
         self.assertEqual(out_value.device.type, 'npu')
@@ -152,23 +152,23 @@ class TestLaPreprocessMindieSd(unittest.TestCase):
         batch_sizes = [1, 2, 4]
         for batch in batch_sizes:
             with self.subTest(batch_size=batch):
-                query = torch.randn((batch, self.qseqlen, self.head_num, self.head_dim), 
+                query = torch.randn((batch, self.qseqlen, self.head_num, self.head_dim),
                                   device=self.device, dtype=self.dtype)
-                key = torch.randn((batch, self.kvseqlen, self.head_num, self.head_dim), 
+                key = torch.randn((batch, self.kvseqlen, self.head_num, self.head_dim),
                                 device=self.device, dtype=self.dtype)
-                value = torch.randn((batch, self.kvseqlen, self.head_num, self.head_dim), 
+                value = torch.randn((batch, self.kvseqlen, self.head_num, self.head_dim),
                                   device=self.device, dtype=self.dtype)
-                
+
                 out_query, out_key, out_value = torch.ops.mindiesd.la_preprocess(
                     query, key, value, self.align_len
                 )
-                
+
                 padded_qseqlen = self._get_padded_length(self.qseqlen, self.align_len)
                 padded_kvseqlen = self._get_padded_length(self.kvseqlen, self.align_len)
-                
+
                 expected_query_shape = (batch, self.head_num, padded_qseqlen, self.head_dim)
                 expected_kv_shape = (batch, self.head_num, padded_kvseqlen, self.head_dim)
-                
+
                 self.assertEqual(out_query.shape, expected_query_shape)
                 self.assertEqual(out_key.shape, expected_kv_shape)
                 self.assertEqual(out_value.shape, expected_kv_shape)
@@ -177,23 +177,23 @@ class TestLaPreprocessMindieSd(unittest.TestCase):
         head_nums = [4, 8, 16]
         for head_num in head_nums:
             with self.subTest(head_num=head_num):
-                query = torch.randn((self.batch, self.qseqlen, head_num, self.head_dim), 
+                query = torch.randn((self.batch, self.qseqlen, head_num, self.head_dim),
                                   device=self.device, dtype=self.dtype)
-                key = torch.randn((self.batch, self.kvseqlen, head_num, self.head_dim), 
+                key = torch.randn((self.batch, self.kvseqlen, head_num, self.head_dim),
                                 device=self.device, dtype=self.dtype)
-                value = torch.randn((self.batch, self.kvseqlen, head_num, self.head_dim), 
+                value = torch.randn((self.batch, self.kvseqlen, head_num, self.head_dim),
                                   device=self.device, dtype=self.dtype)
-                
+
                 out_query, out_key, out_value = torch.ops.mindiesd.la_preprocess(
                     query, key, value, self.align_len
                 )
-                
+
                 padded_qseqlen = self._get_padded_length(self.qseqlen, self.align_len)
                 padded_kvseqlen = self._get_padded_length(self.kvseqlen, self.align_len)
-                
+
                 expected_query_shape = (self.batch, head_num, padded_qseqlen, self.head_dim)
                 expected_kv_shape = (self.batch, head_num, padded_kvseqlen, self.head_dim)
-                
+
                 self.assertEqual(out_query.shape, expected_query_shape)
                 self.assertEqual(out_key.shape, expected_kv_shape)
                 self.assertEqual(out_value.shape, expected_kv_shape)
@@ -202,23 +202,23 @@ class TestLaPreprocessMindieSd(unittest.TestCase):
         seq_lens = [(512, 256), (1024, 512), (2048, 1024)]
         for qseqlen, kvseqlen in seq_lens:
             with self.subTest(qseqlen=qseqlen, kvseqlen=kvseqlen):
-                query = torch.randn((self.batch, qseqlen, self.head_num, self.head_dim), 
+                query = torch.randn((self.batch, qseqlen, self.head_num, self.head_dim),
                                   device=self.device, dtype=self.dtype)
-                key = torch.randn((self.batch, kvseqlen, self.head_num, self.head_dim), 
+                key = torch.randn((self.batch, kvseqlen, self.head_num, self.head_dim),
                                 device=self.device, dtype=self.dtype)
-                value = torch.randn((self.batch, kvseqlen, self.head_num, self.head_dim), 
+                value = torch.randn((self.batch, kvseqlen, self.head_num, self.head_dim),
                                   device=self.device, dtype=self.dtype)
-                
+
                 out_query, out_key, out_value = torch.ops.mindiesd.la_preprocess(
                     query, key, value, self.align_len
                 )
-                
+
                 padded_qseqlen = self._get_padded_length(qseqlen, self.align_len)
                 padded_kvseqlen = self._get_padded_length(kvseqlen, self.align_len)
-                
+
                 expected_query_shape = (self.batch, self.head_num, padded_qseqlen, self.head_dim)
                 expected_kv_shape = (self.batch, self.head_num, padded_kvseqlen, self.head_dim)
-                
+
                 self.assertEqual(out_query.shape, expected_query_shape)
                 self.assertEqual(out_key.shape, expected_kv_shape)
                 self.assertEqual(out_value.shape, expected_kv_shape)

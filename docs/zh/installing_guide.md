@@ -34,9 +34,9 @@
     | 容器名称 | `--name <container-name>`，以及 `docker exec` 中的 `<container-name>` | 替换为自定义容器名；进入容器时须与启动时 `--name` 一致。 |
     | 镜像名称 | 命令末尾 `mindie:2.2.RC1-800I-A2-py311-openeuler24.03-lts`（镜像名与标签） | 替换为本地已存在镜像的名称与标签，可通过 `docker images` 查看。 |
     | 挂载路径 | 各 `-v` 参数中**冒号左侧**的主机路径，例如 `/path-to-weights` | 按实际目录修改；昇腾驱动、固件等路径需与宿主机安装位置一致。 |
-    
+
     执行以下命令启动容器（示例命令，请结合上表修改）：
-    
+
     ```bash
     docker run -it -d --net=host --shm-size=1g \
         --name <container-name> \
@@ -51,7 +51,7 @@
         mindie:2.2.RC1-800I-A2-py311-openeuler24.03-lts bash
     ```
 
-    > **说明：** 
+    >[!NOTE]说明
     >“mindie:2.2.RC1-800I-A2-py311-openeuler24.03-lts”为镜像名称和标签，可根据实际情况修改。可在宿主机执行以下命令查看当前机器上已有的镜像：
     >
     >```bash
@@ -81,7 +81,7 @@
    2. 安装gcc、g++。
 
         若容器环境中没有gcc、g++，请用户自行安装，并导入头文件路径:
-        
+
         ```bash
         yum install gcc g++ -y
         export CPLUS_INCLUDE_PATH=/usr/include/c++/12/:/usr/include/c++/12/aarch64-openEuler-linux/:$CPLUS_INCLUDE_PATH
@@ -120,7 +120,7 @@
     - 请参见《Ascend Extension for PyTorch 软件安装指南》中的“[安装PyTorch](https://www.hiascend.com/document/detail/zh/Pytorch/720/configandinstg/instg/insg_0004.html)”章节安装PyTorch框架。
     - 请参见《Ascend Extension for PyTorch 软件安装指南》中的“[（可选）安装扩展模块](https://www.hiascend.com/document/detail/zh/Pytorch/720/configandinstg/instg/insg_0008.html)”章节安装torch_npu插件。
 
-    > **说明：** 
+    >[!NOTE]说明
     >若镜像环境中没有gcc、g++，请用户自行安装，并导入头文件路径。
     >
     >```bash
@@ -133,7 +133,7 @@
 4. 安装其他环境依赖。
 
     使用模型进行推理前需要安装对应的依赖，根据Modelers/Modelzoo仓上模型README，进行相关依赖的安装。
-   
+
     ```bash
     pip install -r requirements.txt
     ```
@@ -143,26 +143,26 @@
     MindIE SD无需单独安装，安装MindIE时，MindIE SD将自动安装。MindIE软件包安装步骤如下：
 
       1. 将获取到的MindIE软件包上传到安装环境任意路径（如/home/package）进入软件包所在路径，增加对软件包的可执行权限
-      
+
             ```bash
             cd /home/package
             chmod +x Ascend-mindie_<version>_linux-<arch>_<abi>.run
             ```
 
       2. 执行以下命令添加ascend-toolkit包的环境变量（以root用户为例，以下为root用户的默认安装路径）
-      
+
             ```bash
             source /usr/local/Ascend/ascend-toolkit/set_env.sh
             ```
 
       3. 执行以下命令安装软件（以下命令支持--install-path={path}等参数，具体参数说明请参见软件包参数说明）
-      
+
             ```bash
             ./软件包名.run --install --quiet
             ```
 
       4. 输入命令验证是否安装成功
-      
+
             ```bash
             python3 -c "import torch, torch_npu, mindiesd; print(torch_npu.npu.is_available())"
             ```

@@ -24,14 +24,14 @@ from ...utils import file_utils
 def avgpool(input_tensor, pool_size=128, input_layout='BNSD'): # BSND in,  BSND out
     if input_layout == "BSND":
         batch, seqlen, headnum, dim = input_tensor.shape
-        
+
         num_full_blocks = seqlen // pool_size
         tail_size = seqlen % pool_size
-        
+
         if num_full_blocks > 0:
             full_blocks = input_tensor[:, :num_full_blocks * pool_size, :, :]
             full_blocks_reshaped = full_blocks.view(batch, num_full_blocks, pool_size, headnum, dim)
-            full_pooled = full_blocks_reshaped.mean(dim=2) 
+            full_pooled = full_blocks_reshaped.mean(dim=2)
         else:
             full_pooled = torch.empty(0, device=input_tensor.device)
         if tail_size > 0:
@@ -63,7 +63,7 @@ def avgpool(input_tensor, pool_size=128, input_layout='BNSD'): # BSND in,  BSND 
             tail_pooled = tail_reshaped.mean(dim=3)
         else:
             tail_pooled = torch.empty(0, device=input_tensor.device)
-        
+
         if num_full_blocks > 0 and tail_size > 0:
             output_tensor = torch.cat([full_pooled, tail_pooled], dim=2)
         elif num_full_blocks > 0:
@@ -76,17 +76,17 @@ def avgpool(input_tensor, pool_size=128, input_layout='BNSD'): # BSND in,  BSND 
 def get_mask_index(mask):
     b, n, s, _ = mask.shape
     device = mask.device
-    
+
     mask_reshaped = mask.reshape(-1, s, s)
     batch_size = mask_reshaped.shape[0]
-    
+
     row_indices = torch.arange(s, device=device).expand(batch_size, s, -1)
     sorted_vals = torch.where(mask_reshaped, row_indices, 1e9).to(torch.float32)
     sorted_vals, _ = torch.sort(sorted_vals, dim=-1)
     valid_count = mask_reshaped.sum(dim=-1, keepdim=True)
     keep_mask = row_indices < valid_count
     result = torch.where(keep_mask, sorted_vals, -1)
-    
+
     pos_matrix = result.reshape(b, n, s, s).to(torch.int64)
     return pos_matrix
 
@@ -107,7 +107,7 @@ def get_blockwise_mask(
     score_matrix = torch.nn.functional.softmax(attn_scores_head, dim=-1)
 
     cols = score_matrix.shape[-1]
-    
+
     keep_len = math.ceil(cols * (1 - sparsity))
     topk_values, _ = torch.topk(score_matrix, k=keep_len, dim=-1)
     thresholds = topk_values[..., -1:]
@@ -282,7 +282,7 @@ def inv_rearrange_with_remaining(tensor, latent_shape_q, latent_shape_k, input_l
                                 hn=hq // 8, wn=wq // 8)
     return tensor_hwt
 
-                
+
 def do_tensor_rearrange_pooling(query, key, value, text_len, pool_size, latent_shape_q, latent_shape_k, input_layout):
     '''
     张量的分块重排 + 池化操作
@@ -309,7 +309,7 @@ def do_tensor_rearrange_pooling(query, key, value, text_len, pool_size, latent_s
         tensor_pool = avgpool(tensor, pool_size, input_layout)
     query_, key_, value_ = torch.chunk(tensor, 3, dim=0)
     return query_, key_, value_, tensor_pool
-   
+
 
 
 def do_tensor_inv_rearrange(tensor, text_len, latent_shape_q, latent_shape_k, input_layout):
@@ -341,7 +341,7 @@ def do_tensor_pooling(tensor, text_len):
     tensor_pool = torch.concat((tensor_t_pool, tensor_i_pool), dim=1)
     return tensor_pool
 
-  
+
 def rain_fusion_attention(
     query,
     key,
@@ -356,7 +356,7 @@ def rain_fusion_attention(
     actual_seq_lengths_kv=None,
     inner_precise=0
 ):
-    
+
     out, _ = ops.rain_fusion_attention(
         query, key, value,
         select_idx, select_num_idx,
@@ -371,5 +371,5 @@ def rain_fusion_attention(
         mask_type=0, scale=scale,
         inner_precise=inner_precise,
         block_size=0)
-    
+
     return out

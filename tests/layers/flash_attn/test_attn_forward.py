@@ -228,7 +228,7 @@ class TestAttentionFunc(unittest.TestCase):
         out_fused = attention_forward(
             query, key, value, head_first=True, opt_mode="manual", op_type="ascend_laser_attention", layout="BNSD")
         self.assertIsNotNone(out_fused)
-    
+
     def test_attn_forward_manual_env(self):
         attention_shape = [2, 16, 5120, 64]
         device = "npu"

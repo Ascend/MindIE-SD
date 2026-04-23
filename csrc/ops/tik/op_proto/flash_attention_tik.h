@@ -9,7 +9,7 @@
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PSL v2 for more details.
  */
- 
+
 #ifndef GE_OP_FLASH_ATTENTION_TIK_H
 #define GE_OP_FLASH_ATTENTION_TIK_H
 #include "graph/operator_reg.h"

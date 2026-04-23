@@ -153,7 +153,7 @@ inline void* FindFuncInCustomLib(const char* apiName)
     if (!ShouldSearchCustomLib()) {
         return nullptr;
     }
-    
+
     void* result = SearchCustomLibPaths(apiName);
     if (result == nullptr) {
         LogCustomLibNotFound(apiName);

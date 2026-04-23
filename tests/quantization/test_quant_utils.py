@@ -24,7 +24,7 @@ from mindiesd.quantization.utils import extract_constructor_args, replace_rank_s
 class MockSafeTensorHandler:
     def __init__(self, data):
         self.data = data
-        
+
     def get_tensor(self, key):
         return self.data.get(key, None)
 
@@ -67,75 +67,75 @@ class TestReplaceRankSuffix(unittest.TestCase):
         file_path = "/path/to/config.json"
         file_name = "config.json"
         new_path, new_file_name, rank = replace_rank_suffix(file_path)
-        
+
         # Should not change the path and return -1 for rank
         self.assertEqual(new_path, file_path)
         self.assertEqual(new_file_name, file_name)
         self.assertEqual(rank, -1)
-        
+
     def test_with_underscore_not_rank(self):
         # Test file with underscore but not a rank suffix
         file_path = "/path/to/config_name.json"
         file_name = "config_name.json"
         new_path, new_file_name, rank = replace_rank_suffix(file_path)
-        
+
         # Should not change the path and return -1 for rank
         self.assertEqual(new_path, file_path)
         self.assertEqual(new_file_name, file_name)
         self.assertEqual(rank, -1)
-    
+
     @patch('torch.distributed.is_initialized')
     @patch('torch.distributed.get_rank')
     def test_with_rank_suffix_dist_initialized(self, mock_get_rank, mock_is_initialized):
         # Mock distributed environment
         mock_is_initialized.return_value = True
         mock_get_rank.return_value = 3
-        
+
         # Test file with rank suffix
         file_path = "/path/to/config_0.json"
         expected_path = "/path/to/config_3.json"
         file_name = "config_3.json"
-        
+
         new_path, new_file_name, rank = replace_rank_suffix(file_path)
-        
+
         # Should change the rank suffix and return the current rank
         self.assertEqual(new_path, expected_path)
         self.assertEqual(new_file_name, file_name)
         self.assertEqual(rank, 3)
-        
+
         # Verify mocks were called
         mock_is_initialized.assert_called_once()
         mock_get_rank.assert_called_once()
-    
+
     @patch('torch.distributed.is_initialized')
     def test_with_rank_suffix_dist_not_initialized(self, mock_is_initialized):
         # Mock distributed environment not initialized
         mock_is_initialized.return_value = False
-        
+
         # Test file with rank suffix
         file_path = "/path/to/config_0.json"
-        
+
         # Should raise ConfigError
         with self.assertRaises(ConfigError):
             replace_rank_suffix(file_path)
-        
+
         # Verify mock was called
         mock_is_initialized.assert_called_once()
-    
+
     @patch('torch.distributed.is_initialized')
     @patch('torch.distributed.get_rank')
     def test_complex_path_with_rank_suffix(self, mock_get_rank, mock_is_initialized):
         # Mock distributed environment
         mock_is_initialized.return_value = True
         mock_get_rank.return_value = 2
-        
+
         # Test complex file path with rank suffix
         file_path = "/complex/path/with_underscores/config_file_1.json"
         expected_path = "/complex/path/with_underscores/config_file_2.json"
         file_name = "config_file_2.json"
-        
+
         new_path, new_file_name, rank = replace_rank_suffix(file_path)
-        
+
         # Should change the rank suffix and return the current rank
         self.assertEqual(new_path, expected_path)
         self.assertEqual(new_file_name, file_name)
@@ -151,20 +151,20 @@ class TestGetQuantWeight(unittest.TestCase):
         # 准备模拟数据
         mock_tensor = MagicMock()
         weights = {'valid_key': mock_tensor}
-        
+
         # 执行测试
         result = get_quant_weight(create_mock_handler(weights), 'valid_key')
-        
+
         # 验证调用和返回
         self.assertEqual(result, mock_tensor)
 
     def test_key_not_exist(self):
         """测试键不存在的情况"""
         invalid_weights = {'other_key': 'value'}
-        
+
         with self.assertRaises(ParametersInvalid) as cm:
             get_quant_weight(create_mock_handler(invalid_weights), 'missing_key')
-        
+
         # 验证错误信息
         self.assertIn("Critical parameter missing: missing_key.", str(cm.exception))
 

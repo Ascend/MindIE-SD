@@ -264,20 +264,20 @@ class TestAdaLayerNorm(unittest.TestCase):
         x = torch.randn([batch_size, sentence_length, hidden_size], dtype=torch.float32).to(device)
         scale = torch.randn([batch_size, hidden_size], dtype=torch.float32).to(device)
         shift = torch.randn([batch_size, hidden_size], dtype=torch.float32).to(device)
-        
+
         origin_ops_v2 = torch.ops.mindiesd.adaln_v2
         origin_ops_v1 = torch.ops.mindiesd.adaln
         ops_mock_v2 = Mock()
         ops_mock_v1 = Mock()
-        
+
         def mock_ops_v2(*args, **kwargs):
             ops_mock_v2()
             return origin_ops_v2(*args, **kwargs)
-        
+
         def mock_ops_v1(*args, **kwargs):
             ops_mock_v1()
             return origin_ops_v1(*args, **kwargs)
-        
+
         torch.ops.mindiesd.adaln_v2 = mock_ops_v2
         torch.ops.mindiesd.adaln = mock_ops_v1
         try:

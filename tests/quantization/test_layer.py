@@ -25,7 +25,7 @@ from mindiesd.quantization.utils import get_quant_weight, TimestepManager
 class MockSafeTensorHandler:
     def __init__(self, data):
         self.data = data
-        
+
     def get_tensor(self, key):
         return self.data.get(key, None)
 
@@ -202,7 +202,7 @@ class TestQuantLinearFloat16(unittest.TestCase):
         self.stream.synchronize()
         self.assertEqual(output.shape, (2, 32, out_features))
         self.assertIsInstance(output, torch.Tensor)
-    
+
     def test_quant_matmul_dynamic(self):
         in_features = 128
         out_features = 64
@@ -368,13 +368,13 @@ class TestWeightQuantLinearBFloat16(unittest.TestCase):
     def test_init(self):
         # Test initialization of WeightQuantLinear
         linear = WeightQuantLinear(
-            self.in_features, 
-            self.out_features, 
-            bias=True, 
-            weights=create_mock_handler(self.weights), 
+            self.in_features,
+            self.out_features,
+            bias=True,
+            weights=create_mock_handler(self.weights),
             prefix="0"
         ).npu()
-        
+
         # Verify attributes are set correctly
         self.assertEqual(linear.weight_scale.shape, (self.out_features,))
         self.assertEqual(linear.weight.shape, (self.in_features, self.out_features))
@@ -386,17 +386,17 @@ class TestWeightQuantLinearBFloat16(unittest.TestCase):
     def test_forward_2d(self):
         # Test forward pass with 2D input
         linear = WeightQuantLinear(
-            self.in_features, 
-            self.out_features, 
-            bias=True, 
-            weights=create_mock_handler(self.weights), 
+            self.in_features,
+            self.out_features,
+            bias=True,
+            weights=create_mock_handler(self.weights),
             prefix="0"
         ).npu()
-        
+
         x = torch.randn(32, self.in_features).to(torch.bfloat16).npu()
         output = linear(x)
         self.stream.synchronize()
-        
+
         # Verify output shape and type
         self.assertEqual(output.shape, (32, self.out_features))
         self.assertIsInstance(output, torch.Tensor)
@@ -404,17 +404,17 @@ class TestWeightQuantLinearBFloat16(unittest.TestCase):
     def test_forward_3d(self):
         # Test forward pass with 3D input (testing _flatten_linear)
         linear = WeightQuantLinear(
-            self.in_features, 
-            self.out_features, 
-            bias=True, 
-            weights=create_mock_handler(self.weights), 
+            self.in_features,
+            self.out_features,
+            bias=True,
+            weights=create_mock_handler(self.weights),
             prefix="0"
         ).npu()
-        
+
         x = torch.randn(8, 32, self.in_features).to(torch.bfloat16).npu()
         output = linear(x)
         self.stream.synchronize()
-        
+
         # Verify output shape and type
         self.assertEqual(output.shape, (8, 32, self.out_features))
         self.assertIsInstance(output, torch.Tensor)
@@ -422,17 +422,17 @@ class TestWeightQuantLinearBFloat16(unittest.TestCase):
     def test_forward_4d(self):
         # Test forward pass with 4D input (testing _flatten_linear with higher dimensions)
         linear = WeightQuantLinear(
-            self.in_features, 
-            self.out_features, 
-            bias=True, 
-            weights=create_mock_handler(self.weights), 
+            self.in_features,
+            self.out_features,
+            bias=True,
+            weights=create_mock_handler(self.weights),
             prefix="0",
         ).npu()
-        
+
         x = torch.randn(4, 8, 32, self.in_features).to(torch.bfloat16).npu()
         output = linear(x)
         self.stream.synchronize()
-        
+
         # Verify output shape and type
         self.assertEqual(output.shape, (4, 8, 32, self.out_features))
         self.assertIsInstance(output, torch.Tensor)
@@ -454,14 +454,14 @@ class TestWeightQuantLinearFloat(unittest.TestCase):
     def test_init(self):
         # Test initialization of WeightQuantLinear
         linear = WeightQuantLinear(
-            self.in_features, 
-            self.out_features, 
-            bias=True, 
-            weights=create_mock_handler(self.weights), 
+            self.in_features,
+            self.out_features,
+            bias=True,
+            weights=create_mock_handler(self.weights),
             prefix="0",
             dtype=torch.float16
         ).npu()
-        
+
         # Verify attributes are set correctly
         self.assertEqual(linear.weight_scale.shape, (self.out_features,))
         self.assertEqual(linear.weight.shape, (self.in_features, self.out_features))
@@ -473,18 +473,18 @@ class TestWeightQuantLinearFloat(unittest.TestCase):
     def test_forward_2d(self):
         # Test forward pass with 2D input
         linear = WeightQuantLinear(
-            self.in_features, 
-            self.out_features, 
-            bias=True, 
-            weights=create_mock_handler(self.weights), 
+            self.in_features,
+            self.out_features,
+            bias=True,
+            weights=create_mock_handler(self.weights),
             prefix="0",
             dtype=torch.float16
         ).npu()
-        
+
         x = torch.randn(32, self.in_features).to(torch.float16).npu()
         output = linear(x)
         self.stream.synchronize()
-        
+
         # Verify output shape and type
         self.assertEqual(output.shape, (32, self.out_features))
         self.assertIsInstance(output, torch.Tensor)
@@ -492,18 +492,18 @@ class TestWeightQuantLinearFloat(unittest.TestCase):
     def test_forward_3d(self):
         # Test forward pass with 3D input (testing _flatten_linear)
         linear = WeightQuantLinear(
-            self.in_features, 
-            self.out_features, 
-            bias=True, 
-            weights=create_mock_handler(self.weights), 
+            self.in_features,
+            self.out_features,
+            bias=True,
+            weights=create_mock_handler(self.weights),
             prefix="0",
             dtype=torch.float16
         ).npu()
-        
+
         x = torch.randn(8, 32, self.in_features).to(torch.float16).npu()
         output = linear(x)
         self.stream.synchronize()
-        
+
         # Verify output shape and type
         self.assertEqual(output.shape, (8, 32, self.out_features))
         self.assertIsInstance(output, torch.Tensor)
@@ -511,18 +511,18 @@ class TestWeightQuantLinearFloat(unittest.TestCase):
     def test_forward_4d(self):
         # Test forward pass with 4D input (testing _flatten_linear with higher dimensions)
         linear = WeightQuantLinear(
-            self.in_features, 
-            self.out_features, 
-            bias=True, 
-            weights=create_mock_handler(self.weights), 
+            self.in_features,
+            self.out_features,
+            bias=True,
+            weights=create_mock_handler(self.weights),
             prefix="0",
             dtype=torch.float16
         ).npu()
-        
+
         x = torch.randn(4, 8, 32, self.in_features).to(torch.float16).npu()
         output = linear(x)
         self.stream.synchronize()
-        
+
         # Verify output shape and type
         self.assertEqual(output.shape, (4, 8, 32, self.out_features))
         self.assertIsInstance(output, torch.Tensor)
