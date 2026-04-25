@@ -8,10 +8,21 @@
 
 ```bash
 python -m pip install -r docs/requirements-docs.txt
-sphinx-build -b html docs docs/_build/html
+# 构建中英文
+python docs/build_docs.py
+# 仅构建中文
+SPHINX_LANGUAGE=zh sphinx-build -b html -c docs docs/zh docs/_build/zh/html
+# 仅构建英文
+SPHINX_LANGUAGE=en sphinx-build -b html -c docs docs/en docs/_build/en/html
 ```
 
-生成结果位于 `docs/_build/html/`，首页文件为 `docs/_build/html/index.html`。
+本地预览方法：
+
+```bash
+python -m http.server 8080 --directory docs/_build
+```
+
+http://localhost:8080 → 自动跳转中文版
 
 ## 开发镜像构建
 
