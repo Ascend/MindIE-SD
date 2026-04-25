@@ -1,6 +1,4 @@
-# 动态EPLB
-
-## DyEPLB
+# EPLB介绍
 
 - **背景**
 

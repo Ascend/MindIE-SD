@@ -4,28 +4,26 @@ MindIE SD 是面向昇腾的 Stable Diffusion 及相关多模态生成工作负�
 
 ```{toctree}
 :maxdepth: 2
-:caption: 基础文档
+:caption: 快速开始
 
+installation
 quick_start
-installing_guide
-architecture
-environment_variable_configuration
 ```
 
 ```{toctree}
 :maxdepth: 2
-:caption: 特性介绍
+:caption: 加速特性
 
-features/cache
+architecture
+features/sparse
+features/quantization
+features/core_layers
 features/compilation
-features/DyEPLB
-features/graphics_memory_optimization
-features/others
-features/operator_fusion
 features/parallelism
-features/sparse_quantization
-features/supported_matrix
-features/Acceleration_api
+features/cache
+features/cpu_offload
+features/share_memory
+features/DyEPLB
 ```
 
 ```{toctree}
@@ -38,12 +36,11 @@ developer_guide/tooling
 ```
 
 ```{toctree}
-:maxdepth: 2
+:maxdepth: 1
 :caption: 附录
 
-appendix/api_reference
-appendix/environment_variable
-appendix/file_directory_permissions_description
+appendix/apis
+features/supported_matrix
 ```
 
 ```{toctree}
