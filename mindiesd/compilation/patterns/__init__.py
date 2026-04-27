@@ -16,9 +16,11 @@ __all__ = [
     'RopePatternGroup',
     'AdaLayerNormPatternGroup',
     'GELUPatternGroup',
+    'MulAddPatternGroup',
 ]
 
 from .rms_norm_pattern import RMSNormPatternGroup
 from .rope_pattern import RopePatternGroup
 from .adalayernorm_pattern import AdaLayerNormPatternGroup
 from .gelu_pattern import GELUPatternGroup
+from .mul_add_pattern import MulAddPatternGroup

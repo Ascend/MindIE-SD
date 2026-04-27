@@ -18,6 +18,7 @@ class FusionPatterns:
     enable_rope: bool = True
     enable_adalayernorm: bool = True
     enable_fast_gelu: bool = True
+    enable_mul_add: bool = True
 
 
 class CompilationConfig:
