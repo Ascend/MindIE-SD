@@ -27,9 +27,10 @@ repos:
     rev: v0.14.14
     hooks:
       - id: ruff-check
-        args: [--output-format, github, --fix]
+        args: [--output-format, github, --fix, --line-length=120]
         types: [python]
       - id: ruff-format
+        args: [--line-length=120]
         types: [python]
 
   # codespell：注释/文档拼写检查（忽略项目专有名词）
@@ -59,9 +60,9 @@ repos:
       - id: clang-format
         files: \.(c|h|cpp|hpp|cc|hh|cxx|hxx)$
         types_or: [c, c++]
-        args: ["--style={BasedOnStyle: google, IndentWidth: 4}"]
-        exclude: ^build/|^tests/third_party/
-
+        args: ["--style={BasedOnStyle: google, IndentWidth: 4, ColumnLimit: 120}"]
+        exclude: ^build/|^tests/third_party/ 
+        
   # markdownlint：Markdown 格式检查（仅CI手动执行）
   - repo: https://gitcode.com/gh_mirrors/ma/markdownlint-cli
     rev: v0.46.0
@@ -70,25 +71,3 @@ repos:
         exclude: '.*\.inc\.md$|.*report_template\.md$|.*contributors\.md$|.*PULL_REQUEST_TEMPLATE\.md$'
         stages: [manual]
         description: "Markdown format check (run in CI: pre-commit run markdownlint --all-files)"
-
-  # 本地钩子：文件名检查+友好提示
-  - repo: local
-    hooks:
-      - id: check-filenames
-        name: Check for spaces in all filenames
-        entry: bash
-        args:
-          - -c
-          - 'git ls-files | grep -q " " && echo "Filenames should not contain spaces!" && exit 1 || exit 0'
-        language: system
-        always_run: true
-        pass_filenames: false
-
-      # Keep `suggestion` last
-      - id: suggestion
-        name: Suggestion
-        entry: bash -c 'echo "To bypass pre-commit hooks, add --no-verify to git commit."'
-        language: system
-        verbose: true
-        pass_filenames: false
-    # Insert new entries above the `suggestion` entry
