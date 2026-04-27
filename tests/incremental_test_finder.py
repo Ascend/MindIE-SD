@@ -337,6 +337,16 @@ class TestMapper:
             ],
             "mindiesd/compilation/mindie_sd_backend.py": [
                 "tests/compilation/test_backend.py",
+                "tests/compilation/test_aclgraph_backend.py",
+                "tests/UT/compilation/test_aclgraph_config.py",
+            ],
+            "mindiesd/compilation/aclgraph_backend.py": [
+                "tests/compilation/test_aclgraph_backend.py",
+                "tests/UT/compilation/test_aclgraph_config.py",
+            ],
+            "mindiesd/compilation/compiliation_config.py": [
+                "tests/compilation/test_aclgraph_backend.py",
+                "tests/UT/compilation/test_aclgraph_config.py",
             ],
             "mindiesd/layers/norm.py": [
                 "tests/layers/test_norm.py",

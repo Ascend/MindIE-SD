@@ -24,6 +24,9 @@ class CompilationConfig:
     enable_freezing: bool = True
     graph_log_url: str | None = None
     fusion_patterns: FusionPatterns = FusionPatterns()
+    aclgraph_only: bool = False
+    aclgraph_with_compile: bool = False
+    safe_output_mode: bool = True
 
     def __init__(self):
         raise RuntimeError("CompilationConfig is a static class, do not instantiate it")
