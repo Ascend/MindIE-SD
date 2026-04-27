@@ -95,7 +95,8 @@ def get_blockwise_mask(
     qkv_pool,
     txt_len, sparsity, scale, pool_size,
     latent_shape_q, latent_shape_k,
-    input_layout):
+    input_layout, return_binary=False,
+    protect_first_frame=True):
     tq, hq, wq = latent_shape_q
     first_frame_len = hq * wq
 
@@ -118,10 +119,15 @@ def get_blockwise_mask(
         mask[:, :, -text_block_num:, :] = True
         mask[:, :, :, -text_block_num:] = True
 
-    firstframe_block_num = (first_frame_len + pool_size - 1) // pool_size
-    if firstframe_block_num > 0:
-        mask[:, :, :firstframe_block_num, :] = True
-        mask[:, :, :, :firstframe_block_num] = True
+    if protect_first_frame:
+        firstframe_block_num = (first_frame_len + pool_size - 1) // pool_size
+        if firstframe_block_num > 0:
+            mask[:, :, :firstframe_block_num, :] = True
+            mask[:, :, :, :firstframe_block_num] = True
+
+    if return_binary:
+        return mask.to(torch.int8)
+
     select_idx = get_mask_index(mask)
     select_idx = select_idx[0].transpose(0, 1)
     select_num_idx = mask[0].transpose(0, 1).sum(dim=-1)

@@ -327,6 +327,69 @@ def ada_block_sparse_attention_fake(
     return output
 
 
+def block_sparse_attention(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    block_sparse_mask: Optional[torch.Tensor] = None,
+    block_shape: List[int] = None,
+    q_input_layout: str = 'BNSD',
+    kv_input_layout: str = 'BNSD',
+    num_key_value_heads: int = 1,
+    scale_value: float = 1.0,
+    inner_precise: int = 0,
+    actual_seq_lengths: Optional[List[int]] = None,
+    actual_seq_lengths_kv: Optional[List[int]] = None,
+    softmax_lse_flag: int = 0,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    if block_shape is None:
+        block_shape = [128, 128]
+    kwargs = dict(
+        query=query,
+        key=key,
+        value=value,
+        block_sparse_mask=block_sparse_mask,
+        block_shape=block_shape,
+        q_input_layout=q_input_layout,
+        kv_input_layout=kv_input_layout,
+        num_key_value_heads=num_key_value_heads,
+        scale_value=scale_value,
+        inner_precise=inner_precise,
+        softmax_lse_flag=softmax_lse_flag,
+    )
+    if actual_seq_lengths is not None:
+        kwargs['actual_seq_lengths'] = actual_seq_lengths
+    if actual_seq_lengths_kv is not None:
+        kwargs['actual_seq_lengths_kv'] = actual_seq_lengths_kv
+    return getattr(torch.ops.mindiesd, "block_sparse_attention")(**kwargs)
+
+
+@register_ops.register_mindie_fake_op("block_sparse_attention")
+def block_sparse_attention_fake(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    block_sparse_mask: Optional[torch.Tensor] = None,
+    block_shape: List[int] = None,
+    q_input_layout: str = 'BNSD',
+    kv_input_layout: str = 'BNSD',
+    num_key_value_heads: int = 1,
+    scale_value: float = 1.0,
+    inner_precise: int = 0,
+    actual_seq_lengths: Optional[List[int]] = None,
+    actual_seq_lengths_kv: Optional[List[int]] = None,
+    softmax_lse_flag: int = 0,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    attention_out = torch.empty_like(query)
+    # softmax_lse shape: TND -> [T, N, 1], BNSD -> [B, N, S, 1]
+    if q_input_layout == "TND":
+        lse_shape = [query.shape[0], query.shape[1], 1]
+    else:
+        lse_shape = [query.shape[0], query.shape[1], query.shape[2], 1]
+    softmax_lse = torch.empty(lse_shape, device=query.device, dtype=torch.float32)
+    return attention_out, softmax_lse
+
+
 def adaln(
     x: torch.Tensor,
     scale: torch.Tensor,
