@@ -17,7 +17,6 @@ import os
 import time
 
 import torch
-
 from diffusers import (
     AutoencoderKLWan,
     UniPCMultistepScheduler,
@@ -25,8 +24,6 @@ from diffusers import (
     WanTransformer3DModel,
 )
 from transformers import AutoConfig, T5TokenizerFast, UMT5EncoderModel
-
-from . import _PhaseTimer
 
 logger = logging.getLogger(__name__)
 
@@ -44,31 +41,25 @@ def build_wan_pipeline(config_or_dir, num_layers=None, num_layers_2=None,
     npu_device = torch.device(device) if device else torch.device("npu:0")
 
     # Build Transformer (high-noise stage)
-    logger.warning("  Loading transformer config ...")
     transformer_cfg = WanTransformer3DModel.load_config(config_or_dir, subfolder="transformer")
     if num_layers is not None:
         transformer_cfg["num_layers"] = num_layers
-    logger.warning("  Building transformer (meta->to_empty) ...")
     t0 = time.time()
     transformer = _from_config_meta(WanTransformer3DModel, transformer_cfg, npu_device)
     if timer:
         timer.record_build("Transformer", time.time() - t0)
 
     # Build Transformer_2 (low-noise stage)
-    logger.warning("  Loading transformer_2 config ...")
     transformer2_cfg = WanTransformer3DModel.load_config(config_or_dir, subfolder="transformer_2")
     if num_layers_2 is not None:
         transformer2_cfg["num_layers"] = num_layers_2
-    logger.warning("  Building transformer_2 (meta->to_empty) ...")
     t0 = time.time()
     transformer_2 = _from_config_meta(WanTransformer3DModel, transformer2_cfg, npu_device)
     if timer:
         timer.record_build("Transformer_2", time.time() - t0)
 
     # VAE
-    logger.warning("  Loading VAE config ...")
     vae_cfg = AutoencoderKLWan.load_config(config_or_dir, subfolder="vae")
-    logger.warning("  Building VAE (meta->to_empty) ...")
     t0 = time.time()
     vae = _from_config_meta(AutoencoderKLWan, vae_cfg, npu_device)
     if timer:
@@ -79,20 +70,18 @@ def build_wan_pipeline(config_or_dir, num_layers=None, num_layers_2=None,
     scheduler = UniPCMultistepScheduler.from_config(scheduler_cfg)
 
     # Text encoder
-    logger.warning("  Loading text encoder config ...")
     text_encoder_cfg = AutoConfig.from_pretrained(os.path.join(config_or_dir, "text_encoder"))
-    logger.warning("  Building text encoder (meta->to_empty) ...")
+    text_encoder_cfg.num_hidden_layers = 2
     t0 = time.time()
     with torch.device("meta"):
         text_encoder = UMT5EncoderModel(text_encoder_cfg)
     text_encoder.to_empty(device=npu_device).to(torch.bfloat16)
 
     # Tokenizer
-    logger.warning("  Loading tokenizer ...")
     tokenizer = T5TokenizerFast.from_pretrained(os.path.join(config_or_dir, "tokenizer"))
 
     # Boundary ratio
-    with open(os.path.join(config_or_dir, "model_index.json"), "r") as fh:
+    with open(os.path.join(config_or_dir, "model_index.json")) as fh:
         idx = json.load(fh)
     boundary_ratio = idx.get("boundary_ratio", 0.875)
 
@@ -118,6 +107,6 @@ def build_wan_pipeline(config_or_dir, num_layers=None, num_layers_2=None,
             logger.warning("%s params: %.2f B", attr_name, n / 1e9)
     logger.warning("Total params: %.2f B", total / 1e9)
     logger.warning("Estimated memory (bfloat16): %.1f GB", total * 2 / (1024 ** 3))
-    logger.warning("Build time: %.1f s", time.time() - t_start)
+    logger.warning("Build time: %.2f ms", (time.time() - t_start) * 1000)
 
     return pipe

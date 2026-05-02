@@ -22,16 +22,14 @@ import torch_npu
 
 sys.path.append(os.path.dirname(__file__))
 from model import _PhaseTimer, check_npu, resolve_config_path
-from model.wan_model import build_wan_pipeline
+from model.flux_model import build_flux_pipeline
 
-os.environ.setdefault("PYTORCH_NPU_ALLOC_CONF", "expandable_segments:True")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
-MODEL_ID = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
+MODEL_ID = "black-forest-labs/FLUX.1-dev"
 FAST_LAYERS = 2
-HEIGHT = 720
-WIDTH = 1280
-NUM_FRAMES = 81
+HEIGHT = 1024
+WIDTH = 1024
 PROMPT = "test"
 PROFILE_DIR = "./profile_l1"
 
@@ -39,26 +37,38 @@ logger = logging.getLogger(__name__)
 
 
 def _parse_args():
-    parser = argparse.ArgumentParser(
-        description="Wan2.2 NPU dummy weight verification"
-    )
+    parser = argparse.ArgumentParser(description="FLUX.1-dev NPU dummy weight verification")
     parser.add_argument("--device_id", type=int, default=0)
     parser.add_argument("--config_cache", type=str, default=None)
-    parser.add_argument("--num_layers", type=int, default=FAST_LAYERS,
-                        help="Number of transformer layers (default: %d)" % FAST_LAYERS)
-    parser.add_argument("--compile", action="store_true",
-                        help="Enable MindieSDBackend compilation")
-    parser.add_argument("--profile", action="store_true",
-                        help="Enable NPU profiling (level=l1, with_stack=False)")
-    parser.add_argument("--skip-vae", action=argparse.BooleanOptionalAction, default=True,
-                        help="Skip VAE decode (default). Use --no-skip-vae to enable decode.")
+    parser.add_argument(
+        "--num_layers",
+        type=int,
+        default=FAST_LAYERS,
+        help="Number of transformer layers (default: %d)" % FAST_LAYERS,
+    )
+    parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="Enable MindieSDBackend compilation",
+    )
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Enable NPU profiling (level=l1, with_stack=False)",
+    )
+    parser.add_argument(
+        "--skip-vae",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Skip VAE decode (default). Use --no-skip-vae to enable decode.",
+    )
     return parser.parse_args()
 
 
 def _apply_mindie_compile(pipe):
     from mindiesd.compilation import MindieSDBackend
 
-    for attr in ("transformer", "transformer_2"):
+    for attr in ("transformer",):
         t = getattr(pipe, attr, None)
         if t is not None:
             compiled = torch.compile(t, backend=MindieSDBackend())
@@ -92,17 +102,28 @@ def main():
     device = "npu:%d" % device_id
     logger.warning("Using device: %s", device)
 
+    if "HF_TOKEN" not in os.environ:
+        logger.warning("HF_TOKEN not set. FLUX.1-dev is a gated model. Set HF_TOKEN and retry.")
+
     config_dir = resolve_config_path(args.config_cache, MODEL_ID)
     logger.warning("Using config from: %s", config_dir)
 
     timer = _PhaseTimer(device_id=device_id)
     timer.start_build()
 
-    logger.warning("Building Wan2.2 (%d blocks) ...", args.num_layers)
+    logger.warning(
+        "Building FLUX.1-dev (%d transformer layers) ...",
+        args.num_layers,
+    )
 
-    pipe = build_wan_pipeline(config_dir, num_layers=args.num_layers,
-                               num_layers_2=args.num_layers, device=device,
-                               timer=timer)
+    pipe = build_flux_pipeline(
+        config_dir,
+        num_layers=args.num_layers,
+        num_clip_layers=1,
+        num_t5_layers=2,
+        device=device,
+        timer=timer,
+    )
 
     t0 = time.time()
     pipe.to(device)
@@ -113,14 +134,19 @@ def main():
         _apply_mindie_compile(pipe)
         timer.record_build("Compilation", time.time() - t0)
 
-    timer.install(pipe)
+    timer.install(pipe, extra_attrs=["text_encoder_2"])
 
     logger.warning("Warmup (1 step):")
     with torch.no_grad():
-        pipe(prompt=PROMPT, height=HEIGHT, width=WIDTH,
-             num_frames=NUM_FRAMES, num_inference_steps=1,
-             guidance_scale=1.0,
-             output_type="latent" if args.skip_vae else "pil")
+        pipe(
+            prompt=PROMPT,
+            height=HEIGHT,
+            width=WIDTH,
+            num_inference_steps=1,
+            guidance_scale=1.0,
+            max_sequence_length=512,
+            output_type="latent" if args.skip_vae else "pil",
+        )
     torch.npu.synchronize()
     timer.capture_warmup()
 
@@ -132,10 +158,15 @@ def main():
     torch.npu.synchronize()
     t0 = time.time()
     with torch.no_grad():
-        pipe(prompt=PROMPT, height=HEIGHT, width=WIDTH,
-             num_frames=NUM_FRAMES, num_inference_steps=1,
-             guidance_scale=1.0,
-             output_type="latent" if args.skip_vae else "pil")
+        pipe(
+            prompt=PROMPT,
+            height=HEIGHT,
+            width=WIDTH,
+            num_inference_steps=1,
+            guidance_scale=1.0,
+            max_sequence_length=512,
+            output_type="latent" if args.skip_vae else "pil",
+        )
     torch.npu.synchronize()
     logger.warning("Inference time: %.2f ms", (time.time() - t0) * 1000)
     timer.capture_timed()
@@ -146,7 +177,7 @@ def main():
         logger.warning("Profile saved to %s", PROFILE_DIR)
 
     timer.summary()
-    logger.warning("Wan2.2 dummy weight verification PASSED")
+    logger.warning("FLUX.1-dev dummy weight verification PASSED")
 
 
 if __name__ == "__main__":
