@@ -109,8 +109,8 @@ attention_forward_varlen(
 | `q` | `torch.Tensor` | 是 | - | 查询张量，3D，布局为 `[T, N, D]`（T 为所有序列 token 总数） |
 | `k` | `torch.Tensor` | 是 | - | 键张量，3D，布局为 `[T, N, D]` |
 | `v` | `torch.Tensor` | 是 | - | 值张量，3D，布局为 `[T, N, D]` |
-| `cu_seqlens_q` | `list[torch.Tensor]` | 是 | - | 查询序列的累积长度，形状为 `(batch_size + 1,)`，dtype 为 `torch.int32` |
-| `cu_seqlens_k` | `list[torch.Tensor]` | 是 | - | 键序列的累积长度，形状为 `(batch_size + 1,)`，dtype 为 `torch.int32` |
+| `cu_seqlens_q` | `torch.Tensor` | 是 | - | 查询序列的累积长度，1D 张量，形状为 `(batch_size + 1,)`，dtype 为 `torch.int32` |
+| `cu_seqlens_k` | `torch.Tensor` | 是 | - | 键序列的累积长度，1D 张量，形状为 `(batch_size + 1,)`，dtype 为 `torch.int32` |
 | `max_seqlen_q` | `int` | 否 | `None` | 预留参数 |
 | `max_seqlen_k` | `int` | 否 | `None` | 预留参数 |
 | `dropout_p` | `float` | 否 | `0.0` | Dropout 概率，当前仅支持 `0.0` |
@@ -150,7 +150,7 @@ out = attention_forward_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k, causal=False
 
 ### sparse_attention
 
-稀疏注意力前向计算接口，支持 RainFusion（rf_v2）和自适应块稀疏（ada_bsa）两种稀疏策略。
+稀疏注意力前向计算接口，支持 RainFusion（rf_v2 / rf_v3）和自适应块稀疏（ada_bsa）两种稀疏策略。
 
 ```python
 from mindiesd import sparse_attention
@@ -193,7 +193,7 @@ sparse_attention(
 | `head_num` | `int` | 否 | `1` | 注意力头数量 |
 | `input_layout` | `str` | 否 | `"BNSD"` | 张量布局，支持 `"BNSD"` 或 `"BSND"` |
 | `inner_precise` | `int` | 否 | `0` | 计算精度模式，`0` 为高精度，`1` 为高性能 |
-| `sparse_type` | `str` | 否 | `None` | 稀疏类型，支持 `None`、`"rf_v2"`、`"ada_bsa"` |
+| `sparse_type` | `str` | 否 | `None` | 稀疏类型，支持 `None`、`"rf_v2"`、`"rf_v3"`、`"ada_bsa"` |
 | `txt_len` | `int` | 否 | `0` | 文本序列长度，仅在 `sparse_type="rf_v2"` 时生效 |
 | `block_size` | `int` | 否 | `128` | 块大小，当前仅支持 `128` |
 | `latent_shape_q` | `list` | 否 | `None` | 查询的潜空间形状 `[t, h, w]`，`t*h*w = qseqlen`，仅在 `sparse_type="rf_v2"` 时生效 |
@@ -436,7 +436,7 @@ out = layernorm_scale_shift(norm, x, scale, shift, fused=True)
 #### 约束条件
 
 - `x` 的最后一维必须与 `scale`、`shift` 的最后一维相等。
-- 若 `scale` 或 `shift` 为 3D 张量，则第二维必须为 1。
+- 若 `scale` 或 `shift` 为 3D 张量，则第二维必须为 1 或与 `x` 的第二维（序列长度）相等。
 
 ---
 
@@ -484,3 +484,34 @@ from mindiesd import get_activation_layer
 act = get_activation_layer("gelu-fast")
 out = act(hidden_states)
 ```
+
+---
+
+### Linear
+
+自定义线性层，与 PyTorch 的 `nn.Linear` 用法一致，但新增 `op_type` 参数用于选择底层算子实现。
+
+```python
+from mindiesd import Linear
+```
+
+#### 构造参数
+
+| 参数 | 类型 | 必选 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `in_features` | `int` | 是 | - | 输入特征维度 |
+| `out_features` | `int` | 是 | - | 输出特征维度 |
+| `bias` | `bool` | 否 | `True` | 是否使用偏置 |
+| `device` | `str` | 否 | `None` | 权重存储设备 |
+| `dtype` | `torch.dtype` | 否 | `None` | 权重数据类型 |
+| `op_type` | `str` | 否 | `"matmulv2"` | 算子类型，支持 `"matmulv2"`、`"batchmatmulv2"`、`"batchmatmulv3"` |
+
+#### forward
+
+```python
+forward(input) -> torch.Tensor
+```
+
+| 参数 | 类型 | 必选 | 说明 |
+|------|------|------|------|
+| `input` | `torch.Tensor` | 是 | 输入张量，最后一维须等于 `in_features` |

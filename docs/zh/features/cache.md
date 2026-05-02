@@ -1,5 +1,66 @@
 # 以存代算
 
+扩散模型在推理过程中会循环迭代多个时间步，每个时间步内所有 block 都参与计算，相邻步之间 latent 的相似性导致大量冗余计算。MindIE SD 提供以下缓存加速手段来减少重复计算：
+
+- **DiTCache**：在 block 粒度上缓存和复用中间结果，适用于 block 数较多的模型。
+- **AttentionCache**：在 Attention 层粒度上缓存和复用注意力计算结果，适用于 Attention 计算占比较高的模型。
+- **时间步优化**：减少或跳过扩散过程中的部分时间步，适用于需要对推理步数进行精细控制的场景。
+
+各缓存策略可以独立使用，也可以根据模型特点选择最合适的方案。
+
+- **DiTCache 优先**：block 粒度缓存，通用性最强，推荐首先尝试。
+- **AttentionCache 备选**：Attention 计算占比较高的模型可选用，比 DiTCache 粒度更细。
+- **时间步优化辅助**：与其他缓存策略互补，可在开启 DiTCache 或 AttentionCache 基础上进一步减少步数。
+
+## 接口说明
+
+### CacheConfig
+
+缓存配置类，定义缓存方法、block 数、步数等参数。
+
+```python
+from mindiesd import CacheConfig
+```
+
+| 参数 | 类型 | 必选 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `method` | `str` | 是 | - | 缓存方法，`"attention_cache"` 或 `"dit_block_cache"` |
+| `blocks_count` | `int` | 是 | - | 每步的 block 数 |
+| `steps_count` | `int` | 是 | - | 总迭代步数 |
+| `step_start` | `int` | 否 | `0` | 开始缓存步数 |
+| `step_interval` | `int` | 否 | `1` | 缓存间隔步数 |
+| `step_end` | `int` | 否 | `10000` | 结束缓存步数 |
+| `block_start` | `int` | 否 | `0` | 开始缓存 block 索引 |
+| `block_end` | `int` | 否 | `10000` | 结束缓存 block 索引 |
+
+### CacheAgent
+
+缓存代理类，根据配置管理缓存的应用。
+
+```python
+from mindiesd import CacheAgent
+```
+
+**构造参数**：
+
+| 参数 | 类型 | 必选 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `config` | `CacheConfig` | 是 | - | 缓存配置对象 |
+
+**apply 方法**：
+
+```python
+apply(function: callable, *args, **kwargs) -> Any
+```
+
+| 参数 | 类型 | 必选 | 说明 |
+|------|------|------|------|
+| `function` | `callable` | 是 | 要执行的函数（block 或 attn 模块） |
+| `*args` | - | 否 | 函数位置参数 |
+| `**kwargs` | - | 否 | 函数关键字参数 |
+
+---
+
 ## DitCache
 
 - **背景**

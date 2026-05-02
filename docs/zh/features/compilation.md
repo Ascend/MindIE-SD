@@ -44,15 +44,40 @@ class FluxSingleTransformerBlock(nn.Module):
 ```python
 from mindiesd.compilation import CompilationConfig
 
-CompilationConfig.fusion_patterns.enable_rms_norm = False   # 关闭 RMSNorm 融合
-CompilationConfig.fusion_patterns.enable_rope = False       # 关闭 RoPE 融合
+CompilationConfig.fusion_patterns.enable_rms_norm = False      # 关闭 RMSNorm 融合
+CompilationConfig.fusion_patterns.enable_rope = False          # 关闭 RoPE 融合
+CompilationConfig.fusion_patterns.enable_adalayernorm = False  # 关闭 adaLN 融合
+CompilationConfig.fusion_patterns.enable_fast_gelu = False     # 关闭 fastGelu 融合
+CompilationConfig.fusion_patterns.enable_mul_add = False       # 关闭 Mul+Add 融合
+ ```
+
+各融合算子的详细 API 说明请参见 [core_layers.md 中的融合算子章节](core_layers.md#融合算子)。
+
+### 接口说明
+
+#### MindieSDBackend
+
+```python
+from mindiesd.compilation import MindieSDBackend
 ```
 
-### 支持度
+作为 `torch.compile` 的 `backend` 参数传入，自动启用 Pattern 融合和 ACLGraph 加速。
 
-|     模型     | RMSNorm | Rope | fastGelu | adaLN |
-|:----------:|:------: |:---: |:---: |:-----:|
-| flux.1-dev | ✅      | ✅   | ✅️ |  ✅️   |
+#### CompilationConfig
+
+```python
+from mindiesd.compilation import CompilationConfig
+```
+
+Pattern 融合的开关通过 `fusion_patterns` 控制：
+
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `fusion_patterns.enable_rms_norm` | `True` | RMSNorm 融合 |
+| `fusion_patterns.enable_rope` | `True` | RoPE 融合 |
+| `fusion_patterns.enable_adalayernorm` | `True` | AdaLayerNorm 融合 |
+| `fusion_patterns.enable_fast_gelu` | `True` | fastGELU 融合 |
+| `fusion_patterns.enable_mul_add` | `True` | Mul+Add 融合 |
 
 ## ACLGraph 加速
 
@@ -60,12 +85,15 @@ CompilationConfig.fusion_patterns.enable_rope = False       # 关闭 RoPE 融合
 
 ### 配置方式
 
+`aclgraph_only` 与 `aclgraph_with_compile` 互斥，同时开启时 `aclgraph_with_compile` 优先级更高。
+
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
 | `aclgraph_only` | `False` | 仅 ACLGraph，跳过 Pattern 融合 |
 | `aclgraph_with_compile` | `False` | 先 Pattern 融合，再捕获为 ACLGraph |
-
-两者互斥，同时开启时 `aclgraph_with_compile` 优先级更高。
+| `enable_freezing` | `True` | 编译前是否执行常量折叠 |
+| `safe_output_mode` | `True` | ACLGraph replay 时是否 clone 输出 |
+| `graph_log_url` | `None` | 调试用 graph transform 日志 URL |
 
 ### 使用示例
 
