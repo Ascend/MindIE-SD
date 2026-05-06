@@ -29,14 +29,16 @@ except ImportError:
             self.passname = passname
             self.subsystem = subsystem
             self.log_url = log_url
-        
+
         def apply_gm_pass(self, pass_obj):
             pass_obj(self.gm)
-        
+
         def apply_graph_pass(self, pass_func):
             pass_func(self.gm.graph)
 
 from .compiliation_config import CompilationConfig
+
+from .aclgraph_backend import npu_graph_available, create_aclgraph_backend
 
 from .passes import activate_pattern_once
 from .passes.register_pattern_to_pass import patterns
@@ -77,8 +79,16 @@ class MindieSDBackend:
         Returns:
             fx.Graph: The processed FX graph with custom operation fusing applied.
         """
-        graph = self.compile(graph, example_inputs)
-        return graph
+        if CompilationConfig.aclgraph_with_compile and npu_graph_available:
+            graph = self.compile(graph, example_inputs)
+            return create_aclgraph_backend()(graph, example_inputs)
+        if CompilationConfig.aclgraph_only and npu_graph_available:
+            logger.info("Using ACLGraph backend with torch.npu.graph")
+            return create_aclgraph_backend()(graph, example_inputs)
+        else:
+            # Use default backend
+            graph = self.compile(graph, example_inputs)
+            return graph
 
     @classmethod
     def apply_redundant_node_elimination_pass(cls, graph: fx.GraphModule, inputs):

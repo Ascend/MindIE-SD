@@ -1,0 +1,34 @@
+<div class="language-switcher__container dropdown">
+  <button type="button"
+    class="version-switcher__button btn btn-sm dropdown-toggle"
+    data-bs-toggle="dropdown"
+    aria-haspopup="listbox"
+    aria-label="Language switcher">
+    {{ current_language_name }}
+    <span class="caret"></span>
+  </button>
+  <div class="version-switcher__menu dropdown-menu list-group-flush py-0"
+    role="listbox">
+    {% for item in language_switcher_items %}
+    <a class="dropdown-item list-group-item list-group-item-action py-1 language-switch-link"
+       href="{{ item.url }}" data-lang-path="{{ item.lang_path }}" role="option">
+      <span>{{ item.name }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+<script>
+(function() {
+  var currentPath = window.location.pathname;
+  var segments = currentPath.split('/');
+  var htmlIdx = segments.indexOf('html');
+  if (htmlIdx < 0) return;
+  var pagePath = segments.slice(htmlIdx + 1).join('/');
+  var links = document.querySelectorAll('.language-switch-link');
+  links.forEach(function(link) {
+    var langPath = link.getAttribute('data-lang-path');
+    var base = segments.slice(0, htmlIdx - 1).join('/');
+    link.href = base + '/' + langPath + '/html/' + (pagePath || 'index.html');
+  });
+})();
+</script>

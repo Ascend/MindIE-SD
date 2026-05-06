@@ -28,25 +28,25 @@ class TestEnvs(unittest.TestCase):
         mindie_log_level = " sd:info; debug"
         log_level = parser_env_to_dict(mindie_log_level, VALID_LOG_LEVELS)
         self.assertEqual(log_level.get("sd"), "info")
-    
+
     def test_parser_env_to_dict_case2(self):
         """测试正常配置"sd : info   "，解析sd的日志等级功能"""
         mindie_log_level = "sd : info   "
         log_level = parser_env_to_dict(mindie_log_level, VALID_LOG_LEVELS)
         self.assertEqual(log_level.get("sd"), "info")
-    
+
     def test_parser_env_to_dict_case3(self):
         """测试重复配置"sd : info;sd:debug "，解析sd的日志等级功能"""
         mindie_log_level = "sd : info;sd:debug "
         log_level = parser_env_to_dict(mindie_log_level, VALID_LOG_LEVELS)
         self.assertEqual(log_level.get("sd"), "debug")
-    
+
     def test_parser_env_to_dict_invalid_case1(self):
         """测试异常配置等级为不支持字符，字符串解析过滤功能"""
         mindie_log_level = "sd : dinfo   "
         log_level = parser_env_to_dict(mindie_log_level, VALID_LOG_LEVELS)
         self.assertIsNone(log_level.get("sd", None))
-    
+
     def test_parser_env_to_dict_invalid_case2(self):
         """测试异常配置等级为不支持字符，字符串解析过滤功能"""
         mindie_log_level = "dinfo   "
@@ -55,7 +55,7 @@ class TestEnvs(unittest.TestCase):
 
     def test_valid_env_log_level(self):
         """测试正常log_level配置"""
-        
+
         test_envs = ["critical", "debug", "error", "info", "warn"]
         for log_level in test_envs:
             os.environ[MINDIE_LOG_LEVEL] = log_level
@@ -69,7 +69,7 @@ class TestEnvs(unittest.TestCase):
             os.environ[MINDIE_LOG_LEVEL] = "other:" + log_level
             env = EnvVar(os.getenv(MINDIE_LOG_LEVEL, ""))
             self.assertEqual(env.component_log_level, "info")
-    
+
     def test_valid_env_disable_log_level(self):
         """测试日志级别设置为null关掉所有日志"""
         disable_log_level = "null"

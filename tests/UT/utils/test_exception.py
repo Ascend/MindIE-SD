@@ -24,43 +24,43 @@ class TestException(unittest.TestCase):
         parameters_invalid = getattr(lib, 'ParametersInvalid')
         value_string = "Test parameter exception!"
 
-        with self.assertRaises(Exception, msg="not raise") as context: 
+        with self.assertRaises(Exception, msg="not raise") as context:
             raise parameters_invalid(value_string)
         self.assertEqual(str(context.exception), "[MIE06E000001] Parameters invalid. " + value_string)
-    
+
     def test_config_exception(self):
         lib = importlib.import_module('mindiesd.utils')
         config_error = getattr(lib, 'ConfigError')
         value_string = "Test config exception!"
 
-        with self.assertRaises(Exception, msg="not raise") as context: 
+        with self.assertRaises(Exception, msg="not raise") as context:
             raise config_error(value_string)
         self.assertEqual(str(context.exception), "[MIE06E000002] Config parameter err. " + value_string)
-    
+
     def test_torch_exception(self):
         lib = importlib.import_module('mindiesd.utils')
         torch_error = getattr(lib, 'TorchError')
         value_string = "Test torch exception!"
 
-        with self.assertRaises(Exception, msg="not raise") as context: 
+        with self.assertRaises(Exception, msg="not raise") as context:
             raise torch_error(value_string)
         self.assertEqual(str(context.exception), "[MIE06E000003] Torch exec err. " + value_string)
-    
+
     def test_model_init_exception(self):
         lib = importlib.import_module('mindiesd.utils')
         modelinit_error = getattr(lib, 'ModelInitError')
         value_string = "Test model init exception!"
 
-        with self.assertRaises(Exception, msg="not raise") as context: 
+        with self.assertRaises(Exception, msg="not raise") as context:
             raise modelinit_error(value_string)
         self.assertEqual(str(context.exception), "[MIE06E000004] Model init err. " + value_string)
-    
+
     def test_model_exec_exception(self):
         lib = importlib.import_module('mindiesd.utils')
         modelexec_error = getattr(lib, 'ModelExecError')
         value_string = "Test model exec exception!"
 
-        with self.assertRaises(Exception, msg="not raise") as context: 
+        with self.assertRaises(Exception, msg="not raise") as context:
             raise modelexec_error(value_string)
         self.assertEqual(str(context.exception), "[MIE06E000005] Model exec err. " + value_string)
 

@@ -41,7 +41,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --help           Show this help message and exit."
             exit 0
             ;;
-        *)            
+        *)
             echo "Unknown option: $1"
             echo "Use --help for usage information."
             exit 1

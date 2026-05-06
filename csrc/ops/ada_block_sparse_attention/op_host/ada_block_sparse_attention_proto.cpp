@@ -63,7 +63,7 @@ static ge::graphStatus InferShapeAdaBlockSparseAttention(gert::InferShapeContext
     }
 
     *attentionOutShape = *queryShape;
-    
+
     // UNKNOWN DIM
     if (((queryShape->GetDimNum() == BSA_DIM_NUMS_1) && (queryShape->GetDim(BSA_LAYOUT_DIM0) == BSA_UNKNOWN_DIMS)) ||
         ((valueShape->GetDimNum() == BSA_DIM_NUMS_1) && (valueShape->GetDim(BSA_LAYOUT_DIM0) == BSA_UNKNOWN_DIMS))) {

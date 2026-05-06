@@ -77,7 +77,7 @@ class GeneratorWorker:
         os.environ["TASK_QUEUE_ENABLE"] = "2"
         os.environ["CPU_AFFINITY_CONF"] = "1"
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
-                
+
         self.rank = rank
         self.world_size = world_size
         self._init_logging(rank)
@@ -140,7 +140,7 @@ class GeneratorWorker:
         if request.image is not None:
             img = Image.open(request.image).convert("RGB")
             logging.info(f"Input image: {request.image}")
-        
+
         rainfusion_config = {
             "sparsity": self.sparsity,
             "skip_timesteps": self.sparse_start_step,
@@ -348,9 +348,9 @@ class GeneratorWorker:
                 world_size=self.world_size)
 
         need_parallel_env = (
-            args.cfg_size > 1 or 
-            args.ulysses_size > 1 or 
-            args.ring_size > 1 or 
+            args.cfg_size > 1 or
+            args.ulysses_size > 1 or
+            args.ring_size > 1 or
             args.tp_size > 1
         )
         if need_parallel_env:

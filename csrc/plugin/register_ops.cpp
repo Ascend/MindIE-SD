@@ -19,6 +19,7 @@
 #include "ada_block_sparse_attention.h"
 #include "sparse_block_estimate.h"
 #include "layernorm.h"
+#include "block_sparse_attention.h"
 
 
 TORCH_LIBRARY(mindiesd, m)
@@ -58,6 +59,12 @@ TORCH_LIBRARY(mindiesd, m)
         -> (Tensor, Tensor)");
     m.def("layernorm(Tensor input, int[] normalized_shape, Tensor? weight=None, Tensor? bias=None, float eps=1e-05, \
         int impl_mode=0) -> (Tensor, Tensor, Tensor)");
+    m.def("block_sparse_attention(Tensor query, Tensor key, Tensor value, \
+        Tensor? block_sparse_mask=None, int[] block_shape=[128,128], \
+        str q_input_layout='BNSD', str kv_input_layout='BNSD', \
+        int num_key_value_heads=1, float scale_value=1.0, int inner_precise=0, \
+        int[]? actual_seq_lengths=None, int[]? actual_seq_lengths_kv=None, \
+        int softmax_lse_flag=0) -> (Tensor, Tensor)");
 }
 
 
@@ -71,4 +78,5 @@ TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m)
     m.impl("ada_block_sparse_attention", &ada_block_sparse_attention_impl_npu);
     m.impl("sparse_block_estimate", &sparse_block_estimate_mindie_sd_impl_npu);
     m.impl("layernorm", &layernorm_mindie_sd_impl_npu);
+    m.impl("block_sparse_attention", &block_sparse_attention_impl_npu);
 }

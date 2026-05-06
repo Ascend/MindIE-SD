@@ -42,7 +42,7 @@ class AscendLaserPreprocess(AttentionOperateBase):
             raise ParametersInvalid("LA_preprocess输入必须是4D张量")
         batch_size, seq_len, head_num, head_dim = query.shape
         original_dtype = query.dtype
-        
+
         attn_param = AttentionParam(
             batch_size=batch_size,
             head_num=head_num,

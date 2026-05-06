@@ -36,7 +36,7 @@ class CustomLinear(nn.Linear):
 class MockSafeTensorHandler:
     def __init__(self, data):
         self.data = data
-        
+
     def get_tensor(self, key):
         return self.data.get(key, None)
 
@@ -101,7 +101,7 @@ class TestSmoothQuantize(unittest.TestCase):
         quant_layer, is_modified = smooth_quantize_w8a8("0", layer, cfg, create_mock_handler(self.weights))
         self.assertIsInstance(quant_layer, W8A8QuantBaseLinear)
         self.assertTrue(is_modified)
-    
+
     def test_smooth_quantize_w4a4_with_linear(self):
         layer = nn.Linear(8, 8)
         cfg = QuantConfig(quant_algo=QuantAlgorithm.W4A4_DYNAMIC)
@@ -144,7 +144,7 @@ class TestSmoothQuantize(unittest.TestCase):
         quant_layer, is_modified = smooth_quantize_w8a8("0", layer, cfg, create_mock_handler(self.weights4))
         self.assertIsInstance(quant_layer, W8A8MXFP8QuantLinear)
         self.assertTrue(is_modified)
-    
+
     @unittest.skipIf(get_npu_device() != NPUDevice.A5, "Skip unsupported tests when device is not available.")
     def test_smooth_quantize_w4a4_mxfp4_with_linear(self):
         layer = nn.Linear(8, 8)
@@ -396,11 +396,11 @@ class TestGetCfgAndWeights(unittest.TestCase):
 
         # Test normal case
         cfg, weights = get_cfg_and_weights(self.quant_des_path)
-        
+
         # Verify results
         self.assertEqual(cfg.quant_algo, QuantAlgorithm.W8A8)
         self.assertEqual(cfg.exclude_layers, tuple(["layer2"]))
-        
+
         # Verify calls
         mock_safe_open1.assert_called_once()
         mock_check_safety.assert_called()

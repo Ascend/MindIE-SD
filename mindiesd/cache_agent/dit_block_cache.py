@@ -29,7 +29,7 @@ class DiTBlockCache(CacheBase):
         hidden_states = kwargs.pop("hidden_states")
         if hidden_states is None:
             raise ParametersInvalid("[DiTBlockCache]: Input 'hidden_states' is None.")
-        
+
         # update cache
         if not self._use_cache():
             if "encoder_hidden_states" not in kwargs:
@@ -51,7 +51,7 @@ class DiTBlockCache(CacheBase):
             return hidden_states + res[0], encoder_hidden_states + res[1]
 
         return hidden_states + res[0]
-    
+
     def _use_cache(self):
         if self._cur_step < self._config.step_start:
             return False
@@ -77,7 +77,7 @@ class DiTBlockCache(CacheBase):
         diftime = self._cur_step - self._config.step_start
         if not (self._cur_step >= self._config.step_start and self._time_cache[diftime]):
             return
-        
+
         # update output count
         self._output_count = len(res) if isinstance(res, (List, Tuple)) else 1
 
@@ -110,4 +110,3 @@ class DiTBlockCache(CacheBase):
 
     def _release(self):
         self._cache = [None] * 2
-        

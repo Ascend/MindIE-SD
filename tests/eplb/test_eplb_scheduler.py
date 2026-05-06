@@ -104,7 +104,7 @@ class TestEplbScheduler(unittest.TestCase):
             self.assertEqual(len(experts), len(unique_experts))
         expected_shape = (320, 320)
         self.assertEqual(expert_trans_tensor.shape, expected_shape)
-        
+
     def test_AG_algo(self):
         result = eplb_greedy(RESPONSE, "AG", EXPERT_DICT, world_size=4, expert_num=320)
         self.assertIsNotNone(result)
@@ -118,7 +118,7 @@ class TestEplbScheduler(unittest.TestCase):
             self.assertEqual(len(experts), len(unique_experts))
         expected_shape = (320, 320)
         self.assertEqual(expert_trans_tensor.shape, expected_shape)
-    
+
     def test_EX_algo(self):
         result = eplb_greedy(RESPONSE, "EX", EXPERT_DICT, world_size=4, expert_num=320)
         self.assertIsNotNone(result)

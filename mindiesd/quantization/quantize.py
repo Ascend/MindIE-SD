@@ -31,9 +31,9 @@ from ..utils.logs.logging import logger
 
 def get_key_patterns(layer_name):
     key_patterns = [
-        f'{layer_name}.linear.weight', 
-        f'{layer_name}.weight', 
-        f'{layer_name}', 
+        f'{layer_name}.linear.weight',
+        f'{layer_name}.weight',
+        f'{layer_name}',
         f'{layer_name}.fa_q.scale',
         f'{layer_name}.quant_type'
     ]
@@ -61,7 +61,7 @@ def w8a16_quantize(name, layer, cfg, quant_weights, **kwargs):
 
     # 寻找匹配的规则
     quant_cls = next((quant_map[cls] for cls in quant_map if isinstance(layer, cls)), None)
-    
+
     if quant_cls is None:
         return layer, False
 
@@ -78,7 +78,7 @@ def w8a16_quantize(name, layer, cfg, quant_weights, **kwargs):
     if cfg.quant_algo == QuantAlgorithm.W4A16:
         init_params['is_w4'] = True
 
-    # 抑制算法需要的属性    
+    # 抑制算法需要的属性
     if f'{name}.div.mul_scale' in quant_weights.keys():
         init_params['mul_scale'] = get_quant_weight(quant_weights, f'{name}.div.mul_scale')
         init_params['prefix'] = f'{name}.linear'
@@ -135,7 +135,7 @@ def smooth_quantize_w8a8(name, layer, cfg, quant_weights, **kwargs):
 
     init_params['weights'] = quant_weights
     init_params['prefix'] = name
-    # 抑制算法需要的属性    
+    # 抑制算法需要的属性
     if f'{name}.div.mul_scale' in quant_weights.keys():
         init_params['mul_scale'] = get_quant_weight(quant_weights, f'{name}.div.mul_scale')
         init_params['prefix'] = f'{name}.linear'
@@ -163,7 +163,7 @@ def add_fa_quant(layer, cfg, prefix, quant_weights):
 
 def get_layer_quant_mode(name, layer, cfg):
     layer_quant_mode = None
-    
+
     for pattern in get_key_patterns(name):
         if pattern in cfg.layer_quantization_mode:
             return cfg.layer_quantization_mode[pattern]
@@ -172,7 +172,7 @@ def get_layer_quant_mode(name, layer, cfg):
 
 def get_layer_quant_cfg(cfg, name, layer):
     layer_quant_cfg = None
-    
+
     if cfg.quantized_layers is None:
         return None
     for pattern in get_key_patterns(name):

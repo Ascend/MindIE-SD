@@ -55,21 +55,21 @@ class TestRainFusionAttention(unittest.TestCase):
 
     def _generate_sparse_mask(self, q_blocknum, head, kv_blocknum, device='npu', ratio=1.0):
         select_idx = torch.full(
-            (q_blocknum, head, kv_blocknum), 
-            -1, 
-            dtype=torch.int64, 
+            (q_blocknum, head, kv_blocknum),
+            -1,
+            dtype=torch.int64,
             device=device
         )
 
         select_num_idx = torch.tensor(
-            kv_blocknum, 
-            dtype=torch.int64, 
+            kv_blocknum,
+            dtype=torch.int64,
             device=device
         ).repeat(q_blocknum, head)
-        
+
         base_indices = torch.arange(kv_blocknum, dtype=torch.int64, device=device)
         select_idx[...] = base_indices.repeat(q_blocknum, head, 1)
-        
+
         for q in range(q_blocknum):
             for h in range(head):
                 selected_kvs = base_indices[:int(kv_blocknum*ratio)]
@@ -77,7 +77,7 @@ class TestRainFusionAttention(unittest.TestCase):
                 select_num_idx[q, h] = len(selected_kvs)
 
         return select_idx, select_num_idx
-    
+
     def test_rainfusionattention_vs_fusionattention(self):
         ra, _ = torch.ops.mindiesd.rainfusionattention(
             self.q_tnd, self.k_tnd, self.v_tnd,
@@ -101,7 +101,7 @@ class TestRainFusionAttention(unittest.TestCase):
                     head_num=self.head)[0]
         result, _, max_err = data_compare(ra.cpu(), fascore.cpu())
         self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
-    
+
     def test_rainfusionattention_bnsd(self):
         q = self.q.transpose(1, 2)
         k = self.k.transpose(1, 2)
@@ -128,7 +128,7 @@ class TestRainFusionAttention(unittest.TestCase):
                     head_num=self.head)[0]
         result, _, max_err = data_compare(ra.cpu(), fascore.cpu())
         self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
-        
+
     def test_ra_output_shape(self):
             expected_shape = (self.batch_size * self.q_seqlen, self.head, self.headdim)
             ra, _ = torch.ops.mindiesd.rainfusionattention(
@@ -145,7 +145,7 @@ class TestRainFusionAttention(unittest.TestCase):
                 mask_type=0, scale=self.scale,
                 inner_precise=0, block_size=0)
             self.assertEqual(ra.shape, expected_shape, "Output shape does not match expected shape.")
-    
+
     def test_ra_invalid_inputlayout(self):
         with self.assertRaises(RuntimeError):
             ra, _ = torch.ops.mindiesd.rainfusionattention(

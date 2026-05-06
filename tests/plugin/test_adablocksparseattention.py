@@ -66,7 +66,7 @@ def ada_block_sparse_attention_cpu(query, key, value, smask, causal=False, block
                     kt = k.T  # [dim, k_eff]
                     p = q @ kt  # [q_len, k_eff]
                     p = p / np.sqrt(dim)
-                    if causal : 
+                    if causal :
                         t = end - start
                         cm = np.triu(np.ones((t, t)), k=1) * (-10000.0)
                         p[:, -t:] += cm
@@ -119,7 +119,7 @@ class TestBsaMindieSd(unittest.TestCase):
         self.value = torch.randn(self.key_value_shape, dtype=self.dtype)
 
         s1 = (self.qseqlen + self.sparse_size - 1) // self.sparse_size
-        realS2 = s1 
+        realS2 = s1
         s2 = (realS2 + 31) // 32 * 32
         self.smask_shape = (self.batch, self.head_num, s1, s2)
         self.sct_shape = (self.batch, self.head_num, s1)
@@ -137,7 +137,7 @@ class TestBsaMindieSd(unittest.TestCase):
 
         sn1 = (self.qseqlen + self.sparse_size - 1) // self.sparse_size
         realsn2 = (self.qseqlen + self.sparse_size - 1) // self.sparse_size
-        sn2 = (realsn2 + 31) // 32 * 32 
+        sn2 = (realsn2 + 31) // 32 * 32
         sparsity = 0.5
         smask = torch.rand(self.batch, self.head_num, sn1, sn2) > sparsity
         smask[:,:,:,0] = True

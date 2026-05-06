@@ -113,11 +113,11 @@ class TestAdaLayerNorm(unittest.TestCase):
         with self.assertRaises(ParametersInvalid):
             layernorm_scale_shift(layernorm, x, scale, shift, fused)
 
-    def test_scale_second_dim(self):
+    def test_scale_invalid_second_dim(self):
         device = "npu"
         layernorm = nn.LayerNorm(128, self.norm_eps, elementwise_affine=False).to(device)
         x = torch.randn([2, 1024, 128], dtype=torch.float32).to(device)
-        scale = torch.randn([2, 1024, 128], dtype=torch.float32).to(device)
+        scale = torch.randn([2, 512, 128], dtype=torch.float32).to(device)
         shift = torch.randn([2, 128], dtype=torch.float32).to(device)
         fused = True
 
@@ -135,12 +135,12 @@ class TestAdaLayerNorm(unittest.TestCase):
         with self.assertRaises(ParametersInvalid):
             layernorm_scale_shift(layernorm, x, scale, shift, fused)
 
-    def test_shift_second_dim(self):
+    def test_shift_invalid_second_dim(self):
         device = "npu"
         layernorm = nn.LayerNorm(128, self.norm_eps, elementwise_affine=False).to(device)
         x = torch.randn([2, 1024, 128], dtype=torch.float32).to(device)
         scale = torch.randn([2, 128], dtype=torch.float32).to(device)
-        shift = torch.randn([2, 1024, 128], dtype=torch.float32).to(device)
+        shift = torch.randn([2, 512, 128], dtype=torch.float32).to(device)
         fused = True
 
         with self.assertRaises(ParametersInvalid):
@@ -254,6 +254,69 @@ class TestAdaLayerNorm(unittest.TestCase):
 
 
     @torch.no_grad()
+    def test_layernorm_scale_shift_bsh_non_affine(self):
+        device = "npu"
+        batch_size = 2
+        sentence_length = 1024
+        hidden_size = 128
+        layernorm = nn.LayerNorm(128, self.norm_eps, elementwise_affine=False).to(device)
+
+        x = torch.randn([batch_size, sentence_length, hidden_size], dtype=torch.float32).to(device)
+        scale = torch.randn([batch_size, sentence_length, hidden_size], dtype=torch.float32).to(device)
+        shift = torch.randn([batch_size, sentence_length, hidden_size], dtype=torch.float32).to(device)
+
+        out_fused = layernorm_scale_shift(layernorm, x, scale, shift, fused=True)
+        out_non_fused = layernorm_scale_shift(layernorm, x, scale, shift, fused=False)
+
+        self.assertEqual(out_non_fused.shape, out_fused.shape)
+
+        result, _, max_err = data_compare(out_fused.cpu(), out_non_fused.cpu())
+        self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
+
+
+    @torch.no_grad()
+    def test_layernorm_scale_shift_bsh_use_affine(self):
+        device = "npu"
+        batch_size = 2
+        sentence_length = 1024
+        hidden_size = 128
+        layernorm = nn.LayerNorm(128, self.norm_eps, elementwise_affine=True).to(device)
+
+        x = torch.randn([batch_size, sentence_length, hidden_size], dtype=torch.float32).to(device)
+        scale = torch.randn([batch_size, sentence_length, hidden_size], dtype=torch.float32).to(device)
+        shift = torch.randn([batch_size, sentence_length, hidden_size], dtype=torch.float32).to(device)
+
+        out_fused = layernorm_scale_shift(layernorm, x, scale, shift, fused=True)
+        out_non_fused = layernorm_scale_shift(layernorm, x, scale, shift, fused=False)
+
+        self.assertEqual(out_non_fused.shape, out_fused.shape)
+
+        result, _, max_err = data_compare(out_fused.cpu(), out_non_fused.cpu())
+        self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
+
+
+    @torch.no_grad()
+    def test_layernorm_scale_shift_bsh_mixed_modulation(self):
+        device = "npu"
+        batch_size = 2
+        sentence_length = 1024
+        hidden_size = 128
+        layernorm = nn.LayerNorm(128, self.norm_eps, elementwise_affine=True).to(device)
+
+        x = torch.randn([batch_size, sentence_length, hidden_size], dtype=torch.float32).to(device)
+        scale = torch.randn([batch_size, hidden_size], dtype=torch.float32).to(device)
+        shift = torch.randn([batch_size, sentence_length, hidden_size], dtype=torch.float32).to(device)
+
+        out_fused = layernorm_scale_shift(layernorm, x, scale, shift, fused=True)
+        out_non_fused = layernorm_scale_shift(layernorm, x, scale, shift, fused=False)
+
+        self.assertEqual(out_non_fused.shape, out_fused.shape)
+
+        result, _, max_err = data_compare(out_fused.cpu(), out_non_fused.cpu())
+        self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
+
+
+    @torch.no_grad()
     def test_layernorm_scale_shift_3d_use_affine_and_a5(self):
         device = "npu"
         batch_size = 1
@@ -264,20 +327,20 @@ class TestAdaLayerNorm(unittest.TestCase):
         x = torch.randn([batch_size, sentence_length, hidden_size], dtype=torch.float32).to(device)
         scale = torch.randn([batch_size, hidden_size], dtype=torch.float32).to(device)
         shift = torch.randn([batch_size, hidden_size], dtype=torch.float32).to(device)
-        
+
         origin_ops_v2 = torch.ops.mindiesd.adaln_v2
         origin_ops_v1 = torch.ops.mindiesd.adaln
         ops_mock_v2 = Mock()
         ops_mock_v1 = Mock()
-        
+
         def mock_ops_v2(*args, **kwargs):
             ops_mock_v2()
             return origin_ops_v2(*args, **kwargs)
-        
+
         def mock_ops_v1(*args, **kwargs):
             ops_mock_v1()
             return origin_ops_v1(*args, **kwargs)
-        
+
         torch.ops.mindiesd.adaln_v2 = mock_ops_v2
         torch.ops.mindiesd.adaln = mock_ops_v1
         try:

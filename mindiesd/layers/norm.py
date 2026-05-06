@@ -56,7 +56,7 @@ def check_input_params(layernorm, x, impl_mode, fused):
 
 
 def fast_layernorm(
-    norm: torch.nn.LayerNorm, 
+    norm: torch.nn.LayerNorm,
     x: torch.Tensor,
     impl_mode: int = 0,
     fused: bool = True) -> torch.Tensor:
@@ -71,16 +71,16 @@ def fast_layernorm(
             Specifies the compute mode for the kernel. The value must be in [0, 1, 2]. The default value is 0.
             0 indicates the high-precision mode, 1 indicates the high-performance mode, and 2 indicates the
             float16 mode. The float16 mode is supported only when all inputs are float16.
-        fused (bool): 
+        fused (bool):
             If fused is True, can enable different layernorm mode by specifying 'impl_mode'.
     """
     check_input_params(norm, x, impl_mode, fused)
     if fused:
         out = ops.layernorm(
-            x=x, 
+            x=x,
             normalized_shape=list(norm.normalized_shape),
-            weight=norm.weight, 
-            bias=norm.bias, 
+            weight=norm.weight,
+            bias=norm.bias,
             eps=norm.eps,
             impl_mode=impl_mode
         )[0]

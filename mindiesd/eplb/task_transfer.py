@@ -18,19 +18,19 @@ from .task_payload import TaskType, TaskPayload
 
 class ProfileTaskTransfer:
     def __init__(
-            self, 
-            task_queue: queue.Queue, 
-            moe_layer_idx: int, 
+            self,
+            task_queue: queue.Queue,
+            moe_layer_idx: int,
             lb_interval: int = 1
         ):
         self.instruction_queue = task_queue
         self.moe_layer_idx = moe_layer_idx
         self.lb_interval = lb_interval
         self.flag = 0
-    
+
     def profile_emit_task(self):
         task_payload = TaskPayload(
-            task_type=TaskType.PROFILE, 
+            task_type=TaskType.PROFILE,
             moe_layer_idx=self.moe_layer_idx
         )
         if self.instruction_queue:
@@ -47,32 +47,32 @@ class ProfileTaskTransfer:
 
 class UpdateTaskTransfer:
     def __init__(
-            self, 
-            task_queue: queue.Queue, 
+            self,
+            task_queue: queue.Queue,
             moe_layer_idx
         ):
         self.instruction_queue = task_queue
         self.moe_layer_idx = moe_layer_idx
 
     def update_emit_task(
-            self, 
-            device_indices_list, 
-            local_expert_indices_list, 
-            local_expert_list, 
-            expert_trans_tensor, 
+            self,
+            device_indices_list,
+            local_expert_indices_list,
+            local_expert_list,
+            expert_trans_tensor,
             world_size
         ):
         for rank in range(world_size):
             layout_command = {
-                'device_indices': device_indices_list[rank], 
-                'local_expert_indices': local_expert_indices_list[rank], 
-                'local_expert_list': local_expert_list[rank], 
+                'device_indices': device_indices_list[rank],
+                'local_expert_indices': local_expert_indices_list[rank],
+                'local_expert_list': local_expert_list[rank],
                 'expert_trans_tensor': expert_trans_tensor
             }
             task_payload = TaskPayload(
-                task_type=TaskType.UPDATE_LAYOUT, 
-                worker_rank=rank, 
-                moe_layer_idx=self.moe_layer_idx, 
+                task_type=TaskType.UPDATE_LAYOUT,
+                worker_rank=rank,
+                moe_layer_idx=self.moe_layer_idx,
                 data=layout_command
             )
             self.instruction_queue[rank].put(task_payload)

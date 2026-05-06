@@ -28,7 +28,7 @@ class TestLog(unittest.TestCase):
         for handler in logger.handlers:
             if handler.__class__ is logging.StreamHandler:
                 handler.stream = self.string_io
-    
+
     def tearDown(self):
         """回退StringIO为正常日志功能"""
         lib = importlib.import_module('mindiesd.utils.logs.logging')

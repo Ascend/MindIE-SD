@@ -22,11 +22,11 @@ MAX_TOKEN = 2147483647
 class FlashAttentionScore(AttentionOperateBase):
     supported_layout = ["BNSD", "BSND", "BSH"]
     supported_dtype = [torch.float16, torch.bfloat16, torch.float32]
-    
+
     @classmethod
     def is_supported_shape(cls, attn_param: AttentionParam) -> bool:
         return True
-    
+
     @classmethod
     def forward_attn_bnsd(
         cls,

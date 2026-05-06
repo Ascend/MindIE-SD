@@ -111,7 +111,7 @@ public:
                                      __gm__ uint8_t* scale2, __gm__ uint8_t* offset2);
     __aicore__ inline void InitMsd(__gm__ uint8_t* key_antiquant_scale, __gm__ uint8_t* key_antiquant_offset,
         __gm__ uint8_t* value_antiquant_scale, __gm__ uint8_t* value_antiquant_offset);
-   
+
     // define datatype
     using mmInputType = typename AdaBlockSparseAttentionTypeTraits<T, M>::mmInputType;
     using mmBiasType = typename AdaBlockSparseAttentionTypeTraits<T, M>::mmBiasType;
@@ -444,7 +444,7 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::Init(__g
         tilingData->promptAttentionBaseParams.batchSize);
         isActualLenDimsKVNull = false;
     }
-    
+
     isActualLenDimsNull = true;
     if (!tilingData->promptAttentionBaseParams.isActualSeqLengthsNull) {
         actualSeqLengthsGm.SetGlobalBuffer((__gm__ int64_t*)actualSeqLengths,
@@ -574,7 +574,7 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::InitMsd(
 {
     return;
 }
-   
+
 
 template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::InitOutputSingleCore()
@@ -1236,7 +1236,7 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::LoopSOut
     }
     attenMaskCoreOffset =
         (uint64_t)sOuterOffset * (uint64_t)tilingData->promptAttentionBaseParams.maskKVsSize + attenMaskBatchOffset;
-   
+
     uint32_t head_stride_q = tilingData->promptAttentionBaseParams.headSize *
                              tilingData->promptAttentionBaseParams.seqSize;
     uint32_t head_stride_kv = tilingData->promptAttentionBaseParams.headSize *

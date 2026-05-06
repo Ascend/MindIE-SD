@@ -57,7 +57,7 @@ class EPLBService():
     @staticmethod
     def get_expert_total_demand(total_traffic):
         return np.sum(total_traffic, axis=0)
-    
+
     def placement_greedy(self, traffic_data, origin_device_to_expert: dict = None, shared_expert_id: int = None):
         """
         基于贪心算法求解的专家放置策略

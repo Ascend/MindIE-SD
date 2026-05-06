@@ -78,7 +78,7 @@ protected:
         pipe_barrier(PIPE_V);
         LocalTensor<float> softmaxSumTmp = this->softmaxExpBuf.template Get<float>();
         this->Bmm2UpdateDivNoTail(bmm2ResPreUb, softmaxSumTmp);
-        
+
         if ((BSAT::layout == BSALayout::BSH) ||
             (BSAT::layout == BSALayout::BNSD && this->tilingData->promptAttentionBaseParams.isBSNDOut == 1)) {
             this->DataCopyTransposeOutBSH(bmm2ResPreUb);
@@ -440,7 +440,7 @@ __aicore__ inline void AdaBlockSparseAttentionS1s2Bns1X910<BSAT>::Process()
     this->isGlobalFirstCompute = true;
     AllocGlobalResources();
     ComputeEachCore(static_cast<int32_t>(this->tmp_block_idx));
-    
+
     // * Clear the remaining parameters of the queue.
     while (this->queSize > 0) {
         this->queSize--;
@@ -538,7 +538,7 @@ __aicore__ inline void AdaBlockSparseAttentionS1s2Bns1X910<BSAT>::SInnerLoopFunc
             this->preHeadParams = this->headParams;
             this->headId = (this->headId + 1) % BSA_PARAMS_QUEUE_CAPBABILITY;
             this->headParams = &this->bsaParamsQueue[this->headId];
-           
+
             // tail join the queue
             this->tailId = (this->tailId + 1) % BSA_PARAMS_QUEUE_CAPBABILITY;
             BSAComputeParam *nextTailParams = &this->bsaParamsQueue[this->tailId];
@@ -630,7 +630,7 @@ __aicore__ inline void AdaBlockSparseAttentionS1s2Bns1X910<BSAT>::GetTaskCost(ui
     auto eventID = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_V));
     SetFlag<HardEvent::MTE2_V>(eventID);
     WaitFlag<HardEvent::MTE2_V>(eventID);
-    
+
     if (colCount < colCount64) {
         Duplicate(cntUb[colCount], 0, colCount64 - colCount);
         pipe_barrier(PIPE_V);
@@ -664,7 +664,7 @@ __aicore__ inline void AdaBlockSparseAttentionS1s2Bns1X910<BSAT>::ComputeEachCor
     Duplicate(this->loads[blockNum], static_cast<float>(-1e20), 64-blockNum);
     InitEachCoreWorkspace(coreIdx, blockNum);
     pipe_barrier(PIPE_V);
-    
+
     for (uint32_t loopNIdx = 0; loopNIdx < this->headNumSize; loopNIdx++) {
         params->batchNOffset = loopNIdx;
         for (int bIdx = 0; bIdx < this->batchSize; bIdx++) {
@@ -755,7 +755,7 @@ __aicore__ inline void AdaBlockSparseAttentionS1s2Bns1X910<BSAT>::InitEachCoreWo
     mm1ResSize = mm1ResSize * msdExpandsize;
     int64_t mm2ResSize = this->tilingData->promptAttentionSingleCoreParams.singleProcessSOuterSize * \
         this->tilingData->promptAttentionBaseParams.headSize  * msdExpandsize;
-    
+
     this->bmm1ResGmDb[0].SetGlobalBuffer((__gm__ mmOutputType*)this->workspaceGm[blockNum * this->spmTmpSize +
         coreIdx * mm1ResSize  * reuseWorkspaceRatio].GetPhyAddr());
     this->bmm1ResGmDb[1].SetGlobalBuffer((__gm__ mmOutputType*)this->workspaceGm[blockNum * this->spmTmpSize +

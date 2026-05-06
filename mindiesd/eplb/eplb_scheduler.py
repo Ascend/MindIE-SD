@@ -94,8 +94,8 @@ def run_scheduler(args):
         try:
             for rank in range(world_size):
                 try:
-                    report = upload_queues[rank].get_nowait() 
-                    
+                    report = upload_queues[rank].get_nowait()
+
                     layer_idx = report['moe_layer_idx']
                     load_data = report['load']
                     local_expert_list = report['local_expert_list']
@@ -116,19 +116,19 @@ def run_scheduler(args):
                         response = load_report_buffer[layer_idx]
                         expert_dict = local_expert_buffer[layer_idx]
                         expert_dict = dict(sorted(expert_dict.items()))
-                        load_report_buffer[layer_idx] = {} 
+                        load_report_buffer[layer_idx] = {}
                         local_expert_buffer[layer_idx] = {}
 
                         logger.debug(f"[greedy] eplb greedy compute")
                         result = eplb_greedy(
-                            response=response, algorithm_type=args.mode, 
-                            device_to_expert=expert_dict, world_size=world_size, 
+                            response=response, algorithm_type=args.mode,
+                            device_to_expert=expert_dict, world_size=world_size,
                             expert_num=args.expert_num, max_move=args.max_move, redundant=redundant)
-                        (   
-                            update, 
-                            device_indices_list, 
-                            local_expert_indices_list, 
-                            local_expert_list, 
+                        (
+                            update,
+                            device_indices_list,
+                            local_expert_indices_list,
+                            local_expert_list,
                             expert_trans_tensor
                         ) = result
 
@@ -136,10 +136,10 @@ def run_scheduler(args):
                             continue
 
                         transfer.update_emit_task(
-                            device_indices_list, 
-                            local_expert_indices_list, 
-                            local_expert_list, 
-                            expert_trans_tensor, 
+                            device_indices_list,
+                            local_expert_indices_list,
+                            local_expert_list,
+                            expert_trans_tensor,
                             world_size
                         )
                         count += 1
@@ -153,7 +153,7 @@ def run_scheduler(args):
             break
         if all_queues_empty:
             time.sleep(0.1)
-    
+
     logger.info(f"Already has update {count} times")
     logger.info("[Scheduler] Scheduler cycle end.")
 

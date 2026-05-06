@@ -39,7 +39,7 @@ static ge::graphStatus InferShape(gert::InferShapeContext *context)
     if (context == nullptr) {
         return ge::GRAPH_FAILED;
     }
-    
+
     const gert::Shape *qShape = context->GetInputShape(0);
     const gert::Shape *kShape = context->GetInputShape(1);
     const gert::Shape *vShape = context->GetInputShape(2);
@@ -103,7 +103,7 @@ static ge::graphStatus LaPreprocessTilingFunc(gert::TilingContext *context)
     const gert::StorageShape* qShape = context->GetInputShape(0);
     const gert::StorageShape* kShape = context->GetInputShape(1);
     const gert::StorageShape* vShape = context->GetInputShape(2);
-    
+
     if (qShape == nullptr || kShape == nullptr || vShape == nullptr) {
         return ge::GRAPH_FAILED;
     }

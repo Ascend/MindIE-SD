@@ -45,6 +45,13 @@ function build_ops(){
     source ${current_script_dir}/build_tik_ops.sh
     rm -rf ${current_script_dir}/vendors/aie_ascendc/bin
     rm -rf ${current_script_dir}/vendors/customize/bin
+    so_files=$(find "${current_script_dir}/vendors" -name "*.so" -type f 2>/dev/null)
+    if [ -n "$so_files" ]; then
+        echo "Stripping .so files..."
+        for so_file in $so_files; do
+            strip "$so_file"
+        done
+    fi
     cd ${current_script_dir}
 }
 

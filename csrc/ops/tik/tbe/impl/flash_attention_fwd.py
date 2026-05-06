@@ -25,14 +25,14 @@ from constants import UB
 from tik_ops_utils import TikOpsUtils
 
 MLParams = namedtuple("MLParams", [
-    "Pij_l1_K1MK0_ed", "Vj_l1_K1NK0_ed", 
+    "Pij_l1_K1MK0_ed", "Vj_l1_K1NK0_ed",
     "mij_ub", "lij_ub", "batch_start",
     "batch_idx", "kv_blk_idx", "kv_blk_h",
     "q_blk_idx", "q_blk_h", "o_gm_offset"
 ])
 
 BlockParams = namedtuple("BlockParams", [
-    "KjT_l1_K1MK0_ed", "Vj_l1_K1NK0_ed", 
+    "KjT_l1_K1MK0_ed", "Vj_l1_K1NK0_ed",
     "batch_idx", "batch_start", "kv_blk_h",
     "q_blk_h", "q_blk_idx", "kv_blk_idx",
     "Sij_ub_ws", "Qi_l1_ws", "lij_ub_ws",
@@ -76,7 +76,7 @@ class FlashAttentionFwd:
         self.q_ori_shape = self.extract_tensor_ori_shape(q)    # 获取tensor原始的shape
         self.k_ori_shape = self.extract_tensor_ori_shape(k)    # 获取tensor原始的shape
         self.v_ori_shape = self.extract_tensor_ori_shape(v)    # 获取tensor原始的shape
-        
+
         self.check_shape()
         if not self.valid:
             return
@@ -118,11 +118,11 @@ class FlashAttentionFwd:
     @staticmethod
     def extract_tensor_cur_shape(input_tensor):
         return input_tensor["shape"]
-    
+
     @staticmethod
     def extract_tensor_ori_shape(input_tensor):
         return input_tensor["ori_shape"]
-    
+
     def check_params(self):
         if not self.valid:
             return
@@ -154,7 +154,7 @@ class FlashAttentionFwd:
             self.valid = False
             return
         return
-    
+
     def check_shape(self):
         if not self.valid:
             return
@@ -461,11 +461,11 @@ class FlashAttentionFwd:
                                                     vec_len_aligned)
         return mi_new_ub, li_new_ub
 
-    def update_o_m_l(self, 
+    def update_o_m_l(self,
                      inputs: MLParams):
         """Refer to Algorithm 2 line13 and line15 in FlashAttention
         load o m l from gm and update them in ub, then write them back to gm
-        :param 
+        :param
             inputs.Pij_l1_K1MK0_ed: input tensor with shape of (Bc // 16, Br, 16)
             inputs.Vj_l1_K1NK0_ed: input tensor with shape of (d // 16, Bc, 16)
             inputs.mij_ub: input tensor with shape of (Br)
@@ -542,7 +542,7 @@ class FlashAttentionFwd:
                                                         Oi_ub[offset],
                                                         broadcast_scale1,
                                                         m * n0)
-                
+
             broadcast_scale2 = self.tik_ops_utils.broadcast_vec_from_M_to_MN0(scale2)
             for idx in range(0, n1):
                 offset = idx * m * n0
@@ -662,7 +662,7 @@ class FlashAttentionFwd:
             )
             self.compute_in_each_q_block(inputs)
 
-    def compute_in_each_q_block(self, 
+    def compute_in_each_q_block(self,
                                 inputs: BlockParams):
         """The forward computation in each inner loop"""
         q_blk_h_aligned = self.tik_ops_utils.up_align_to_K0(inputs.q_blk_h)

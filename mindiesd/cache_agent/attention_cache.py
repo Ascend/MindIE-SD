@@ -33,4 +33,3 @@ class AttentionCache(CacheBase):
 
     def _release(self):
         self._cache = [None] * self._config.blocks_count
-        

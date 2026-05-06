@@ -122,7 +122,7 @@ class LayerQuantConfig(QuantConfig):
             name: QuantConfig.parse_from_dict(layer_config)
             for name, layer_config in quantized_layers.items()
         }
-        
+
         return cls(quantized_layers=quantized_layers_dict, **config)
 
     @cached_property
@@ -143,18 +143,18 @@ class LayerQuantConfig(QuantConfig):
             'quant_algo': self.quant_algo,
             quant_layer: {}
         }
-        
+
         # 处理量化层配置
         if self.quantized_layers:
             output[quant_layer] = {
                 name: layer_config.serialize_to_dict()
                 for name, layer_config in self.quantized_layers.items()
             }
-            
+
             # 移除每个层配置中的exclude_layers字段
             for layer_dict in output[quant_layer].values():
                 layer_dict.pop('exclude_layers', None)
-                
+
         return output
 
 

@@ -30,7 +30,7 @@ class TestVersionMetadata(unittest.TestCase):
         try:
             version_ns = runpy.run_path(str(VERSION_FILE))
             self.assertTrue(version_ns["__version__"])
-            self.assertEqual(version_ns["__version__"], "2.3.0")
+            self.assertEqual(version_ns["__version__"], "3.0.0")
         finally:
             if original is not None:
                 os.environ["MINDIE_SD_VERSION_OVERRIDE"] = original

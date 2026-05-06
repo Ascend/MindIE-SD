@@ -76,7 +76,7 @@ def rotary_position_embedding(x: torch.Tensor,
             If `rotated_interleaved`: rotate x to [-x_1, x_0, -x_3, x_2, ... , -x_d-1, x_d-2].
         head_first (bool):
             In the layout of x, if N is before S, set to True; otherwise, set to False.
-        fused (bool): 
+        fused (bool):
             If fused is True, using high-performance RoPE operator.
 
     Returns:

@@ -16,4 +16,5 @@ from .flash_attn.sparse_flash_attn import sparse_attention
 from .activation import get_activation_layer
 from .norm import RMSNorm, fast_layernorm
 from .adalayernorm import layernorm_scale_shift
+from .muls_add import muls_add
 from .rope import rotary_position_embedding

@@ -118,7 +118,7 @@ if [ "$DRY_RUN" = true ]; then
 else
     # 正常模式：运行测试并生成覆盖率报告
     ${python_command} -m coverage run --branch --source=../mindiesd ${current_directory}/run_incremental.py $PYTHON_ARGS 2>&1 | tee ${current_directory}/incremental_test.log
-    
+
     ${python_command} -m coverage report
     ${python_command} -m coverage xml -o ${current_directory}/coverage.xml
 

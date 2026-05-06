@@ -8,14 +8,25 @@
 
 ```bash
 python -m pip install -r docs/requirements-docs.txt
-sphinx-build -b html docs docs/_build/html
+# 构建中英文
+python docs/build_docs.py
+# 仅构建中文
+SPHINX_LANGUAGE=zh sphinx-build -b html -c docs docs/zh docs/_build/zh/html
+# 仅构建英文
+SPHINX_LANGUAGE=en sphinx-build -b html -c docs docs/en docs/_build/en/html
 ```
 
-生成结果位于 `docs/_build/html/`，首页文件为 `docs/_build/html/index.html`。
+本地预览方法：
+
+```bash
+python -m http.server 8080 --directory docs/_build
+```
+
+http://localhost:8080 → 自动跳转中文版
 
 ## 开发镜像构建
 
-仓库提供了基于 910B aarch64 环境的开发镜像定义文件 `docker/Dockerfile_910b_aarch64.ubuntu`。本地构建镜像可使用：
+仓库提供了基于Atlas 800I A2 推理服务器的AArch64环境的开发镜像定义文件 `docker/Dockerfile_910b_aarch64.ubuntu`。本地构建镜像可使用：
 
 ```bash
 docker build --network=host -f docker/Dockerfile_910b_aarch64.ubuntu -t mindiesd:910b-aarch64-head .

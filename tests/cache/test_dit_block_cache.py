@@ -30,7 +30,7 @@ class TestDiTBlockCache(unittest.TestCase):
             24, 27, 35, 35, 35, 35, 38,  # delta 3, reuse cache
             42, 46, 50, 54, 58, 62, 66,  # delta 4, update cache 19-11=16
             71, 76, 92, 92, 92, 92, 97]  # delta 5, reuse cache
-                  
+
         steps_count = 5
         blocks_count = 7
 
@@ -55,7 +55,7 @@ class TestDiTBlockCache(unittest.TestCase):
                     res = agent.apply(test_cache_func, hidden_states=res, delta=(step + 1))
                     cache_result.append(res)
             self.assertEqual(cache_result, result)
-    
+
     def test_cache_func_one_output_with_two_input(self):
         """测试2个输入,但只有1个输出场景,cache只缓存一个"""
         result = [
@@ -64,7 +64,7 @@ class TestDiTBlockCache(unittest.TestCase):
             24, 27, 35, 35, 35, 35, 38,  # delta 3, reuse cache
             42, 46, 50, 54, 58, 62, 66,  # delta 4, update cache 19-11=16
             71, 76, 92, 92, 92, 92, 97]  # delta 5, reuse cache
-                  
+
         steps_count = 5
         blocks_count = 7
 
@@ -94,7 +94,7 @@ class TestDiTBlockCache(unittest.TestCase):
                         delta=(step + 1))
                     cache_result.append((hidden_states))
             self.assertEqual(cache_result, result)
-    
+
     def test_cache_func_invalid_two_output_with_one_input(self):
         """测试1个输入,2个输出场景"""
         result = [
@@ -197,7 +197,7 @@ class TestDiTBlockCache(unittest.TestCase):
                         encoder_hidden_states=encoder_hidden_states,
                         delta=(step + 1))
         self.assertIn("[DiTBlockCache] The output count of cache function must be 1 or 2", str(context.exception))
-    
+
     def test_cache_func_invliad_hidden_states_empty(self):
         """测试cache的输入没有hidden_states"""
         steps_count = 5
@@ -224,7 +224,7 @@ class TestDiTBlockCache(unittest.TestCase):
                         hidden_states,
                         delta=(step + 1))
         self.assertIn("[DiTBlockCache]: Cannot find 'hidden_states' in kwargs.", str(context.exception))
-    
+
     def test_cache_func_invliad_hidden_states_none(self):
         """测试cache的输入hidden_states是None"""
         steps_count = 5
@@ -253,7 +253,7 @@ class TestDiTBlockCache(unittest.TestCase):
                         encoder_hidden_states=encoder_hidden_states,
                         delta=(step + 1))
         self.assertIn("[DiTBlockCache]: Input 'hidden_states' is None.", str(context.exception))
-    
+
     def test_cache_func_invliad_output_none(self):
         """测试cache的function输出是None"""
         steps_count = 5
@@ -283,7 +283,7 @@ class TestDiTBlockCache(unittest.TestCase):
                         hidden_states=hidden_states,
                         delta=(step + 1))
         self.assertIn("The output of cache function is None.", str(context.exception))
-    
+
     def test_cache_func_invliad_two_output_none(self):
         """测试cache的function输出中的一个是None"""
         steps_count = 5

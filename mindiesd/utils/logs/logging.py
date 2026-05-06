@@ -86,7 +86,7 @@ class MindIELogFileHandler(BaseRotatingHandler):
         now_time_str = time.strftime("_%Y%m%d%H%M%S", time.localtime())
         init_log_file = "mindie-sd_" + str(get_pid()) + now_time_str + ".log"
         init_log_path = os.path.realpath(os.path.join(real_log_path, init_log_file))
-        
+
         super().__init__(init_log_path, mode='a', encoding=encoding, delay=True, errors=None)
         self._real_log_path = real_log_path
         self._cur_log_file = init_log_path
@@ -140,14 +140,14 @@ class MindIELogFileHandler(BaseRotatingHandler):
             self.stream.seek(0, 2)
             if self.stream.tell() + len(msg) >= self._max_file_size:
                 return True
-        
+
         # check if the timestamp of the current log exceeds next rollover time
         cur_time = int(time.time())
         if cur_time >= self._next_rollover:
             return True
 
         return False
-    
+
     def do_rollover(self):
         """
         rotate log file according to file size and time interval
@@ -183,12 +183,12 @@ class MindIELogFileHandler(BaseRotatingHandler):
         # refresh next rollover time point, may have a very slight time difference,
         # but it won't matter since log files are built at least every second.
         self._next_rollover = self._get_rollover_timepoint()
-    
+
     def _get_log_name(self):
         now_time_str = time.strftime("_%Y%m%d%H%M%S", time.localtime())
         log_file_name = "mindie-sd_" + str(get_pid()) + now_time_str + ".log"
         return log_file_name
-    
+
     def _get_time_str(self, file_name):
         log_time = None
         reg = re.compile(R"mindie-sd_(\d+)_(\d{4}\d{2}\d{2}\d{6}).log")
@@ -219,11 +219,11 @@ class MindIELogFileHandler(BaseRotatingHandler):
             oldest_log = self._history_files[0]
             log_time = time.strptime(oldest_log[1], date_format)
             log_date = datetime.fromtimestamp(time.mktime(log_time))
-            
+
             if self._check_time_rotate(log_date, cur_date):
                 break
             self._remove_oldest_log()
-    
+
     def _check_daily(self, log_date, cur_date):
         return cur_date - log_date < timedelta(days=self._rotate_cycle_num)
 
@@ -245,7 +245,7 @@ class MindIELogFileHandler(BaseRotatingHandler):
         # 20240306 vs 20221230 rotate_cycle_num=1
         if cur_date.year - log_date.year > self._rotate_cycle_num:
             return False
-        
+
         if cur_date.year - log_date.year == self._rotate_cycle_num:
             # 20240306 vs 20230208 rotate_cycle_num=1
             if cur_date.month > log_date.month:
@@ -318,7 +318,7 @@ class LoggerFormatter(logging.Formatter):
             }
             for char in invalid_chars:
                 message = message.replace(char, "")
-            message = re.sub(R"[ ]+", " ", message) 
+            message = re.sub(R"[ ]+", " ", message)
         else:
             message = f'log is None!'
         return message
@@ -351,7 +351,7 @@ def init_logger():
     if ENV.disable_log:
         logger.disabled=True
         return logger
-    
+
     if ENV.component_log_verbose in POSITIVE_BOOLEAN:
         formatter = LoggerFormatter(
             '%(asctime)s [%(process)d] [%(thread)d] [MindIE-SD] [%(levelname)s] %(filename)s:%(lineno)d: %(message)s'
@@ -366,7 +366,7 @@ def init_logger():
         print_handler.setFormatter(formatter)
         print_handler.setLevel(log_level)
         logger.addHandler(print_handler)
-    
+
     if ENV.component_log_to_file in POSITIVE_BOOLEAN:
         # check and standarlize the path
         log_base_path = ENV.mindie_log_path
@@ -375,7 +375,7 @@ def init_logger():
         if not log_base_path.startswith("/"):
             log_base_path = os.path.join(MINDIE_DEFAULTS_LOG_PATH, log_base_path)
             log_base_path = os.path.expanduser(log_base_path) # expand '~'
-        
+
         real_log_path = ""
         if check_path(log_base_path):
             real_log_path = os.path.realpath(log_base_path)

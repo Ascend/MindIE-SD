@@ -114,7 +114,7 @@ BEGIN_TILING_DATA_DEF(PromptAttentionBaseApiBaseParams)
     TILING_DATA_FIELD_DEF(uint32_t, headNumSize);
     TILING_DATA_FIELD_DEF(uint32_t, headSize);
     TILING_DATA_FIELD_DEF(uint32_t, maskTypeByteNum);
-    
+
     TILING_DATA_FIELD_DEF(uint32_t, inputLayoutType);
     TILING_DATA_FIELD_DEF(uint32_t, kvHeadNumSize);
     TILING_DATA_FIELD_DEF(uint32_t, maxSeqLen);
