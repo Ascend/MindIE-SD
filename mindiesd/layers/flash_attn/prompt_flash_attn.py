@@ -22,11 +22,11 @@ from .common import AttentionParam
 class PromptFlashAttention(AttentionOperateBase):
     supported_layout = ["BNSD", "BSND", "BSH"]
     supported_dtype = [torch.float16, torch.bfloat16, torch.int8]
-    
+
     @classmethod
     def is_supported_shape(cls, attn_param: AttentionParam) -> bool:
         return True
-    
+
     @classmethod
     def forward_attn_bnsd(
         cls,
@@ -126,5 +126,5 @@ class PromptFlashAttention(AttentionOperateBase):
             out = out.reshape(attn_param.batch_size, attn_param.q_seqlen, attn_param.head_num, attn_param.head_dim)
         else:
             out = out.reshape(attn_param.batch_size, attn_param.q_seqlen, attn_param.head_num, attn_param.head_dim)
-            out = out.transpose(1, 2)        
+            out = out.transpose(1, 2)
         return out

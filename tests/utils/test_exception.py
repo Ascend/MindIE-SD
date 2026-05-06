@@ -24,35 +24,35 @@ class TestException(unittest.TestCase):
     def test_parameter_exception(self):
         value_string = "Test parameter exception!"
 
-        with self.assertRaises(Exception, msg="not raise") as context: 
+        with self.assertRaises(Exception, msg="not raise") as context:
             raise ParametersInvalid(value_string)
         self.assertEqual(str(context.exception), "[MIE06E000001] Parameters invalid. " + value_string)
-    
+
     def test_config_exception(self):
         value_string = "Test config exception!"
 
-        with self.assertRaises(Exception, msg="not raise") as context: 
+        with self.assertRaises(Exception, msg="not raise") as context:
             raise ConfigError(value_string)
         self.assertEqual(str(context.exception), "[MIE06E000002] Config parameter err. " + value_string)
-    
+
     def test_torch_exception(self):
         value_string = "Test torch exception!"
 
-        with self.assertRaises(Exception, msg="not raise") as context: 
+        with self.assertRaises(Exception, msg="not raise") as context:
             raise TorchError(value_string)
         self.assertEqual(str(context.exception), "[MIE06E000003] Torch exec err. " + value_string)
-    
+
     def test_model_init_exception(self):
         value_string = "Test model init exception!"
 
-        with self.assertRaises(Exception, msg="not raise") as context: 
+        with self.assertRaises(Exception, msg="not raise") as context:
             raise ModelInitError(value_string)
         self.assertEqual(str(context.exception), "[MIE06E000004] Model init err. " + value_string)
-    
+
     def test_model_exec_exception(self):
         value_string = "Test model exec exception!"
 
-        with self.assertRaises(Exception, msg="not raise") as context: 
+        with self.assertRaises(Exception, msg="not raise") as context:
             raise ModelExecError(value_string)
         self.assertEqual(str(context.exception), "[MIE06E000005] Model exec err. " + value_string)
 

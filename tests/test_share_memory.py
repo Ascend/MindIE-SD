@@ -47,13 +47,13 @@ class TestShareMemoryManager(unittest.TestCase):
         global global_manager
         self.original_manager = global_manager
         global_manager = None
-        
+
         self.mock_socket = MagicMock()
         self.mock_socket.setsockopt.return_value = None
         self.mock_socket.send_pyobj.return_value = None
         self.mock_socket.recv_pyobj.return_value = 123456
         mock_zmq_ctx.socket.return_value = self.mock_socket
-        
+
         self.mock_socket.reset_mock()
 
         self.device_id = 0
@@ -67,7 +67,7 @@ class TestShareMemoryManager(unittest.TestCase):
 
     def test_manager_init_rank0(self):
         manager = ShareMemoryManager(
-            instance_world_size=self.world_size, 
+            instance_world_size=self.world_size,
             instance_id=0,
         )
         self.assertEqual(manager.instance_world_size, self.world_size)
@@ -78,7 +78,7 @@ class TestShareMemoryManager(unittest.TestCase):
 
     def test_manager_init_rank1(self):
         manager = ShareMemoryManager(
-            instance_world_size=self.world_size, 
+            instance_world_size=self.world_size,
             instance_id=1,
             master_addr="192.168.1.100",
             base_port=6666
@@ -91,18 +91,18 @@ class TestShareMemoryManager(unittest.TestCase):
     def test_broadcast_handle_master(self):
         manager = ShareMemoryManager(instance_world_size=2, instance_id=0)
         pub_port = self.default_base_port + self.device_id + 100
-        
+
         ret_handle = manager.broadcast_handle(99999)
-        
+
         self.assertEqual(ret_handle, 99999)
 
 
     def test_broadcast_handle_slave(self):
         manager = ShareMemoryManager(instance_world_size=2, instance_id=1)
         pub_port = self.default_base_port + self.device_id + 100
-        
+
         ret_handle = manager.broadcast_handle(None)
-        
+
         self.assertEqual(ret_handle, 123456)
         self.mock_socket.setsockopt.assert_has_calls([
             call(zmq.SUBSCRIBE, b""),
@@ -131,7 +131,7 @@ class TestGetShareMemoryManager(unittest.TestCase):
             base_port=6666
         )
         self.assertIsInstance(manager1, ShareMemoryManager)
-        
+
         manager2 = get_share_memory_manager()
         self.assertIs(manager1, manager2)
 
@@ -159,14 +159,14 @@ class TestMemoryShareTo(unittest.TestCase):
         self.original_manager = global_manager
         self.device = f'npu:{DEVICE_ID}'
         self.dtype = torch.float16
-        
+
         mock_socket = MagicMock()
         mock_socket.setsockopt.return_value = None
         mock_socket.send_pyobj.return_value = None
         mock_socket.recv_pyobj.return_value = 123456
         mock_zmq_ctx.socket.return_value = mock_socket
         global_manager = ShareMemoryManager(
-            instance_world_size=2, 
+            instance_world_size=2,
             instance_id=0,
         )
 
@@ -177,7 +177,7 @@ class TestMemoryShareTo(unittest.TestCase):
     def test_share_memory_basic(self):
         module = nn.Linear(10, 10).cpu()
         result_module = share_memory(module, device=self.device, dtype=self.dtype)
-        
+
         self.assertIs(result_module, module)
         self.assertEqual(next(module.parameters()).dtype, self.dtype)
 
@@ -194,7 +194,7 @@ class TestCheckDeviceDtype(unittest.TestCase):
     def test_check_device_dtype_npu_match(self):
         module = nn.Linear(10,10).to(f'npu:{DEVICE_ID}')
         target_device = torch.device(f'npu:{DEVICE_ID}')
-        
+
         should_fallback, result, _, _ = _check_device_and_dtype(module, target_device, torch.float16)
         self.assertTrue(should_fallback)
         self.assertIs(result, module)
@@ -202,7 +202,7 @@ class TestCheckDeviceDtype(unittest.TestCase):
     def test_check_invalid_dtype(self):
         module = nn.Linear(5,5).cpu()
         target_device = torch.device(f'npu:{DEVICE_ID}')
-        
+
         with self.assertRaises(msm.ParametersInvalid):
             _check_device_and_dtype(module, target_device, torch.int32)
 
@@ -218,7 +218,7 @@ class TestAllInOnePipeline(unittest.TestCase):
 
         model = nn.Linear(10, 10)
         model = share_memory(model, device="npu:0", dtype=torch.bfloat16)
-        
+
         self.assertIsInstance(model, nn.Linear)
         self.assertTrue(next(model.parameters()).is_npu)
 

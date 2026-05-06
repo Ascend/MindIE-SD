@@ -25,8 +25,8 @@ def create(dtype):
         _dtype_cast_func = torch.ops.npu.npu_dtype_cast.default
     else:
         _dtype_cast_func = torch.ops.npu._npu_dtype_cast.default
-    
-    
+
+
     class RopePattern(PatternBase):
         @staticmethod
         def name():

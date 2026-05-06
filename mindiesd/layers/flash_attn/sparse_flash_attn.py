@@ -21,6 +21,7 @@ from .sparse_flash_attn_rf_v2 import (
     do_tensor_rearrange_pooling
 )
 from .sparse_flash_attn_ada_bsa import get_estimate_mask, ada_block_sparse_attention
+from .sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
 from ...utils.exception import ParametersInvalid
 MAX_TOKEN = 2147483647
 
@@ -28,8 +29,8 @@ MAX_TOKEN = 2147483647
 def check_params(input_layout, sparse_type):
     if input_layout not in ['BSND', 'BNSD']:
         raise ParametersInvalid(f"The input_layout must in ['BSND', 'BNSD'], but got {input_layout}.")
-    if sparse_type not in [None, 'rf_v2', 'ada_bsa']:
-        raise ParametersInvalid(f"sparse_type must be None, 'rf_v2' or 'ada_bsa', but got {sparse_type}.")
+    if sparse_type not in [None, 'rf_v2', 'rf_v3', 'ada_bsa']:
+        raise ParametersInvalid(f"sparse_type must be None, 'rf_v2', 'rf_v3' or 'ada_bsa', but got {sparse_type}.")
 
 
 def sparse_attention(
@@ -134,6 +135,19 @@ def sparse_attention(
         if layout == "TND":
             out = out.reshape(batch, q_seq, head_num, head_dim)
         out = do_tensor_inv_rearrange(out, txt_len, latent_shape_q, latent_shape_k, input_layout)
+    elif sparse_type == "rf_v3":
+        out, _ = bsa_sparse_attention_v3(
+            q, k, v,
+            latent_shape_q=latent_shape_q,
+            latent_shape_k=latent_shape_k,
+            txt_len=txt_len,
+            pool_size=block_size,
+            sparsity=sparsity,
+            input_layout=input_layout,
+            head_num=head_num,
+            scale=scale,
+            inner_precise=inner_precise,
+        )
     elif sparse_type == "ada_bsa":
         smask, sct = get_estimate_mask(
             q, k, v,

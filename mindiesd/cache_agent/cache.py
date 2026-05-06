@@ -32,8 +32,8 @@ class CacheBase(ABC):
         self._config = config
         self._cur_step = 0
         self._cur_block = 0
-    
-    
+
+
     def apply(self, func: callable, *args, **kwargs):
         res = self.apply_imp(func, *args, **kwargs)
         self._counter()  # 内部计数

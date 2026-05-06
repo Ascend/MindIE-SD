@@ -1,9 +1,70 @@
-# 以存代算加速特性
+# 以存代算
+
+扩散模型在推理过程中会循环迭代多个时间步，每个时间步内所有 block 都参与计算，相邻步之间 latent 的相似性导致大量冗余计算。MindIE SD 提供以下缓存加速手段来减少重复计算：
+
+- **DiTCache**：在 block 粒度上缓存和复用中间结果，适用于 block 数较多的模型。
+- **AttentionCache**：在 Attention 层粒度上缓存和复用注意力计算结果，适用于 Attention 计算占比较高的模型。
+- **时间步优化**：减少或跳过扩散过程中的部分时间步，适用于需要对推理步数进行精细控制的场景。
+
+各缓存策略可以独立使用，也可以根据模型特点选择最合适的方案。
+
+- **DiTCache 优先**：block 粒度缓存，通用性最强，推荐首先尝试。
+- **AttentionCache 备选**：Attention 计算占比较高的模型可选用，比 DiTCache 粒度更细。
+- **时间步优化辅助**：与其他缓存策略互补，可在开启 DiTCache 或 AttentionCache 基础上进一步减少步数。
+
+## 接口说明
+
+### CacheConfig
+
+缓存配置类，定义缓存方法、block 数、步数等参数。
+
+```python
+from mindiesd import CacheConfig
+```
+
+| 参数 | 类型 | 必选 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `method` | `str` | 是 | - | 缓存方法，`"attention_cache"` 或 `"dit_block_cache"` |
+| `blocks_count` | `int` | 是 | - | 每步的 block 数 |
+| `steps_count` | `int` | 是 | - | 总迭代步数 |
+| `step_start` | `int` | 否 | `0` | 开始缓存步数 |
+| `step_interval` | `int` | 否 | `1` | 缓存间隔步数 |
+| `step_end` | `int` | 否 | `10000` | 结束缓存步数 |
+| `block_start` | `int` | 否 | `0` | 开始缓存 block 索引 |
+| `block_end` | `int` | 否 | `10000` | 结束缓存 block 索引 |
+
+### CacheAgent
+
+缓存代理类，根据配置管理缓存的应用。
+
+```python
+from mindiesd import CacheAgent
+```
+
+**构造参数**：
+
+| 参数 | 类型 | 必选 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `config` | `CacheConfig` | 是 | - | 缓存配置对象 |
+
+**apply 方法**：
+
+```python
+apply(function: callable, *args, **kwargs) -> Any
+```
+
+| 参数 | 类型 | 必选 | 说明 |
+|------|------|------|------|
+| `function` | `callable` | 是 | 要执行的函数（block 或 attn 模块） |
+| `*args` | - | 否 | 函数位置参数 |
+| `**kwargs` | - | 否 | 函数关键字参数 |
+
+---
 
 ## DitCache
 
 - **背景**
-  
+
   DiT模型在推理过程中会循环迭代T个步骤，每个步骤t都会完整的计算所有的block，而每个block都包含大量的计算操作（如下图所示）。但相邻步骤之间的latent很相似，导致推理过程中反复计算几乎相同的中间结果，造成计算冗余，推理速度慢。
 
   ![](../figures/ditcache-image-1.png)
@@ -11,13 +72,13 @@
 <br>
 
 - **原理**
-  
+
   基于相邻迭代采样步骤间、或相邻block间的激活相似性，复用模型局部特征，跳过指定的DiTBlock，减少冗余计算，实现模型推理加速。
 
 <br>
 
 - **优化方法**
-  
+
   通过搜索脚本，根据加速比计算需要跳过的最少block数，然后从起止block开始遍历，在所有可能的组合中，找到MSE损失最小的配置作为最优解。其核心优化点在于：当缓存命中时，直接复用stepN中特定block区间的计算结果到stepM，从而将整个DiTBlock序列的正向传播计算变成一次简单的张量读取操作。
 
     ![](../figures/ditcache-image-2.png)
@@ -36,7 +97,7 @@
       ```
 
   2. 在模型初始化的方法中初始化CacheConfig。
-    
+
       ```python
       config = CacheConfig(
               method="dit_block_cache",
@@ -51,13 +112,13 @@
       ```
 
   3. 在Transformer的init方法中初始化cache变量。
-    
+
       ```python
       self.cache = None
       ```
 
   4. 初始化CacheAgent并赋值给block。
-    
+
       ```python
       cache_agent = CacheAgent(config)
       # 使能ditcache
@@ -65,7 +126,7 @@
       ```
 
   5. 在Transformer的forward方法中使用apply方法使能cache进行推理，其中apply方法第一个入参为block，其余参数与原始代码保持一致
-    
+
       ```python
       for index_block, block in enumerate(self.transformer_blocks):
         # 使能ditcache
@@ -84,12 +145,12 @@
 <br>
 
 - **示例**
-  
+
   具体示例详情请参见examples下的[cache目录](../../../examples/cache/cache.py)。
 
 ---
 
-## AttentionCache 
+## AttentionCache
 
 - **背景**
 
@@ -119,13 +180,13 @@
 - **优化流程**
 
   1. 调用CacheConfig和CacheAgent接口。
-    
+
       ```python
       from mindiesd import CacheConfig, CacheAgent
       ```
 
   2. 初始化CacheConfig，对于attention_cache、block_start和block_end，可采用默认值。
-    
+
       ```python
       config = CacheConfig(
                   method="attention_cache",
@@ -138,13 +199,13 @@
       ```
 
   3. 在Transformer的block模块的init方法中初始化cache变量
-   
+
       ```python
       self.cache = None
       ```
 
   4. 初始化CacheAgent并赋值给block
-    
+
       ```python
       cache_agent = CacheAgent(config)
       # 对block里的attention部分进行cache
@@ -153,7 +214,7 @@
       ```
 
   5. 在Transformer的block模块的forward方法中使用apply方法使能cache进行推理，其中方法第一个入参为原始执行推理的方法，其余参数与原代码保持一致
-    
+
       ```python
       # 使能attention cache
       attn_output = self.cache.apply(
@@ -168,7 +229,7 @@
 
 - **FAQ**
 
-  Q：Qwen-Image-Edit-2509在开启AttentionCache后推理报错：RuntimeError: NPU out of memory. 
+  Q：Qwen-Image-Edit-2509在开启AttentionCache后推理报错：RuntimeError: NPU out of memory.
 
   A：开启AttentionCache会增加对显存的消耗，单卡显存容易不足，推荐使用八卡推理。
 

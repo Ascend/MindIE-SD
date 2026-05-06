@@ -40,7 +40,7 @@ bash tests/run_test.sh --all
 1. 如需切换已安装版本，可先卸载当前 MindIE SD：
 
    ```bash
-   pip uninstall mindiesd
+   python -m pip uninstall mindiesd
    ```
 
 2. 修改 `tests/plugin/la_acc_prof.py` 文件，选择 Option 1 或 Option 2，通过加载 `test_la.csv` 或 `enumerated_cases.csv` 文件，测试 LA 算子在所设置 shape 下的精度。
@@ -65,7 +65,7 @@ bash tests/run_test.sh --all
 - 使用模型推理时，若输入的 tensor shape 过大，也可能触发类似的内存不足报错。
 - 在使用 MindIE SD 进行生成业务时，如果出现错误输入、环境不适配等问题，代码中会抛出异常，需要用户在上层进行异常捕获处理。常见异常类型如下：
 
-| 异常类型 | 说明 |
-| -- | -- |
-| ZeroDivisionError | 除 0 异常。 |
-| ValueError | 参数值异常。 |
+   | 异常类型 | 说明 |
+   | -- | -- |
+   | ZeroDivisionError | 除 0 异常。 |
+   | ValueError | 参数值异常。 |

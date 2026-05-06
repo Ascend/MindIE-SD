@@ -58,7 +58,7 @@ class TestCacheConfig(unittest.TestCase):
         with self.assertRaises(ConfigError) as context:
             CacheAgent(config)
         self.assertIn("The 'steps_count' in config must > 0", str(context.exception))
-    
+
     def test_invalid_blocks_count(self):
         config = CacheConfig(
             method="attention_cache",
@@ -70,7 +70,7 @@ class TestCacheConfig(unittest.TestCase):
         with self.assertRaises(ConfigError) as context:
             CacheAgent(config)
         self.assertIn("The 'blocks_count' in config must > 0", str(context.exception))
-    
+
     def test_invalid_step_start(self):
         config = CacheConfig(
             method="attention_cache",
@@ -82,7 +82,7 @@ class TestCacheConfig(unittest.TestCase):
         with self.assertRaises(ConfigError) as context:
             CacheAgent(config)
         self.assertIn("The 'step_start' in config must >= 0", str(context.exception))
-    
+
     def test_invalid_step_interval(self):
         config = CacheConfig(
             method="attention_cache",
@@ -94,7 +94,7 @@ class TestCacheConfig(unittest.TestCase):
         with self.assertRaises(ConfigError) as context:
             CacheAgent(config)
         self.assertIn("The 'step_interval' in config must > 0", str(context.exception))
-    
+
     def test_invalid_step_end(self):
         config = CacheConfig(
             method="attention_cache",
@@ -106,7 +106,7 @@ class TestCacheConfig(unittest.TestCase):
         with self.assertRaises(ConfigError) as context:
             CacheAgent(config)
         self.assertIn("The 'step_end' must >= 'step_start'", str(context.exception))
-    
+
     def test_invalid_block_start(self):
         config = CacheConfig(
             method="attention_cache",
@@ -120,7 +120,7 @@ class TestCacheConfig(unittest.TestCase):
         with self.assertRaises(ConfigError) as context:
             CacheAgent(config)
         self.assertIn("The 'block_start' in config must >= 0", str(context.exception))
-    
+
     def test_invalid_block_end(self):
         config = CacheConfig(
             method="attention_cache",
@@ -134,7 +134,7 @@ class TestCacheConfig(unittest.TestCase):
         with self.assertRaises(ConfigError) as context:
             CacheAgent(config)
         self.assertIn("The 'block_end' must >= 'block_start'", str(context.exception))
-    
+
     def test_invalid_cache_function(self):
         config = CacheConfig(
             method="attention_cache",
@@ -150,7 +150,7 @@ class TestCacheConfig(unittest.TestCase):
         with self.assertRaises(ParametersInvalid) as context:
             agent.apply(invalid_func)
         self.assertIn("Input function must be callable.", str(context.exception))
-    
+
     def test_cache_config_step_count_no_cache(self):
         """测试当step count <= step start的时候,直接执行传入函数"""
         config = CacheConfig(
@@ -164,13 +164,13 @@ class TestCacheConfig(unittest.TestCase):
             block_end=8,
             )
         agent = CacheAgent(config)
-        
+
         def func(x):
             return str(x)  # str类型的返回值没法缓存,因此如果走进了cache分支则会抛异常
 
         res = agent.apply(func, 20)
         self.assertEqual(res, func(20))
-    
+
     def test_cache_config_step_start_no_cache(self):
         """测试当step start == step end 的时候,直接执行传入函数"""
         config = CacheConfig(
@@ -184,13 +184,13 @@ class TestCacheConfig(unittest.TestCase):
             block_end=8,
             )
         agent = CacheAgent(config)
-        
+
         def func(x):
             return str(x)  # str类型的返回值没法缓存,因此如果走进了cache分支则会抛异常
 
         res = agent.apply(func, 20)
         self.assertEqual(res, func(20))
-    
+
     def test_cache_config_step_interval_no_cache(self):
         """测试当step interval = 1 的时候,直接执行传入函数"""
         config = CacheConfig(
@@ -204,13 +204,13 @@ class TestCacheConfig(unittest.TestCase):
             block_end=8,
             )
         agent = CacheAgent(config)
-        
+
         def func(x):
             return str(x)  # str类型的返回值没法缓存,因此如果走进了cache分支则会抛异常
 
         res = agent.apply(func, 20)
         self.assertEqual(res, func(20))
-    
+
     def test_cache_config_block_count_no_cache(self):
         """测试当block count <= block start 的时候,直接执行传入函数"""
         config = CacheConfig(
@@ -224,13 +224,13 @@ class TestCacheConfig(unittest.TestCase):
             block_end=100,
             )
         agent = CacheAgent(config)
-        
+
         def func(x):
             return str(x)  # str类型的返回值没法缓存,因此如果走进了cache分支则会抛异常
 
         res = agent.apply(func, 20)
         self.assertEqual(res, func(20))
-    
+
     def test_cache_config_block_start_no_cache(self):
         """测试当block start == block end 的时候,直接执行传入函数"""
         config = CacheConfig(
@@ -244,7 +244,7 @@ class TestCacheConfig(unittest.TestCase):
             block_end=5,
             )
         agent = CacheAgent(config)
-        
+
         def func(x):
             return str(x)  # str类型的返回值没法缓存,因此如果走进了cache分支则会抛异常
 

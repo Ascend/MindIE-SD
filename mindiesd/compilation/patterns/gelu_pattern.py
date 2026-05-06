@@ -24,12 +24,12 @@ def create(dtype):
         @staticmethod
         def name():
             return __class__.__name__ + f"-{dtype}"
-        
+
         @staticmethod
         def inputs():
             hidden_states = torch.empty(2, 2, 2, dtype=dtype, device="meta")
             return [hidden_states]
-        
+
         @staticmethod
         def pattern(hidden_states):
             def func(hidden_states):

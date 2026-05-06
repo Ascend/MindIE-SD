@@ -18,12 +18,16 @@ class FusionPatterns:
     enable_rope: bool = True
     enable_adalayernorm: bool = True
     enable_fast_gelu: bool = True
+    enable_mul_add: bool = True
 
 
 class CompilationConfig:
     enable_freezing: bool = True
     graph_log_url: str | None = None
     fusion_patterns: FusionPatterns = FusionPatterns()
+    aclgraph_only: bool = False
+    aclgraph_with_compile: bool = False
+    safe_output_mode: bool = True
 
     def __init__(self):
         raise RuntimeError("CompilationConfig is a static class, do not instantiate it")

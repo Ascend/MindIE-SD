@@ -50,7 +50,7 @@ class TestAttentionCache(unittest.TestCase):
                     res = agent.apply(test_cache_func, step * blocks_count + block)
                     cache_result.append(res)
             self.assertEqual(cache_result, result)
-    
+
     def test_cache_func_two_result(self):
         result = [
             (0, 0), (0, 1), (0, 2), (0, 3), (0, 4),
@@ -62,7 +62,7 @@ class TestAttentionCache(unittest.TestCase):
             (6, 0), (6, 1), (6, 2), (6, 3), (6, 4)]
         steps_count = 7
         blocks_count = 5
-        
+
         config = CacheConfig(
             method="attention_cache",
             blocks_count=blocks_count,

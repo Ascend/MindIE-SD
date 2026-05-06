@@ -99,13 +99,13 @@ def attention_forward_varlen(
             Reserved for future use (planned for regularization).
         window_size ('int', *optional*, defaults to `None`):
             Reserved for future use (planned for regularization).
-        softcap: ('float', *optional*, defaults to `None`). 
+        softcap: ('float', *optional*, defaults to `None`).
             Reserved for future use (planned for regularization).
         alibi_slopes ('torch.Tensor', *optional*, defaults to `None`):
             Reserved for future use (planned for regularization).
         deterministic ('bool', *optional*, defaults to `None`):
             Reserved for future use (planned for regularization).
-        return_attn_probs ('bool', *optional*, defaults to `None`): 
+        return_attn_probs ('bool', *optional*, defaults to `None`):
             Reserved for future use (planned for regularization).
         block_table ('torch.Tensor', *optional*, defaults to `None`):
             Reserved for future use (planned for regularization).

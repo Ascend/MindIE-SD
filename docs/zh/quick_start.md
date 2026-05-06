@@ -1,16 +1,12 @@
 # 快速开始
 
-本章节以 **Wan2.1** 模型为例，展示如何使用 MindIE SD 进行文本生成视频，关于该模型的更多推理内容请参见 [Modelers - MindIE/Wan2.1](https://modelers.cn/models/MindIE/Wan2.1)。
+本章节以 **Wan2.1** 模型为例，展示如何使用 MindIE SD 进行文本生成视频，关于该模型的更多推理内容请参见 [Modelers - MindIE](https://modelers.cn/models/MindIE)。
 
-## 前提条件
+> 开始推理前，请先按 [安装指导](./installation.md) 完成环境准备和 MindIE SD 安装。
 
-开始推理前，请先按 [安装指导](./installing_guide.md) 完成环境准备和 MindIE SD 安装。
+## 模型下载与运行
 
-## 执行推理
-
-安装模型所需依赖并执行推理。
-
-在任意路径下载 Wan2.1 模型仓，并安装所需依赖。在 MindIE SD 代码路径下进行推理。用户可根据需要自行设置权重路径（例：`/home/{用户名}/Wan2.1-T2V-14B`）和推理脚本中的模型参数，参数解释详情请参见[参数配置](../../examples/wan/parameter_config.md)。
+在任意路径下载 Wan2.1 模型仓，并安装模型仓所需依赖。用户可根据需要自行设置权重路径（例：`/home/{用户名}/Wan2.1-T2V-14B`）和推理脚本中的模型参数，参数解释详情请参见[参数配置](../../examples/wan/parameter_config.md)。
 
 ```bash
 git clone https://modelers.cn/MindIE/Wan2.1.git && cd Wan2.1
@@ -21,16 +17,16 @@ cp MindIE-SD/examples/wan/infer_t2v.sh ./
 bash infer_t2v.sh --model_base="/home/{用户名}/Wan2.1-T2V-14B"
 ```
 
-## 加速特性效果展示
+## 加速效果展示
 
 下面以 Wan2.1 模型为例，展示在 Atlas 800I A2 推理服务器（1*64G）上单卡和多卡实现不同加速特性的加速效果。
 
 其中：
 
 - Cache：表示使用[AttentionCache](./features/cache.md#attentioncache)特性；
-- TP：表示使用[Tensor Parallel](./features/parallelism.md#张量并行)特性；
-- FA 稀疏：表示使用 FA 稀疏中的[RainFusion 特性](./features/sparse_quantization.md#fa稀疏)；
-- CFG：表示使用[CFG 并行](./features/parallelism.md#cfg并行)特性；
+- TP：表示使用[Tensor Parallel](./features/parallelism.md)特性；
+- FA 稀疏：表示使用 FA 稀疏中的[RainFusion 特性](./features/sparse.md)；
+- CFG：表示使用[CFG 并行](./features/parallelism.md)特性；
 - Ulysses：表示使用[Ulysses 并行](./features/parallelism.md#ulysses-sequence-parallel)加速特性，模型生成的视频的 H*W 为 832*480，`sample_steps` 为 50。
 
 ### 单卡加速效果

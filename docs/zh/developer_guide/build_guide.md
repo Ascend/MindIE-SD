@@ -24,7 +24,7 @@ MindIE镜像获取请参见[镜像安装方式](https://gitcode.com/Ascend/MindI
     python -m build --wheel --no-isolation
     ```
 
-    > **说明：** 
+    >[!NOTE]说明
     >若环境中没有wheel等依赖，请用户使用以下命令自行安装。
     >
     >```bash

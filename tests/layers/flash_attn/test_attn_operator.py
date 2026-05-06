@@ -24,11 +24,11 @@ from mindiesd.layers.flash_attn.attention_operate import (
 class TestOperator(AttentionOperateBase):
     supported_layout = ["BNSD", "BSH"]
     supported_dtype = [torch.float32]
-    
+
     @classmethod
     def is_supported_shape(cls, attn_param: AttentionParam) -> bool:
         return True
-  
+
     @classmethod
     def forward_attn_bnsd(cls, attn_param, query, key, value, mask=None, scale=None) -> None:
         return "bnsd"
@@ -40,7 +40,7 @@ class TestOperator(AttentionOperateBase):
     @classmethod
     def forward_attn_bsh(cls, attn_param, query, key, value, mask=None, scale=None) -> None:
         return "bsh"
-        
+
 
 @unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestAttentionOperator(unittest.TestCase):
@@ -48,7 +48,7 @@ class TestAttentionOperator(unittest.TestCase):
         op = device_duo_op.get_all()
         self.assertIn("test_op", op)
         test_op = device_duo_op.get("test_op")
-    
+
     def test_operator_registry_800(self):
         op = device_800_op.get_all()
         self.assertIn("test_op", op)

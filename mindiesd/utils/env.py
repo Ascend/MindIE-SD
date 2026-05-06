@@ -35,7 +35,7 @@ def parser_env_to_dict(mindie_log_level, valid_keys=None):
         if ":" in module:
             module_name, level = module.split(':')[:2] # 2: only retrieve the first two
             level = level.strip().lower()
-            if valid_keys is None or level in valid_keys:  
+            if valid_keys is None or level in valid_keys:
                 log_level[module_name.strip()] = level
         module = module.lower() # A~Z to a~z
         if valid_keys is None or module in valid_keys:
@@ -68,7 +68,7 @@ class EnvVar:
     mindie_log_to_file: str = os.getenv("MINDIE_LOG_TO_FILE", "true")
     # The path to write logs, the default is `~/mindie/log`.
     mindie_log_path: str = os.getenv("MINDIE_LOG_PATH", "~/mindie/log")
-    
+
     mindie_log_verbose: str = os.getenv("MINDIE_LOG_VERBOSE", "true")
 
     mindie_log_rotate: str = os.getenv("MINDIE_LOG_ROTATE", "-s 30 -fs 20 -r 10")
@@ -102,7 +102,7 @@ class EnvVar:
             return
         self.component_log_level = log_level.get(COMPONENT_NAME,
             log_level.get(ALL_COMPONENT_NAME, self.component_log_level))
-        
+
         log_stdout = parser_env_to_dict(self.mindie_log_stdout, VALID_BOOLEAN)
         self.component_log_stdout = log_stdout.get(COMPONENT_NAME,
             log_stdout.get(ALL_COMPONENT_NAME, self.component_log_stdout))
@@ -130,19 +130,19 @@ class EnvVar:
                 f"[{len(self.mindie_log_level)}] is > {MAX_STRING_LENGTH}.")
         if not check_string_valid(self.mindie_log_level):
             raise ValueError(f"The environment variable MINDIE_LOG_LEVEL is invalid!")
-        
+
         if len(self.mindie_log_stdout) > MAX_STRING_LENGTH:
             raise ValueError(f"The length of the environment variable MINDIE_LOG_TO_STDOUT" \
                 f"[{len(self.mindie_log_stdout)}] is > {MAX_STRING_LENGTH}.")
         if not check_string_valid(self.mindie_log_stdout):
             raise ValueError(f"The environment variable MINDIE_LOG_TO_STDOUT is invalid!")
-        
+
         if len(self.mindie_log_to_file) > MAX_STRING_LENGTH:
             raise ValueError(f"The length of the environment variable MINDIE_LOG_TO_FILE" \
                 f"[{len(self.mindie_log_to_file)}] is > {MAX_STRING_LENGTH}.")
         if not check_string_valid(self.mindie_log_to_file):
             raise ValueError(f"The environment variable MINDIE_LOG_TO_FILE is invalid!")
-        
+
         if len(self.mindie_log_path) > MAX_STRING_LENGTH:
             raise ValueError(f"The length of the environment variable MINDIE_LOG_PATH" \
                 f"[{len(self.mindie_log_path)}] is > {MAX_STRING_LENGTH}.")
@@ -154,7 +154,7 @@ class EnvVar:
                 f"[{len(self.mindie_log_verbose)}] is > {MAX_STRING_LENGTH}.")
         if not check_string_valid(self.mindie_log_verbose):
             raise ValueError(f"The environment variable MINDIE_LOG_VERBOSE is invalid!")
-        
+
         if len(self.mindie_log_rotate) > MAX_STRING_LENGTH:
             raise ValueError(f"The length of the environment variable MINDIE_LOG_ROTATE" \
                 f"[{len(self.mindie_log_rotate)}] is > {MAX_STRING_LENGTH}.")
@@ -168,7 +168,7 @@ class EnvVar:
             if self.rotate_cycle_num < 1 or self.rotate_cycle_num > MAX_ROTATE_DAY:
                 raise ValueError(f"The number of days for log rotation must be in range [1, {MAX_ROTATE_DAY}], "
                     f"but got {self.rotate_cycle_num}.")
-        
+
         s_match = re.search(r'-s ([a-z]+)', component_log_rotate) # match '-s daily'
         if s_match is not None and s_match.group(1) in VALID_CYCLE:
             self.rotate_cycle = s_match.group(1)
@@ -180,7 +180,7 @@ class EnvVar:
             if self.rotate_max_file_size < 1 or self.rotate_max_file_size > MAX_FILE_SIZE:
                 raise ValueError(f"The size of the log rotation file must be in range [1, {MAX_FILE_SIZE}]MB, "
                     f"but got {self.rotate_max_file_size}MB.")
-        
+
         fc_match = re.search(r'-r (\d+)', component_log_rotate) # match '-r 1000'
         if fc_match is not None:
             self.rotate_max_file_num = int(fc_match.group(1))

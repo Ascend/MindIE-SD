@@ -192,34 +192,34 @@ class QuantMode():
 
     def check_weight_int8_only(self):
         return self._all(QuantFlag.INT8_WEIGHTS, QuantFlag.WEIGHTS_AND_ACTIVATION)
-        
+
     def contains_fa_quantization(self):
         return self._any(QuantFlag.FA_QUANT)
-        
+
     def contains_per_group_scale(self):
         return self._any(QuantFlag.PER_GROUP)
-        
+
     def contains_weight_quantization(self):
         return self._any(QuantFlag.INT4_WEIGHTS | QuantFlag.INT8_WEIGHTS)
-        
+
     def check_weight_int4_only(self):
         return self._all(QuantFlag.INT4_WEIGHTS, QuantFlag.WEIGHTS_AND_ACTIVATION)
-        
+
     def check_weight_only_mode(self):
         return self.check_weight_int8_only() or self.check_weight_int4_only()
-        
+
     def contains_activation_or_weight_quant(self):
         return self._any(QuantFlag.INT4_WEIGHTS | QuantFlag.INT8_WEIGHTS | QuantFlag.ACTIVATION)
-        
+
     def check_weight_int8_only_with_group(self):
         return self.check_weight_int8_only() and self._any(QuantFlag.PER_GROUP)
-        
+
     def contains_per_channel_scale(self):
         return self._any(QuantFlag.PER_CHANNEL)
-        
+
     def contains_activation_and_weight_quant(self):
         return self._all(QuantFlag.INT8_WEIGHTS | QuantFlag.ACTIVATION, QuantFlag.WEIGHTS_AND_ACTIVATION)
-        
+
     def check_weight_int4_only_with_group(self):
         return self.check_weight_int4_only() and self._any(QuantFlag.PER_GROUP)
 

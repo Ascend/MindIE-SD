@@ -39,8 +39,8 @@ class Mlp(nn.Module):
         bias = to_2tuple(bias)
         linear_layer = partial(nn.Conv2d, kernel_size=1) if use_conv else nn.Linear
 
-        self.fc1 = linear_layer(features_in, features_hidden, bias=bias[0])  
-        self.act = act_layer() if not isinstance(act_layer, str) else get_activation_layer(act_layer) 
+        self.fc1 = linear_layer(features_in, features_hidden, bias=bias[0])
+        self.act = act_layer() if not isinstance(act_layer, str) else get_activation_layer(act_layer)
         self.norm = norm_layer(features_hidden) if norm_layer is not None else nn.Identity()
         self.fc2 = linear_layer(features_hidden, features_out, bias=bias[1])
 

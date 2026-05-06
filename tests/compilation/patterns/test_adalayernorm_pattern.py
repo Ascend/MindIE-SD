@@ -1,9 +1,9 @@
 import os
 import unittest
 import torch
-import time
 
 from mindiesd.compilation import MindieSDBackend
+from tests.compilation.test_bench_utils import benchmark
 
 
 @unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
@@ -27,20 +27,23 @@ class AdaLayerNormZeroPatternDiffusersModel(torch.nn.Module):
 class TestAdaLayerNormPatternCompilationCase(unittest.TestCase):
     def _run_test_and_measure_time(self, model, x, scale, shift):
         compiled_model = torch.compile(model, backend=MindieSDBackend())
+        compiled_model(x, scale, shift)
+        torch.npu.synchronize()
 
-        t1 = time.perf_counter()
+        compiled_args = (x, scale, shift)
+        compiled_time = benchmark(compiled_model, compiled_args)
+        original_time = benchmark(model, compiled_args)
+
         output_compiled = compiled_model(x, scale, shift)
-        t2 = time.perf_counter()
         output_original = model(x, scale, shift)
-        t3 = time.perf_counter()
 
         output_compiled = output_compiled.reshape(1, -1).to(torch.float32)
         output_original = output_original.reshape(1, -1).to(torch.float32)
         self.assertGreater(torch.cosine_similarity(output_compiled, output_original)[0], 2**-7, msg="模式替换后输出不一致！")
-        self.assertLess(t3-t2, t2-t1, msg="函数耗时超过预期阈值")
+        self.assertLess(compiled_time, original_time, msg="compiled={:.6f}s >= original={:.6f}s".format(compiled_time, original_time))
 
     def test_adalayernorm_zero_pattern_diffusers_bfloat16(self):
-        B, S, N, D = 1, 4096, 24, 128   # FLux.1-dev
+        B, S, N, D = 4, 4096, 24, 128   # FLux.1-dev
 
         embedding_dim = N * D
         eps = 1e-06

@@ -19,14 +19,14 @@ from mindiesd.layers.flash_attn.common import lru_cache_by_attn_param, Attention
 @unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
 class TestCacheByAttnParam(unittest.TestCase):
     def test_update_cache(self):
-        
+
         @lru_cache_by_attn_param()
         def test_cache(attn_param: AttentionParam):
             if attn_param.batch_size > 10:
                 return "case 0"
             else:
                 return "case 1"
-        
+
         param = AttentionParam(20, 16, 64, 128, 128, torch.float32, False)
         out = test_cache(param)
         self.assertIn(param.to_hash(), attn_cache)

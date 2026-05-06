@@ -94,14 +94,14 @@ def attention_preprocess_fake(
     q_seq_len = query.shape[1] if query.dim() == 4 else query.shape[0]
     k_seq_len = key.shape[1] if key.dim() == 4 else key.shape[0]
     v_seq_len = value.shape[1] if value.dim() == 4 else value.shape[0]
-    
+
     def pad_length(length):
         return (length + align_len - 1) // align_len * align_len
-    
+
     q_padded_seq_len = pad_length(q_seq_len)
     k_padded_seq_len = pad_length(k_seq_len)
     v_padded_seq_len = pad_length(v_seq_len)
-    
+
     def create_padded_tensor(tensor, padded_seq_len):
         if tensor.dim() == 4:
             return torch.empty(
@@ -113,11 +113,11 @@ def attention_preprocess_fake(
                 [padded_seq_len, head_num, head_dim],
                 device=tensor.device, dtype=tensor.dtype
             )
-    
+
     out_query = create_padded_tensor(query, q_padded_seq_len)
     out_key = create_padded_tensor(key, k_padded_seq_len)
     out_value = create_padded_tensor(value, v_padded_seq_len)
-    
+
     return out_query, out_key, out_value
 
 
@@ -327,6 +327,69 @@ def ada_block_sparse_attention_fake(
     return output
 
 
+def block_sparse_attention(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    block_sparse_mask: Optional[torch.Tensor] = None,
+    block_shape: List[int] = None,
+    q_input_layout: str = 'BNSD',
+    kv_input_layout: str = 'BNSD',
+    num_key_value_heads: int = 1,
+    scale_value: float = 1.0,
+    inner_precise: int = 0,
+    actual_seq_lengths: Optional[List[int]] = None,
+    actual_seq_lengths_kv: Optional[List[int]] = None,
+    softmax_lse_flag: int = 0,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    if block_shape is None:
+        block_shape = [128, 128]
+    kwargs = dict(
+        query=query,
+        key=key,
+        value=value,
+        block_sparse_mask=block_sparse_mask,
+        block_shape=block_shape,
+        q_input_layout=q_input_layout,
+        kv_input_layout=kv_input_layout,
+        num_key_value_heads=num_key_value_heads,
+        scale_value=scale_value,
+        inner_precise=inner_precise,
+        softmax_lse_flag=softmax_lse_flag,
+    )
+    if actual_seq_lengths is not None:
+        kwargs['actual_seq_lengths'] = actual_seq_lengths
+    if actual_seq_lengths_kv is not None:
+        kwargs['actual_seq_lengths_kv'] = actual_seq_lengths_kv
+    return getattr(torch.ops.mindiesd, "block_sparse_attention")(**kwargs)
+
+
+@register_ops.register_mindie_fake_op("block_sparse_attention")
+def block_sparse_attention_fake(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    block_sparse_mask: Optional[torch.Tensor] = None,
+    block_shape: List[int] = None,
+    q_input_layout: str = 'BNSD',
+    kv_input_layout: str = 'BNSD',
+    num_key_value_heads: int = 1,
+    scale_value: float = 1.0,
+    inner_precise: int = 0,
+    actual_seq_lengths: Optional[List[int]] = None,
+    actual_seq_lengths_kv: Optional[List[int]] = None,
+    softmax_lse_flag: int = 0,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    attention_out = torch.empty_like(query)
+    # softmax_lse shape: TND -> [T, N, 1], BNSD -> [B, N, S, 1]
+    if q_input_layout == "TND":
+        lse_shape = [query.shape[0], query.shape[1], 1]
+    else:
+        lse_shape = [query.shape[0], query.shape[1], query.shape[2], 1]
+    softmax_lse = torch.empty(lse_shape, device=query.device, dtype=torch.float32)
+    return attention_out, softmax_lse
+
+
 def adaln(
     x: torch.Tensor,
     scale: torch.Tensor,
@@ -336,11 +399,11 @@ def adaln(
     epsilon: float = 1e-05
 ) -> torch.Tensor:
     return getattr(torch.ops.mindiesd, "adaln")(
-        x=x, 
-        scale=scale, 
+        x=x,
+        scale=scale,
         shift=shift,
-        weight=weight, 
-        bias=bias, 
+        weight=weight,
+        bias=bias,
         epsilon=epsilon
     )
 

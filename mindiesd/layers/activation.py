@@ -20,7 +20,7 @@ class GELU(nn.Module):
     def __init__(self, approximate="none"):
         super().__init__()
         self.approximate = approximate
-    
+
     def forward(self, hidden_states):
         if self.approximate == "none" or self.approximate == "tanh":
             return F.gelu(hidden_states, approximate=self.approximate)

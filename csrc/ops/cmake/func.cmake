@@ -236,7 +236,7 @@ function(add_opc_config)
     endif()
 
     string(REPLACE "," ";" OP_COMPILE_CONFIG_LIST "${OP_COMPILE_CONFIG}")
-    
+
     set(_OPC_CONFIG)
 
     foreach(_option ${OP_COMPILE_CONFIG_LIST})

@@ -24,8 +24,8 @@ if os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU":
 def softmax_flash(src, inmax=None, insum=None, update=False):
     if not update:
         x_max = np.max(src, axis=-1, keepdims=True)
-        x_sub = src - x_max   
-        dst = np.exp(x_sub) 
+        x_sub = src - x_max
+        dst = np.exp(x_sub)
         x_sum = np.sum(dst, axis=-1, keepdims=True)
         exp_max = None
     else:
@@ -54,7 +54,7 @@ def sparse_estimate_cpu(query, key, causal, blocksize=128, stride=8, threshold=0
     mask = np.zeros([bs, nq, block_num, block_num], dtype=np.bool_)
     M, N = 128, 1024
     FLASH = True
-  
+
     for bi in range(bs):
         for ni in range(nq):
             qtimes = (seq + M*stride -1) // (M*stride)
@@ -82,27 +82,27 @@ def sparse_estimate_cpu(query, key, causal, blocksize=128, stride=8, threshold=0
                     if n % stride > 0:
                         pad_size = stride - (n % stride)
                         z = np.zeros((pad_size, dim), dtype=np.float32)
-                        k = np.concatenate([k, z], axis=-2)  # (padded_n, dim) 
-            
+                        k = np.concatenate([k, z], axis=-2)  # (padded_n, dim)
+
                     k = k.reshape(-1, stride * dim)
-            
+
                     p = np.dot(q / (np.sqrt(dim) * stride), k.T)
                     if FLASH:
-                        if innerIdx == 0: 
+                        if innerIdx == 0:
                             p, x_max, x_sum, exp_max = softmax_flash(p)
-                        else: 
+                        else:
                             p, x_max[:], x_sum[:], exp_max = softmax_flash(p, x_max, x_sum, True)
                     else:
                         p = np.exp(p-20.0)
                         x_sum = x_sum + p.sum(axis=-1, keepdims=True)
-            
+
                     # first reduce
                     n = p.shape[-1]
                     if n % reduce_size > 0:
                         pad_size = reduce_size - (n % reduce_size)
                         z = np.zeros((p.shape[0], pad_size), dtype=np.float32)
                         p = np.concatenate([p, z], axis=-1)
-            
+
                     p = p.reshape(-1, p.shape[-1] // reduce_size, reduce_size).sum(axis=-1)
                     first_reduce_gm.append(p.copy())
                     x_max_loop_ub.append(x_max.copy() if x_max is not None else None)
@@ -113,11 +113,11 @@ def sparse_estimate_cpu(query, key, causal, blocksize=128, stride=8, threshold=0
                     reduce_ub, x_max = first_reduce_gm[i], x_max_loop_ub[i]
                     upd = np.exp(x_max - x_max_global) / x_sum if FLASH else 1.0 / x_sum
                     reduce_ub *= upd
-                    n, m = reduce_ub.shape 
+                    n, m = reduce_ub.shape
                     if n % reduce_size > 0:
                         z = np.zeros((reduce_size - n % reduce_size, m), dtype=np.float32)
                         reduce_ub = np.concatenate([reduce_ub, z], axis=0)
-                    reduce_ub = reduce_ub.reshape(reduce_ub.shape[0] // reduce_size, reduce_size, reduce_ub.shape[1]) 
+                    reduce_ub = reduce_ub.reshape(reduce_ub.shape[0] // reduce_size, reduce_size, reduce_ub.shape[1])
                     reduce_ub = reduce_ub.sum(axis=1)
                     first_reduce_gm[i] = reduce_ub.copy()
 
@@ -141,7 +141,7 @@ def sparse_estimate_cpu(query, key, causal, blocksize=128, stride=8, threshold=0
                         to_sort[0] = guard +1
                         if not causal: to_sort[-1] = guard + 1
                         mask[bi, ni, offset + i, :to_sort.shape[-1]] = (to_sort >= guard).astype(np.bool_)
-  
+
     return mask
 
 
@@ -173,7 +173,7 @@ class TestSparseBlockEstimate(unittest.TestCase):
         self.query = torch.randn(self.query_shape, dtype=self.dtype)
         self.key = torch.randn(self.key_value_shape, dtype=self.dtype)
         s1 = (self.qseqlen + self.sparse_size - 1) // self.sparse_size
-        realS2 = s1 
+        realS2 = s1
         s2 = (realS2 + 31) // 32 * 32
         self.smask_shape = (self.batch, self.head_num, s1, s2)
         self.sct_shape = (self.batch, self.head_num, s1)

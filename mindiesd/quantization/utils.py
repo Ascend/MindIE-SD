@@ -119,7 +119,7 @@ class TimestepManager:
         if t_idx is None:
             logger.debug("Warning: Timestep index not set. Call set_timestep_idx() before each timestep.")
         return t_idx
-    
+
     @classmethod
     def set_timestep_idx_max(cls, t_idx: int) -> None:
         r"""

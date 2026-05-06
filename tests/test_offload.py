@@ -28,7 +28,7 @@ class MockDITBlock(torch.nn.Module):
         self.register_buffer('running_mean', torch.randn(16, dtype=torch.float32))
         self.running_mean.is_slice_tensor = False
         self.slice_param = None
-        
+
         if has_slice_tensor:
             full_tensor = torch.randn(64, dtype=torch.float32)
             self.slice_param = torch.nn.Parameter(full_tensor[::2])

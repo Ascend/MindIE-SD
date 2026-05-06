@@ -36,9 +36,9 @@ def parse_module(module):
 
 
 def expert_info_transfer_pool(
-        module, 
-        instruction_queue, 
-        upload_queue, 
+        module,
+        instruction_queue,
+        upload_queue,
         device
     ):
     dispatcher_list, expert_load_collector_list = parse_module(module)
@@ -64,8 +64,8 @@ def expert_info_transfer_pool(
 
 
 def connect_to_schedule_manager(
-        rank_in_group, 
-        ip, 
+        rank_in_group,
+        ip,
         port,
         auth_key
     ):
@@ -89,8 +89,8 @@ def construct_expert_info_transfer_pool(**kwargs):
     if instruction_queue is None or upload_queue is None:
         return None, None
     worker = threading.Thread(
-        target=expert_info_transfer_pool, 
-        args=(module, instruction_queue, upload_queue, device), 
+        target=expert_info_transfer_pool,
+        args=(module, instruction_queue, upload_queue, device),
         daemon=True
     )
     worker.start()

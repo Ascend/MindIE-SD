@@ -17,10 +17,10 @@ from mindiesd.utils.exception import ParametersInvalid
 
 
 def handle_profile_task(
-        instruction, 
-        upload_queue, 
-        expert_load_collector_list, 
-        dispatcher_list, 
+        instruction,
+        upload_queue,
+        expert_load_collector_list,
+        dispatcher_list,
         transfer_stream
     ):
     moe_layer_idx = instruction.moe_layer_idx
@@ -32,7 +32,7 @@ def handle_profile_task(
             with dispatcher.update_lock:
                 local_expert_list = dispatcher.local_expert_list
             response_data = {
-                'moe_layer_idx': moe_layer_idx, 
+                'moe_layer_idx': moe_layer_idx,
                 'load': expert_load,
                 'local_expert_list': local_expert_list
             }
@@ -40,10 +40,10 @@ def handle_profile_task(
 
 
 def handle_update_layout_task(
-        instruction, 
-        upload_queue, 
-        expert_load_collector_list, 
-        dispatcher_list, 
+        instruction,
+        upload_queue,
+        expert_load_collector_list,
+        dispatcher_list,
         transfer_stream
     ):
     moe_layer_idx = instruction.moe_layer_idx
@@ -65,7 +65,7 @@ def handle_update_layout_task(
 
         weight1_local_list_cpu = [dispatcher.weight1_list_cpu[i] for i in local_expert_list]
         weight2_local_list_cpu = [dispatcher.weight2_list_cpu[i] for i in local_expert_list]
-        
+
         with torch_npu.npu.stream(transfer_stream):
 
             device_indices_map = device_indices_map_cpu.to(device)
@@ -74,26 +74,26 @@ def handle_update_layout_task(
             # 直接修改data
             weight1_npu_list = [t.to(device, non_blocking=True) for t in weight1_local_list_cpu]
             weight2_npu_list = [t.to(device, non_blocking=True) for t in weight2_local_list_cpu]
-            
+
             weight1 = nn.ParameterList(weight1_npu_list)
             weight2 = nn.ParameterList(weight2_npu_list)
 
             dispatcher.copy_module_weight_and_map(
-                weight1=weight1, 
-                weight2=weight2, 
-                device_indices_map=device_indices_map, 
-                local_expert_indices_map=local_expert_indices_map, 
-                local_expert_list=local_expert_list, 
-                expert_trans_tensor=expert_trans_tensor, 
+                weight1=weight1,
+                weight2=weight2,
+                device_indices_map=device_indices_map,
+                local_expert_indices_map=local_expert_indices_map,
+                local_expert_list=local_expert_list,
+                expert_trans_tensor=expert_trans_tensor,
                 layer_idx=moe_layer_idx
             )
 
 
 def handle_unknown_task(
-        instruction, 
-        upload_queue, 
-        expert_load_collector_list, 
-        dispatcher_list, 
+        instruction,
+        upload_queue,
+        expert_load_collector_list,
+        dispatcher_list,
         transfer_stream
     ):
     raise ParametersInvalid(f"Unknown task type: {instruction.task_type}")

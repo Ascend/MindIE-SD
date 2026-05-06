@@ -15,5 +15,12 @@ __all__ = [
     "CompilationConfig"
 ]
 
-from .mindie_sd_backend import MindieSDBackend
-from .compiliation_config import CompilationConfig
+
+def __getattr__(name):
+    if name == "MindieSDBackend":
+        from .mindie_sd_backend import MindieSDBackend as _cls
+        return _cls
+    if name == "CompilationConfig":
+        from .compiliation_config import CompilationConfig as _cls
+        return _cls
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

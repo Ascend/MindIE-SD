@@ -59,7 +59,7 @@ class PatchEmbed3D(nn.Module):
             norm_layer (nn.Module, optional): Normalization layer. Default: None.
         Adapted Models: Open-Sora
         """
-        
+
         super().__init__()
         self.patch_size = patch_size
         self.flatten = flatten
@@ -85,7 +85,7 @@ class PatchEmbed3D(nn.Module):
         re_d = x_shape2_d % self.patch_size[0]
         if re_d != 0:
             x = F.pad(x, (0, 0, 0, 0, 0, self.patch_size[0] - re_d))
-        
+
         # embedding
         # (B, in_chans, D, H, W) -> (B, embed_dim, D//patch_size[0], H//patch_size[1], W//patch_size[2])
         x = self.proj(x)
@@ -120,7 +120,7 @@ class PatchEmbed2D(nn.Module):
         super().__init__()
         self.proj = nn.Conv2d(
             in_channels,
-            embed_dim, 
+            embed_dim,
             kernel_size=(patch_size, patch_size),
             stride=(patch_size, patch_size),
             bias=bias
@@ -132,7 +132,7 @@ class PatchEmbed2D(nn.Module):
         x = self.proj(x)
         x = rearrange(x, '(b t) c h w -> b (t h w) c', b=b)
         return x
-    
+
 
 def cal_1d_sincos_embed(
         items: torch.Tensor,
@@ -172,7 +172,7 @@ def cal_1d_sincos_embed(
         embed = torch.cat([cos, sin], dim=-1)
     else:
         embed = torch.cat([sin, cos], dim=-1)
-        
+
     return embed
 
 
@@ -211,7 +211,7 @@ class SinCosPositionEmbed1D(nn.Module):
             self.register_buffer("embed", embed, persistent=False)
         else:
             self.embed = None
-    
+
     def get_1d_sincos_embed(self, items: torch.Tensor):
         """
         Calculate 1d sinusoidal embeddings.
@@ -230,7 +230,7 @@ class SinCosPositionEmbed1D(nn.Module):
             embed = self.embed[items]
         else:
             embed = cal_1d_sincos_embed(items, self.embed_dim, self.max_period, self.step, self.flip)
-        
+
         return embed
 
 
@@ -253,7 +253,7 @@ class TimestepEmbedder(SinCosPositionEmbed1D):
             nn.SiLU(),
             nn.Linear(hidden_size, hidden_size, bias=True),
         )
-    
+
     def forward(self, t, dtype):
         t_freq = self.get_1d_sincos_embed(t)
         if t_freq.dtype != dtype:
@@ -274,7 +274,7 @@ class SizeEmbedder(SinCosPositionEmbed1D):
             size (int): The size of cache.
         Adapted Models: Open-Sora
         """
-        
+
         super().__init__(frequency_embedding_size, flip=flip, cache1d=cache1d, size=size)
         self.mlp = nn.Sequential(
             nn.Linear(frequency_embedding_size, hidden_size, bias=True),
@@ -386,7 +386,7 @@ class SinCosPositionEmbed2D(SinCosPositionEmbed1D):
         base_size: Union[int, None] = None,
         interpolation_scale: float = 1.0,
         persistent = False,
-    ):  
+    ):
         """
         Create 2d sinusoidal embeddings.
         Args:
@@ -400,7 +400,7 @@ class SinCosPositionEmbed2D(SinCosPositionEmbed1D):
             interpolation_scale (float): The scale parameter.
             persistent (bool): If true, save the cache in dict.
         """
-        
+
         self.embed_dim = embed_dim
         self.step = step
         self.flip = flip
@@ -416,14 +416,14 @@ class SinCosPositionEmbed2D(SinCosPositionEmbed1D):
             self.base_size = round((self.grid_size[0] * self.grid_size[1]) ** 0.5)
         else:
             self.base_size = base_size
-        
+
         if not isinstance(self.embed_dim, int) or self.embed_dim <= 0:
             raise ParametersInvalid(f"Embed_dim should be a positive integer, but got {self.embed_dim}.")
         if self.step not in [1, 2]:
             raise ParametersInvalid(f"The value of step must be in [1, 2], but got {self.step}.")
         if self.embed_dim % (2 * self.step) != 0:
             raise ParametersInvalid(f"Embed_dim must be divisible by {2 * self.step}, but got {self.embed_dim}.")
-        
+
         self.dim = self.embed_dim // (2 // self.step)
         super().__init__(self.dim, self.step, self.flip, self.max_period, cache1d=False)
 
@@ -443,7 +443,7 @@ class SinCosPositionEmbed2D(SinCosPositionEmbed1D):
         Return:
             emb (torch.Tensor): An (1, H*W, embed_dim) tensor of embeddings.
         """
-        
+
         if isinstance(grid_size, int):
             grid_size = (grid_size, grid_size)
 
@@ -491,10 +491,10 @@ class PositionEmbedding2D(SinCosPositionEmbed2D):
             dim (int): The dimension of embedding.
         Adapted Models: Open-Sora
         """
-        
+
         if dim % 4 != 0:
             raise ParametersInvalid(f"Input dim must be divisible by 4, but got {dim}.")
-        
+
         super().__init__(embed_dim=dim, step=2)
 
     def forward(self, x: torch.Tensor, h: int, w: int, scale: Optional[float]=1.0):
@@ -535,7 +535,7 @@ class PatchEmbed(SinCosPositionEmbed2D):
             pos_embed_max_size: The size of max postion embedding.
         Adapted Models: SD3, HuanyuanDit
         """
-        
+
         num_patches = (height // patch_size) * (width // patch_size)
         self.flatten = flatten
         self.layer_norm = layer_norm
@@ -598,11 +598,11 @@ class PatchEmbed(SinCosPositionEmbed2D):
         spatial_pos_embed = spatial_pos_embed[:, top : top + height, left : left + width, :]
         spatial_pos_embed = spatial_pos_embed.reshape(1, -1, spatial_pos_embed.shape[-1])
         return spatial_pos_embed
-    
+
     @property
     def dtype(self):
         return next(self.parameters()).dtype
-    
+
     def forward(self, latent):
         if self.pos_embed_max_size is not None:
             height, width = latent.shape[-2:]
@@ -622,7 +622,7 @@ class PatchEmbed(SinCosPositionEmbed2D):
             pos_embed = self.cropped_pos_embed(height, width)
         else:
             pos_embed = self.get_2d_sincos_embed(
-                (height, width), 
+                (height, width),
                 self.base_size,
                 interpolation_scale=self.interpolation_scale,
                 device=latent.device
@@ -659,7 +659,7 @@ class RotaryEmbedding(nn.Module):
                  cache_if_possible=True
                  ):
         super().__init__()
-        
+
         theta *= theta_rescale_factor ** (dim / (dim - 2))
 
         self.freqs_for = freqs_for
@@ -849,11 +849,11 @@ class ReconstitutionRotaryEmbedding:
         if theta_rescale_factor <= 0.:
             raise ParametersInvalid(
                 f"The value of input theta_rescale_factor must be > 0, but got {theta_rescale_factor}.")
-        
+
         theta *= theta_rescale_factor ** (dim / (dim - 2))
 
         self.freqs = 1. / (theta ** (torch.arange(0, dim, 2)[:(dim // 2)].float() / dim))
-        
+
         # default sequence dimension
         self.seq_before_head_dim = seq_before_head_dim
         self.default_seq_dim = -3 if seq_before_head_dim else -2
@@ -909,7 +909,7 @@ class ReconstitutionRotaryEmbedding:
         freqs = einsum('..., f -> ... f', t.type(freqs.dtype), freqs)
         freqs = torch.repeat_interleave(freqs, repeats=2, dim=-1)
         return freqs
-    
+
     def __call__(self, t, freqs=None, seq_dim=None, offset=0):
         # 进入这个函数
         seq_dim = default(seq_dim, self.default_seq_dim)

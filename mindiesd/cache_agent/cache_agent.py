@@ -29,11 +29,11 @@ class CacheAgent:
         self._check_config()
 
         self._cache_method = CACHE_METHOD.get(self._config.method)(self._config)
-    
+
     def apply(self, function: callable, *args, **kwargs):
         if not callable(function):
             raise ParametersInvalid("Input function must be callable.")
-        
+
         # If start step[0,1,2,...] >= stpes_count(), not use cache
         if self._config.step_start >= self._config.steps_count or \
             self._config.step_end == self._config.step_start:
@@ -43,7 +43,7 @@ class CacheAgent:
         if self._config.block_start >= self._config.blocks_count or \
             self._config.block_end == self._config.block_start:
             return function(*args, **kwargs)
-        
+
         if self._config.step_interval == 1:
             return function(*args, **kwargs)
 
@@ -53,12 +53,12 @@ class CacheAgent:
         if self._config.method not in CACHE_METHOD.keys():
             raise ConfigError(f"Method '{self._config.method}' is not supported, "
                               f"the list of support methods is {CACHE_METHOD.keys()}.")
-        
+
         if self._config.blocks_count <= 0:
             raise ConfigError(f"The 'blocks_count' in config must > 0, but got {self._config.blocks_count}.")
         if self._config.steps_count <= 0:
             raise ConfigError(f"The 'steps_count' in config must > 0, but got {self._config.steps_count}.")
-        
+
         if self._config.step_start < 0:
             raise ConfigError(f"The 'step_start' in config must >= 0, but got {self._config.step_start}.")
         if self._config.step_interval <= 0:

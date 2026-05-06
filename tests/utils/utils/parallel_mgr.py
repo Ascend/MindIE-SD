@@ -52,7 +52,7 @@ def init_parallel_env(enable_sequence_parallelism):
     world_size = int(os.getenv('WORLD_SIZE', 1))
     torch_npu.npu.set_device(rank)
     dist.init_process_group(
-        backend='hccl', init_method='env://', 
+        backend='hccl', init_method='env://',
         world_size=world_size, rank=rank
         )
     if enable_sequence_parallelism:

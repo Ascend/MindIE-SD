@@ -69,7 +69,7 @@ class TestSparseAttention(unittest.TestCase):
             sparsity=0.0
         )
         self.assertIsNotNone(out)
-    
+
     def test_rf_v2_BSND_result(self):
         out = sparse_attention(
             self.q, self.k, self.v,
@@ -93,7 +93,7 @@ class TestSparseAttention(unittest.TestCase):
 
         result, _, max_err = data_compare(out.cpu(), fascore.cpu())
         self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
-    
+
     def test_rf_v2_BNSD_result(self):
         q = self.q.transpose(1, 2)
         k = self.k.transpose(1, 2)

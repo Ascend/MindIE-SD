@@ -8,7 +8,7 @@
 
 #     http://license.coscl.org.cn/MulanPSL2
 
-# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, 
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
@@ -44,10 +44,10 @@ def get_python_version():
     try:
         major = sys.version_info.major
         minor = sys.version_info.minor
-        
+
         if major is None or minor is None:
             raise RuntimeError("Cannot get Python version: version info is None")
-        
+
         python_version = f"py{major}{minor}"
         logging.info(f"Python version is: {python_version}")
         return python_version
@@ -74,8 +74,8 @@ def copy_so_files(src_dir, dest_dir):
 def ensure_plugin_init():
     plugin_dir = os.path.join(os.getcwd(), 'mindiesd/plugin')
     init_file = os.path.join(plugin_dir, '__init__.py')
-    
-    os.makedirs(plugin_dir, exist_ok=True)   
+
+    os.makedirs(plugin_dir, exist_ok=True)
     if not os.path.isfile(init_file):
         open(init_file, 'a').close()
     else:
@@ -88,11 +88,11 @@ def run_script(script_path, args=None, cwd=None):
     cmd = ['bash', script_path]
     if args:
         cmd.extend(args)
-    
+
     logging.info(f">>> Running script: {' '.join(cmd)}")
     try:
         subprocess.check_call(
-            cmd, 
+            cmd,
             cwd=cwd,
             stderr=subprocess.STDOUT
         )
@@ -110,11 +110,11 @@ def clean_build_dirs(build_dir):
         os.path.join(build_dir, "lib"),
         os.path.join(build_dir, "output"),
     ]
-    
+
     logging.info("About to delete the following build-related directories:")
     for dir_path in dirs_to_remove:
         logging.info(f"  - {dir_path}")
-    
+
     for dir_path in dirs_to_remove:
         if os.path.isdir(dir_path):
             shutil.rmtree(dir_path)
@@ -126,20 +126,20 @@ class CustomBuildPy(_build_py):
     def run(self):
         proj_root = os.path.abspath(os.getcwd())
         build_dir = os.path.join(proj_root, 'build')
-        
+
         logging.info("=" * 60)
         logging.info("Starting MindIE-SD Build Process")
         logging.info(f"Project root: {proj_root}")
         logging.info(f"Build directory: {build_dir}")
         logging.info("=" * 60)
-        
+
         get_python_version()
-        
+
         for script in os.listdir(build_dir):
             script_path = os.path.join(build_dir, script)
             if os.path.isfile(script_path):
                 os.chmod(script_path, 0o444)
-        
+
         try:
             ops_dir = os.path.join(proj_root, 'csrc', 'ops')
             if os.path.isdir(ops_dir):
@@ -150,7 +150,7 @@ class CustomBuildPy(_build_py):
                 run_script(build_ops_script, args=[build_dir], cwd=build_dir)
             else:
                 logging.warning(f"The path of custom op operators {ops_dir} does not exist.")
-            
+
             plugin_dir = os.path.join(proj_root, 'csrc', 'plugin')
             if os.path.isdir(plugin_dir):
                 logging.info("=" * 60)
@@ -160,21 +160,21 @@ class CustomBuildPy(_build_py):
                 run_script(build_plugin_script, args=[build_dir], cwd=build_dir)
             else:
                 logging.warning(f"The path of op plugins {plugin_dir} does not exist.")
-            
+
             clean_build_dirs(build_dir)
-            
+
             source_dir = os.path.join(build_dir, 'build')
             destination_dir = os.path.join(proj_root, 'mindiesd', 'plugin')
             copy_so_files(source_dir, destination_dir)
-            
+
             logging.info("=" * 60)
             logging.info("Build completed successfully!")
             logging.info("=" * 60)
-            
+
         except Exception as e:
             logging.error(f"Build failed: {e}")
             raise
-        
+
         super().run()
 
 
@@ -202,7 +202,7 @@ if __name__ == "__main__":
         packages=find_packages(),
         package_data={
             "": [
-                "*.so",  
+                "*.so",
                 "ops/**/*"
             ]
         },
