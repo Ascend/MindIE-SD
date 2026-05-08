@@ -14,7 +14,7 @@
 
 下图展示了同步 offload 和异步 offload 的流程对比：
 
-![](../figures/offload%E6%B5%81%E7%A8%8B-image.png) ![](../figures/%E5%BC%82%E6%AD%A5offload-image.png)
+![](../../figures/offload_process_image.png) ![](../../figures/async_offload_image.png)
 
 具体通过以下机制实现：
 

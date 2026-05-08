@@ -59,5 +59,5 @@ MindIE SD 支持[魔乐社区](https://modelers.cn/models?name=MindIE&page=1&siz
 
 ## 💖 联系我们
 
-![](./docs/zh/figures/contact-us.jpg)
-![](./docs/zh/figures/contact-us-MindIESD.jpg)
+![](./docs/figures/contact_us.jpg)
+![](./docs/figures/contact_us_mindiesd.jpg)
