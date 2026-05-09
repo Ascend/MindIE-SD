@@ -19,12 +19,12 @@ extern "C" __global__ __aicore__ void la_preprocess(
 {
     GET_TILING_DATA(tiling_data, tiling);
     if (TILING_KEY_IS(0)) {
-        mmdit_ops::kernels::LaPreprocess<bfloat16_t, half, 128, 1> op;
+        mmdit_ops::kernels::LaPreprocess<bfloat16_t, half, 1> op;
         AscendC::TPipe pipe;
         op.Init(query, key, value, out_query, out_key, out_value, &tiling_data, &pipe);
         op.Process();
     } else if (TILING_KEY_IS(1)) {
-        mmdit_ops::kernels::LaPreprocess<half, half, 128, 1> op;
+        mmdit_ops::kernels::LaPreprocess<half, half, 1> op;
         AscendC::TPipe pipe;
         op.Init(query, key, value, out_query, out_key, out_value, &tiling_data, &pipe);
         op.Process();

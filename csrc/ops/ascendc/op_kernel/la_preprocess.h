@@ -19,7 +19,7 @@ namespace mmdit_ops {
 
 namespace kernels {
 
-template <typename T, typename DST, int32_t HEAD_DIM = 128, int32_t QUEUE_DEPTH = 1>
+template <typename T, typename DST, int32_t QUEUE_DEPTH = 1>
 class LaPreprocess {
 public:
     __aicore__ inline LaPreprocess()
@@ -32,6 +32,7 @@ public:
     {
         batchSize_ = tiling->batchSize;
         headNum_ = tiling->headNum;
+        headDim_ = tiling->headDim;
 
         qSeqLen_ = tiling->qSeqLen;
         kSeqLen_ = tiling->kSeqLen;
@@ -42,12 +43,12 @@ public:
 
         if constexpr (std::is_same_v<T, bfloat16_t>) {
             blockSeqLen_ =
-                (ubSize_ - HEAD_DIM * sizeof(T)) /
-                (QUEUE_DEPTH * headNum_ * HEAD_DIM) / (sizeof(float) + sizeof(T));
+                (ubSize_ - headDim_ * sizeof(T)) /
+                (QUEUE_DEPTH * headNum_ * headDim_) / (sizeof(float) + sizeof(T));
         } else {
             blockSeqLen_ =
-                (ubSize_ - HEAD_DIM * sizeof(T)) /
-                (QUEUE_DEPTH * headNum_ * HEAD_DIM) / sizeof(T);
+                (ubSize_ - headDim_ * sizeof(T)) /
+                (QUEUE_DEPTH * headNum_ * headDim_) / sizeof(T);
         }
 
         pipe_ = pipe;
@@ -71,17 +72,17 @@ public:
 private:
     __aicore__ inline void InitBuffers()
     {
-        bufLen_ = blockSeqLen_ * headNum_ * HEAD_DIM;
+        bufLen_ = blockSeqLen_ * headNum_ * headDim_;
         if constexpr (std::is_same_v<T, bfloat16_t>) {
             pipe_->InitBuffer(inQue_, QUEUE_DEPTH, bufLen_ * sizeof(float));
             pipe_->InitBuffer(outQue_, QUEUE_DEPTH, bufLen_ * sizeof(T));
         } else {
             pipe_->InitBuffer(movQueBind_, QUEUE_DEPTH, bufLen_ * sizeof(T));
         }
-        pipe_->InitBuffer(zeroBuf_, HEAD_DIM * sizeof(DST));
+        pipe_->InitBuffer(zeroBuf_, headDim_ * sizeof(DST));
 
         zeroTensor_ = zeroBuf_.Get<DST>();
-        AscendC::Duplicate<DST>(zeroTensor_, static_cast<DST>(0.0), HEAD_DIM);
+        AscendC::Duplicate<DST>(zeroTensor_, static_cast<DST>(0.0), headDim_);
     }
 
     __aicore__ inline void InitGlobal(
@@ -134,7 +135,7 @@ private:
             AscendC::LocalTensor<T> srcLocal = inQue_.template AllocTensor<T>();
 
             AscendC::DataCopyExtParams inCopyParams{
-                1, seqLen * headNum_ * HEAD_DIM * static_cast<uint32_t>(sizeof(T)), 0, 0, 0};
+                1, seqLen * headNum_ * headDim_ * static_cast<uint32_t>(sizeof(T)), 0, 0, 0};
             AscendC::DataCopyPadExtParams<T> inPadParams{false, 0, 0, 0};
             AscendC::DataCopyPad(srcLocal[bufLen_], src, inCopyParams, inPadParams);
 
@@ -156,7 +157,7 @@ private:
             AscendC::LocalTensor<T> srcLocal = movQueBind_.template AllocTensor<T>();
 
             AscendC::DataCopyExtParams inCopyParams{
-                1, seqLen * headNum_ * HEAD_DIM * static_cast<uint32_t>(sizeof(T)), 0, 0, 0};
+                1, seqLen * headNum_ * headDim_ * static_cast<uint32_t>(sizeof(T)), 0, 0, 0};
             AscendC::DataCopyPadExtParams<T> inPadParams{false, 0, 0, 0};
             AscendC::DataCopyPad(srcLocal, src, inCopyParams, inPadParams);
 
@@ -169,24 +170,24 @@ private:
         if constexpr (std::is_same_v<T, bfloat16_t>) {
             AscendC::LocalTensor<DST> dstLocal = outQue_.template DeQue<DST>();
 
-            uint32_t dstStride = (curSeqAlignLen_ - 1) * HEAD_DIM * sizeof(DST);
+            uint32_t dstStride = (curSeqAlignLen_ - 1) * headDim_ * sizeof(DST);
 
             for (uint32_t i = 0; i < seqLen; ++i) {
                 AscendC::DataCopyExtParams outCopyParams{
-                    static_cast<uint16_t>(headNum_), HEAD_DIM * sizeof(T), 0, dstStride, 0};
-                AscendC::DataCopyPad(dst[i * HEAD_DIM], dstLocal[i * headNum_ * HEAD_DIM], outCopyParams);
+                    static_cast<uint16_t>(headNum_), static_cast<uint32_t>(headDim_ * sizeof(T)), 0, dstStride, 0};
+                AscendC::DataCopyPad(dst[i * headDim_], dstLocal[i * headNum_ * headDim_], outCopyParams);
             }
 
             outQue_.FreeTensor(dstLocal);
         } else {
             AscendC::LocalTensor<DST> dstLocal = movQueBind_.template DeQue<DST>();
 
-            uint32_t dstStride = (curSeqAlignLen_ - 1) * HEAD_DIM * sizeof(DST);
+            uint32_t dstStride = (curSeqAlignLen_ - 1) * headDim_ * sizeof(DST);
 
             for (uint32_t i = 0; i < seqLen; ++i) {
                 AscendC::DataCopyExtParams outCopyParams{
-                    static_cast<uint16_t>(headNum_), HEAD_DIM * sizeof(DST), 0, dstStride, 0};
-                AscendC::DataCopyPad(dst[i * HEAD_DIM], dstLocal[i * headNum_ * HEAD_DIM], outCopyParams);
+                    static_cast<uint16_t>(headNum_), static_cast<uint32_t>(headDim_ * sizeof(DST)), 0, dstStride, 0};
+                AscendC::DataCopyPad(dst[i * headDim_], dstLocal[i * headNum_ * headDim_], outCopyParams);
             }
 
             movQueBind_.FreeTensor(dstLocal);
@@ -198,9 +199,9 @@ private:
         for (uint32_t i = 0; i < headNum_; ++i) {
             for (uint32_t j = 0; j < seqLen; ++j) {
                 AscendC::DataCopyExtParams outCopyParams{
-                    1, HEAD_DIM * sizeof(DST), 0, 0, 0};
+                    1, static_cast<uint32_t>(headDim_ * sizeof(DST)), 0, 0, 0};
                 AscendC::DataCopyPad(
-                    dst[j * HEAD_DIM + i * curSeqAlignLen_ * HEAD_DIM], zeroTensor_, outCopyParams);
+                    dst[j * headDim_ + i * curSeqAlignLen_ * headDim_], zeroTensor_, outCopyParams);
             }
         }
     }
@@ -208,11 +209,11 @@ private:
     __aicore__ inline void CopyData(const AscendC::GlobalTensor<DST>& dst, const AscendC::GlobalTensor<T>& src)
     {
         for (uint32_t i = 0; i < batchSize_; ++i) {
-            uint32_t inBatchOffset = i * curSeqLen_ * headNum_ * HEAD_DIM;
-            uint32_t outBatchOffset = i * curSeqAlignLen_ * headNum_ * HEAD_DIM;
+            uint32_t inBatchOffset = i * curSeqLen_ * headNum_ * headDim_;
+            uint32_t outBatchOffset = i * curSeqAlignLen_ * headNum_ * headDim_;
 
             if (singlePadSeqLen_ > 0) {
-                PadOut(dst[outBatchOffset + curPadSeq_ * HEAD_DIM], singlePadSeqLen_);
+                PadOut(dst[outBatchOffset + curPadSeq_ * headDim_], singlePadSeqLen_);
             }
 
             for (uint32_t j = curSeq_; j < curSeq_ + singleSeqLen_; j += blockSeqLen_) {
@@ -220,9 +221,9 @@ private:
                     j + blockSeqLen_ > curSeq_ + singleSeqLen_ ?
                     curSeq_ + singleSeqLen_ - j : blockSeqLen_;
 
-                CopyIn(src[inBatchOffset + j * headNum_ * HEAD_DIM], seqLen);
+                CopyIn(src[inBatchOffset + j * headNum_ * headDim_], seqLen);
 
-                CopyOut(dst[outBatchOffset + j * HEAD_DIM], seqLen);
+                CopyOut(dst[outBatchOffset + j * headDim_], seqLen);
             }
         }
     }
@@ -238,6 +239,7 @@ private:
     uint32_t curSeqAlignLen_;
 
     uint32_t headNum_;
+    uint32_t headDim_;
     uint32_t alignLen_;
     uint32_t ubSize_;
     uint32_t blockSeqLen_;
