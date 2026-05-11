@@ -43,9 +43,12 @@ def build_dummy_tokenizer_output(model, token_length=4096):
     img = tkw.img_token_id or dummy
 
     tokens = (
-        [bos] + text_ids + [boi]
+        [bos]
+        + text_ids
+        + [boi]
         + [coi("<img_ratio_16>") or dummy, coi("<img_size_1024>") or dummy, coi("<timestep>") or dummy]
-        + [img] * token_length + [eoi]
+        + [img] * token_length
+        + [eoi]
     )
 
     for i, t in enumerate(tokens):
@@ -101,9 +104,7 @@ def build_hunyuan_image3_model(config_dir, num_layers=2, device=None, timer=None
 
     logger.warning("  Building model (from_config, bfloat16) ...")
     t0 = time.time()
-    model = AutoModelForCausalLM.from_config(
-        config, trust_remote_code=True, torch_dtype=torch.bfloat16
-    )
+    model = AutoModelForCausalLM.from_config(config, trust_remote_code=True, torch_dtype=torch.bfloat16)
     if timer:
         timer.record_build("Model (AR+MoE+ViT+VAE)", time.time() - t0)
 
@@ -121,9 +122,7 @@ def build_hunyuan_image3_model(config_dir, num_layers=2, device=None, timer=None
 
     total = sum(p.numel() for p in model.parameters())
     logger.warning("Total params: %.2f B", total / 1e9)
-    logger.warning(
-        "Estimated memory (bfloat16): %.1f GB", total * 2 / (1024 ** 3)
-    )
+    logger.warning("Estimated memory (bfloat16): %.1f GB", total * 2 / (1024**3))
     logger.warning("Build time: %.2f ms", (time.time() - t_start) * 1000)
 
     return model

@@ -14,22 +14,16 @@
 
 #include <kernel_operator.h>
 
-
 namespace mmdit_ops {
 
 namespace kernels {
 
-template <typename T, typename DST, int32_t QUEUE_DEPTH = 1>
-class LaPreprocess {
-public:
-    __aicore__ inline LaPreprocess()
-        : blockIdx_(AscendC::GetBlockIdx()), blockDim_(AscendC::GetBlockNum()) {}
+template <typename T, typename DST, int32_t QUEUE_DEPTH = 1> class LaPreprocess {
+  public:
+    __aicore__ inline LaPreprocess() : blockIdx_(AscendC::GetBlockIdx()), blockDim_(AscendC::GetBlockNum()) {}
 
-    __aicore__ inline void Init(
-        GM_ADDR query, GM_ADDR key, GM_ADDR value,
-        GM_ADDR outQuery, GM_ADDR outKey, GM_ADDR outValue,
-        const LaPreprocessTiling *tiling, AscendC::TPipe *pipe)
-    {
+    __aicore__ inline void Init(GM_ADDR query, GM_ADDR key, GM_ADDR value, GM_ADDR outQuery, GM_ADDR outKey,
+        GM_ADDR outValue, const LaPreprocessTiling *tiling, AscendC::TPipe *pipe) {
         batchSize_ = tiling->batchSize;
         headNum_ = tiling->headNum;
         headDim_ = tiling->headDim;
@@ -43,12 +37,9 @@ public:
 
         if constexpr (std::is_same_v<T, bfloat16_t>) {
             blockSeqLen_ =
-                (ubSize_ - headDim_ * sizeof(T)) /
-                (QUEUE_DEPTH * headNum_ * headDim_) / (sizeof(float) + sizeof(T));
+                (ubSize_ - headDim_ * sizeof(T)) / (QUEUE_DEPTH * headNum_ * headDim_) / (sizeof(float) + sizeof(T));
         } else {
-            blockSeqLen_ =
-                (ubSize_ - headDim_ * sizeof(T)) /
-                (QUEUE_DEPTH * headNum_ * headDim_) / sizeof(T);
+            blockSeqLen_ = (ubSize_ - headDim_ * sizeof(T)) / (QUEUE_DEPTH * headNum_ * headDim_) / sizeof(T);
         }
 
         pipe_ = pipe;
@@ -57,8 +48,7 @@ public:
         InitGlobal(query, key, value, outQuery, outKey, outValue);
     }
 
-    __aicore__ inline void Process()
-    {
+    __aicore__ inline void Process() {
         SplitTask(qSeqLen_);
         CopyData(outQueryGm_, queryGm_);
 
@@ -69,9 +59,8 @@ public:
         CopyData(outValueGm_, valueGm_);
     }
 
-private:
-    __aicore__ inline void InitBuffers()
-    {
+  private:
+    __aicore__ inline void InitBuffers() {
         bufLen_ = blockSeqLen_ * headNum_ * headDim_;
         if constexpr (std::is_same_v<T, bfloat16_t>) {
             pipe_->InitBuffer(inQue_, QUEUE_DEPTH, bufLen_ * sizeof(float));
@@ -86,9 +75,7 @@ private:
     }
 
     __aicore__ inline void InitGlobal(
-        GM_ADDR query, GM_ADDR key, GM_ADDR value,
-        GM_ADDR outQuery, GM_ADDR outKey, GM_ADDR outValue)
-    {
+        GM_ADDR query, GM_ADDR key, GM_ADDR value, GM_ADDR outQuery, GM_ADDR outKey, GM_ADDR outValue) {
         queryGm_.SetGlobalBuffer(reinterpret_cast<__gm__ T *>(query));
         keyGm_.SetGlobalBuffer(reinterpret_cast<__gm__ T *>(key));
         valueGm_.SetGlobalBuffer(reinterpret_cast<__gm__ T *>(value));
@@ -97,8 +84,7 @@ private:
         outValueGm_.SetGlobalBuffer(reinterpret_cast<__gm__ DST *>(outValue));
     }
 
-    __aicore__ inline void SplitTask(uint32_t seqLen)
-    {
+    __aicore__ inline void SplitTask(uint32_t seqLen) {
         uint32_t tailLen = 0;
 
         curSeqLen_ = seqLen;
@@ -129,8 +115,7 @@ private:
         }
     }
 
-    __aicore__ inline void CopyIn(const AscendC::GlobalTensor<T>& src, uint32_t seqLen)
-    {
+    __aicore__ inline void CopyIn(const AscendC::GlobalTensor<T> &src, uint32_t seqLen) {
         if constexpr (std::is_same_v<T, bfloat16_t>) {
             AscendC::LocalTensor<T> srcLocal = inQue_.template AllocTensor<T>();
 
@@ -143,13 +128,11 @@ private:
             AscendC::LocalTensor<T> castLocal = inQue_.template DeQue<T>();
             AscendC::LocalTensor<DST> dstLocal = outQue_.template AllocTensor<DST>();
 
-            AscendC::Cast<float, T>(
-                castLocal.template ReinterpretCast<float>(), castLocal[bufLen_],
+            AscendC::Cast<float, T>(castLocal.template ReinterpretCast<float>(), castLocal[bufLen_],
                 AscendC::RoundMode::CAST_NONE, bufLen_);
             AscendC::PipeBarrier<PIPE_V>();
             AscendC::Cast<DST, float>(
-                dstLocal, castLocal.template ReinterpretCast<float>(),
-                AscendC::RoundMode::CAST_RINT, bufLen_);
+                dstLocal, castLocal.template ReinterpretCast<float>(), AscendC::RoundMode::CAST_RINT, bufLen_);
 
             outQue_.EnQue(dstLocal);
             inQue_.FreeTensor(castLocal);
@@ -165,8 +148,7 @@ private:
         }
     }
 
-    __aicore__ inline void CopyOut(const AscendC::GlobalTensor<DST>& dst, uint32_t seqLen)
-    {
+    __aicore__ inline void CopyOut(const AscendC::GlobalTensor<DST> &dst, uint32_t seqLen) {
         if constexpr (std::is_same_v<T, bfloat16_t>) {
             AscendC::LocalTensor<DST> dstLocal = outQue_.template DeQue<DST>();
 
@@ -194,20 +176,16 @@ private:
         }
     }
 
-    __aicore__ inline void PadOut(const AscendC::GlobalTensor<DST>& dst, uint32_t seqLen)
-    {
+    __aicore__ inline void PadOut(const AscendC::GlobalTensor<DST> &dst, uint32_t seqLen) {
         for (uint32_t i = 0; i < headNum_; ++i) {
             for (uint32_t j = 0; j < seqLen; ++j) {
-                AscendC::DataCopyExtParams outCopyParams{
-                    1, static_cast<uint32_t>(headDim_ * sizeof(DST)), 0, 0, 0};
-                AscendC::DataCopyPad(
-                    dst[j * headDim_ + i * curSeqAlignLen_ * headDim_], zeroTensor_, outCopyParams);
+                AscendC::DataCopyExtParams outCopyParams{1, static_cast<uint32_t>(headDim_ * sizeof(DST)), 0, 0, 0};
+                AscendC::DataCopyPad(dst[j * headDim_ + i * curSeqAlignLen_ * headDim_], zeroTensor_, outCopyParams);
             }
         }
     }
 
-    __aicore__ inline void CopyData(const AscendC::GlobalTensor<DST>& dst, const AscendC::GlobalTensor<T>& src)
-    {
+    __aicore__ inline void CopyData(const AscendC::GlobalTensor<DST> &dst, const AscendC::GlobalTensor<T> &src) {
         for (uint32_t i = 0; i < batchSize_; ++i) {
             uint32_t inBatchOffset = i * curSeqLen_ * headNum_ * headDim_;
             uint32_t outBatchOffset = i * curSeqAlignLen_ * headNum_ * headDim_;
@@ -218,8 +196,7 @@ private:
 
             for (uint32_t j = curSeq_; j < curSeq_ + singleSeqLen_; j += blockSeqLen_) {
                 uint32_t seqLen =
-                    j + blockSeqLen_ > curSeq_ + singleSeqLen_ ?
-                    curSeq_ + singleSeqLen_ - j : blockSeqLen_;
+                    j + blockSeqLen_ > curSeq_ + singleSeqLen_ ? curSeq_ + singleSeqLen_ - j : blockSeqLen_;
 
                 CopyIn(src[inBatchOffset + j * headNum_ * headDim_], seqLen);
 

@@ -55,8 +55,8 @@ pip install --trusted-host ascend.devcloud.huaweicloud.com -i https://ascend.dev
 
    ```bash
    python setup.py bdist_wheel
-   cd dist  
-   pip install mindiesd-*.whl 
+   cd dist
+   pip install mindiesd-*.whl
    ```
 
 ### 每日构建安装

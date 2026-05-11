@@ -44,14 +44,14 @@ KeepEmptyLinesAtTheStartOfBlocks: false
 SpacesBeforeTrailingComments: 1  # 代码与注释之间 1 个空格
 
 # 强制关闭所有额外自动行为（无隐藏规则）
-SortIncludes: false                  
-FixNamespaceComments: false          
-ReflowComments: false                
-SortUsingDeclarations: false         
-IndentPPDirectives: None             
-AlignAfterOpenBracket: DontAlign     
-AlignArrayOfStructures: None         
-AlignConsecutiveAssignments: false   
+SortIncludes: false
+FixNamespaceComments: false
+ReflowComments: false
+SortUsingDeclarations: false
+IndentPPDirectives: None
+AlignAfterOpenBracket: DontAlign
+AlignArrayOfStructures: None
+AlignConsecutiveAssignments: false
 AlignConsecutiveBitFields: false
 AlignConsecutiveDeclarations: false
 AlignConsecutiveMacros: false

@@ -37,9 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 def _parse_args():
-    parser = argparse.ArgumentParser(
-        description="HunyuanImage-3.0 NPU dummy weight verification"
-    )
+    parser = argparse.ArgumentParser(description="HunyuanImage-3.0 NPU dummy weight verification")
     parser.add_argument("--device_id", type=int, default=0)
     parser.add_argument("--config_cache", type=str, default=None)
     parser.add_argument(
@@ -69,9 +67,7 @@ def _parse_args():
 def _start_profile():
     prof = torch_npu.profiler.profile(
         activities=[torch_npu.profiler.ProfilerActivity.NPU],
-        on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(
-            PROFILE_DIR
-        ),
+        on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(PROFILE_DIR),
         with_stack=False,
     )
     prof.start()
@@ -167,6 +163,7 @@ def main():
         if len(args) > 0 and isinstance(args[0], torch.Tensor):
             args[0] = args[0].to(torch.bfloat16)
         return _vae_dec(*args, **kwargs)
+
     model.vae.decode = _patched_vae_decode
 
     tokenizer_output, img_info, img_start = build_dummy_tokenizer_output(model, TOKEN_LENGTH)
@@ -175,9 +172,7 @@ def main():
     if tokenizer_output.gen_image_mask is not None:
         tokenizer_output.gen_image_mask = tokenizer_output.gen_image_mask.to(device)
     if tokenizer_output.gen_timestep_scatter_index is not None:
-        tokenizer_output.gen_timestep_scatter_index = (
-            tokenizer_output.gen_timestep_scatter_index.to(device)
-        )
+        tokenizer_output.gen_timestep_scatter_index = tokenizer_output.gen_timestep_scatter_index.to(device)
 
     _rope_fn = None
     for _n in sys.modules:

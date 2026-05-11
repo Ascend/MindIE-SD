@@ -14,7 +14,7 @@
 | -------- | ------ |
 | CANN | 8.5.1 |
 | Ascend Extension for PyTorch | 7.3.0 |
-| Ascend HDK | 25.5.0 |     
+| Ascend HDK | 25.5.0 |
 | Torch  | 2.9 |
 
 ## 病毒扫描结果

@@ -5,32 +5,32 @@ format.quote-style = "preserve"
 
 [tool.ruff.lint]
 extend-select = [
-  "D209",  
-  "SIM115",    
+  "D209",
+  "SIM115",
 ]
 
 [tool.pylint]
 reports = false
 score = false
 max-line-length = 120
-max-args = 15       
-max-branches = 50   
+max-args = 15
+max-branches = 50
 max-statements = 200
-max-locals = 50     
-max-positional-arguments = 20  
+max-locals = 50
+max-positional-arguments = 20
 
 enable = [
-  "E0100",  
-  "E0601",  
-  "E0602",  
-  "E0603",  
-  "E0611",  
-  "E0632",  
-  "E1101",  
-  "E1120",  
-  "E0632",  
-  "W0632",  
-  "W1514",  
+  "E0100",
+  "E0601",
+  "E0602",
+  "E0603",
+  "E0611",
+  "E0632",
+  "E1101",
+  "E1120",
+  "E0632",
+  "W0632",
+  "W1514",
 ]
 
 disable = [
