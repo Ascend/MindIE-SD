@@ -68,18 +68,27 @@ if _current_lang == "zh":
 else:
     language = "en"
 
+# ReadTheDocs builds directly to <lang>/index.html; local builds use <lang>/html/index.html.
+_on_rtd = os.environ.get("READTHEDOCS") == "True"
+if _on_rtd:
+    _en_url = "../en/index.html" if _current_lang == "zh" else "index.html"
+    _zh_url = "../zh/index.html" if _current_lang == "en" else "index.html"
+else:
+    _en_url = "../en/html/index.html" if _current_lang == "zh" else "index.html"
+    _zh_url = "../zh/html/index.html" if _current_lang == "en" else "index.html"
+
 HTML_CONTEXT = {
     "current_language": _current_lang,
     "current_language_name": "\u4e2d\u6587" if _current_lang == "zh" else "English",
     "language_switcher_items": [
         {
             "name": "English",
-            "url": "../en/html/index.html" if _current_lang == "zh" else "index.html",
+            "url": _en_url,
             "lang_path": "en",
         },
         {
             "name": "\u4e2d\u6587",
-            "url": "../zh/html/index.html" if _current_lang == "en" else "index.html",
+            "url": _zh_url,
             "lang_path": "zh",
         },
     ],
