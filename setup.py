@@ -103,6 +103,13 @@ def run_script(script_path, args=None, cwd=None):
 
 def clean_build_dirs(build_dir):
     """清理构建目录"""
+    # Save TIK compile_commands.json before cleanup
+    tik_cc = os.path.join(build_dir, "custom_project_tik", "build_out", "compile_commands.json")
+    if os.path.isfile(tik_cc):
+        dest = os.path.join(build_dir, "compile_commands_tik.json")
+        shutil.copy2(tik_cc, dest)
+        logging.info(f"Saved TIK compile_commands.json to {dest}")
+
     dirs_to_remove = [
         os.path.join(build_dir, "bdist.linux-aarch64"),
         os.path.join(build_dir, "bdist.linux-x86_64"),
@@ -120,6 +127,60 @@ def clean_build_dirs(build_dir):
             shutil.rmtree(dir_path)
         else:
             logging.info(f"Directory does not exist, skipping: {dir_path}")
+
+
+
+
+def merge_compile_commands(proj_root, build_dir):
+    """Merge all compile_commands.json from different build stages into one."""
+    import json
+
+    sources = [
+        ("AscendC ops", os.path.join(build_dir, "compile_commands_ascendc.json")),
+        ("PyTorch plugin", os.path.join(build_dir, "build", "compile_commands.json")),
+        ("TIK ops", os.path.join(build_dir, "compile_commands_tik.json")),
+    ]
+
+    merged = []
+    seen = set()
+
+    for stage_name, path in sources:
+        if not os.path.isfile(path):
+            logging.info(f"compile_commands.json not found for {stage_name}: {path}")
+            continue
+
+        try:
+            with open(path, 'r') as f:
+                entries = json.load(f)
+        except json.JSONDecodeError as e:
+            logging.warning(f"Failed to parse {path}: {e}")
+            continue
+
+        if not isinstance(entries, list):
+            logging.warning(f"Unexpected format in {path}, expected list")
+            continue
+
+        added = 0
+        for entry in entries:
+            key = (
+                entry.get("directory", ""),
+                entry.get("file", ""),
+                entry.get("command", ""),
+            )
+            if key not in seen:
+                seen.add(key)
+                merged.append(entry)
+                added += 1
+
+        logging.info(f"Merged {added} entries from {stage_name} ({len(entries)} total)")
+
+    if merged:
+        output_path = os.path.join(proj_root, "compile_commands.json")
+        with open(output_path, 'w') as f:
+            json.dump(merged, f, indent=2)
+        logging.info(f"Merged compile_commands.json written to {output_path} ({len(merged)} total entries)")
+    else:
+        logging.info("No compile_commands.json entries found to merge")
 
 
 class CustomBuildPy(_build_py):
@@ -162,6 +223,7 @@ class CustomBuildPy(_build_py):
                 logging.warning(f"The path of op plugins {plugin_dir} does not exist.")
 
             clean_build_dirs(build_dir)
+            merge_compile_commands(proj_root, build_dir)
 
             source_dir = os.path.join(build_dir, 'build')
             destination_dir = os.path.join(proj_root, 'mindiesd', 'plugin')

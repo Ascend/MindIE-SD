@@ -6,7 +6,7 @@
 
   During inference, DiT models iterate through `T` steps, and every step computes the full set of blocks. Each block contains a large amount of compute, as shown below. However, latents from adjacent steps are highly similar, so nearly identical intermediate results are recomputed repeatedly, which introduces redundant compute and slows down inference.
 
-  ![](../../zh/figures/ditcache-image-1.png)
+  ![](../../figures/dit_cache_image_1.png)
 
 - **Principle**
 
@@ -16,7 +16,7 @@
 
   A search script first determines the minimum number of blocks that need to be skipped to achieve the target acceleration ratio. It then scans candidate start and end blocks and picks the configuration with the lowest MSE among all valid combinations. When the cache hits, the cached result from a selected block range at step `N` is reused directly at step `M`, so a full DiTBlock forward pass becomes a lightweight tensor read.
 
-  ![](../../zh/figures/ditcache-image-2.png)
+  ![](../../figures/dit_cache_image_2.png)
 
   1. Compute the minimum number of blocks that need to be cached for the target speedup ratio.
   2. Because `block0` must always be computed, start scanning from `block1` and search for the three best `(block_start, block_end)` candidates.
@@ -89,7 +89,7 @@
 
   Inference iterates over `T` steps, and each step contains multiple blocks with expensive compute, including STA, as shown below. Attention layers in blocks across adjacent steps are often highly similar, so nearly identical intermediate results are recomputed repeatedly and inference becomes slower.
 
-  ![](../../zh/figures/attentioncache-image-1.png)
+  ![](../../figures/attention_cache_image_1.png)
 
 - **Principle**
 
@@ -99,7 +99,7 @@
 
   A search script first computes the minimum number of Attention executions that must be skipped for the target acceleration ratio. It then scans candidate start and end steps and chooses the configuration with the lowest MSE among all valid combinations. The key idea is to trade space for time by directly reusing cached Attention results from step `N` at step `M`.
 
-  ![](../../zh/figures/attentioncache-image-2.png)
+  ![](../../figures/attention_cache_image_2.png)
 
   1. Compute the minimum number of Attention executions that must be skipped from the requested speedup ratio.
   2. Based on the starting step and `min_skip_attention`, derive `min_interval` and `step_end`, traverse all valid candidates, and pick the one with minimum MSE loss.

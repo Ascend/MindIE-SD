@@ -10,7 +10,7 @@ MindIE SD是一个 Python 包，它基于PyTorch构建，可以轻松集成到 P
 * Python: >=3.10
 * Pytorch：2.6, 2.7, 2.8, 2.9
 * torch-npu: 2.6, 2.7, 2.8, 2.9
-* CANN: 8.0.0
+* CANN: 8.5.1
 
 #### 注意事项
 
@@ -55,8 +55,8 @@ pip install --trusted-host ascend.devcloud.huaweicloud.com -i https://ascend.dev
 
    ```bash
    python setup.py bdist_wheel
-   cd dist  
-   pip install mindiesd-*.whl 
+   cd dist
+   pip install mindiesd-*.whl
    ```
 
 ### 每日构建安装

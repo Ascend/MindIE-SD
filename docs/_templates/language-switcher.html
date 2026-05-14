@@ -21,14 +21,38 @@
 (function() {
   var currentPath = window.location.pathname;
   var segments = currentPath.split('/');
+
+  // Strategy 1: local builds contain /html/ in the path
   var htmlIdx = segments.indexOf('html');
-  if (htmlIdx < 0) return;
-  var pagePath = segments.slice(htmlIdx + 1).join('/');
-  var links = document.querySelectorAll('.language-switch-link');
-  links.forEach(function(link) {
-    var langPath = link.getAttribute('data-lang-path');
-    var base = segments.slice(0, htmlIdx - 1).join('/');
-    link.href = base + '/' + langPath + '/html/' + (pagePath || 'index.html');
-  });
+  if (htmlIdx >= 0) {
+    var pagePath = segments.slice(htmlIdx + 1).join('/');
+    var links = document.querySelectorAll('.language-switch-link');
+    links.forEach(function(link) {
+      var langPath = link.getAttribute('data-lang-path');
+      var base = segments.slice(0, htmlIdx - 1).join('/');
+      link.href = base + '/' + langPath + '/html/' + (pagePath || 'index.html');
+    });
+    return;
+  }
+
+  // Strategy 2: ReadTheDocs builds use /zh/ or /en/ language segments
+  var langIdx = -1;
+  for (var i = 0; i < segments.length; i++) {
+    if (segments[i] === 'zh' || segments[i] === 'en') {
+      langIdx = i;
+      break;
+    }
+  }
+  if (langIdx >= 0) {
+    var pagePath = segments.slice(langIdx + 1).join('/');
+    var links = document.querySelectorAll('.language-switch-link');
+    links.forEach(function(link) {
+      var langPath = link.getAttribute('data-lang-path');
+      var newSegments = segments.slice(0, langIdx);
+      newSegments.push(langPath);
+      if (pagePath) newSegments.push(pagePath);
+      link.href = newSegments.join('/') || '/';
+    });
+  }
 })();
 </script>

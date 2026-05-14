@@ -6,7 +6,7 @@
 
   As visual generation models evolve toward DiT architectures, introducing MoE mechanisms to extend the scaling law has become a common industry direction. However, the large parameter scale of DiT-MoE models forces the use of expert parallelism (EP). Unlike LLM workloads, visual data has strong spatial locality, which can easily overload specific experts and cause severe load imbalance. In addition, expert activation distributions vary dynamically across denoising timesteps, which means traditional static load-balancing strategies fail under combined spatial and temporal heterogeneity. DyEPLB addresses this DiT-MoE scenario with dynamic expert load balancing to improve cluster utilization and inference performance.
 
-  ![](../../zh/figures/DyEPLB-image-1.png)
+  ![](../../figures/dyeplb_image_1.png)
 
 - **Principle**
 

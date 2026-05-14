@@ -4,7 +4,7 @@
 
   多实例场景下，在同一个NPU设备中，多个模型使用了相同的权重（如下图所示），可使用显存共享降低消耗。
 
-    ![](../figures/%E6%98%BE%E5%AD%98%E5%85%B1%E4%BA%AB-image-1.png)
+    ![](../../figures/memory_share_image_1.png)
 - **理论支撑**
 
   利用相同的NPU物理地址和偏移构建不同Tensor，可同时访问同一片内存。
@@ -13,7 +13,7 @@
   使用进程间共享的内存管理器管理内存，不同进程使用内存管理器分配的内存进行共享。
 - **实现流程**
 
-    ![](../figures/%E6%98%BE%E5%AD%98%E5%85%B1%E4%BA%AB-image-2.png)
+    ![](../../figures/memory_share_image_2.png)
   1. 进程0统计所需的内存大小offset，通过进程间共享的NPU Allocator申请内存。
   2. NPU Allocator将申请的物理内存地址data_ptr返回给进程0。
   3. 进程0将实际物理内存地址data_ptr通过进程间通信传给进程1。

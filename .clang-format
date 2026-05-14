@@ -1,0 +1,60 @@
+---
+Language: Cpp
+Standard: c++17
+
+# 行宽不超过 120
+ColumnLimit: 120
+
+# 空格缩进
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+
+# &/* 跟随变量名
+PointerAlignment: Right
+ReferenceAlignment: Right
+
+# if/for/while语句必须加大括号
+InsertBraces: true
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: false
+
+# 表达式换行保持一致性，运算符放行末
+BreakBeforeBinaryOperators: None
+
+# 使用 K&R 缩进风格
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: false
+  AfterControlStatement: false
+  AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterStruct: false
+  AfterUnion: false
+  BeforeElse: false
+  IndentBraces: false
+
+# 合理安排空行，保持代码紧凑
+MaxEmptyLinesToKeep: 1
+KeepEmptyLinesAtTheStartOfBlocks: false
+
+# 注释格式
+SpacesBeforeTrailingComments: 1  # 代码与注释之间 1 个空格
+
+# 强制关闭所有额外自动行为（无隐藏规则）
+SortIncludes: false
+FixNamespaceComments: false
+ReflowComments: false
+SortUsingDeclarations: false
+IndentPPDirectives: None
+AlignAfterOpenBracket: DontAlign
+AlignArrayOfStructures: None
+AlignConsecutiveAssignments: false
+AlignConsecutiveBitFields: false
+AlignConsecutiveDeclarations: false
+AlignConsecutiveMacros: false
+AlignEscapedNewlines: DontAlign
+AlignOperands: DontAlign
+AlignTrailingComments: false

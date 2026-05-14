@@ -14,26 +14,24 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
-        args: ["--allow-multiple-documents"]  # 兼容K8S
-      - id: check-added-large-files  # 拦截>50MB文件（默认阈值）
-      - id: check-merge-conflict     # 检测未解决的合并冲突（<<<<<<< HEAD）
-      - id: detect-private-key       # 检测硬编码的私钥/密钥
+        args: ["--allow-multiple-documents"]
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: detect-private-key
       - id: check-json
-      - id: no-commit-to-branch     # 禁止直接提交到main/master分支
 
-# -------------------------- Python 核心检查 --------------------------
-  # Ruff：Python 代码检查+格式化
+  # Ruff：指定读取 pre-commit/pyproject.toml
   - repo: https://gitcode.com/gh_mirrors/ru/ruff-pre-commit
     rev: v0.14.14
     hooks:
       - id: ruff-check
-        args: [--output-format, github, --fix, --line-length=120]
+        args: ["--config", "pre-commit/pyproject.toml", "--output-format", "github", "--fix"]
         types: [python]
       - id: ruff-format
-        args: [--line-length=120]
+        args: ["--config", "pre-commit/pyproject.toml"]
         types: [python]
 
-  # codespell：注释/文档拼写检查（忽略项目专有名词）
+  # codespell
   - repo: https://gitcode.com/gh_mirrors/co/codespell
     rev: v2.4.1
     hooks:
@@ -42,32 +40,45 @@ repos:
             "-L",
             "CANN,cann,NNAL,nnal,ASCEND,ascend,EnQue,CopyIn,ArchType,AND,ND,tbe,copyin,alog",
             "--skip",
-            "*.py,*.cpp,*.hpp,*.c,*.h", # 仅查文档/注释，跳过代码文件
+            "*.toml,*.py,*.cpp,*.hpp,*.c,*.h",
           ]
 
-  # typos：代码标识符拼写检查
+  # pylint：指定 pre-commit/pyproject.toml
+  - repo: https://gitcode.com/gh_mirrors/pyl/pylint
+    rev: v4.0.5
+    hooks:
+      - id: pylint
+        name: pylint (Python code quality check)
+        types: [python]
+        args: ["--rcfile=pre-commit/pyproject.toml"]
+        verbose: false
+
+  # Bandit：指定 pre-commit/pyproject.toml
+  - repo: https://gitcode.com/gh_mirrors/ba/bandit
+    rev: 1.9.4
+    hooks:
+      - id: bandit
+        name: bandit (Python 安全漏洞检查)
+        types: [python]
+        args: [
+          "--config=pre-commit/pyproject.toml",
+          "--quiet",
+        ]
+
+  # typos
   - repo: https://gitcode.com/gh_mirrors/ty/typos
     rev: v1.32.0
     hooks:
       - id: typos
         args: ["--force-exclude", "--config", "pre-commit/typos.toml"]
 
-#--------------- C++ 核心检查 ---------------------------------------------
-  # clang-format：C/C++ 代码格式化
+  # C++ 核心检查
   - repo: https://gitcode.com/pre-commit-clang/mirrors-clang-format
     rev: v18.1.8
     hooks:
       - id: clang-format
         files: \.(c|h|cpp|hpp|cc|hh|cxx|hxx)$
-        types_or: [c, c++]
-        args: ["--style={BasedOnStyle: google, IndentWidth: 4, ColumnLimit: 120}"]
-        exclude: ^build/|^tests/third_party/ 
-        
-  # markdownlint：Markdown 格式检查（仅CI手动执行）
-  - repo: https://gitcode.com/gh_mirrors/ma/markdownlint-cli
-    rev: v0.46.0
-    hooks:
-      - id: markdownlint
-        exclude: '.*\.inc\.md$|.*report_template\.md$|.*contributors\.md$|.*PULL_REQUEST_TEMPLATE\.md$'
-        stages: [manual]
-        description: "Markdown format check (run in CI: pre-commit run markdownlint --all-files)"
+        args:
+          - "--style=file"
+          - "--verbose"
+          - "-i"

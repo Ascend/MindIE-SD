@@ -4,7 +4,7 @@
 
 By tuning execution so that Cube and Vector compute can run in parallel across multiple streams, contention is reduced and compute efficiency improves.
 
-![](../../zh/figures/CV%E5%B9%B6%E8%A1%8C.png)
+![](../../figures/cv_parallel.png)
 
 ---
 
@@ -17,7 +17,7 @@ The figure below shows a two-instance example:
 - In case ①, the two models execute serially, so `task1` must wait until `task0` completes. In case ②, `task0` and `task1` run in parallel, improving total throughput.
 - In case ③, compared with ②, the two models also reuse weights. This reduces additional memory demand and further improves throughput.
 
-![](../../zh/figures/%E5%A4%9A%E5%AE%9E%E4%BE%8B.png)
+![](../../figures/multi_instance.png)
 
 ---
 
@@ -25,7 +25,7 @@ The figure below shows a two-instance example:
 
 CFG (Classifier-Free Guidance) improves generation quality by combining positive-sample and negative-sample inference. In a conventional implementation, the positive and negative branches each run a full forward pass. Because most of the compute path is shared, this introduces a large amount of redundant work. CFG fusion concatenates the positive and negative samples so that operator calls and repeated compute are reduced, improving inference speed.
 
-![](../../zh/figures/CFG%E8%9E%8D%E5%90%88.png)
+![](../../figures/cfg_fusion.png)
 
 ---
 
@@ -35,7 +35,7 @@ CFG (Classifier-Free Guidance) improves generation quality by combining positive
 
   RoPE (Rotary Position Embedding) fused operators inject position information through rotation and improve DiT efficiency on sequence-like data. The operator position is illustrated below:
 
-  ![](../../zh/figures/%E7%AE%97%E5%AD%90%E8%9E%8D%E5%90%88-image-1.png)
+  ![](../../figures/operator_fusion_image_1.png)
 
   - Rotary position encoding injects positional information into `q` and `k` through a rotation matrix, so the attention computation can encode token position relationships. It is widely used across modern models and is an efficient positional encoding method.
   - Rotational encoding encodes positional information directly into token embeddings so the model can capture relative position relationships without depending on absolute positions.
@@ -78,7 +78,7 @@ CFG (Classifier-Free Guidance) improves generation quality by combining positive
 
   In these models, RMSNorm often appears in DiT blocks after the `q`, `k`, and `v` linear layers and before FA. The location is illustrated below:
 
-  ![](../../zh/figures/%E7%AE%97%E5%AD%90%E8%9E%8D%E5%90%88-image-2.png)
+  ![](../../figures/operator_fusion_image_2.png)
 
   When optimizing with MindIE SD, use the `RMSNorm` implementation directly:
 
