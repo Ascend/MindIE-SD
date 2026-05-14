@@ -21,3 +21,9 @@ tests/build.log
 tests/tests/
 **/__pycache__/
 tmp/
+
+# Merged compile_commands.json from all build stages
+compile_commands.json
+build/compile_commands_ascendc.json
+build/compile_commands_tik.json
+build/build/compile_commands.json

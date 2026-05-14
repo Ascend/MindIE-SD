@@ -79,7 +79,7 @@ function cmake_config()
     local extra_option="$1"
     log "Info: cmake config ${CUSTOM_OPTION} ${extra_option} ."
     CMAKE_SOURCE_DIR="${CURRENT_DIR}/../csrc/ops"
-    cmake -S ${CMAKE_SOURCE_DIR} -B . ${CUSTOM_OPTION} ${extra_option}
+    cmake -S ${CMAKE_SOURCE_DIR} -B . ${CUSTOM_OPTION} ${extra_option} -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 }
 
 function build()
@@ -229,6 +229,11 @@ build_package
 build_and_install
 
 clean_build_dirs() {
+    # Save compile_commands.json before cleanup
+    if [ -f "${BUILD_DIR}/compile_commands.json" ]; then
+        cp "${BUILD_DIR}/compile_commands.json" "${CURRENT_DIR}/compile_commands_ascendc.json"
+        echo "Saved compile_commands.json to ${CURRENT_DIR}/compile_commands_ascendc.json"
+    fi
     local dirs_to_remove=(
         "${BUILD_DIR}/"
     )

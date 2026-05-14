@@ -36,7 +36,7 @@ bash infer_t2v.sh --model_base="/home/{用户名}/Wan2.1-T2V-14B"
 | Baseline | + Cache 加速比1.6 | + Cache 加速比2.0 | + Cache 加速比2.4 |
 |:---:|:---:|:---:|:---:|
 | 860.2s | 631.7s 1.36x | 541.8s 1.59x | 516.9s ***1.66x** |
-| ![](./figures/单卡base%20+%20高性能FA算子.gif) | ![](./figures/单卡%20+%20高性能FA算子%20+%20开启attentioncache+加速比为1.6.gif) | ![](./figures/单卡%20+%20高性能FA算子%20+%20开启attentioncache+加速比为2.0.gif) | ![](./figures/单卡%20+%20高性能FA算子%20+%20开启attentioncache+加速比为2.4.gif) |
+| ![](../figures/single_card_base_fa.gif) | ![](../figures/single_card_fa_attentioncache_speedup_1_6.gif) | ![](../figures/single_card_fa_attentioncache_speedup_2_0.gif) | ![](../figures/single_card_fa_attentioncache_speedup_2_4.gif) |
 
 ### 并行策略效果
 

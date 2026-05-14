@@ -39,7 +39,7 @@ export USER_ABI_VERSION=$(echo "$USER_ABI_VERSION_RAW" | tr -d '[:space:]')
 
 rm -rf build
 mkdir -p build
-cmake -B build ../csrc
+cmake -B build ../csrc -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 cmake --build build -j
 
 copy_so_files() {

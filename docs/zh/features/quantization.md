@@ -21,7 +21,7 @@ MindIE SD 提供两类量化能力，分别作用于模型的不同部分：
 
 下图展示了 INT8 量化示例，将 FP32 映射到 INT8。其中 `[-max(xf), max(xf)]` 是量化前浮点范围，`[-128, 127]` 是量化后范围。
 
-![](../figures/INT8-image.png)
+![](../../figures/int8_image.png)
 
 ### 技术特点
 

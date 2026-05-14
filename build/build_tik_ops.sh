@@ -91,6 +91,7 @@ function revise_settings(){
     else
         sed -i '/project(opp)/a add_compile_options('"${OPTIONS[*]}"')' CMakeLists.txt
     fi
+    sed -i '/project(opp)/a set(CMAKE_EXPORT_COMPILE_COMMANDS ON)' CMakeLists.txt
 }
 
 function build_and_install(){

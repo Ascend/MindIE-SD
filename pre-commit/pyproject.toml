@@ -1,0 +1,114 @@
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+format.quote-style = "preserve"
+
+[tool.ruff.lint]
+extend-select = [
+  "D209",
+  "SIM115",
+]
+
+[tool.pylint]
+reports = false
+score = false
+max-line-length = 120
+max-args = 15
+max-branches = 50
+max-statements = 200
+max-locals = 50
+max-positional-arguments = 20
+
+enable = [
+  "E0100",
+  "E0601",
+  "E0602",
+  "E0603",
+  "E0611",
+  "E0632",
+  "E1101",
+  "E1120",
+  "E0632",
+  "W0632",
+  "W1514",
+]
+
+disable = [
+  "invalid-name",
+  "missing-docstring",
+  "missing-module-docstring",
+  "missing-function-docstring",
+  "missing-class-docstring",
+  "empty-docstring",
+  "line-too-long",
+  "trailing-whitespace",
+  "too-many-arguments",
+  "too-many-positional-arguments",
+  "too-many-branches",
+  "too-many-statements",
+  "too-many-locals",
+  "too-many-return-statements",
+  "too-many-instance-attributes",
+  "too-few-public-methods",
+  "too-many-public-methods",
+  "unused-argument",
+  "unused-variable",
+  "unused-import",
+  "protected-access",
+  "no-else-raise",
+  "no-else-return",
+  "consider-using-enumerate",
+  "use-dict-literal",
+  "consider-using-f-string",
+  "superfluous-parens",
+  "unnecessary-pass",
+  "len-as-condition",
+  "global-statement",
+  "import-outside-toplevel",
+  "raise-missing-from",
+  "broad-except",
+  "bare-except",
+  "wrong-import-order",
+  "wrong-import-position",
+  "import-error",
+]
+
+[tool.bandit]
+severity_level = "LOW"
+confidence_level = "LOW"
+
+exclude_dirs = [
+  "tests", "test", "venv", ".venv", "build", "dist", "migrations", "__pycache__"
+]
+
+tests = [
+  "B608",
+  "B602",
+  "B605",
+  "B607",
+  "B307",
+  "B324",
+  "B301",
+  "B306",
+  "B321",
+  "B311",
+  "B105",
+  "B106",
+  "B107",
+  "B108",
+  "B110",
+]
+
+skips = [
+  "B101",
+  "B102", "B103", "B104",
+  "B201", "B202",
+  "B302", "B303", "B304", "B305", "B308",
+  "B401", "B402", "B403", "B404", "B405", "B406",
+  "B501", "B502", "B503",
+  "B601", "B603", "B604", "B606", "B609",
+  "B701", "B702"
+]
+
+format = "screen"
+quiet = false
