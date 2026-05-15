@@ -14,7 +14,7 @@ pip install -r requirements.txt
 
 # Wan2.1-T2V-14B 8 卡推理
 cp MindIE-SD/examples/wan/infer_t2v.sh ./
-bash infer_t2v.sh --model_base="/home/{用户名}/Wan2.1-T2V-14B"
+model_base="/mnt/share/weight/Wan2.1-T2V-14B" bash infer_t2v.sh
 ```
 
 ## 加速效果展示
