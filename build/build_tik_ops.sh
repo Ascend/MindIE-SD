@@ -103,6 +103,20 @@ function build_and_install(){
 }
 
 function build_tik_ops(){
+    # Check CMake version compatibility
+    cmake_version=$(cmake --version 2>/dev/null | head -1 | awk '{print $3}')
+    if [ -z "$cmake_version" ]; then
+        echo "ERROR: cmake is not installed or not in PATH"
+        exit 1
+    fi
+    cmake_major=$(echo "$cmake_version" | cut -d. -f1)
+    cmake_minor=$(echo "$cmake_version" | cut -d. -f2)
+    if [ "$cmake_major" -gt 4 ] || { [ "$cmake_major" -eq 4 ] && [ "$cmake_minor" -ge 1 ]; }; then
+        echo "WARNING: CMake $cmake_version is not supported for TIK operator build. Skipping build_tik_ops."
+        echo "         Please use CMake < 4.1.0"
+        return 0
+    fi
+
     ori_path=${PWD}
     create_empty_custom_project
     release_framework_onnx
