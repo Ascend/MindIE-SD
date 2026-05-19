@@ -12,7 +12,6 @@
 import os
 import unittest
 import torch
-import torch_npu
 from mindiesd.offload import enable_offload
 
 
@@ -55,7 +54,9 @@ class MockDITModel(torch.nn.Module):
         return x
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestDITOffload(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -76,7 +77,7 @@ class TestDITOffload(unittest.TestCase):
                 'weight': blk.weight.data.clone(),
                 'bias': blk.bias.data.clone(),
                 'img_feat': blk.img_feat.data.clone(),
-                'running_mean': blk.running_mean.clone()
+                'running_mean': blk.running_mean.clone(),
             }
             if blk.slice_param is not None:
                 self.original_params[blk_idx]['slice_param'] = blk.slice_param.data.clone()
@@ -120,6 +121,21 @@ class TestDITOffload(unittest.TestCase):
                 self.assertEqual(buf.data.shape, self.original_params[blk_idx][name].shape)
                 self.assertEqual(buf.data.untyped_storage().size(), 0)
                 self.assertTrue(torch.allclose(buf.p_cpu, self.original_params[blk_idx][name], atol=1e-6))
+
+    def test_enable_offload_idempotent(self):
+        enable_offload(self.model, self.model.blocks)
+
+        pre_hook_counts = [len(blk._forward_pre_hooks) for blk in self.model.blocks]
+        hook_counts = [len(blk._forward_hooks) for blk in self.model.blocks]
+
+        enable_offload(self.model, self.model.blocks)
+
+        for idx, blk in enumerate(self.model.blocks):
+            self.assertEqual(len(blk._forward_pre_hooks), pre_hook_counts[idx])
+            self.assertEqual(len(blk._forward_hooks), hook_counts[idx])
+
+        self.assertTrue(self.model.mindiesd_offload_enabled)
+
     def test_full_forward_flow(self):
         enable_offload(self.model, self.model.blocks)
         for idx, blk in enumerate(self.model.blocks):
