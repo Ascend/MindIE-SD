@@ -12,6 +12,7 @@
 
 from enum import Enum, auto
 import torch_npu
+from .logs import logger
 PLATFORM = None
 
 
@@ -25,13 +26,23 @@ class NPUDevice(Enum):
 def get_npu_device() -> NPUDevice:
     global PLATFORM
     if PLATFORM is None:
-        soc = torch_npu.npu.get_device_name()
-        if "310" in soc:
-            PLATFORM = NPUDevice.Duo
-        elif "910" in soc:
-            PLATFORM = NPUDevice.A5 if "910_95" in soc else NPUDevice.A2
-        elif "950" in soc:
-            PLATFORM = NPUDevice.A5
-        else:
+        try:
+            if torch_npu.npu.device_count() == 0:
+                PLATFORM = NPUDevice.UNDEFINED
+                return PLATFORM
+            soc = torch_npu.npu.get_device_name()
+            if soc is None:
+                PLATFORM = NPUDevice.UNDEFINED
+                return PLATFORM
+            if "310" in soc:
+                PLATFORM = NPUDevice.Duo
+            elif "910" in soc:
+                PLATFORM = NPUDevice.A5 if "910_95" in soc else NPUDevice.A2
+            elif "950" in soc:
+                PLATFORM = NPUDevice.A5
+            else:
+                PLATFORM = NPUDevice.UNDEFINED
+        except RuntimeError:
+            logger.warning(f"Failed to get NPU device name: {RuntimeError}")
             PLATFORM = NPUDevice.UNDEFINED
     return PLATFORM
