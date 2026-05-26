@@ -62,31 +62,24 @@ def attention_fake(
     keep_prob: float = 1.0,
     pre_tokens: int = 2147483647,
     next_tokens: int = 1,
-    is_high_precision: bool = True
+    is_high_precision: bool = True,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     softmax_log_max_sum = torch.empty(
-        [query.shape[0], query.shape[1], query.shape[2]],
-        device=query.device, dtype=query.dtype
+        [query.shape[0], query.shape[1], query.shape[2]], device=query.device, dtype=query.dtype
     )
     output = torch.empty_like(query)
     return softmax_log_max_sum, output
 
 
 def laser_attention_preprocess(
-    query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
-    align_len: int
+    query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, align_len: int
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     return getattr(torch.ops.mindiesd, "la_preprocess")(query, key, value, align_len)
 
 
 @register_ops.register_mindie_fake_op("la_preprocess")
 def attention_preprocess_fake(
-    query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
-    align_len: int
+    query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, align_len: int
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     batch_size = query.shape[0]
     head_num = query.shape[2] if query.dim() == 4 else query.shape[1]
@@ -105,14 +98,10 @@ def attention_preprocess_fake(
     def create_padded_tensor(tensor, padded_seq_len):
         if tensor.dim() == 4:
             return torch.empty(
-                [batch_size, padded_seq_len, head_num, head_dim],
-                device=tensor.device, dtype=tensor.dtype
+                [batch_size, padded_seq_len, head_num, head_dim], device=tensor.device, dtype=tensor.dtype
             )
         else:
-            return torch.empty(
-                [padded_seq_len, head_num, head_dim],
-                device=tensor.device, dtype=tensor.dtype
-            )
+            return torch.empty([padded_seq_len, head_num, head_dim], device=tensor.device, dtype=tensor.dtype)
 
     out_query = create_padded_tensor(query, q_padded_seq_len)
     out_key = create_padded_tensor(key, k_padded_seq_len)
@@ -138,7 +127,7 @@ def rain_fusion_attention(
     mask_type: int = 0,
     scale: float = 1.0,
     inner_precise: int = 1,
-    block_size: int = 0
+    block_size: int = 0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     return getattr(torch.ops.mindiesd, "rainfusionattention")(
         query=query,
@@ -157,7 +146,7 @@ def rain_fusion_attention(
         mask_type=mask_type,
         scale=scale,
         inner_precise=inner_precise,
-        block_size=block_size
+        block_size=block_size,
     )
 
 
@@ -179,12 +168,9 @@ def rain_fusion_attention_fake(
     mask_type: int = 0,
     scale: float = 1.0,
     inner_precise: int = 1,
-    block_size: int = 0
+    block_size: int = 0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    softmax_lse = torch.empty(
-        [query.shape[0], query.shape[1], query.shape[2]],
-        device=query.device, dtype=query.dtype
-    )
+    softmax_lse = torch.empty([query.shape[0], query.shape[1], query.shape[2]], device=query.device, dtype=query.dtype)
     output = torch.empty_like(query)
     return output, softmax_lse
 
@@ -204,7 +190,7 @@ def sparse_block_estimate(
     causal: bool = False,
     keep_sink: bool = True,
     keep_recent: bool = True,
-    row_sparse: float = 1.0
+    row_sparse: float = 1.0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     return getattr(torch.ops.mindiesd, "sparse_block_estimate")(
         query=query,
@@ -221,7 +207,7 @@ def sparse_block_estimate(
         causal=causal,
         keep_sink=keep_sink,
         keep_recent=keep_recent,
-        row_sparse=row_sparse
+        row_sparse=row_sparse,
     )
 
 
@@ -241,7 +227,7 @@ def sparse_block_estimate_fake(
     causal: bool = False,
     keep_sink: bool = True,
     keep_recent: bool = True,
-    row_sparse: float = 1.0
+    row_sparse: float = 1.0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     b, nq, s, d = 0, 0, 0, 0
     if input_layout == "BNSD":
@@ -255,14 +241,8 @@ def sparse_block_estimate_fake(
     sparse_mask_shape = (b, nq, seqlen_sparse, seqlen_sparse_align32)
     sparse_count_table_shape = (b, nq, seqlen_sparse)
 
-    sparse_mask = torch.empty(
-        sparse_mask_shape,
-        device=query.device, dtype=torch.int8
-    )
-    sparse_count_table = torch.empty(
-        sparse_count_table_shape,
-        device=query.device, dtype=torch.int32
-    )
+    sparse_mask = torch.empty(sparse_mask_shape, device=query.device, dtype=torch.int8)
+    sparse_count_table = torch.empty(sparse_count_table_shape, device=query.device, dtype=torch.int32)
     return sparse_mask, sparse_count_table
 
 
@@ -300,7 +280,7 @@ def ada_block_sparse_attention(
         pre_tokens=pre_tokens,
         next_tokens=next_tokens,
         actual_seq_lengths=actual_seq_lengths,
-        actual_seq_lengths_kv=actual_seq_lengths_kv
+        actual_seq_lengths_kv=actual_seq_lengths_kv,
     )
 
 
@@ -396,15 +376,10 @@ def adaln(
     shift: torch.Tensor,
     weight: torch.Tensor | None = None,
     bias: torch.Tensor | None = None,
-    epsilon: float = 1e-05
+    epsilon: float = 1e-05,
 ) -> torch.Tensor:
     return getattr(torch.ops.mindiesd, "adaln")(
-        x=x,
-        scale=scale,
-        shift=shift,
-        weight=weight,
-        bias=bias,
-        epsilon=epsilon
+        x=x, scale=scale, shift=shift, weight=weight, bias=bias, epsilon=epsilon
     )
 
 
@@ -415,7 +390,7 @@ def adaln_fake(
     shift: torch.Tensor,
     weight: torch.Tensor | None = None,
     bias: torch.Tensor | None = None,
-    epsilon: float = 1e-05
+    epsilon: float = 1e-05,
 ) -> torch.Tensor:
     return torch.empty_like(x)
 
@@ -426,15 +401,10 @@ def layernorm(
     weight: torch.Tensor | None = None,
     bias: torch.Tensor | None = None,
     eps: float = 1e-05,
-    impl_mode: int = 0
+    impl_mode: int = 0,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     return getattr(torch.ops.mindiesd, "layernorm")(
-        input=x,
-        normalized_shape=normalized_shape,
-        weight=weight,
-        bias=bias,
-        eps=eps,
-        impl_mode=impl_mode
+        input=x, normalized_shape=normalized_shape, weight=weight, bias=bias, eps=eps, impl_mode=impl_mode
     )
 
 
@@ -445,12 +415,17 @@ def layernorm_fake(
     weight: torch.Tensor | None = None,
     bias: torch.Tensor | None = None,
     eps: float = 1e-05,
-    impl_mode: int = 0
+    impl_mode: int = 0,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     output = torch.empty_like(x)
 
     norm_ndim = len(normalized_shape)
     input_ndim = x.dim()
+    if norm_ndim > input_ndim:
+        raise ParametersInvalid(
+            f"normalized_shape must fit within input dimensions, but got "
+            f"normalized_shape={normalized_shape} (ndim={norm_ndim}) and input.dim()={input_ndim}"
+        )
     begin_axis = input_ndim - norm_ndim
 
     m = math.prod(x.shape[:begin_axis])
@@ -467,20 +442,15 @@ def layernorm_fake(
 
 
 def adaln_v2(
-        x: torch.Tensor,
-        scale: torch.Tensor,
-        shift: torch.Tensor,
-        weight: torch.Tensor | None = None,
-        bias: torch.Tensor | None = None,
-        epsilon: float = 1e-05
+    x: torch.Tensor,
+    scale: torch.Tensor,
+    shift: torch.Tensor,
+    weight: torch.Tensor | None = None,
+    bias: torch.Tensor | None = None,
+    epsilon: float = 1e-05,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     return getattr(torch.ops.mindiesd, "adaln_v2")(
-        x=x,
-        scale=scale,
-        shift=shift,
-        weight=weight,
-        bias=bias,
-        epsilon=epsilon
+        x=x, scale=scale, shift=shift, weight=weight, bias=bias, epsilon=epsilon
     )
 
 
@@ -491,7 +461,7 @@ def adaln_v2_fake(
     shift: torch.Tensor,
     weight: torch.Tensor | None = None,
     bias: torch.Tensor | None = None,
-    epsilon: float = 1e-05
+    epsilon: float = 1e-05,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     b, s, _ = x.shape
     mean_out = torch.empty((b, s, 1), dtype=x.dtype, device=x.device)
