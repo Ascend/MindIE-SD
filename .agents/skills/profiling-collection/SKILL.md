@@ -48,10 +48,10 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 
 Profiling 采集时必须在 profiler 外部完成 warmup，确保分析数据不含 JIT 编译开销：
 
-- Profiler 打开前先执行 **≥10 步 warmup**（含 `torch.npu.synchronize()`）
+- Profiler 打开前先执行 **2 步 warmup**（含 `torch.npu.synchronize()`）
 - Profiler 仅在 warmup 之后开启 **capture ≥5 步** timed steps
-- MindieSDBackend 编译场景：warmup 步数需同时覆盖 JIT 编译（最多 8 次，建议 10 步以上）
-- `collect_profile.py` 的 `--warmup-steps` 参数（默认 5）通过脚本传入远端推理入口
+- MindieSDBackend 编译场景：warmup 步数需同时覆盖 JIT 编译（最多 8 次，建议 2 步以上）
+- `--warmup-steps` 参数（默认 2）控制 warmup 步数
 
 > performance-analysis 会验证 warmup 是否已剔除，未剔除时标注 `WARMUP_NOT_STRIPPED` 异常。
 

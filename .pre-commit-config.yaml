@@ -72,6 +72,14 @@ repos:
       - id: typos
         args: ["--force-exclude", "--config", "pre-commit/typos.toml"]
 
+  # Markdown
+  - repo: https://gitcode.com/gh_mirrors/ma/markdownlint-cli
+    rev: v0.44.0
+    hooks:
+      - id: markdownlint
+        args: ["-c", ".markdownlint.json"]
+        stages: [manual]
+
   # C++ 核心检查
   - repo: https://gitcode.com/pre-commit-clang/mirrors-clang-format
     rev: v18.1.8

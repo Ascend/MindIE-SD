@@ -32,7 +32,11 @@ features/DyEPLB
 
 developer_guide/build_guide
 developer_guide/test
-developer_guide/tooling
+developer_guide/dev_setup
+developer_guide/repo_structure
+developer_guide/contribution_guide
+developer_guide/pattern_dev_guide
+developer_guide/benchmark_and_profiling
 ```
 
 ```{toctree}
