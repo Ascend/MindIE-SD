@@ -13,6 +13,7 @@
 from enum import Enum, auto
 import torch_npu
 from .logs import logger
+
 PLATFORM = None
 
 
