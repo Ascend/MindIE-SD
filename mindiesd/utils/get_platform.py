@@ -20,6 +20,7 @@ PLATFORM = None
 class NPUDevice(Enum):
     UNDEFINED = auto()
     A2 = auto()
+    A3 = auto()
     A5 = auto()
     Duo = auto()
 
@@ -31,19 +32,18 @@ def get_npu_device() -> NPUDevice:
             if torch_npu.npu.device_count() == 0:
                 PLATFORM = NPUDevice.UNDEFINED
                 return PLATFORM
-            soc = torch_npu.npu.get_device_name()
-            if soc is None:
-                PLATFORM = NPUDevice.UNDEFINED
-                return PLATFORM
-            if "310" in soc:
+            soc_version = torch_npu.npu.get_soc_version()
+            if 200 <= soc_version <= 205:
                 PLATFORM = NPUDevice.Duo
-            elif "910" in soc:
-                PLATFORM = NPUDevice.A5 if "910_95" in soc else NPUDevice.A2
-            elif "950" in soc:
+            elif 220 <= soc_version <= 225:
+                PLATFORM = NPUDevice.A2
+            elif 250 <= soc_version <= 255:
+                PLATFORM = NPUDevice.A3
+            elif soc_version == 260:
                 PLATFORM = NPUDevice.A5
             else:
                 PLATFORM = NPUDevice.UNDEFINED
-        except RuntimeError:
-            logger.warning(f"Failed to get NPU device name: {RuntimeError}")
+        except RuntimeError as exc:
+            logger.warning("Failed to get NPU SoC version: %s", exc)
             PLATFORM = NPUDevice.UNDEFINED
     return PLATFORM

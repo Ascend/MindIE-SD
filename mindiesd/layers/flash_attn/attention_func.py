@@ -16,10 +16,10 @@ import time
 import torch
 
 from .common import AttentionParam, lru_cache_by_attn_param
-from .attention_operate import device_duo_op, device_800_op, device_a5_op, AttentionOperateBase
-from .prompt_flash_attn import PromptFlashAttention
-from .fused_attn_score import FlashAttentionScore
-from .ascend_laser_attention import AscendLaserAttention
+from .attention_operate import device_duo_op, device_800_op, device_a5_op, AttentionOperateBase  # noqa: F401
+from .prompt_flash_attn import PromptFlashAttention  # noqa: F401
+from .fused_attn_score import FlashAttentionScore  # noqa: F401
+from .ascend_laser_attention import AscendLaserAttention  # noqa: F401
 from ...utils.get_platform import get_npu_device, NPUDevice
 from ...utils.exception import ParametersInvalid
 from ...utils.logs.logging import logger
@@ -42,8 +42,10 @@ def attention_math(query, key, value, attn_mask, scale, head_first=False):
     attn = attn.to(dtype=torch.float32)
     if attn_mask is not None:
         if attn_mask.dim() not in [2, 4] or attn_mask.size(-2) != q_seqlen or attn_mask.size(-1) != kv_seqlen:
-            raise ParametersInvalid("The attn_mask must be a 2D tensor with shape [q_seqlen, kv_seqlen],"
-                                    " or a 4D tensor with shape [batch_size, num_heads, q_seqlen, kv_seqlen]")
+            raise ParametersInvalid(
+                "The attn_mask must be a 2D tensor with shape [q_seqlen, kv_seqlen],"
+                " or a 4D tensor with shape [batch_size, num_heads, q_seqlen, kv_seqlen]"
+            )
         attn_bias = torch.zeros(q_seqlen, kv_seqlen, dtype=dtype).to(device)
         attn_bias.masked_fill_(attn_mask.logical_not(), float("-inf"))
         attn += attn_bias
@@ -56,14 +58,16 @@ def attention_math(query, key, value, attn_mask, scale, head_first=False):
 
 
 def get_attention_function_static(attn_param):
-    logger.debug(f"Begin to get attention function in static mode. Current parameters are {attn_param.to_str()}")
+    logger.debug("Begin to get attention function in static mode. Current parameters are %s", attn_param.to_str())
 
     hash_key = attn_param.to_hash()
     if hash_key in ATTN_DICT:
         op_type, layout = ATTN_DICT[hash_key]
     else:
-        logger.debug("Unable to locate the cached result in the static table; "
-                     "defaulting to the standard operation type and layout.")
+        logger.debug(
+            "Unable to locate the cached result in the static table; "
+            "defaulting to the standard operation type and layout."
+        )
 
         op_type = "prompt_flash_attn"  # default
         layout = "BNSD"
@@ -74,7 +78,7 @@ def get_attention_function(attn_param, op_type, layout):
     npu_device = get_npu_device()
     if npu_device == NPUDevice.Duo:
         op_registry = device_duo_op.get_all()
-    elif npu_device == NPUDevice.A2:
+    elif npu_device in (NPUDevice.A2, NPUDevice.A3):
         op_registry = device_800_op.get_all()
     elif npu_device == NPUDevice.A5:
         op_registry = device_a5_op.get_all()
@@ -82,18 +86,22 @@ def get_attention_function(attn_param, op_type, layout):
         raise ParametersInvalid("Platform invalid. Please check env.")
 
     if op_type not in op_registry:
-        raise ParametersInvalid(f"The 'op_type':{op_type} is not supported. "
-                                f"The list of supported options is {op_registry.keys()}")
+        raise ParametersInvalid(
+            f"The 'op_type':{op_type} is not supported. The list of supported options is {op_registry.keys()}"
+        )
 
     op = op_registry[op_type]
 
     if layout not in op.supported_layout:
-        raise ParametersInvalid(f"The 'layout':{layout} is not supported. "
-                                f"The list of supported options is {op.supported_layout}")
+        raise ParametersInvalid(
+            f"The 'layout':{layout} is not supported. The list of supported options is {op.supported_layout}"
+        )
 
     if attn_param.dtype not in op.supported_dtype:
-        raise ParametersInvalid(f"The input dtype:{attn_param.dtype} is not supported. "
-                                f"The list of supported options is {op.supported_dtype}")
+        raise ParametersInvalid(
+            f"The input dtype:{attn_param.dtype} is not supported. "
+            f"The list of supported options is {op.supported_dtype}"
+        )
 
     func = getattr(op, op.layout_to_func[layout])
 
@@ -102,11 +110,11 @@ def get_attention_function(attn_param, op_type, layout):
 
 @lru_cache_by_attn_param(maxsize=512)
 def get_attention_function_runtime(attn_param, query, key, value, attn_mask=None, scale=None):
-    logger.debug(f"Begin to get attention function in runtime mode. Current parameters are {attn_param.to_str()}")
+    logger.debug("Begin to get attention function in runtime mode. Current parameters are %s", attn_param.to_str())
     npu_device = get_npu_device()
     if npu_device == NPUDevice.Duo:
         all_op = device_duo_op.get_all()
-    elif npu_device == NPUDevice.A2:
+    elif npu_device in (NPUDevice.A2, NPUDevice.A3):
         all_op = device_800_op.get_all()
     elif npu_device == NPUDevice.A5:
         all_op = device_a5_op.get_all()
@@ -124,8 +132,12 @@ def get_attention_function_runtime(attn_param, query, key, value, attn_mask=None
         return attention_math
 
     func_list = min(cost_time_lists, key=lambda x: x[3])  # 3: cost time is in place 3
-    logger.debug(f"Got the most time-efficient function. "
-                 f"Op name: {func_list[0]}, layout: {func_list[1]}, cost time: {func_list[3] * 1000}ms")
+    logger.debug(
+        "Got the most time-efficient function. Op name: %s, layout: %s, cost time: %sms",
+        func_list[0],
+        func_list[1],
+        func_list[3] * 1000,
+    )
 
     return partial(func_list[2], attn_param)
 
@@ -133,15 +145,17 @@ def get_attention_function_runtime(attn_param, query, key, value, attn_mask=None
 def get_test_func_lists(attn_param: AttentionParam, all_op):
     func_lists = []
     if not all_op:
-        raise ParametersInvalid(f"all_op is none!")
+        raise ParametersInvalid("all_op is none!")
     for name, op in all_op.items():
         if not op.is_supported_dtype(attn_param.dtype):
             logger.debug(
-                f"The input data type[{attn_param.dtype}] is not in the range supported by op {name}.")
+                "The input data type[%s] is not in the range supported by op %s.",
+                attn_param.dtype,
+                name,
+            )
             continue
         if not op.is_supported_shape(attn_param):
-            logger.debug(
-                f"The input data shape is not in the range supported by op {name}.")
+            logger.debug("The input data shape is not in the range supported by op %s.", name)
             continue
         for layout in op.supported_layout:
             func_lists.append([name, layout, getattr(op, op.layout_to_func[layout])])
@@ -154,18 +168,18 @@ def get_all_func_forward_time(func_lists, query, key, value, attn_param, attn_ma
         name, layout, func = func_list
         try:
             for _ in range(WARM_UP_COUNT):
-                out = func(attn_param, query, key, value, attn_mask, scale)
+                func(attn_param, query, key, value, attn_mask, scale)
 
             torch.npu.synchronize()
             begin = time.time()
             for _ in range(TEST_COUNT):
-                out = func(attn_param, query, key, value, attn_mask, scale)
+                func(attn_param, query, key, value, attn_mask, scale)
             torch.npu.synchronize()
             end = time.time()
             cost_time = (end - begin) / TEST_COUNT
 
-            logger.debug(f"Op name: {name}, layout: {layout}, cost time: {cost_time * 1000}ms")
+            logger.debug("Op name: %s, layout: %s, cost time: %sms", name, layout, cost_time * 1000)
             cost_time_lists.append([name, layout, func, cost_time])
         except Exception as e:
-            logger.debug(f"Op name: {name}, layout: {layout}, get exception {e}.")
+            logger.debug("Op name: %s, layout: %s, get exception %s.", name, layout, e)
     return cost_time_lists

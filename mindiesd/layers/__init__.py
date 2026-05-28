@@ -18,3 +18,17 @@ from .norm import RMSNorm, fast_layernorm
 from .adalayernorm import layernorm_scale_shift
 from .muls_add import muls_add
 from .rope import rotary_position_embedding
+from .fused_moe import fused_moe
+
+__all__ = [
+    "RMSNorm",
+    "attention_forward",
+    "attention_forward_varlen",
+    "fast_layernorm",
+    "fused_moe",
+    "get_activation_layer",
+    "layernorm_scale_shift",
+    "muls_add",
+    "rotary_position_embedding",
+    "sparse_attention",
+]

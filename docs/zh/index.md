@@ -18,6 +18,7 @@ architecture
 features/sparse
 features/quantization
 features/core_layers
+features/fused_moe
 features/compilation
 features/parallelism
 features/cache

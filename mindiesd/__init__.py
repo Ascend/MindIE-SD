@@ -23,15 +23,17 @@ __all__ = [
     'TimestepManager',
     'TimestepPolicyConfig',
     'sparse_attention',
-    'fast_layernorm'
+    'fast_layernorm',
+    'fused_moe',
 ]
 
 
 from .env import set_environment_variables
+
 set_environment_variables()
 
-from .cache_agent import CacheConfig, CacheAgent
-from .layers import (
+from .cache_agent import CacheConfig, CacheAgent  # noqa: E402
+from .layers import (  # noqa: E402
     layernorm_scale_shift,
     attention_forward,
     attention_forward_varlen,
@@ -39,6 +41,7 @@ from .layers import (
     get_activation_layer,
     RMSNorm,
     sparse_attention,
-    fast_layernorm
+    fast_layernorm,
+    fused_moe,
 )
-from .quantization import quantize, TimestepManager, TimestepPolicyConfig
+from .quantization import quantize, TimestepManager, TimestepPolicyConfig  # noqa: E402
