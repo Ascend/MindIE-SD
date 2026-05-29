@@ -19,7 +19,7 @@ import time
 
 logger = logging.getLogger(__name__)
 
-_CONFIG_ALLOW = ["*.json", "*.txt", "*.model", "tokenizer*"]
+_CONFIG_ALLOW = ["*.json", "*.txt", "*.model", "*.py", "tokenizer*"]
 _CONFIG_IGNORE = ["*.safetensors", "*.bin", "*.msgpack", "*.ckpt", "*.pth"]
 
 
@@ -29,9 +29,7 @@ def check_npu():
     npu_smi = shutil.which("npu-smi")
     if npu_smi is None:
         raise RuntimeError("npu-smi not found in PATH")
-    result = subprocess.run(
-        [npu_smi, "info", "-l"], capture_output=True, text=True
-    )
+    result = subprocess.run([npu_smi, "info", "-l"], capture_output=True, text=True, check=True)
     total = sum(1 for line in result.stdout.splitlines() if "NPU ID" in line)
     logger.warning("NPU: %d card(s) available", total)
 
@@ -144,9 +142,7 @@ class _PhaseTimer:
                     continue
                 name = attr
                 h_pre = module.register_forward_pre_hook(lambda _m, _in, _n=name: self._on_pre(_n))
-                h_post = module.register_forward_hook(
-                    lambda _m, _in, _out, _n=name: self._on_post(_n)
-                )
+                h_post = module.register_forward_hook(lambda _m, _in, _out, _n=name: self._on_post(_n))
                 self._handles.append(h_pre)
                 self._handles.append(h_post)
 
