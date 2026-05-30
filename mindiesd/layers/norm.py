@@ -11,7 +11,7 @@
 # See the Mulan PSL v2 for more details.
 
 import torch
-import torch.nn as nn
+from torch import nn
 import torch_npu
 from ..utils.exception import ParametersInvalid
 from . import _custom_ops as ops
@@ -30,6 +30,7 @@ class RMSNorm(nn.Module):
         if hidden_states.dim() < 2 or hidden_states.dim() > 8:
             raise ParametersInvalid("The input dimension should be greater than 1 and less than 9.")
         if if_fused:
+            # pylint: disable=no-member
             return torch_npu.npu_rms_norm(hidden_states, self.weight, epsilon=self.variance_epsilon)[0]
         else:
             input_dtype = hidden_states.dtype
@@ -46,20 +47,22 @@ def check_input_params(layernorm, x, impl_mode, fused):
         raise ParametersInvalid(f"The data type of input fused must be bool, but got {type(fused)}.")
     if impl_mode not in [0, 1, 2]:
         raise ParametersInvalid(f"Expected impl_mode to be in [0, 1, 2], but now got [{impl_mode}]")
+    if len(layernorm.normalized_shape) > x.dim():
+        raise ParametersInvalid(
+            f"normalized_shape must fit within input dimensions, but got "
+            f"normalized_shape={list(layernorm.normalized_shape)} (ndim={len(layernorm.normalized_shape)}) "
+            f"and input.dim()={x.dim()}"
+        )
     if impl_mode == 2:
         if not (
             x.dtype == torch.float16
             and (layernorm.weight is None or layernorm.weight.dtype == torch.float16)
             and (layernorm.bias is None or layernorm.bias.dtype == torch.float16)
         ):
-            raise ParametersInvalid(f"only support all input dtype float16!")
+            raise ParametersInvalid("only support all input dtype float16!")
 
 
-def fast_layernorm(
-    norm: torch.nn.LayerNorm,
-    x: torch.Tensor,
-    impl_mode: int = 0,
-    fused: bool = True) -> torch.Tensor:
+def fast_layernorm(norm: torch.nn.LayerNorm, x: torch.Tensor, impl_mode: int = 0, fused: bool = True) -> torch.Tensor:
     """
     Args:
         norm (torch.nn.LayerNorm):
@@ -82,7 +85,7 @@ def fast_layernorm(
             weight=norm.weight,
             bias=norm.bias,
             eps=norm.eps,
-            impl_mode=impl_mode
+            impl_mode=impl_mode,
         )[0]
     else:
         out = norm(x)

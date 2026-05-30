@@ -57,15 +57,23 @@ bash tests/run_test.sh --all
 
 运行成功后会在仓库目录下生成结果文件，记录 LA 和 FAScore 的相似度，可据此查看算子在目标 shape 下的精度表现。
 
-## 常见异常说明
+## 测试编写规范
 
-在使用 MindIE SD 进行推理业务时，模型相关文件（权重、配置、模型代码等）的安全性需由用户保证，常见的异常如下：
+### 测试组织原则
 
-- 如用户在模型初始化时修改模型配置的默认参数，可能影响模型接口；若权重文件过大或配置文件参数过大，可能会触发内存不足报错，例如：`RuntimeError: NPU out of memory. Tried to allocate xxx GiB.`。
-- 使用模型推理时，若输入的 tensor shape 过大，也可能触发类似的内存不足报错。
-- 在使用 MindIE SD 进行生成业务时，如果出现错误输入、环境不适配等问题，代码中会抛出异常，需要用户在上层进行异常捕获处理。常见异常类型如下：
+`tests/` 下的测试目录与 `mindiesd/` 模块层次对应：
 
-   | 异常类型 | 说明 |
-   | -- | -- |
-   | ZeroDivisionError | 除 0 异常。 |
-   | ValueError | 参数值异常。 |
+| 源码模块 | 对应测试目录 |
+|----------|-------------|
+| `mindiesd/layers/` | `tests/layers/` |
+| `mindiesd/cache/` | `tests/cache/` |
+| `mindiesd/compilation/` | `tests/compilation/` |
+| `mindiesd/quantization/` | `tests/quantization/` |
+
+新增代码时，检查对应测试目录是否已有测试文件，并在其中追加或新建测试覆盖新功能。
+
+### 测试性能规范
+
+- 单个测试文件运行超过 500 秒时，应拆分为多个文件
+- 优先复用已有的设备/模型加载，减少重复初始化开销
+- CPU 友好的测试应优先使用 `bash tests/run_UT_test.sh` 验证

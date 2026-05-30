@@ -1,8 +1,11 @@
 docs/_build/
 build/build/
+build/plugin_build/
 build/custom_project_tik/
 build/output/
 build/vendors/
+build/bdist.linux-*/
+build/lib/
 dist/
 mindiesd.egg-info/
 mindiesd/ops/

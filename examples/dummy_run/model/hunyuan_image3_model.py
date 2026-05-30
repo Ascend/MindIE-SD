@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def _get_custom_classes():
     for name in sorted(sys.modules.keys()):
-        if "tokenizer_wrapper" in name and "hunyuan" in name.lower():
+        if "tokenizer_wrapper" in name:
             mod = sys.modules[name]
             return mod.TokenizerEncodeOutput, mod.ImageInfo
     raise RuntimeError("Cannot find TokenizerEncodeOutput/ImageInfo")

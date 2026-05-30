@@ -183,6 +183,13 @@ description: "Handle MindIE-SD documentation, governance, contributor workflow, 
   - `pre-commit install`
   - `pre-commit run --all-files`
 - `git commit --no-verify` 只在明确需要绕过时使用
+- 对本次 commit 新增或修改的 `.md` 文件，额外做 markdownlint 专项检查：
+
+  ```shell
+  git diff --name-only HEAD~1..HEAD -- '*.md' | xargs markdownlint -c .markdownlint.json
+  ```
+
+- 批量修复 `.md` 文件时需确认编码不破坏：PowerShell `Get-Content`/`Set-Content` 读写 UTF-8 含中文文件会引入 BOM 与乱码，应使用 Python 或 Node.js 处理
 
 ### 5.5 Assert / MR 质量规则资产
 

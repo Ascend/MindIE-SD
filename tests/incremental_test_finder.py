@@ -10,15 +10,11 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-import os
-import re
-import sys
-import subprocess
 import argparse
-import glob
 import ast
-from pathlib import Path
-from typing import List, Set, Dict, Tuple, Optional
+import glob
+import os
+import subprocess
 from dataclasses import dataclass, field
 from fnmatch import fnmatch
 
@@ -26,26 +22,28 @@ from fnmatch import fnmatch
 @dataclass
 class FileChange:
     """文件变更信息"""
+
     path: str
     change_type: str  # 'A'=新增, 'M'=修改, 'D'=删除, 'R'=重命名
-    old_path: Optional[str] = None  # 重命名时的原路径
+    old_path: str | None = None  # 重命名时的原路径
 
 
 @dataclass
 class ChangeInfo:
     """变更操作信息"""
+
     # 按变更类型分类的源码文件
-    added_source_files: Set[str] = field(default_factory=set)    # 新增的源码文件
-    modified_source_files: Set[str] = field(default_factory=set) # 修改的源码文件
-    deleted_source_files: Set[str] = field(default_factory=set)  # 删除的源码文件
+    added_source_files: set[str] = field(default_factory=set)  # 新增的源码文件
+    modified_source_files: set[str] = field(default_factory=set)  # 修改的源码文件
+    deleted_source_files: set[str] = field(default_factory=set)  # 删除的源码文件
 
     # 测试文件
-    deleted_test_files: Set[str] = field(default_factory=set)    # 删除的测试文件
+    deleted_test_files: set[str] = field(default_factory=set)  # 删除的测试文件
 
     # 依赖分析结果
-    dependency_affected_tests: Set[str] = field(default_factory=set)  # 依赖变更源码的测试
+    dependency_affected_tests: set[str] = field(default_factory=set)  # 依赖变更源码的测试
 
-    def get_all_changed_sources(self) -> Set[str]:
+    def get_all_changed_sources(self) -> set[str]:
         """获取所有变更的源码文件"""
         return self.added_source_files | self.modified_source_files | self.deleted_source_files
 
@@ -60,8 +58,8 @@ class GitChangeDetector:
     def _find_repo_root(self) -> str:
         """查找Git仓库根目录"""
         current = os.getcwd()
-        while current != '/':
-            if os.path.isdir(os.path.join(current, '.git')):
+        while current != "/":
+            if os.path.isdir(os.path.join(current, ".git")):
                 return current
             parent = os.path.dirname(current)
             if parent == current:  # 到达根目录
@@ -69,16 +67,10 @@ class GitChangeDetector:
             current = parent
         raise RuntimeError("Not in a git repository")
 
-    def _run_git_command(self, cmd: List[str]) -> str:
+    def _run_git_command(self, cmd: list[str]) -> str:
         """运行Git命令"""
         try:
-            result = subprocess.run(
-                cmd,
-                cwd=self.repo_root,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            result = subprocess.run(cmd, cwd=self.repo_root, capture_output=True, text=True, check=True)
             return result.stdout.strip()
         except subprocess.CalledProcessError as e:
             print(f"Git command failed: {' '.join(cmd)}")
@@ -89,17 +81,12 @@ class GitChangeDetector:
         """检查Git引用是否存在"""
         cmd = ["git", "rev-parse", "--verify", ref]
         try:
-            subprocess.run(
-                cmd,
-                cwd=self.repo_root,
-                capture_output=True,
-                check=True
-            )
+            subprocess.run(cmd, cwd=self.repo_root, capture_output=True, check=True)
             return True
         except subprocess.CalledProcessError:
             return False
 
-    def get_changed_files(self, since_ref: str = None) -> List[FileChange]:
+    def get_changed_files(self, since_ref: str = None) -> list[FileChange]:
         """
         获取变更的文件列表
 
@@ -121,17 +108,17 @@ class GitChangeDetector:
         diff_cmd = ["git", "diff", "--name-status", f"{ref}...HEAD"]
         output = self._run_git_command(diff_cmd)
 
-        for line in output.split('\n'):
+        for line in output.split("\n"):
             if not line.strip():
                 continue
 
-            parts = line.split('\t')
+            parts = line.split("\t")
             if len(parts) < 2:
                 continue
 
             change_type = parts[0][0]  # A/M/D/R
 
-            if change_type == 'R':
+            if change_type == "R":
                 # 重命名: R100\told_path\tnew_path
                 if len(parts) >= 3:
                     old_path = parts[1]
@@ -144,16 +131,16 @@ class GitChangeDetector:
 
         return changes
 
-    def get_staged_files(self) -> List[FileChange]:
+    def get_staged_files(self) -> list[FileChange]:
         """获取暂存区的变更文件"""
         changes = []
         cmd = ["git", "diff", "--cached", "--name-status"]
         output = self._run_git_command(cmd)
 
-        for line in output.split('\n'):
+        for line in output.split("\n"):
             if not line.strip():
                 continue
-            parts = line.split('\t')
+            parts = line.split("\t")
             if len(parts) < 2:
                 continue
             change_type = parts[0][0]
@@ -162,16 +149,16 @@ class GitChangeDetector:
 
         return changes
 
-    def get_unstaged_files(self) -> List[FileChange]:
+    def get_unstaged_files(self) -> list[FileChange]:
         """获取未暂存的变更文件"""
         changes = []
         cmd = ["git", "diff", "--name-status"]
         output = self._run_git_command(cmd)
 
-        for line in output.split('\n'):
+        for line in output.split("\n"):
             if not line.strip():
                 continue
-            parts = line.split('\t')
+            parts = line.split("\t")
             if len(parts) < 2:
                 continue
             change_type = parts[0][0]
@@ -187,22 +174,22 @@ class SourceDependencyAnalyzer:
     def __init__(self, repo_root: str):
         self.repo_root = repo_root
         # 缓存模块名到文件路径的映射
-        self._module_cache: Dict[str, str] = {}
+        self._module_cache: dict[str, str] = {}
         # 缓存文件依赖关系
-        self._dependency_cache: Dict[str, Set[str]] = {}
+        self._dependency_cache: dict[str, set[str]] = {}
 
-    def _get_module_name(self, file_path: str) -> Optional[str]:
+    def _get_module_name(self, file_path: str) -> str | None:
         """从文件路径获取模块名"""
-        if not file_path.endswith('.py'):
+        if not file_path.endswith(".py"):
             return None
 
         # 转换为模块名 (mindiesd/layers/norm.py -> mindiesd.layers.norm)
-        rel_path = file_path.replace('/', '.').replace('\\', '.')
-        if rel_path.endswith('.py'):
+        rel_path = file_path.replace("/", ".").replace("\\", ".")
+        if rel_path.endswith(".py"):
             rel_path = rel_path[:-3]
         return rel_path
 
-    def _extract_imports(self, file_path: str) -> Set[str]:
+    def _extract_imports(self, file_path: str) -> set[str]:
         """从Python文件中提取导入的模块"""
         imports = set()
         full_path = os.path.join(self.repo_root, file_path)
@@ -211,7 +198,7 @@ class SourceDependencyAnalyzer:
             return imports
 
         try:
-            with open(full_path, 'r', encoding='utf-8') as f:
+            with open(full_path, encoding="utf-8") as f:
                 content = f.read()
 
             tree = ast.parse(content)
@@ -225,16 +212,16 @@ class SourceDependencyAnalyzer:
                     if module:
                         imports.add(module)
                         # 也添加子模块
-                        parts = module.split('.')
+                        parts = module.split(".")
                         for i in range(1, len(parts)):
-                            imports.add('.'.join(parts[:i]))
-        except (SyntaxError, UnicodeDecodeError, IOError):
+                            imports.add(".".join(parts[:i]))
+        except (OSError, SyntaxError, UnicodeDecodeError):
             # 解析失败时返回空集合
             pass
 
         return imports
 
-    def find_dependent_sources(self, changed_sources: Set[str], other_source_files: List[str]) -> Set[str]:
+    def find_dependent_sources(self, changed_sources: set[str], other_source_files: list[str]) -> set[str]:
         """
         查找依赖变更源码的其他源码文件
 
@@ -274,16 +261,16 @@ class SourceDependencyAnalyzer:
 
         return dependent_sources
 
-    def get_all_source_files(self) -> List[str]:
+    def get_all_source_files(self) -> list[str]:
         """获取项目中所有的Python源文件"""
         source_files = []
 
         # 扫描 mindiesd 目录
-        mindiesd_dir = os.path.join(self.repo_root, 'mindiesd')
+        mindiesd_dir = os.path.join(self.repo_root, "mindiesd")
         if os.path.isdir(mindiesd_dir):
             for root, _, files in os.walk(mindiesd_dir):
                 for file in files:
-                    if file.endswith('.py'):
+                    if file.endswith(".py"):
                         full_path = os.path.join(root, file)
                         rel_path = os.path.relpath(full_path, self.repo_root)
                         source_files.append(rel_path)
@@ -369,25 +356,25 @@ class TestMapper:
                 "tests/layers/test_register_ops.py",
             ],
             # CSRC 算子实现源码映射到 Layers 测试（因为 layers 调用这些算子）
-            "csrc/ops/ascendc/op_kernel/ascend_laser_attention.cpp": [
+            "csrc/ops/laser_attention/op_kernel/laser_attention.cpp": [
                 "tests/plugin/test_la.py",
                 "tests/plugin/test_la_preprocess.py",
                 "tests/layers/flash_attn/test_attn_forward.py",
                 "tests/layers/flash_attn/test_attention_func.py",
                 "tests/layers/test_custom_ops.py",
             ],
-            "csrc/ops/ascendc/op_kernel/la_preprocess.cpp": [
+            "csrc/ops/la_preprocess/op_kernel/la_preprocess.cpp": [
                 "tests/plugin/test_la.py",
                 "tests/plugin/test_la_preprocess.py",
                 "tests/layers/flash_attn/test_attn_forward.py",
                 "tests/layers/test_custom_ops.py",
             ],
-            "csrc/ops/ascendc/op_kernel/ada_block_sparse_attention.cpp": [
+            "csrc/ops/ada_block_sparse_attention/op_kernel/ada_block_sparse_attention.cpp": [
                 "tests/plugin/test_adablocksparseattention.py",
                 "tests/layers/flash_attn/test_sparse_attention.py",
                 "tests/layers/test_custom_ops.py",
             ],
-            "csrc/ops/ascendc/op_kernel/sparse_block_estimate.cpp": [
+            "csrc/ops/sparse_block_estimate/op_kernel/sparse_block_estimate.cpp": [
                 "tests/plugin/test_sparseblockestimate.py",
                 "tests/layers/test_custom_ops.py",
             ],
@@ -423,7 +410,6 @@ class TestMapper:
                 "tests/layers/test_custom_ops.py",
             ],
         },
-
         # 模式匹配（通配符）
         "pattern": {
             "mindiesd/layers/flash_attn/*.py": "tests/layers/flash_attn/test_*.py",
@@ -432,7 +418,6 @@ class TestMapper:
             "mindiesd/utils/*.py": "tests/utils/test_*.py",
             "mindiesd/utils/logs/*.py": "tests/utils/logs/test_*.py",
         },
-
         # 目录匹配
         "directory": {
             "mindiesd/layers/": "tests/layers/",
@@ -442,19 +427,24 @@ class TestMapper:
             "mindiesd/eplb/": "tests/eplb/",
             "mindiesd/utils/": "tests/utils/",
         },
-
         # C++插件映射
         "plugin": {
             "csrc/plugin/": "tests/plugin/",
-            "csrc/ops/ascendc/op_kernel/": "tests/plugin/",
-            "csrc/ops/ascendc/op_host/": "tests/plugin/",
-        }
+            "csrc/ops/laser_attention/op_kernel/": "tests/plugin/",
+            "csrc/ops/laser_attention/op_host/": "tests/plugin/",
+            "csrc/ops/la_preprocess/op_kernel/": "tests/plugin/",
+            "csrc/ops/la_preprocess/op_host/": "tests/plugin/",
+            "csrc/ops/ada_block_sparse_attention/op_kernel/": "tests/plugin/",
+            "csrc/ops/ada_block_sparse_attention/op_host/": "tests/plugin/",
+            "csrc/ops/sparse_block_estimate/op_kernel/": "tests/plugin/",
+            "csrc/ops/sparse_block_estimate/op_host/": "tests/plugin/",
+        },
     }
 
     def __init__(self, repo_root: str):
         self.repo_root = repo_root
 
-    def find_related_tests(self, changed_files: List[FileChange]) -> Tuple[Set[str], ChangeInfo]:
+    def find_related_tests(self, changed_files: list[FileChange]) -> tuple[set[str], ChangeInfo]:
         """
         根据变更文件查找相关的测试用例
 
@@ -473,7 +463,7 @@ class TestMapper:
 
             # 如果变更的是测试文件
             if self._is_test_file(file_path):
-                if change.change_type == 'D':
+                if change.change_type == "D":
                     # 删除的测试直接跳过，但记录下来
                     change_info.deleted_test_files.add(file_path)
                 else:
@@ -486,10 +476,10 @@ class TestMapper:
                 continue
 
             # 处理源码文件
-            if change.change_type == 'D':
+            if change.change_type == "D":
                 # 删除的源码，记录并跳过直接映射
                 change_info.deleted_source_files.add(file_path)
-            elif change.change_type == 'A':
+            elif change.change_type == "A":
                 # 新增的源码
                 change_info.added_source_files.add(file_path)
                 tests = self._map_to_tests(file_path)
@@ -509,10 +499,7 @@ class TestMapper:
             # 从所有源码中排除变更的源码本身
             other_sources = [s for s in all_sources if s not in all_changed_sources]
 
-            dependent_sources = analyzer.find_dependent_sources(
-                all_changed_sources,
-                other_sources
-            )
+            dependent_sources = analyzer.find_dependent_sources(all_changed_sources, other_sources)
 
             # 为依赖的源码查找测试
             for dep_source in dependent_sources:
@@ -525,16 +512,18 @@ class TestMapper:
 
     def _is_test_file(self, file_path: str) -> bool:
         """判断是否为测试文件"""
-        return file_path.startswith("tests/") and \
-               (file_path.startswith("test_") or "/test_" in file_path) and \
-               file_path.endswith(".py")
+        return (
+            file_path.startswith("tests/")
+            and (file_path.startswith("test_") or "/test_" in file_path)
+            and file_path.endswith(".py")
+        )
 
     def _is_source_file(self, file_path: str) -> bool:
         """判断是否为源文件（需要测试的代码文件）"""
-        source_extensions = ['.py', '.cpp', '.h', '.hpp', '.c', '.cc']
+        source_extensions = [".py", ".cpp", ".h", ".hpp", ".c", ".cc"]
         return any(file_path.endswith(ext) for ext in source_extensions)
 
-    def _map_to_tests(self, source_path: str) -> List[str]:
+    def _map_to_tests(self, source_path: str) -> list[str]:
         """将源码路径映射到测试路径"""
         tests = []
 
@@ -553,7 +542,7 @@ class TestMapper:
         for src_dir, test_dir in self.MAPPING_RULES["directory"].items():
             if source_path.startswith(src_dir):
                 # 根据源文件推断测试文件名
-                relative_path = source_path[len(src_dir):]
+                relative_path = source_path[len(src_dir) :]
                 test_file = self._infer_test_file(relative_path, test_dir)
                 if test_file:
                     tests.append(test_file)
@@ -567,13 +556,13 @@ class TestMapper:
         unique_tests = list(set(tests))
         return [t for t in unique_tests if self._test_file_exists(t)]
 
-    def _expand_test_pattern(self, pattern: str) -> List[str]:
+    def _expand_test_pattern(self, pattern: str) -> list[str]:
         """展开测试文件通配符模式"""
         full_pattern = os.path.join(self.repo_root, pattern)
         files = glob.glob(full_pattern)
         return [os.path.relpath(f, self.repo_root) for f in files]
 
-    def _infer_test_file(self, relative_path: str, test_dir: str) -> Optional[str]:
+    def _infer_test_file(self, relative_path: str, test_dir: str) -> str | None:
         """根据源文件推断测试文件名"""
         # 去掉.py后缀，加上test_前缀
         base_name = os.path.basename(relative_path)
@@ -581,7 +570,7 @@ class TestMapper:
         test_name = f"test_{name_without_ext}.py"
         return os.path.join(test_dir, test_name)
 
-    def _find_plugin_tests(self, source_path: str, test_dir: str) -> List[str]:
+    def _find_plugin_tests(self, source_path: str, test_dir: str) -> list[str]:
         """查找插件相关的测试"""
         tests = []
         # 从源文件名推断测试名
@@ -623,9 +612,9 @@ class IncrementalTestFinder:
         self.detector = GitChangeDetector(self.repo_root, base_branch)
         self.mapper = TestMapper(self.repo_root)
 
-    def get_incremental_tests(self, since_ref: str = None,
-                              include_staged: bool = True,
-                              include_unstaged: bool = True) -> Tuple[Set[str], ChangeInfo, List[FileChange]]:
+    def get_incremental_tests(
+        self, since_ref: str = None, include_staged: bool = True, include_unstaged: bool = True
+    ) -> tuple[set[str], ChangeInfo, list[FileChange]]:
         """
         获取增量测试列表
 
@@ -665,7 +654,7 @@ class IncrementalTestFinder:
 
         return related_tests, change_info, all_changes
 
-    def print_test_plan(self, tests: Set[str], change_info: ChangeInfo, changes: List[FileChange]):
+    def print_test_plan(self, tests: set[str], change_info: ChangeInfo, changes: list[FileChange]):
         """打印测试计划"""
         print("=" * 80)
         print("增量测试计划")
@@ -710,7 +699,7 @@ class IncrementalTestFinder:
             for test in sorted(tests):
                 print(f"  ✅ {test}")
         else:
-            print(f"\n🧪 没有需要运行的测试用例")
+            print("\n🧪 没有需要运行的测试用例")
 
         print("\n" + "=" * 80)
 
@@ -718,41 +707,33 @@ class IncrementalTestFinder:
 def main():
     """命令行入口"""
     parser = argparse.ArgumentParser(description="增量测试工具")
-    parser.add_argument("--base", "-b", default="master",
-                       help="基分支或commit (默认: master)")
-    parser.add_argument("--repo", "-r", default=None,
-                       help="仓库根目录 (默认: 自动检测)")
-    parser.add_argument("--no-staged", action="store_true",
-                       help="不包含暂存区变更")
-    parser.add_argument("--no-unstaged", action="store_true",
-                       help="不包含未暂存变更")
-    parser.add_argument("--dry-run", "-n", action="store_true",
-                       help="仅显示测试计划，不执行测试")
+    parser.add_argument("--base", "-b", default="master", help="基分支或commit (默认: master)")
+    parser.add_argument("--repo", "-r", default=None, help="仓库根目录 (默认: 自动检测)")
+    parser.add_argument("--no-staged", action="store_true", help="不包含暂存区变更")
+    parser.add_argument("--no-unstaged", action="store_true", help="不包含未暂存变更")
+    parser.add_argument("--dry-run", "-n", action="store_true", help="仅显示测试计划，不执行测试")
 
     args = parser.parse_args()
 
     # 创建运行器
-    runner = IncrementalTestFinder(
-        repo_root=args.repo,
-        base_branch=args.base
-    )
+    runner = IncrementalTestFinder(repo_root=args.repo, base_branch=args.base)
 
     # 获取增量测试
     tests, change_info, changes = runner.get_incremental_tests(
         since_ref=args.base,
         include_staged=not args.no_staged,
-        include_unstaged=not args.no_unstaged
+        include_unstaged=not args.no_unstaged,
     )
 
     # 打印测试计划
     runner.print_test_plan(tests, change_info, changes)
 
     if args.dry_run:
-        return
+        return None
 
     if not tests:
         print("\n没有需要运行的测试。")
-        return
+        return None
 
     # 运行测试
     print("\n🚀 开始运行测试...\n")

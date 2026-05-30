@@ -68,9 +68,6 @@ function set_env()
 
 function clean()
 {
-    if [ -n "${BUILD_DIR}" ];then
-        rm -rf ${BUILD_DIR}
-    fi
     mkdir -p ${BUILD_DIR} ${OUTPUT_DIR}
 }
 
@@ -228,31 +225,8 @@ cmake_config
 build_package
 build_and_install
 
-clean_build_dirs() {
-    # Save compile_commands.json before cleanup
-    if [ -f "${BUILD_DIR}/compile_commands.json" ]; then
-        cp "${BUILD_DIR}/compile_commands.json" "${CURRENT_DIR}/compile_commands_ascendc.json"
-        echo "Saved compile_commands.json to ${CURRENT_DIR}/compile_commands_ascendc.json"
-    fi
-    local dirs_to_remove=(
-        "${BUILD_DIR}/"
-    )
-
-    echo "About to delete the following build-related directories: "
-    for dir in "${dirs_to_remove[@]}"; do
-        echo "  - $dir"
-    done
-
-    for dir in "${dirs_to_remove[@]}"; do
-        if [[ -d "$dir" ]]; then
-            rm -rf "$dir"
-        else
-            echo "Directory does not exist, skipping: $dir"
-        fi
-    done
-}
-
-clean_build_dirs
-
-
-
+# Save compile_commands.json for merge_compile_commands in setup.py
+if [ -f "${BUILD_DIR}/compile_commands.json" ]; then
+    cp "${BUILD_DIR}/compile_commands.json" "${CURRENT_DIR}/compile_commands_ascendc.json"
+    echo "Saved compile_commands.json to ${CURRENT_DIR}/compile_commands_ascendc.json"
+fi

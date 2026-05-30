@@ -101,8 +101,7 @@ def enable_offload(model, blocks, min_reserved_blocks_count=2):
 
     if not isinstance(min_reserved_blocks_count, int):
         raise TypeError(
-            f"min_reserved_blocks_count must be int type, current type: "
-            f"{type(min_reserved_blocks_count).__name__}"
+            f"min_reserved_blocks_count must be int type, current type: {type(min_reserved_blocks_count).__name__}"
         )
     if min_reserved_blocks_count < 0:
         raise ValueError(f"min_reserved_blocks_count must be >= 0, current value: {min_reserved_blocks_count}")
@@ -112,6 +111,9 @@ def enable_offload(model, blocks, min_reserved_blocks_count=2):
             f"min_reserved_blocks_count must be < len(blocks), "
             f"current value: {min_reserved_blocks_count}, blocks length: {len(blocks)}"
         )
+    if hasattr(model, "mindiesd_offload_enabled") and model.mindiesd_offload_enabled:
+        return
+    model.mindiesd_offload_enabled = True
     model.h2d_stream = torch.npu.Stream()
     model.d2h_stream = torch.npu.Stream()
     model.min_reserved_blocks_count = min_reserved_blocks_count
@@ -120,7 +122,6 @@ def enable_offload(model, blocks, min_reserved_blocks_count=2):
     for i, block in enumerate(model.blocks):
         block.index = i
         model.event.append(torch.npu.Event())
-
 
     def parameter_to_device_hook(block, _input):
         to_device_index = block.index + model.min_reserved_blocks_count
@@ -131,8 +132,7 @@ def enable_offload(model, blocks, min_reserved_blocks_count=2):
                 model.h2d_stream.wait_event(forward_event)
 
                 for _, p in itertools.chain(
-                    model.blocks[to_device_index].named_parameters(),
-                    model.blocks[to_device_index].named_buffers()
+                    model.blocks[to_device_index].named_parameters(), model.blocks[to_device_index].named_buffers()
                 ):
                     p.data.untyped_storage().resize_(p.storage_size)
                     if p.is_slice_tensor:
@@ -143,10 +143,10 @@ def enable_offload(model, blocks, min_reserved_blocks_count=2):
                 model.event[to_device_index].record()
         torch.npu.current_stream().wait_event(model.event[block.index])
 
-
     def parameter_to_resize_hook(block, _input, _output):
         if block.index >= model.min_reserved_blocks_count:
             forward_event = torch.npu.Event()
+            forward_event.record()
             with torch.npu.stream(model.d2h_stream):
                 model.d2h_stream.wait_event(forward_event)
 

@@ -21,7 +21,7 @@ import subprocess
 import shutil
 from setuptools import setup, find_packages
 from setuptools.command.build_py import build_py as _build_py
-from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
+from wheel.bdist_wheel import bdist_wheel as _bdist_wheel  # pylint: disable=no-name-in-module
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
@@ -33,9 +33,9 @@ def get_mindiesd_version():
     version_ns = runpy.run_path(VERSION_FILE)
     version = version_ns.get("__version__")
     if not version:
-        raise RuntimeError(f"Failed to get version from {VERSION_FILE}")
+        raise RuntimeError("Failed to get version from %s" % VERSION_FILE)
 
-    logging.info(f"Build version is: {version}")
+    logging.info("Build version is: %s", version)
     return version
 
 
@@ -49,10 +49,10 @@ def get_python_version():
             raise RuntimeError("Cannot get Python version: version info is None")
 
         python_version = f"py{major}{minor}"
-        logging.info(f"Python version is: {python_version}")
+        logging.info("Python version is: %s", python_version)
         return python_version
     except Exception as e:
-        logging.error(f"Failed to get Python version: {e}")
+        logging.error("Failed to get Python version: %s", e)
         raise RuntimeError("Cannot get Python version. Please ensure Python is properly installed.") from e
 
 
@@ -62,13 +62,13 @@ def copy_so_files(src_dir, dest_dir):
 
     so_files = [f for f in os.listdir(src_dir) if f.endswith('.so')]
     if not so_files:
-        logging.warning(f"No .so files found in {src_dir}")
+        logging.warning("No .so files found in %s", src_dir)
         return
     for so_file in so_files:
         src_file = os.path.join(src_dir, so_file)
         dest_file = os.path.join(dest_dir, so_file)
         shutil.copy2(src_file, dest_file)
-        logging.info(f"Copied {src_file} to {dest_file}")
+        logging.info("Copied %s to %s", src_file, dest_file)
 
 
 def ensure_plugin_init():
@@ -76,11 +76,8 @@ def ensure_plugin_init():
     init_file = os.path.join(plugin_dir, '__init__.py')
 
     os.makedirs(plugin_dir, exist_ok=True)
-    if not os.path.isfile(init_file):
-        open(init_file, 'a').close()
-    else:
-        os.remove(init_file)
-        open(init_file, 'a').close()
+    with open(init_file, "a", encoding="utf-8"):
+        pass
 
 
 def run_script(script_path, args=None, cwd=None):
@@ -89,46 +86,12 @@ def run_script(script_path, args=None, cwd=None):
     if args:
         cmd.extend(args)
 
-    logging.info(f">>> Running script: {' '.join(cmd)}")
+    logging.info(">>> Running script: %s", ' '.join(cmd))
     try:
-        subprocess.check_call(
-            cmd,
-            cwd=cwd,
-            stderr=subprocess.STDOUT
-        )
+        subprocess.check_call(cmd, cwd=cwd, stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as e:
-        logging.error(f"Script failed with return code {e.returncode}")
-        raise RuntimeError(f"Script execution failed: {script_path}") from e
-
-
-def clean_build_dirs(build_dir):
-    """清理构建目录"""
-    # Save TIK compile_commands.json before cleanup
-    tik_cc = os.path.join(build_dir, "custom_project_tik", "build_out", "compile_commands.json")
-    if os.path.isfile(tik_cc):
-        dest = os.path.join(build_dir, "compile_commands_tik.json")
-        shutil.copy2(tik_cc, dest)
-        logging.info(f"Saved TIK compile_commands.json to {dest}")
-
-    dirs_to_remove = [
-        os.path.join(build_dir, "bdist.linux-aarch64"),
-        os.path.join(build_dir, "bdist.linux-x86_64"),
-        os.path.join(build_dir, "custom_project_tik"),
-        os.path.join(build_dir, "lib"),
-        os.path.join(build_dir, "output"),
-    ]
-
-    logging.info("About to delete the following build-related directories:")
-    for dir_path in dirs_to_remove:
-        logging.info(f"  - {dir_path}")
-
-    for dir_path in dirs_to_remove:
-        if os.path.isdir(dir_path):
-            shutil.rmtree(dir_path)
-        else:
-            logging.info(f"Directory does not exist, skipping: {dir_path}")
-
-
+        logging.error("Script failed with return code %s", e.returncode)
+        raise RuntimeError("Script execution failed: %s" % script_path) from e
 
 
 def merge_compile_commands(proj_root, build_dir):
@@ -137,7 +100,7 @@ def merge_compile_commands(proj_root, build_dir):
 
     sources = [
         ("AscendC ops", os.path.join(build_dir, "compile_commands_ascendc.json")),
-        ("PyTorch plugin", os.path.join(build_dir, "build", "compile_commands.json")),
+        ("PyTorch plugin", os.path.join(build_dir, "plugin_build", "compile_commands.json")),
         ("TIK ops", os.path.join(build_dir, "compile_commands_tik.json")),
     ]
 
@@ -146,18 +109,18 @@ def merge_compile_commands(proj_root, build_dir):
 
     for stage_name, path in sources:
         if not os.path.isfile(path):
-            logging.info(f"compile_commands.json not found for {stage_name}: {path}")
+            logging.info("compile_commands.json not found for %s: %s", stage_name, path)
             continue
 
         try:
-            with open(path, 'r') as f:
+            with open(path, 'r', encoding="utf-8") as f:
                 entries = json.load(f)
         except json.JSONDecodeError as e:
-            logging.warning(f"Failed to parse {path}: {e}")
+            logging.warning("Failed to parse %s: %s", path, e)
             continue
 
         if not isinstance(entries, list):
-            logging.warning(f"Unexpected format in {path}, expected list")
+            logging.warning("Unexpected format in %s, expected list", path)
             continue
 
         added = 0
@@ -172,13 +135,13 @@ def merge_compile_commands(proj_root, build_dir):
                 merged.append(entry)
                 added += 1
 
-        logging.info(f"Merged {added} entries from {stage_name} ({len(entries)} total)")
+        logging.info("Merged %s entries from %s (%s total)", added, stage_name, len(entries))
 
     if merged:
         output_path = os.path.join(proj_root, "compile_commands.json")
-        with open(output_path, 'w') as f:
+        with open(output_path, 'w', encoding="utf-8") as f:
             json.dump(merged, f, indent=2)
-        logging.info(f"Merged compile_commands.json written to {output_path} ({len(merged)} total entries)")
+        logging.info("Merged compile_commands.json written to %s (%s total entries)", output_path, len(merged))
     else:
         logging.info("No compile_commands.json entries found to merge")
 
@@ -188,11 +151,11 @@ class CustomBuildPy(_build_py):
         proj_root = os.path.abspath(os.getcwd())
         build_dir = os.path.join(proj_root, 'build')
 
-        logging.info("=" * 60)
+        logging.info("%s", "=" * 60)
         logging.info("Starting MindIE-SD Build Process")
-        logging.info(f"Project root: {proj_root}")
-        logging.info(f"Build directory: {build_dir}")
-        logging.info("=" * 60)
+        logging.info("Project root: %s", proj_root)
+        logging.info("Build directory: %s", build_dir)
+        logging.info("%s", "=" * 60)
 
         get_python_version()
 
@@ -204,37 +167,36 @@ class CustomBuildPy(_build_py):
         try:
             ops_dir = os.path.join(proj_root, 'csrc', 'ops')
             if os.path.isdir(ops_dir):
-                logging.info("=" * 60)
+                logging.info("%s", "=" * 60)
                 logging.info("Building Ascend operators...")
-                logging.info("=" * 60)
+                logging.info("%s", "=" * 60)
                 build_ops_script = os.path.join(build_dir, 'build_ops.sh')
                 run_script(build_ops_script, args=[build_dir], cwd=build_dir)
             else:
-                logging.warning(f"The path of custom op operators {ops_dir} does not exist.")
+                logging.warning("The path of custom op operators %s does not exist.", ops_dir)
 
             plugin_dir = os.path.join(proj_root, 'csrc', 'plugin')
             if os.path.isdir(plugin_dir):
-                logging.info("=" * 60)
+                logging.info("%s", "=" * 60)
                 logging.info("Building PyTorch plugins...")
-                logging.info("=" * 60)
+                logging.info("%s", "=" * 60)
                 build_plugin_script = os.path.join(build_dir, 'build_plugin.sh')
                 run_script(build_plugin_script, args=[build_dir], cwd=build_dir)
             else:
-                logging.warning(f"The path of op plugins {plugin_dir} does not exist.")
+                logging.warning("The path of op plugins %s does not exist.", plugin_dir)
 
-            clean_build_dirs(build_dir)
             merge_compile_commands(proj_root, build_dir)
 
-            source_dir = os.path.join(build_dir, 'build')
+            source_dir = os.path.join(build_dir, 'plugin_build')
             destination_dir = os.path.join(proj_root, 'mindiesd', 'plugin')
             copy_so_files(source_dir, destination_dir)
 
-            logging.info("=" * 60)
+            logging.info("%s", "=" * 60)
             logging.info("Build completed successfully!")
-            logging.info("=" * 60)
+            logging.info("%s", "=" * 60)
 
         except Exception as e:
-            logging.error(f"Build failed: {e}")
+            logging.error("Build failed: %s", e)
             raise
 
         super().run()
@@ -243,6 +205,7 @@ class CustomBuildPy(_build_py):
 class BDistWheel(_bdist_wheel):
     def finalize_options(self):
         super().finalize_options()
+        # pylint: disable=attribute-defined-outside-init
         self.root_is_pure = False
 
 
@@ -262,14 +225,6 @@ if __name__ == "__main__":
         python_requires=">=3.10",
         include_package_data=True,
         packages=find_packages(),
-        package_data={
-            "": [
-                "*.so",
-                "ops/**/*"
-            ]
-        },
-        cmdclass={
-            "build_py": CustomBuildPy,
-            "bdist_wheel": BDistWheel
-        }
+        package_data={"": ["*.so", "ops/**/*"]},
+        cmdclass={"build_py": CustomBuildPy, "bdist_wheel": BDistWheel},
     )

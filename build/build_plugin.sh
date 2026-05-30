@@ -37,10 +37,9 @@ fi
 export USER_ABI_VERSION=$(echo "$USER_ABI_VERSION_RAW" | tr -d '[:space:]')
 
 
-rm -rf build
-mkdir -p build
-cmake -B build ../csrc -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-cmake --build build -j
+mkdir -p plugin_build
+cmake -B plugin_build ../csrc -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake --build plugin_build -j
 
 copy_so_files() {
     if [ $# -ne 2 ]; then
@@ -80,6 +79,12 @@ copy_so_files() {
 }
 
 BUILD_DIR=$(dirname $(readlink -f $0))
-SRC_DIR=${BUILD_DIR}/build
+SRC_DIR=${BUILD_DIR}/plugin_build
 DSET_DIR=${BUILD_DIR}/../mindiesd/plugin
 copy_so_files $SRC_DIR $DSET_DIR
+
+# Save compile_commands.json for merge_compile_commands in setup.py
+if [ -f "${BUILD_DIR}/custom_project_tik/build_out/compile_commands.json" ]; then
+    cp "${BUILD_DIR}/custom_project_tik/build_out/compile_commands.json" "${BUILD_DIR}/compile_commands_tik.json"
+    echo "Saved compile_commands.json to ${BUILD_DIR}/compile_commands_tik.json"
+fi
