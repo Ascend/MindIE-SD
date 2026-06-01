@@ -19,20 +19,25 @@ from mindiesd import fused_moe
 ```python
 fused_moe(
     hidden_states,
-    w13_weight,
-    w2_weight,
     router_logits,
     num_experts,
     top_k,
+    w13_weight,
+    w2_weight,
     w13_bias=None,
     w2_bias=None,
-    tokens_full=True,
-    reduce_results=True,
-    dispatcher_type=None,
     tp_group=None,
     ep_group=None,
+    dispatcher_type=None,
+    tokens_full=True,
+    k_group=1,
+    group_count=1,
+    group_select_mode=0,
+    routing_method="softmax",
     renormalize=False,
+    routed_scaling_factor=1.0,
     custom_routing_function=None,
+    reduce_results=True,
     use_fused_op=False,
 ) -> torch.Tensor
 ```
@@ -42,20 +47,25 @@ fused_moe(
 | 参数 | 类型 | 必选 | 默认值 | 说明 |
 |------|------|------|--------|------|
 | `hidden_states` | `torch.Tensor` | 是 | - | 输入激活，形状为 `[..., hidden_size]`，维度不少于 2。 |
-| `w13_weight` | `torch.Tensor` | 是 | - | 融合后的 gate/up 投影权重，形状为 `[local_experts, hidden_size, 2 * intermediate_size]`，必须为 3D Tensor。 |
-| `w2_weight` | `torch.Tensor` | 是 | - | down 投影权重，形状为 `[local_experts, intermediate_size, hidden_size]`，必须与 `w13_weight` 具有相同的 `local_experts`。 |
 | `router_logits` | `torch.Tensor` | 是 | - | 路由 logits，形状为 `[..., num_experts]`，维度不少于 2，前置维度需与 `hidden_states` 一致。 |
 | `num_experts` | `int` | 是 | - | 全局 expert 数量，必须与 `router_logits` 最后一维一致。使用 EP 时需能被 EP group size 整除。 |
 | `top_k` | `int` | 是 | - | 每个 Token 选择的 expert 数量，取值范围为 `[1, num_experts]`。 |
+| `w13_weight` | `torch.Tensor` | 是 | - | 融合后的 gate/up 投影权重，形状为 `[local_experts, hidden_size, 2 * intermediate_size]`，必须为 3D Tensor。 |
+| `w2_weight` | `torch.Tensor` | 是 | - | down 投影权重，形状为 `[local_experts, intermediate_size, hidden_size]`，必须与 `w13_weight` 具有相同的 `local_experts`。 |
 | `w13_bias` | `torch.Tensor` / `None` | 否 | `None` | gate/up 投影 bias，形状为 `[local_experts, 2 * intermediate_size]`，需与 `w13_weight` 的 expert 和输出维度一致。 |
 | `w2_bias` | `torch.Tensor` / `None` | 否 | `None` | down 投影 bias，形状为 `[local_experts, hidden_size]`，需与 `w2_weight` 的 expert 和输出维度一致。 |
-| `tokens_full` | `bool` | 否 | `True` | 输入 Token layout 标记。仅支持两种输入 layout：`True` 表示每个 rank 输入全量 Token；`False` 表示每个 rank 输入按通信组均匀切分后的本地 Token shard。 |
-| `reduce_results` | `bool` | 否 | `True` | static MoE 下是否对完整 Token 输出做通信规约；dynamic MoE 路径不使用该参数。 |
-| `dispatcher_type` | `str` / `None` | 否 | `None` | Token 分发策略。可选 `"static"`、`"dynamic"`；`None` 表示根据平台和通信配置自动选择。`"dynamic"` 仅支持 EP 通信场景。 |
 | `tp_group` | `dist.ProcessGroup` / `None` | 否 | `None` | TP 通信组。未启用 EP 且 TP group size 大于 1 时生效。 |
 | `ep_group` | `dist.ProcessGroup` / `None` | 否 | `None` | EP 通信组。EP group size 大于 1 时优先生效。 |
-| `renormalize` | `bool` | 否 | `False` | 是否对选中的 top-k routing weights 重新归一化。 |
+| `dispatcher_type` | `str` / `None` | 否 | `None` | Token 分发策略。可选 `"static"`、`"dynamic"`；`None` 表示根据平台和通信配置自动选择。`"dynamic"` 仅支持 EP 通信场景。 |
+| `tokens_full` | `bool` | 否 | `True` | 输入 Token layout 标记。仅支持两种输入 layout：`True` 表示每个 rank 输入全量 Token；`False` 表示每个 rank 输入按通信组均匀切分后的本地 Token shard。 |
+| `k_group` | `int` | 否 | `1` | 分组路由时每个 Token 选择的 expert group 数量，取值范围为 `[1, group_count]`。 |
+| `group_count` | `int` | 否 | `1` | expert group 总数，`num_experts` 需要能被 `group_count` 整除。 |
+| `group_select_mode` | `int` | 否 | `0` | expert group 打分方式。`0` 表示取组内最大分数，`1` 表示取组内 top-2 分数之和。使用 `1` 时每组至少需要 2 个 experts。 |
+| `routing_method` | `str` | 否 | `"softmax"` | router logits 的打分方式，可选 `"softmax"` 或 `"sigmoid"`。 |
+| `renormalize` | `bool` | 否 | `False` | 是否对 softmax 路由选中的 top-k routing weights 重新归一化。sigmoid 路由按 NPU gating top-k 算子语义输出归一化后的权重。 |
+| `routed_scaling_factor` | `float` | 否 | `1.0` | 路由权重缩放系数，在专家选择阶段生效。 |
 | `custom_routing_function` | `callable` / `None` | 否 | `None` | 自定义路由函数，调用形式为 `custom_routing_function(hidden_states, gating_output, topk, renormalize)`，需返回 `(topk_weights, topk_ids)`。 |
+| `reduce_results` | `bool` | 否 | `True` | static MoE 下是否对完整 Token 输出做通信规约；dynamic MoE 路径不使用该参数。 |
 | `use_fused_op` | `bool` | 否 | `False` | 是否优先启用融合 MoE 算子。当前版本暂不支持该路径，设置为 `True` 时会回退到阶段化 MoE fallback；默认 `False` 直接使用阶段化 MoE fallback。 |
 
 ### 返回值
@@ -102,6 +112,17 @@ fused_moe(
 
 调用方需要保证输入激活和 router logits 的 layout 与 `tokens_full` 配置一致。
 
+### 路由选择
+
+默认路由使用 NPU gating top-k 算子完成专家选择。`routing_method="softmax"` 时对 router logits 做 softmax，`routing_method="sigmoid"` 时做 sigmoid。softmax 路由可通过 `renormalize=True` 对选中的 top-k weights 做重新归一化；sigmoid 路由按 NPU gating top-k 算子语义输出归一化后的权重。未启用分组路由时保持默认 `k_group=1`、`group_count=1` 即可；启用分组路由时，先按 `group_select_mode` 选择 expert group，再在选中的 group 中选择每个 Token 的 top-k experts。
+
+分组路由需要满足以下约束：
+
+- `num_experts` 能被 `group_count` 整除。
+- `k_group` 取值范围为 `[1, group_count]`。
+- `top_k` 不超过被选中 expert group 内的 expert 总数。
+- `group_select_mode=1` 时，每个 expert group 至少包含 2 个 experts。
+
 ### 使用示例
 
 #### 用例说明
@@ -135,14 +156,50 @@ w2_bias = torch.randn(num_experts, hidden_size, device=device, dtype=dtype)
 
 out = fused_moe(
     hidden_states=hidden_states,
-    w13_weight=w13_weight,
-    w2_weight=w2_weight,
     router_logits=router_logits,
     num_experts=num_experts,
     top_k=top_k,
+    w13_weight=w13_weight,
+    w2_weight=w2_weight,
     w13_bias=w13_bias,
     w2_bias=w2_bias,
     renormalize=True,
+)
+```
+
+#### 分组路由 MoE
+
+当模型需要先选择 expert group，再从选中 group 中选择 top-k experts 时，可以配置分组路由参数。下面示例使用 sigmoid 路由，并通过 `routed_scaling_factor` 对路由权重做缩放。
+
+```python
+import torch
+from mindiesd import fused_moe
+
+num_tokens = 8
+hidden_size = 4096
+intermediate_size = 14336
+num_experts = 16
+top_k = 2
+dtype = torch.bfloat16
+device = "npu"
+
+hidden_states = torch.randn(num_tokens, hidden_size, device=device, dtype=dtype)
+router_logits = torch.randn(num_tokens, num_experts, device=device, dtype=dtype)
+w13_weight = torch.randn(num_experts, hidden_size, 2 * intermediate_size, device=device, dtype=dtype)
+w2_weight = torch.randn(num_experts, intermediate_size, hidden_size, device=device, dtype=dtype)
+
+out = fused_moe(
+    hidden_states=hidden_states,
+    router_logits=router_logits,
+    num_experts=num_experts,
+    top_k=top_k,
+    w13_weight=w13_weight,
+    w2_weight=w2_weight,
+    k_group=1,
+    group_count=4,
+    group_select_mode=1,
+    routing_method="sigmoid",
+    routed_scaling_factor=0.5,
 )
 ```
 
@@ -169,15 +226,15 @@ w2_weight = torch.randn(num_experts, intermediate_size, hidden_size, device=devi
 
 out = fused_moe(
     hidden_states=hidden_states,
-    w13_weight=w13_weight,
-    w2_weight=w2_weight,
     router_logits=router_logits,
     num_experts=num_experts,
     top_k=top_k,
+    w13_weight=w13_weight,
+    w2_weight=w2_weight,
     tp_group=tp_group,
+    dispatcher_type="static",
     tokens_full=True,
     reduce_results=True,
-    dispatcher_type="static",
 )
 ```
 
@@ -207,15 +264,15 @@ w2_weight = torch.randn(local_experts, intermediate_size, hidden_size, device=de
 
 out = fused_moe(
     hidden_states=hidden_states,
-    w13_weight=w13_weight,
-    w2_weight=w2_weight,
     router_logits=router_logits,
     num_experts=num_experts,
     top_k=top_k,
+    w13_weight=w13_weight,
+    w2_weight=w2_weight,
     ep_group=ep_group,
+    dispatcher_type="static",
     tokens_full=True,
     reduce_results=True,
-    dispatcher_type="static",
     renormalize=True,
 )
 ```
@@ -249,14 +306,14 @@ w2_weight = torch.randn(local_experts, intermediate_size, hidden_size, device=de
 
 out = fused_moe(
     hidden_states=local_hidden_states,
-    w13_weight=w13_weight,
-    w2_weight=w2_weight,
     router_logits=local_router_logits,
     num_experts=num_experts,
     top_k=top_k,
+    w13_weight=w13_weight,
+    w2_weight=w2_weight,
     ep_group=ep_group,
-    tokens_full=False,
     dispatcher_type="dynamic",
+    tokens_full=False,
     renormalize=True,
 )
 ```
@@ -293,11 +350,11 @@ def custom_routing_function(hidden_states, gating_output, topk, renormalize):
 
 out = fused_moe(
     hidden_states=hidden_states,
-    w13_weight=w13_weight,
-    w2_weight=w2_weight,
     router_logits=router_logits,
     num_experts=num_experts,
     top_k=top_k,
+    w13_weight=w13_weight,
+    w2_weight=w2_weight,
     custom_routing_function=custom_routing_function,
     renormalize=True,
 )

@@ -10,6 +10,7 @@
 # MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+import os
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -38,6 +39,10 @@ from mindiesd.utils import ParametersInvalid
 from .common import make_moe_kwargs
 
 
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
+    "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
+)
 class TestMoEContext(unittest.TestCase):
     def setUp(self):
         set_moe_comm_context()
@@ -52,6 +57,13 @@ class TestMoEContext(unittest.TestCase):
             dict(name="renormalize", kwargs=dict(renormalize="true")),
             dict(name="num_experts", kwargs=dict(num_experts="2")),
             dict(name="top_k", kwargs=dict(top_k=3)),
+            dict(name="k_group", kwargs=dict(k_group=0)),
+            dict(name="group_count", kwargs=dict(group_count=0)),
+            dict(name="group_select_mode", kwargs=dict(group_select_mode=2)),
+            dict(name="routing_method", kwargs=dict(routing_method="relu")),
+            dict(name="routing_method_type", kwargs=dict(routing_method=0)),
+            dict(name="routed_scaling_factor_int", kwargs=dict(routed_scaling_factor=1)),
+            dict(name="routed_scaling_factor", kwargs=dict(routed_scaling_factor="1.0")),
             dict(name="dispatcher_type", kwargs=dict(dispatcher_type="auto")),
             dict(name="custom_routing_function", kwargs=dict(custom_routing_function=object())),
         )
@@ -81,24 +93,51 @@ class TestMoEContext(unittest.TestCase):
             with patch("torch.distributed.get_world_size", return_value=3):
                 validate_moe_inputs(**make_moe_kwargs(num_experts=4, ep_group=ep_group))
 
-    def test_set_moe_comm_context_prefers_ep_group(self):
+    def test_validate_moe_inputs_rejects_invalid_expert_grouping(self):
+        cases = (
+            dict(name="uneven_groups", kwargs=dict(num_experts=5, group_count=2)),
+            dict(name="too_many_selected_groups", kwargs=dict(num_experts=4, k_group=3, group_count=2)),
+            dict(
+                name="topk_exceeds_selected_experts",
+                kwargs=dict(num_experts=4, top_k=3, k_group=1, group_count=2),
+            ),
+            dict(
+                name="top2_group_score_without_two_experts",
+                kwargs=dict(num_experts=4, group_count=4, group_select_mode=1),
+            ),
+        )
+        for case in cases:
+            with self.subTest(case=case["name"]):
+                with self.assertRaises(ParametersInvalid):
+                    validate_moe_inputs(**make_moe_kwargs(**case["kwargs"]))
+
+    def test_set_moe_comm_context_resolves_active_group(self):
         tp_group = MagicMock(spec=dist.ProcessGroup)
         ep_group = MagicMock(spec=dist.ProcessGroup)
+        cases = (
+            dict(
+                name="prefers_ep",
+                tp_group=tp_group,
+                ep_group=ep_group,
+                expected_type=MoECommType.EP,
+                expected_group=ep_group,
+            ),
+            dict(
+                name="uses_tp_without_ep",
+                tp_group=tp_group,
+                ep_group=None,
+                expected_type=MoECommType.TP,
+                expected_group=tp_group,
+            ),
+        )
 
-        with patch("torch.distributed.get_world_size", return_value=2):
-            set_moe_comm_context(tp_group=tp_group, ep_group=ep_group)
+        for case in cases:
+            with self.subTest(case=case["name"]):
+                with patch("torch.distributed.get_world_size", return_value=2):
+                    set_moe_comm_context(tp_group=case["tp_group"], ep_group=case["ep_group"])
 
-        self.assertEqual(get_moe_comm_type(), MoECommType.EP)
-        self.assertIs(get_moe_group(), ep_group)
-
-    def test_set_moe_comm_context_uses_tp_when_ep_is_absent(self):
-        tp_group = MagicMock(spec=dist.ProcessGroup)
-
-        with patch("torch.distributed.get_world_size", return_value=2):
-            set_moe_comm_context(tp_group=tp_group)
-
-        self.assertEqual(get_moe_comm_type(), MoECommType.TP)
-        self.assertIs(get_moe_group(), tp_group)
+                self.assertEqual(get_moe_comm_type(), case["expected_type"])
+                self.assertIs(get_moe_group(), case["expected_group"])
 
     def test_build_input_wrappers(self):
         hidden_states = torch.randn(3, 4)
@@ -110,7 +149,22 @@ class TestMoEContext(unittest.TestCase):
         group_list = torch.tensor([2, 3])
 
         self.assertIsInstance(build_prepare_input(hidden_states, router_logits), MoEPrepareInput)
-        self.assertIsInstance(build_routing_input(hidden_states, router_logits, top_k=1), MoERoutingInput)
+        routing_input = build_routing_input(
+            hidden_states,
+            router_logits,
+            top_k=1,
+            k_group=2,
+            group_count=2,
+            group_select_mode=1,
+            routing_method="sigmoid",
+            routed_scaling_factor=0.5,
+        )
+        self.assertIsInstance(routing_input, MoERoutingInput)
+        self.assertEqual(routing_input.k_group, 2)
+        self.assertEqual(routing_input.group_count, 2)
+        self.assertEqual(routing_input.group_select_mode, 1)
+        self.assertEqual(routing_input.norm_type, 1)
+        self.assertEqual(routing_input.routed_scaling_factor, 0.5)
         self.assertIsInstance(
             build_token_dispatch_input(hidden_states, topk_weights, topk_ids, 2, 1, w13_weight),
             MoETokenDispatchInput,

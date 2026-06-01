@@ -10,6 +10,7 @@
 # MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+import os
 import unittest
 from unittest.mock import MagicMock
 
@@ -19,21 +20,11 @@ from mindiesd.layers.moe.experts_selector import select_experts
 from mindiesd.layers.moe.moe_dataclass import MoERoutingInput
 
 
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
+    "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
+)
 class TestExpertsSelector(unittest.TestCase):
-    def test_default_router_selects_topk_and_renormalizes(self):
-        router_logits = torch.tensor([[1.0, 2.0, 3.0], [3.0, 1.0, 2.0]])
-        routing_input = MoERoutingInput(
-            hidden_states=torch.randn(2, 4),
-            router_logits=router_logits,
-            top_k=2,
-            renormalize=True,
-        )
-        topk_weights, topk_ids = select_experts(routing_input)
-
-        self.assertEqual(topk_ids.dtype, torch.int32)
-        self.assertEqual(topk_ids.shape, torch.Size([2, 2]))
-        self.assertTrue(torch.allclose(topk_weights.sum(dim=-1), torch.ones(2)))
-
     def test_custom_router_output_is_forwarded(self):
         hidden_states = torch.randn(2, 4)
         router_logits = torch.randn(2, 3)
@@ -48,6 +39,7 @@ class TestExpertsSelector(unittest.TestCase):
             router_logits=router_logits,
             top_k=2,
             renormalize=True,
+            routed_scaling_factor=0.5,
             custom_routing_function=custom_routing_function,
         )
         topk_weights, topk_ids = select_experts(routing_input)
@@ -59,8 +51,106 @@ class TestExpertsSelector(unittest.TestCase):
             renormalize=True,
         )
         self.assertEqual(topk_ids.dtype, torch.int32)
-        self.assertTrue(torch.equal(topk_weights, torch.tensor([[0.6, 0.4], [0.7, 0.3]])))
+        self.assertTrue(torch.equal(topk_weights, torch.tensor([[0.3, 0.2], [0.35, 0.15]])))
         self.assertTrue(torch.equal(topk_ids, torch.tensor([[2, 1], [0, 2]], dtype=torch.int32)))
+
+
+def torch_grouped_topk_reference(
+    router_logits,
+    top_k,
+    k_group=1,
+    group_count=1,
+    group_select_mode=0,
+    norm_type=0,
+    renormalize=False,
+    routed_scaling_factor=1.0,
+):
+    scores = router_logits.softmax(dim=-1) if norm_type == 0 else router_logits.sigmoid()
+    num_experts = router_logits.shape[-1]
+    experts_per_group = num_experts // group_count
+    grouped_scores = scores.view(scores.shape[0], group_count, experts_per_group)
+    if group_select_mode == 0:
+        group_scores = grouped_scores.max(dim=-1).values
+    else:
+        group_scores = grouped_scores.topk(2, dim=-1).values.sum(dim=-1)
+    group_ids = group_scores.topk(k_group, dim=-1).indices
+    group_mask = torch.zeros_like(group_scores, dtype=torch.bool)
+    group_mask.scatter_(dim=-1, index=group_ids, value=True)
+    expert_mask = group_mask.repeat_interleave(experts_per_group, dim=-1)
+    routed_scores = scores.masked_fill(~expert_mask, float("-inf"))
+    topk_result = routed_scores.topk(top_k, dim=-1)
+    topk_weights = topk_result.values
+    if norm_type == 1:
+        topk_weights = topk_weights / (topk_weights.sum(dim=-1, keepdim=True) + 1e-20)
+    elif renormalize:
+        topk_weights = topk_weights / topk_weights.sum(dim=-1, keepdim=True)
+    if routed_scaling_factor != 1.0:
+        topk_weights = topk_weights * routed_scaling_factor
+    return topk_weights, topk_result.indices.to(torch.int32)
+
+
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
+    "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.",
+)
+class TestExpertsSelectorNPU(unittest.TestCase):
+    def test_gating_topk_matches_torch_reference(self):
+        router_logits = torch.tensor(
+            [[1.0, 4.0, 3.0, 2.0, 7.0, 5.0, 0.0, 6.0], [8.0, 2.0, 6.0, 1.0, 5.0, 3.0, 7.0, 4.0]],
+            device="npu",
+            dtype=torch.float32,
+        )
+        cases = (
+            dict(name="softmax", norm_type=0, renormalize=True, group_select_mode=0),
+            dict(name="grouped_softmax", norm_type=0, renormalize=True, k_group=1, group_count=2, group_select_mode=1),
+            dict(name="sigmoid", norm_type=1, group_select_mode=0),
+            dict(name="grouped_sigmoid", norm_type=1, k_group=1, group_count=2, group_select_mode=1),
+        )
+        for case in cases:
+            with self.subTest(case=case["name"]):
+                case_kwargs = {key: value for key, value in case.items() if key != "name"}
+                routing_input = MoERoutingInput(
+                    hidden_states=torch.randn(2, 4, device="npu"),
+                    router_logits=router_logits,
+                    top_k=2,
+                    routed_scaling_factor=0.5,
+                    **case_kwargs,
+                )
+                topk_weights, topk_ids = select_experts(routing_input)
+                expected_weights, expected_ids = torch_grouped_topk_reference(
+                    router_logits.cpu(),
+                    top_k=2,
+                    routed_scaling_factor=0.5,
+                    **case_kwargs,
+                )
+
+                torch.testing.assert_close(topk_weights.cpu(), expected_weights)
+                self.assertTrue(torch.equal(topk_ids.cpu(), expected_ids))
+
+    def test_gating_topk_softmax_matches_torch_reference(self):
+        shapes = (
+            (2, 8, 2),
+            (4, 16, 4),
+            (1, 32, 1),
+            (3, 64, 8),
+        )
+        for B, num_experts, top_k in shapes:
+            with self.subTest(B=B, num_experts=num_experts, top_k=top_k):
+                router_logits = torch.randn(B, num_experts, device="npu", dtype=torch.float32)
+                routing_input = MoERoutingInput(
+                    hidden_states=torch.randn(B, 4, device="npu"),
+                    router_logits=router_logits,
+                    top_k=top_k,
+                    renormalize=True,
+                )
+                topk_weights, topk_ids = select_experts(routing_input)
+
+                expected_weights = router_logits.softmax(dim=-1)
+                expected_weights, expected_ids = expected_weights.topk(top_k, dim=-1)
+                expected_weights = expected_weights / expected_weights.sum(dim=-1, keepdim=True)
+
+                torch.testing.assert_close(topk_weights.cpu(), expected_weights.cpu())
+                self.assertTrue(torch.equal(topk_ids.cpu(), expected_ids.cpu().to(torch.int32)))
 
 
 if __name__ == "__main__":

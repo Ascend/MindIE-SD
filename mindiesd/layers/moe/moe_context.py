@@ -27,20 +27,25 @@ from .moe_dataclass import (
 
 def validate_moe_inputs(
     hidden_states: torch.Tensor,
-    w13_weight: torch.Tensor,
-    w2_weight: torch.Tensor,
     router_logits: torch.Tensor,
     num_experts: int,
     top_k: int,
+    w13_weight: torch.Tensor,
+    w2_weight: torch.Tensor,
     w13_bias: torch.Tensor | None = None,
     w2_bias: torch.Tensor | None = None,
-    tokens_full: bool = True,
-    reduce_results: bool = True,
-    dispatcher_type: str | None = None,
     tp_group: dist.ProcessGroup | None = None,
     ep_group: dist.ProcessGroup | None = None,
+    dispatcher_type: str | None = None,
+    tokens_full: bool = True,
+    k_group: int = 1,
+    group_count: int = 1,
+    group_select_mode: int = 0,
+    routing_method: str = "softmax",
     renormalize: bool = False,
+    routed_scaling_factor: float = 1.0,
     custom_routing_function: Callable | None = None,
+    reduce_results: bool = True,
 ) -> None:
     """Validate public MoE inputs at the beginning of the MoE invocation."""
     if not isinstance(hidden_states, torch.Tensor):
@@ -60,31 +65,41 @@ def validate_moe_inputs(
         raise ParametersInvalid(f"num_experts must be an integer, but got {type(num_experts)}.")
     if not isinstance(top_k, int) or isinstance(top_k, bool):
         raise ParametersInvalid(f"top_k must be an integer, but got {type(top_k)}.")
-    if not 1 <= top_k <= num_experts:
-        raise ParametersInvalid(f"top_k must be in [1, num_experts], but got top_k={top_k}, num_experts={num_experts}.")
+    if not isinstance(k_group, int) or isinstance(k_group, bool):
+        raise ParametersInvalid(f"k_group must be an integer, but got {type(k_group)}.")
+    if not isinstance(group_count, int) or isinstance(group_count, bool):
+        raise ParametersInvalid(f"group_count must be an integer, but got {type(group_count)}.")
+    if not isinstance(routed_scaling_factor, float):
+        raise ParametersInvalid(f"routed_scaling_factor must be a float, but got {type(routed_scaling_factor)}.")
 
     if not isinstance(tokens_full, bool):
         raise ParametersInvalid(f"tokens_full must be a bool, but got {type(tokens_full)}.")
-    if not isinstance(reduce_results, bool):
-        raise ParametersInvalid(f"reduce_results must be a bool, but got {type(reduce_results)}.")
     if not isinstance(renormalize, bool):
         raise ParametersInvalid(f"renormalize must be a bool, but got {type(renormalize)}.")
+    if not isinstance(reduce_results, bool):
+        raise ParametersInvalid(f"reduce_results must be a bool, but got {type(reduce_results)}.")
     if dispatcher_type not in (None, "static", "dynamic"):
         raise ParametersInvalid(f"dispatcher_type must be None, 'static', or 'dynamic', but got {dispatcher_type}.")
+    if group_select_mode not in (0, 1):
+        raise ParametersInvalid(f"group_select_mode must be 0 or 1, but got {group_select_mode}.")
+    if routing_method not in ("softmax", "sigmoid"):
+        raise ParametersInvalid(f"routing_method must be 'softmax' or 'sigmoid', but got {routing_method}.")
     if custom_routing_function is not None and not callable(custom_routing_function):
         raise ParametersInvalid("custom_routing_function must be callable if provided.")
+
+    if not 1 <= top_k <= num_experts:
+        raise ParametersInvalid(f"top_k must be in [1, num_experts], but got top_k={top_k}, num_experts={num_experts}.")
+    if k_group < 1:
+        raise ParametersInvalid(f"k_group must be positive, but got {k_group}.")
+    if group_count < 1:
+        raise ParametersInvalid(f"group_count must be positive, but got {group_count}.")
+    if k_group > group_count:
+        raise ParametersInvalid(f"k_group={k_group} exceeds group_count={group_count}.")
 
     if tp_group is not None and not isinstance(tp_group, dist.ProcessGroup):
         raise ParametersInvalid(f"tp_group must be a dist.ProcessGroup or None, but got {type(tp_group)}.")
     if ep_group is not None and not isinstance(ep_group, dist.ProcessGroup):
         raise ParametersInvalid(f"ep_group must be a dist.ProcessGroup or None, but got {type(ep_group)}.")
-    if ep_group is not None:
-        ep_size = dist.get_world_size(ep_group)
-        if num_experts % ep_size != 0:
-            raise ParametersInvalid(
-                "num_experts must be evenly divisible by ep_size, "
-                f"but got num_experts={num_experts}, ep_size={ep_size}."
-            )
 
     if hidden_states.dim() < 2:
         raise ParametersInvalid(f"hidden_states must be at least 2D, but got shape {tuple(hidden_states.shape)}.")
@@ -142,6 +157,30 @@ def validate_moe_inputs(
         raise ParametersInvalid(
             "w2_bias shape must match w2_weight expert and output dimensions, "
             f"but got bias={tuple(w2_bias.shape)}, weight={tuple(w2_weight.shape)}."
+        )
+
+    if ep_group is not None:
+        ep_size = dist.get_world_size(ep_group)
+        if num_experts % ep_size != 0:
+            raise ParametersInvalid(
+                "num_experts must be evenly divisible by ep_size, "
+                f"but got num_experts={num_experts}, ep_size={ep_size}."
+            )
+    if num_experts % group_count != 0:
+        raise ParametersInvalid(
+            "num_experts must be evenly divisible by group_count, "
+            f"but got num_experts={num_experts}, group_count={group_count}."
+        )
+    experts_per_group = num_experts // group_count
+    if group_select_mode == 1 and experts_per_group < 2:
+        raise ParametersInvalid(
+            "group_select_mode=1 requires at least two experts per group, "
+            f"but got experts_per_group={experts_per_group}."
+        )
+    if top_k > k_group * experts_per_group:
+        raise ParametersInvalid(
+            "top_k cannot exceed the number of experts in selected groups, "
+            f"but got top_k={top_k}, k_group={k_group}, experts_per_group={experts_per_group}."
         )
 
 
@@ -202,7 +241,12 @@ def build_routing_input(
     hidden_states: torch.Tensor,
     router_logits: torch.Tensor,
     top_k: int,
+    k_group: int = 1,
+    group_count: int = 1,
+    group_select_mode: int = 0,
+    routing_method: str = "softmax",
     renormalize: bool = False,
+    routed_scaling_factor: float = 1.0,
     custom_routing_function: Callable | None = None,
 ) -> MoERoutingInput:
     """Build the expert-selection input wrapper."""
@@ -211,6 +255,11 @@ def build_routing_input(
         router_logits=router_logits,
         top_k=top_k,
         renormalize=renormalize,
+        k_group=k_group,
+        group_count=group_count,
+        group_select_mode=group_select_mode,
+        norm_type=0 if routing_method == "softmax" else 1,
+        routed_scaling_factor=routed_scaling_factor,
         custom_routing_function=custom_routing_function,
     )
 

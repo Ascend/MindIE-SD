@@ -10,6 +10,7 @@
 # MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+import os
 import unittest
 
 import torch
@@ -36,6 +37,10 @@ def torch_mlp_reference(hidden_states, w13_weight, w2_weight, group_list, w13_bi
     return torch.cat(outputs, dim=0)
 
 
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
+    "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.",
+)
 class TestMoEMlp(unittest.TestCase):
     def test_unquant_apply_mlp_matches_torch_reference_with_bias(self):
         torch.manual_seed(2026)

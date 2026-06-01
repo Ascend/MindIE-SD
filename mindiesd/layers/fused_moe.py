@@ -21,20 +21,25 @@ from .moe import moe
 
 def fused_moe(
     hidden_states: torch.Tensor,
-    w13_weight: torch.Tensor,
-    w2_weight: torch.Tensor,
     router_logits: torch.Tensor,
     num_experts: int,
     top_k: int,
+    w13_weight: torch.Tensor,
+    w2_weight: torch.Tensor,
     w13_bias: torch.Tensor | None = None,
     w2_bias: torch.Tensor | None = None,
-    tokens_full: bool = True,
-    reduce_results: bool = True,
-    dispatcher_type: str | None = None,
     tp_group: dist.ProcessGroup | None = None,
     ep_group: dist.ProcessGroup | None = None,
+    dispatcher_type: str | None = None,
+    tokens_full: bool = True,
+    k_group: int = 1,
+    group_count: int = 1,
+    group_select_mode: int = 0,
+    routing_method: str = "softmax",
     renormalize: bool = False,
+    routed_scaling_factor: float = 1.0,
     custom_routing_function: Callable | None = None,
+    reduce_results: bool = True,
     use_fused_op: bool = False,
 ) -> torch.Tensor:
     """Run MoE through the public fused-MoE entry.
@@ -45,12 +50,6 @@ def fused_moe(
     Args:
         hidden_states (torch.Tensor):
             Input activations with shape ``[..., hidden_size]``.
-        w13_weight (torch.Tensor):
-            Fused gate/up projection weights with shape
-            ``[local_experts, hidden_size, 2 * intermediate_size]``.
-        w2_weight (torch.Tensor):
-            Down projection weights with shape
-            ``[local_experts, intermediate_size, hidden_size]``.
         router_logits (torch.Tensor):
             Router logits with shape ``[..., num_experts]``. The leading token
             dimensions must match ``hidden_states``.
@@ -58,33 +57,51 @@ def fused_moe(
             Total number of global experts.
         top_k (int):
             Number of experts selected per token.
+        w13_weight (torch.Tensor):
+            Fused gate/up projection weights with shape
+            ``[local_experts, hidden_size, 2 * intermediate_size]``.
+        w2_weight (torch.Tensor):
+            Down projection weights with shape
+            ``[local_experts, intermediate_size, hidden_size]``.
         w13_bias (torch.Tensor, optional):
             Optional fused gate/up projection bias with shape
             ``[local_experts, 2 * intermediate_size]``.
         w2_bias (torch.Tensor, optional):
             Optional down projection bias with shape
             ``[local_experts, hidden_size]``.
+        tp_group (optional):
+            Tensor-parallel process group used for MoE TP communication.
+        ep_group (optional):
+            Expert-parallel process group used for MoE EP communication.
+        dispatcher_type (str, optional):
+            Manual MoE dispatcher override. Supported values are ``"static"`` and
+            ``"dynamic"``. ``None`` uses the default device and communication routing.
         tokens_full (bool, optional):
             Token layout across the resolved MoE communication group (TP or EP).
             ``True`` means ``hidden_states`` and ``router_logits`` contain the
             full token set on each rank. ``False`` means each rank receives the
             token shard evenly split by the communication group. Other token
             layouts are not supported.
+        k_group (int, optional):
+            Number of expert groups selected per token during grouped routing.
+        group_count (int, optional):
+            Number of expert groups used by grouped routing.
+        group_select_mode (int, optional):
+            Expert-group scoring mode. ``0`` uses max score in each group and
+            ``1`` uses the sum of top-2 scores in each group.
+        routing_method (str, optional):
+            Router score function. Supported values are ``"softmax"`` and ``"sigmoid"``.
+        renormalize (bool, optional):
+            Whether to renormalize selected top-k routing weights for softmax routing.
+            Sigmoid routing follows the NPU gating top-k op semantics.
+        routed_scaling_factor (float, optional):
+            Scaling factor applied to routing weights during expert selection.
+        custom_routing_function (optional):
+            Optional routing callback. It must return ``(topk_weights, topk_ids)``.
         reduce_results (bool, optional):
             Whether static MoE reduces full-token routed outputs across the
             resolved MoE communication group. This only applies when static MoE
             is used with ``tokens_full=True``.
-        dispatcher_type (str, optional):
-            Manual MoE dispatcher override. Supported values are ``"static"`` and
-            ``"dynamic"``. ``None`` uses the default device and communication routing.
-        tp_group (optional):
-            Tensor-parallel process group used for MoE TP communication.
-        ep_group (optional):
-            Expert-parallel process group used for MoE EP communication.
-        renormalize (bool, optional):
-            Whether to renormalize the selected top-k routing weights.
-        custom_routing_function (optional):
-            Optional routing callback. It must return ``(topk_weights, topk_ids)``.
         use_fused_op (bool, optional):
             Whether to use the real fused MoE op. The current version does not
             support this path and falls back to staged MoE.
@@ -97,19 +114,24 @@ def fused_moe(
 
     moe_kwargs = {
         "hidden_states": hidden_states,
-        "w13_weight": w13_weight,
-        "w2_weight": w2_weight,
         "router_logits": router_logits,
         "num_experts": num_experts,
         "top_k": top_k,
+        "w13_weight": w13_weight,
+        "w2_weight": w2_weight,
         "w13_bias": w13_bias,
         "w2_bias": w2_bias,
-        "tokens_full": tokens_full,
-        "reduce_results": reduce_results,
-        "dispatcher_type": dispatcher_type,
         "tp_group": tp_group,
         "ep_group": ep_group,
+        "dispatcher_type": dispatcher_type,
+        "tokens_full": tokens_full,
+        "k_group": k_group,
+        "group_count": group_count,
+        "group_select_mode": group_select_mode,
+        "routing_method": routing_method,
         "renormalize": renormalize,
+        "routed_scaling_factor": routed_scaling_factor,
         "custom_routing_function": custom_routing_function,
+        "reduce_results": reduce_results,
     }
     return moe(**moe_kwargs)

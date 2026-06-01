@@ -10,6 +10,7 @@
 # MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+import os
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -30,6 +31,10 @@ class TestTokenDispatcher(unittest.TestCase):
         DynamicDispatcher._split_cpu_buffers.clear()
         set_moe_comm_context()
 
+    @unittest.skipIf(
+        os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
+        "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
+    )
     def test_dynamic_ep_prepare_pads_and_slices_full_inputs(self):
         hidden_states = torch.arange(12, dtype=torch.float32).reshape(3, 4)
         router_logits = torch.arange(12, dtype=torch.float32).reshape(3, 4)
@@ -53,6 +58,10 @@ class TestTokenDispatcher(unittest.TestCase):
         self.assertTrue(torch.equal(prepared_hidden_states[1], torch.zeros(4)))
         self.assertTrue(torch.equal(prepared_router_logits[1], torch.zeros(4)))
 
+    @unittest.skipIf(
+        os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
+        "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.",
+    )
     def test_dynamic_ep_dispatch_uses_all_to_all_path(self):
         device = torch.device("npu")
         hidden_states = torch.randn(2, 4, device=device)
@@ -92,6 +101,10 @@ class TestTokenDispatcher(unittest.TestCase):
         self.assertEqual(all_to_all.call_count, 1)
         self.assertEqual(global_tokens.shape, torch.Size([4, 4]))
 
+    @unittest.skipIf(
+        os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
+        "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.",
+    )
     def test_dynamic_ep_combine_uses_all_to_all_path(self):
         device = torch.device("npu")
         ep_group = MagicMock(spec=dist.ProcessGroup)
@@ -119,6 +132,10 @@ class TestTokenDispatcher(unittest.TestCase):
         self.assertEqual(output.shape, torch.Size([2, 4]))
         self.assertEqual(all_to_all.call_count, 1)
 
+    @unittest.skipIf(
+        os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
+        "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.",
+    )
     def test_static_ep_masks_nonlocal_topk_weights(self):
         device = torch.device("npu")
         topk_ids = torch.tensor([[0, 2], [3, 1]], dtype=torch.int32, device=device)
@@ -145,6 +162,10 @@ class TestTokenDispatcher(unittest.TestCase):
             )
         )
 
+    @unittest.skipIf(
+        os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
+        "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
+    )
     def test_static_prepare_gathers_partial_inputs(self):
         hidden_states = torch.randn(4, 4)
         router_logits = torch.randn(4, 4)
@@ -166,6 +187,10 @@ class TestTokenDispatcher(unittest.TestCase):
         self.assertEqual(prepared_router_logits.shape, torch.Size([8, 4]))
         self.assertEqual(all_gather.call_count, 2)
 
+    @unittest.skipIf(
+        os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
+        "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
+    )
     def test_static_finalize_uses_reduce_scatter_for_partial_inputs(self):
         hidden_states = torch.randn(8, 4)
         original_shape = torch.Size([4, 4])
@@ -187,6 +212,10 @@ class TestTokenDispatcher(unittest.TestCase):
         reduce_scatter.assert_called_once()
         self.assertIs(reduce_scatter.call_args.kwargs["group"], ep_group)
 
+    @unittest.skipIf(
+        os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
+        "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
+    )
     def test_static_finalize_reduce_results_controls_all_reduce(self):
         hidden_states = torch.randn(4, 4)
         tp_group = MagicMock(spec=dist.ProcessGroup)
