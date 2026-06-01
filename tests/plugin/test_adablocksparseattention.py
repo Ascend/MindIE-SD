@@ -10,28 +10,35 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+# pylint: disable=duplicate-code
+
 import os
+import sys
 import unittest
 import torch
-import torch.nn as nn
-import torch_npu
 import numpy as np
 from math import sqrt
+
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from mindiesd.utils.get_platform import is_a5_device  # noqa: E402
 
 # 加载自定义库
 if os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU":
     torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
 
 
-def ref_compare(golden:torch.Tensor, actual:torch.Tensor, err):
+def ref_compare(golden: torch.Tensor, actual: torch.Tensor, err):
     golden = golden.to(torch.float32)
-    golden_nmax = torch.clamp(torch.abs(golden), min = 1)
+    golden_nmax = torch.clamp(torch.abs(golden), min=1)
     abs_error = torch.abs(actual.to(torch.float32) - golden)
     EB = torch.mean(abs_error / golden_nmax)
-    result = (abs_error <= err * golden_nmax).all() and EB <= err/2
-    return EB.item(),result.item(),abs_error.max().item()
+    result = (abs_error <= err * golden_nmax).all() and EB <= err / 2
+    return EB.item(), result.item(), abs_error.max().item()
 
- 
+
 def ada_block_sparse_attention_cpu(query, key, value, smask, causal=False, blocksize=128):
     bs, nq, seq, dim = query.shape
     nkv = key.shape[1]
@@ -48,7 +55,6 @@ def ada_block_sparse_attention_cpu(query, key, value, smask, causal=False, block
             num_blocks = (seq + blocksize - 1) // blocksize  # 向上取整
 
             for s1 in range(num_blocks):  # 当前 query 所在的 block 索引
-
                 mask_block = smask[bi, ni, s1, :num_blocks]  # bool array
 
                 # 展开为序列级掩码：每个 block 重复 blocksize 次
@@ -66,12 +72,12 @@ def ada_block_sparse_attention_cpu(query, key, value, smask, causal=False, block
                     kt = k.T  # [dim, k_eff]
                     p = q @ kt  # [q_len, k_eff]
                     p = p / np.sqrt(dim)
-                    if causal :
+                    if causal:
                         t = end - start
                         cm = np.triu(np.ones((t, t)), k=1) * (-10000.0)
                         p[:, -t:] += cm
 
-                    p =  p -p.max(axis=-1, keepdims=True)
+                    p = p - p.max(axis=-1, keepdims=True)
                     exp_p = np.exp(p)
                     exp_sum = exp_p.sum(axis=-1, keepdims=True)
                     attn = exp_p / (exp_sum + 1e-12)  # softmax
@@ -87,7 +93,10 @@ def ada_block_sparse_attention_cpu(query, key, value, smask, causal=False, block
     return output
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
+@unittest.skipIf(is_a5_device(), "ada_block_sparse_attention (sparse_flash_attn_ada_bsa) is unsupported on A5.")
 class TestBsaMindieSd(unittest.TestCase):
     def setUp(self):
         np.random.seed(10)
@@ -130,7 +139,6 @@ class TestBsaMindieSd(unittest.TestCase):
         value = self.value.clone()
         return query, key, value
 
-
     def test_bsa_mindie_sd_vs_ada_block_sparse_attention_cpu(self):
         """对比 ada_block_sparse_attention 与 cpu 实现的结果"""
         query, key, value = self.bsa_preprocess_input()
@@ -140,16 +148,16 @@ class TestBsaMindieSd(unittest.TestCase):
         sn2 = (realsn2 + 31) // 32 * 32
         sparsity = 0.5
         smask = torch.rand(self.batch, self.head_num, sn1, sn2) > sparsity
-        smask[:,:,:,0] = True
-        smask[:,:,1,:] = False
-        smask[:,:,sn1-2,:] = False
-        smask[:,:,sn1-1,:] = False
+        smask[:, :, :, 0] = True
+        smask[:, :, 1, :] = False
+        smask[:, :, sn1 - 2, :] = False
+        smask[:, :, sn1 - 1, :] = False
 
         smask[:, :, :, realsn2:] = False
         if self.causal:
             for j in range(sn1):
                 smask[:, :, j, j] = True
-                smask[:, :, j, j+1:] = False
+                smask[:, :, j, j + 1 :] = False
         smask = smask.to(torch.int8)
         sparse_count_table = smask.sum(dim=-1, dtype=torch.int32)
 
@@ -163,16 +171,19 @@ class TestBsaMindieSd(unittest.TestCase):
             sparse_size=self.sparse_size,
             num_heads=self.head_num,
             num_key_value_heads=self.head_num,
-            scale_value = self.scale_value,
-            causal=self.causal
+            scale_value=self.scale_value,
+            causal=self.causal,
         )
-        
-        bsa_cpu = ada_block_sparse_attention_cpu(query, key, value, smask, causal=self.causal, blocksize=self.sparse_size)
+
+        bsa_cpu = ada_block_sparse_attention_cpu(
+            query, key, value, smask, causal=self.causal, blocksize=self.sparse_size
+        )
 
         # compare result
-        err_threshold = 2**(-6)
-        EB, result, max_err = ref_compare(bsa_cpu.ravel(), bsa_npu.ravel().cpu().float(),err_threshold)
+        err_threshold = 2 ** (-6)
+        EB, result, max_err = ref_compare(bsa_cpu.ravel(), bsa_npu.ravel().cpu().float(), err_threshold)
         assert result, f'eb should < {err_threshold}, but got {EB}. max_err:{max_err}'
+
 
 if __name__ == "__main__":
     unittest.main(argv=[''], exit=False)

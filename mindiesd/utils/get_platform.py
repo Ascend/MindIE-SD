@@ -47,3 +47,8 @@ def get_npu_device() -> NPUDevice:
             logger.warning("Failed to get NPU SoC version: %s", exc)
             PLATFORM = NPUDevice.UNDEFINED
     return PLATFORM
+
+
+def is_a5_device() -> bool:
+    """Return True when the current NPU is identified as an A5 generation chip."""
+    return get_npu_device() == NPUDevice.A5

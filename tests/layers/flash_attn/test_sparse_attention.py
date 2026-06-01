@@ -10,20 +10,30 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+# pylint: disable=duplicate-code
+
 import unittest
-from unittest.mock import patch
 import os
 import sys
 import torch
 import torch_npu
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from device import DEVICE_ID
 from mindiesd.layers.flash_attn.sparse_flash_attn import sparse_attention
+from mindiesd.utils.get_platform import is_a5_device
 from utils.utils.precision_compare import data_compare
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
+@unittest.skipIf(
+    is_a5_device(),
+    "sparse_flash_attn_rf_v2 / sparse_flash_attn_ada_bsa are unsupported on A5; "
+    "rf_v2 is routed to rf_v3 and ada_bsa is removed.",
+)
 class TestSparseAttention(unittest.TestCase):
     def setUp(self):
         self.device = torch.device("npu:0")
@@ -33,7 +43,7 @@ class TestSparseAttention(unittest.TestCase):
         self.q_seqlen = 9600
         self.kv_seqlen = 9600
         self.headdim = 128
-        self.scale = self.headdim ** -0.5
+        self.scale = self.headdim**-0.5
         self.t, self.h, self.w = 3, 40, 80
 
         q_shape = (self.batch_size, self.q_seqlen, self.head, self.headdim)
@@ -44,7 +54,9 @@ class TestSparseAttention(unittest.TestCase):
 
     def test_rf_v2(self):
         out = sparse_attention(
-            self.q, self.k, self.v,
+            self.q,
+            self.k,
+            self.v,
             scale=self.scale,
             head_num=self.head,
             input_layout="BSND",
@@ -53,26 +65,30 @@ class TestSparseAttention(unittest.TestCase):
             txt_len=0,
             latent_shape_q=(self.t, self.h, self.w),
             latent_shape_k=(self.t, self.h, self.w),
-            sparsity=0.0
+            sparsity=0.0,
         )
         self.assertIsNotNone(out)
 
     def test_ada_bsa(self):
         out = sparse_attention(
-            self.q, self.k, self.v,
+            self.q,
+            self.k,
+            self.v,
             scale=self.scale,
             head_num=self.head,
             input_layout="BSND",
             inner_precise=0,
             sparse_type="ada_bsa",
             cdf_threshold=1.0,
-            sparsity=0.0
+            sparsity=0.0,
         )
         self.assertIsNotNone(out)
 
     def test_rf_v2_BSND_result(self):
         out = sparse_attention(
-            self.q, self.k, self.v,
+            self.q,
+            self.k,
+            self.v,
             scale=self.scale,
             head_num=self.head,
             input_layout="BSND",
@@ -81,15 +97,18 @@ class TestSparseAttention(unittest.TestCase):
             txt_len=0,
             latent_shape_q=(self.t, self.h, self.w),
             latent_shape_k=(self.t, self.h, self.w),
-            sparsity=0.0
+            sparsity=0.0,
         )
         fascore = torch_npu.npu_fusion_attention(
-                    self.q, self.k, self.v,
-                    input_layout="BSND",
-                    scale=self.scale,
-                    pre_tockens=2147483647,
-                    next_tockens=2147483647,
-                    head_num=self.head)[0]
+            self.q,
+            self.k,
+            self.v,
+            input_layout="BSND",
+            scale=self.scale,
+            pre_tockens=2147483647,
+            next_tockens=2147483647,
+            head_num=self.head,
+        )[0]
 
         result, _, max_err = data_compare(out.cpu(), fascore.cpu())
         self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
@@ -99,7 +118,9 @@ class TestSparseAttention(unittest.TestCase):
         k = self.k.transpose(1, 2)
         v = self.v.transpose(1, 2)
         out = sparse_attention(
-            q, k, v,
+            q,
+            k,
+            v,
             scale=self.scale,
             head_num=self.head,
             input_layout="BNSD",
@@ -108,37 +129,45 @@ class TestSparseAttention(unittest.TestCase):
             txt_len=0,
             latent_shape_q=(self.t, self.h, self.w),
             latent_shape_k=(self.t, self.h, self.w),
-            sparsity=0.0
+            sparsity=0.0,
         )
         fascore = torch_npu.npu_fusion_attention(
-                    q, k, v,
-                    input_layout="BNSD",
-                    scale=self.scale,
-                    pre_tockens=2147483647,
-                    next_tockens=2147483647,
-                    head_num=self.head)[0]
+            q,
+            k,
+            v,
+            input_layout="BNSD",
+            scale=self.scale,
+            pre_tockens=2147483647,
+            next_tockens=2147483647,
+            head_num=self.head,
+        )[0]
 
         result, _, max_err = data_compare(out.cpu(), fascore.cpu())
         self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
 
     def test_ada_bsa_result(self):
         out = sparse_attention(
-            self.q, self.k, self.v,
+            self.q,
+            self.k,
+            self.v,
             scale=self.scale,
             head_num=self.head,
             input_layout="BSND",
             inner_precise=0,
             sparse_type="ada_bsa",
             cdf_threshold=1.0,
-            sparsity=0.0
+            sparsity=0.0,
         )
         fascore = torch_npu.npu_fusion_attention(
-                    self.q, self.k, self.v,
-                    input_layout="BSND",
-                    scale=self.scale,
-                    pre_tockens=2147483647,
-                    next_tockens=2147483647,
-                    head_num=self.head)[0]
+            self.q,
+            self.k,
+            self.v,
+            input_layout="BSND",
+            scale=self.scale,
+            pre_tockens=2147483647,
+            next_tockens=2147483647,
+            head_num=self.head,
+        )[0]
         result, _, max_err = data_compare(out.cpu(), fascore.cpu())
         self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
 

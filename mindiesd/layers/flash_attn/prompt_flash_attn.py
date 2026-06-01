@@ -10,15 +10,26 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+# pylint: disable=duplicate-code
+
 import torch
 import torch_npu
-from .attention_operate import AttentionOperateBase, register_op_duo, register_op_800, register_op_a5
+from .attention_operate import AttentionOperateBase, register_op_duo, register_op_800
 from .common import AttentionParam
+from ...utils.exception import ParametersInvalid
+from ...utils.get_platform import is_a5_device
+
+
+_A5_PFA_UNSUPPORTED_MSG = (
+    "prompt_flash_attn is not supported on A5 devices. "
+    "Please use the public API 'mindiesd.layers.flash_attn.attention_forward' (which routes to "
+    "'fused_attn_score' automatically on A5), or pick the higher-performance 'fused_attn_score' "
+    "operator directly under mindiesd.layers.flash_attn."
+)
 
 
 @register_op_duo("prompt_flash_attn")
 @register_op_800("prompt_flash_attn")
-@register_op_a5("prompt_flash_attn")
 class PromptFlashAttention(AttentionOperateBase):
     supported_layout = ["BNSD", "BSND", "BSH"]
     supported_dtype = [torch.float16, torch.bfloat16, torch.int8]
@@ -35,8 +46,10 @@ class PromptFlashAttention(AttentionOperateBase):
         key: torch.Tensor,
         value: torch.Tensor,
         mask: torch.Tensor = None,
-        scale: torch.Tensor = None
+        scale: torch.Tensor = None,
     ) -> torch.Tensor:
+        if is_a5_device():
+            raise ParametersInvalid(_A5_PFA_UNSUPPORTED_MSG)
         head_first = attn_param.head_first
         if not head_first:
             # input layout is bsnd
@@ -54,7 +67,8 @@ class PromptFlashAttention(AttentionOperateBase):
             scale_value=scale,
             pre_tokens=2147483647,
             next_tokens=2147483647,
-            num_heads=attn_param.head_num)
+            num_heads=attn_param.head_num,
+        )
         if not head_first:
             out = out.transpose(1, 2)
         return out
@@ -67,8 +81,10 @@ class PromptFlashAttention(AttentionOperateBase):
         key: torch.Tensor,
         value: torch.Tensor,
         mask: torch.Tensor = None,
-        scale: torch.Tensor = None
+        scale: torch.Tensor = None,
     ) -> torch.Tensor:
+        if is_a5_device():
+            raise ParametersInvalid(_A5_PFA_UNSUPPORTED_MSG)
         head_first = attn_param.head_first
         if head_first:
             # input layout is bnsd
@@ -86,7 +102,8 @@ class PromptFlashAttention(AttentionOperateBase):
             scale_value=scale,
             pre_tokens=2147483647,
             next_tokens=2147483647,
-            num_heads=attn_param.head_num)
+            num_heads=attn_param.head_num,
+        )
         if head_first:
             out = out.transpose(1, 2)
         return out
@@ -99,8 +116,10 @@ class PromptFlashAttention(AttentionOperateBase):
         key: torch.Tensor,
         value: torch.Tensor,
         mask: torch.Tensor = None,
-        scale: torch.Tensor = None
+        scale: torch.Tensor = None,
     ) -> torch.Tensor:
+        if is_a5_device():
+            raise ParametersInvalid(_A5_PFA_UNSUPPORTED_MSG)
         head_first = attn_param.head_first
         if head_first:
             query = query.transpose(1, 2)
@@ -121,7 +140,8 @@ class PromptFlashAttention(AttentionOperateBase):
             scale_value=scale,
             pre_tokens=2147483647,
             next_tokens=2147483647,
-            num_heads=attn_param.head_num)
+            num_heads=attn_param.head_num,
+        )
         if not head_first:
             out = out.reshape(attn_param.batch_size, attn_param.q_seqlen, attn_param.head_num, attn_param.head_dim)
         else:

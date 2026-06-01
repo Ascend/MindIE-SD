@@ -10,14 +10,12 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-import os
-from pathlib import Path
+# pylint: disable=duplicate-code
 
 import torch
-import torch_npu
 from .attention_operate import AttentionOperateBase, register_op_800
 from ...utils.exception import ParametersInvalid
-from ...utils import file_utils
+from ...utils.get_platform import is_a5_device
 from .. import _custom_ops as ops
 from .common import AttentionParam
 
@@ -32,6 +30,12 @@ DIM_BASE = 128
 SEQLEN_INDEX = -2
 DIM_INDEX = -1
 
+_A5_LA_UNSUPPORTED_MSG = (
+    "ascend_laser_attention is not supported on A5 devices. "
+    "Please use the public API 'mindiesd.layers.flash_attn.attention_forward' (which routes to "
+    "'fused_attn_score' automatically on A5), or pick the higher-performance 'fused_attn_score' "
+    "operator directly under mindiesd.layers.flash_attn."
+)
 
 
 @register_op_800("ascend_laser_attention")
@@ -81,19 +85,22 @@ class AscendLaserAttention(AttentionOperateBase):
         if attn_param.q_seqlen == attn_param.kv_seqlen:
             return attn_param.q_seqlen >= MIN_SEQLEN_SELF
         else:
-            return (MIN_SEQLEN_CROSS <= attn_param.q_seqlen <= MAX_SEQLEN_CROSS) and \
-                (MIN_SEQLEN_CROSS <= attn_param.kv_seqlen <= MAX_SEQLEN_CROSS)
+            return (MIN_SEQLEN_CROSS <= attn_param.q_seqlen <= MAX_SEQLEN_CROSS) and (
+                MIN_SEQLEN_CROSS <= attn_param.kv_seqlen <= MAX_SEQLEN_CROSS
+            )
 
     @classmethod
     def forward_attn_bnsd(
-            cls,
-            attn_param: AttentionParam,
-            query: torch.Tensor,
-            key: torch.Tensor,
-            value: torch.Tensor,
-            mask: torch.Tensor = None,
-            scale: torch.Tensor = None
+        cls,
+        attn_param: AttentionParam,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        mask: torch.Tensor = None,
+        scale: torch.Tensor = None,
     ) -> torch.Tensor:
+        if is_a5_device():
+            raise ParametersInvalid(_A5_LA_UNSUPPORTED_MSG)
         head_first = attn_param.head_first
         if not head_first:
             # input layout is bsnd
@@ -109,8 +116,19 @@ class AscendLaserAttention(AttentionOperateBase):
             pre_tokens = (attn_param.kv_seqlen // SEQ_LEN_PAD_BASE + 1) * SEQ_LEN_PAD_BASE - attn_param.kv_seqlen
 
         _, output1 = ops.laser_attention(
-            new_query, new_key, new_value, None, None, None,
-            scale, attn_param.head_num, "BNSD", 1.0, pre_tokens, 1, True
+            new_query,
+            new_key,
+            new_value,
+            None,
+            None,
+            None,
+            scale,
+            attn_param.head_num,
+            "BNSD",
+            1.0,
+            pre_tokens,
+            1,
+            True,
         )
         out = AscendLaserAttention.la_postprocess_output(output1, query.dtype, attn_param.q_seqlen, attn_param.head_dim)
 

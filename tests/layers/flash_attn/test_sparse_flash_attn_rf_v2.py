@@ -23,6 +23,10 @@ from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v2 import (
     do_tensor_rearrange_pooling,
     do_tensor_inv_rearrange,
 )
+from mindiesd.utils.get_platform import is_a5_device
+
+_SKIP_A5_RF_V2 = "sparse_flash_attn_rf_v2 is unsupported on A5; routed to rf_v3."
+_SKIP_IF_A5 = unittest.skipIf(is_a5_device(), _SKIP_A5_RF_V2)
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +71,7 @@ def _make_qkv(cfg, layout, batch=BATCH, head=HEAD, headdim=HEADDIM, dtype=DTYPE)
 # ============================================================================
 # 1. TestAvgpool
 # ============================================================================
+@_SKIP_IF_A5
 class TestAvgpool(unittest.TestCase):
     """avgpool 在 BNSD / BSND 布局以及 seqlen 整除 / 不整除 pool_size 场景下的正确性。"""
 
@@ -129,6 +134,7 @@ class TestAvgpool(unittest.TestCase):
 # ============================================================================
 # 2. TestRearrangeWithRemaining — 覆盖 hw 整除 / 不整除 8
 # ============================================================================
+@_SKIP_IF_A5
 class TestRearrangeWithRemaining(unittest.TestCase):
     """rearrange_with_remaining + inv_rearrange_with_remaining 的 roundtrip 测试。
     覆盖:
@@ -147,7 +153,7 @@ class TestRearrangeWithRemaining(unittest.TestCase):
         self.assertEqual(recovered.shape, q.shape, "inv_rearrange 后 shape 应不变")
         self.assertTrue(
             torch.allclose(recovered, q, atol=1e-6),
-            f"roundtrip 精度不满足, max diff={torch.max(torch.abs(recovered - q)).item()}"
+            f"roundtrip 精度不满足, max diff={torch.max(torch.abs(recovered - q)).item()}",
         )
 
     # BSND, hw 整除 8
@@ -186,8 +192,8 @@ class TestRearrangeWithRemaining(unittest.TestCase):
 # ============================================================================
 # 3. TestGetMaskIndex
 # ============================================================================
+@_SKIP_IF_A5
 class TestGetMaskIndex(unittest.TestCase):
-
     def test_shape_and_dtype(self):
         s = 8
         mask = torch.ones(1, 2, s, s, dtype=torch.bool)
@@ -219,8 +225,8 @@ class TestGetMaskIndex(unittest.TestCase):
 # ============================================================================
 # 4. TestGetBlockwiseMask — BNSD / BSND
 # ============================================================================
+@_SKIP_IF_A5
 class TestGetBlockwiseMask(unittest.TestCase):
-
     def _run_blockwise_mask(self, layout, cfg, txt_len=0, pool_size=POOL_SIZE, sparsity=0.0):
         latent_shape = _make_latent_shape(cfg)
         q, k, v = _make_qkv(cfg, layout)
@@ -239,7 +245,7 @@ class TestGetBlockwiseMask(unittest.TestCase):
                 v = torch.cat([txt_q, v], dim=2)
 
         qkv_pool = avgpool(torch.cat([q, k, v], dim=0), pool_size=pool_size, input_layout=layout)
-        scale = HEADDIM ** -0.5
+        scale = HEADDIM**-0.5
         select_idx, select_num_idx = get_blockwise_mask(
             qkv_pool, txt_len, sparsity, scale, pool_size, latent_shape, latent_shape, layout
         )
@@ -275,6 +281,7 @@ class TestGetBlockwiseMask(unittest.TestCase):
 # ============================================================================
 # 5. TestDoTensorRearrangePooling — BNSD / BSND × text / no text × hw 整除/不整除
 # ============================================================================
+@_SKIP_IF_A5
 class TestDoTensorRearrangePooling(unittest.TestCase):
     """do_tensor_rearrange_pooling 输出 shape 和 roundtrip 一致性。"""
 
@@ -295,9 +302,7 @@ class TestDoTensorRearrangePooling(unittest.TestCase):
                 k = torch.cat([txt_t.clone(), k], dim=2)
                 v = torch.cat([txt_t.clone(), v], dim=2)
 
-        q_, k_, v_, pool = do_tensor_rearrange_pooling(
-            q, k, v, txt_len, pool_size, latent_shape, latent_shape, layout
-        )
+        q_, k_, v_, pool = do_tensor_rearrange_pooling(q, k, v, txt_len, pool_size, latent_shape, latent_shape, layout)
 
         if layout == "BSND":
             self.assertEqual(q_.shape[1], total_seq)
@@ -356,6 +361,7 @@ class TestDoTensorRearrangePooling(unittest.TestCase):
 # ============================================================================
 # 6. TestDoTensorInvRearrange — roundtrip 验证
 # ============================================================================
+@_SKIP_IF_A5
 class TestDoTensorInvRearrange(unittest.TestCase):
     """do_tensor_rearrange_pooling 之后 do_tensor_inv_rearrange 能恢复原始顺序。"""
 
@@ -383,10 +389,7 @@ class TestDoTensorInvRearrange(unittest.TestCase):
                 recovered_text = recovered[:, :txt_len, :, :]
             else:
                 recovered_text = recovered[:, :, :txt_len, :]
-            self.assertTrue(
-                torch.allclose(recovered_text, txt_t, atol=1e-6),
-                "text 部分 roundtrip 失败"
-            )
+            self.assertTrue(torch.allclose(recovered_text, txt_t, atol=1e-6), "text 部分 roundtrip 失败")
 
         self.assertEqual(recovered.shape, q_full.shape, "roundtrip 后 shape 不一致")
 

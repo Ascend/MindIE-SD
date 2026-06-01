@@ -10,18 +10,20 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-import os
-from pathlib import Path
 
 import torch
-import torch_npu
 from .attention_operate import AttentionOperateBase, register_op_800
 from ...utils.exception import ParametersInvalid
-from ...utils import file_utils
+from ...utils.get_platform import is_a5_device
 from .. import _custom_ops as ops
-from .common import AttentionParam
 
 
+_A5_LA_PREPROCESS_UNSUPPORTED_MSG = (
+    "ascend_laser_preprocess is not supported on A5 devices. The LA pre-processing kernel is no longer "
+    "needed because the CANN-native FA operator handles padding internally. "
+    "Please drop this call and use 'mindiesd.layers.flash_attn.attention_forward' (or "
+    "'attention_forward_varlen') directly."
+)
 
 
 @register_op_800("ascend_laser_preprocess")
@@ -31,30 +33,16 @@ class AscendLaserPreprocess(AttentionOperateBase):
 
     @classmethod
     def forward_preprocess(
-            cls,
-            query: torch.Tensor,
-            key: torch.Tensor,
-            value: torch.Tensor,
-            align_len: int = 256
+        cls, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, align_len: int = 256
     ) -> (torch.Tensor, torch.Tensor, torch.Tensor):
+        if is_a5_device():
+            raise ParametersInvalid(_A5_LA_PREPROCESS_UNSUPPORTED_MSG)
 
         if query.dim() != 4 or key.dim() != 4 or value.dim() != 4:
             raise ParametersInvalid("LA_preprocess输入必须是4D张量")
         batch_size, seq_len, head_num, head_dim = query.shape
-        original_dtype = query.dtype
 
-        attn_param = AttentionParam(
-            batch_size=batch_size,
-            head_num=head_num,
-            q_seqlen=seq_len,
-            kv_seqlen=key.shape[1],
-            head_dim=head_dim,
-            dtype=original_dtype
-        )
-
-        out_query, out_key, out_value = ops.laser_attention_preprocess(
-            query, key, value, align_len
-        )
+        out_query, out_key, out_value = ops.laser_attention_preprocess(query, key, value, align_len)
         return out_query, out_key, out_value
 
 

@@ -16,17 +16,19 @@ import time
 import torch
 
 from .common import AttentionParam, lru_cache_by_attn_param
-from .attention_operate import device_duo_op, device_800_op, device_a5_op, AttentionOperateBase  # noqa: F401
-from .prompt_flash_attn import PromptFlashAttention  # noqa: F401
-from .fused_attn_score import FlashAttentionScore  # noqa: F401
-from .ascend_laser_attention import AscendLaserAttention  # noqa: F401
-from ...utils.get_platform import get_npu_device, NPUDevice
+from .attention_operate import device_duo_op, device_800_op, device_a5_op
+from ...utils.get_platform import get_npu_device, NPUDevice, is_a5_device
 from ...utils.exception import ParametersInvalid
 from ...utils.logs.logging import logger
 
 TEST_COUNT = 5
 WARM_UP_COUNT = 2
 ATTN_DICT = {}
+
+# Operators that have been removed from the A5 registry; static-table or default
+# selections that resolve to one of these names must transparently fall back to
+# 'fused_attn_score' so existing models keep working after the A5 upgrade.
+_A5_DEPRECATED_OP_TYPES = {"ascend_laser_attention", "prompt_flash_attn"}
 
 
 def attention_math(query, key, value, attn_mask, scale, head_first=False):
@@ -69,8 +71,16 @@ def get_attention_function_static(attn_param):
             "defaulting to the standard operation type and layout."
         )
 
-        op_type = "prompt_flash_attn"  # default
+        op_type = "fused_attn_score"  # default
         layout = "BNSD"
+
+    if is_a5_device() and op_type in _A5_DEPRECATED_OP_TYPES:
+        logger.warning(
+            "Static-table op_type '%s' is not supported on A5 devices and has been routed to "
+            "'fused_attn_score'. Please refresh the static table entry to silence this warning.",
+            op_type,
+        )
+        op_type = "fused_attn_score"
     return get_attention_function(attn_param, op_type, layout)
 
 
