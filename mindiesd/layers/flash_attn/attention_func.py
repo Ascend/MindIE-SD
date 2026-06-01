@@ -16,7 +16,10 @@ import time
 import torch
 
 from .common import AttentionParam, lru_cache_by_attn_param
-from .attention_operate import device_duo_op, device_800_op, device_a5_op
+from .attention_operate import device_duo_op, device_800_op, device_a5_op, AttentionOperateBase  # noqa: F401
+from .prompt_flash_attn import PromptFlashAttention  # noqa: F401
+from .fused_attn_score import FlashAttentionScore  # noqa: F401
+from .ascend_laser_attention import AscendLaserAttention  # noqa: F401
 from ...utils.get_platform import get_npu_device, NPUDevice, is_a5_device
 from ...utils.exception import ParametersInvalid
 from ...utils.logs.logging import logger
