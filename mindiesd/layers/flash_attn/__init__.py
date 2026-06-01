@@ -13,3 +13,11 @@
 from .attention_forward import attention_forward
 from .attention_forward_varlen import attention_forward_varlen
 from .sparse_flash_attn import sparse_attention
+from .sparse_linear_attn import SparseLinearAttention
+
+__all__ = [
+    "attention_forward",
+    "attention_forward_varlen",
+    "sparse_attention",
+    "SparseLinearAttention",
+]
