@@ -44,7 +44,12 @@ def get_npu_device() -> NPUDevice:
             else:
                 PLATFORM = NPUDevice.UNDEFINED
         except RuntimeError as exc:
-            logger.warning("Failed to get NPU SoC version: %s", exc)
+            logger.warning(
+                "[MindIE-SD/utils] NPU SoC version query failed. issue=torch_npu failed to return SoC version, "
+                "actual_error=%s. possible_cause=NPU driver, CANN, or device environment is unavailable. "
+                "Troubleshooting: check npu-smi info, CANN environment variables, and torch_npu installation.",
+                exc,
+            )
             PLATFORM = NPUDevice.UNDEFINED
     return PLATFORM
 

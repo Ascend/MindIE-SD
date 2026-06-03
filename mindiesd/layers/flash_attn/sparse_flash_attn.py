@@ -55,17 +55,20 @@ def _resolve_sparse_type_for_a5(sparse_type, inner_precise):
 
     if sparse_type == "rf_v2":
         if inner_precise != A5_V3_INNER_PRECISE:
-            logger.info(
-                "sparse_type='rf_v2' is routed to 'rf_v3' on A5 devices, and inner_precise has been "
-                "overridden from %s to %s as required by the v3 operator. "
-                "Please switch to sparse_type='rf_v3' explicitly to silence this notice.",
+            logger.debug(
+                "[MindIE-SD/flash_attn] Sparse attention type remapped for A5. "
+                "sparse_type=rf_v2, actual_sparse_type=rf_v3, expected_inner_precise=%s, actual_inner_precise=%s. "
+                "possible_cause=rf_v2 is deprecated on A5 and rf_v3 requires a fixed inner_precise value. "
+                "Troubleshooting: set sparse_type='rf_v3' and inner_precise=%s explicitly.",
+                A5_V3_INNER_PRECISE,
                 inner_precise,
                 A5_V3_INNER_PRECISE,
             )
         else:
-            logger.info(
-                "sparse_type='rf_v2' is routed to 'rf_v3' on A5 devices. "
-                "Please switch to sparse_type='rf_v3' explicitly to silence this notice."
+            logger.debug(
+                "[MindIE-SD/flash_attn] Sparse attention type remapped for A5. "
+                "sparse_type=rf_v2, actual_sparse_type=rf_v3. possible_cause=rf_v2 is deprecated on A5. "
+                "Troubleshooting: set sparse_type='rf_v3' explicitly."
             )
         return "rf_v3", A5_V3_INNER_PRECISE
 
@@ -226,7 +229,7 @@ def sparse_attention(
             sparse_size=block_size,
         )
     elif sparse_type is None:
-        out = torch_npu.npu_fusion_attention(
+        out = torch_npu.npu_fusion_attention(  # pylint: disable=no-member
             q,
             k,
             v,

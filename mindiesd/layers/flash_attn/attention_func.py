@@ -79,9 +79,14 @@ def get_attention_function_static(attn_param):
 
     if is_a5_device() and op_type in _A5_DEPRECATED_OP_TYPES:
         logger.warning(
-            "Static-table op_type '%s' is not supported on A5 devices and has been routed to "
-            "'fused_attn_score'. Please refresh the static table entry to silence this warning.",
+            "[MindIE-SD/flash_attn] Static-table attention operator remapped for A5. "
+            "issue=static-table op_type is not supported on A5, expected_op_type=fused_attn_score, "
+            "actual_op_type=%s, q_seqlen=%s, kv_seqlen=%s. "
+            "possible_cause=the static attention table contains a deprecated A5 operator. "
+            "Troubleshooting: refresh the static table entry to use fused_attn_score.",
             op_type,
+            attn_param.q_seqlen,
+            attn_param.kv_seqlen,
         )
         op_type = "fused_attn_score"
     return get_attention_function(attn_param, op_type, layout)
@@ -96,7 +101,10 @@ def get_attention_function(attn_param, op_type, layout):
     elif npu_device == NPUDevice.A5:
         op_registry = device_a5_op.get_all()
     else:
-        raise ParametersInvalid("Platform invalid. Please check env.")
+        raise ParametersInvalid(
+            f"Platform invalid. expected one of {[item.name for item in NPUDevice if item != NPUDevice.UNDEFINED]}, "
+            f"actual={npu_device}. Please check env."
+        )
 
     if op_type not in op_registry:
         raise ParametersInvalid(
@@ -132,7 +140,10 @@ def get_attention_function_runtime(attn_param, query, key, value, attn_mask=None
     elif npu_device == NPUDevice.A5:
         all_op = device_a5_op.get_all()
     else:
-        raise ParametersInvalid("Platform invalid.")
+        raise ParametersInvalid(
+            f"Platform invalid. expected one of {[item.name for item in NPUDevice if item != NPUDevice.UNDEFINED]}, "
+            f"actual={npu_device}."
+        )
 
     func_lists = get_test_func_lists(attn_param, all_op)
     if len(func_lists) == 0:

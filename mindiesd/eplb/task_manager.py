@@ -35,46 +35,37 @@ def parse_module(module):
     return dispatcher_list, expert_load_collector_list
 
 
-def expert_info_transfer_pool(
-        module,
-        instruction_queue,
-        upload_queue,
-        device
-    ):
+def expert_info_transfer_pool(module, instruction_queue, upload_queue, device):
     dispatcher_list, expert_load_collector_list = parse_module(module)
     transfer_stream = torch_npu.npu.Stream(device)
 
     for idx, collector in enumerate(expert_load_collector_list):
-        collector.task_transfer = ProfileTaskTransfer(
-            instruction_queue,
-            idx,
-            collector.lb_interval
-        )
+        collector.task_transfer = ProfileTaskTransfer(instruction_queue, idx, collector.lb_interval)
 
     while True:
         instruction = instruction_queue.get()
         if instruction is None or instruction == 'exit':
-            logger.info(f"[ExpertInfoTransferPool] Get exit instruction")
+            logger.debug("[MindIE-SD/eplb] Expert info transfer pool received exit instruction.")
             break
         if isinstance(instruction, TaskPayload):
             handler_function = TASK_DISPATCHER.get(instruction.task_type, handle_unknown_task)
             handler_function(instruction, upload_queue, expert_load_collector_list, dispatcher_list, transfer_stream)
         else:
-            logger.debug(f"Unknown instruction: {instruction}")
+            logger.debug("[MindIE-SD/eplb] Unknown instruction ignored. instruction=%s.", instruction)
 
 
-def connect_to_schedule_manager(
-        rank_in_group,
-        ip,
-        port,
-        auth_key
-    ):
+def connect_to_schedule_manager(rank_in_group, ip, port, auth_key):
     addr = (ip, port)
     manager = get_manager_client(addr, auth_key)
     manager.connect()
-    logger.info(f"Connected to schedule manager, rank_in_group: {rank_in_group}")
-    instruction_queue = manager.get_instruction_queues(rank=rank_in_group)
-    upload_queue = manager.get_upload_queues(rank=rank_in_group)
+    logger.debug(
+        "[MindIE-SD/eplb] Connected to schedule manager. rank_in_group=%s, manager_addr=%s:%s.",
+        rank_in_group,
+        ip,
+        port,
+    )
+    instruction_queue = manager.get_instruction_queues(rank=rank_in_group)  # pylint: disable=no-member
+    upload_queue = manager.get_upload_queues(rank=rank_in_group)  # pylint: disable=no-member
     return instruction_queue, upload_queue
 
 
@@ -89,9 +80,7 @@ def construct_expert_info_transfer_pool(**kwargs):
     if instruction_queue is None or upload_queue is None:
         return None, None
     worker = threading.Thread(
-        target=expert_info_transfer_pool,
-        args=(module, instruction_queue, upload_queue, device),
-        daemon=True
+        target=expert_info_transfer_pool, args=(module, instruction_queue, upload_queue, device), daemon=True
     )
     worker.start()
     return worker, instruction_queue

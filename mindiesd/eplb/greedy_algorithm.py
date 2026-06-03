@@ -10,6 +10,7 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+# pylint: disable=logging-fstring-interpolation,pointless-string-statement,unbalanced-tuple-unpacking,useless-parent-delegation
 import random
 from dataclasses import dataclass
 import numpy as np
@@ -31,7 +32,7 @@ class LoadData:
     expert_trans_tensor: torch.Tensor = None
 
 
-class EPLBService():
+class EPLBService:
     """
     EPLB算法的基类
 
@@ -43,8 +44,18 @@ class EPLBService():
         cost_local (float): 单个Token的本地计算成本 (C_comp)
         cost_remote (float): 单个Token的远程通信成本 (C_comm)
     """
-    def __init__(self, num_devices, num_experts, expert_mems, device_mems, cost_local, cost_remote,
-                 max_move_number, load_balance_threshold):
+
+    def __init__(
+        self,
+        num_devices,
+        num_experts,
+        expert_mems,
+        device_mems,
+        cost_local,
+        cost_remote,
+        max_move_number,
+        load_balance_threshold,
+    ):
         self.num_devices = num_devices
         self.num_experts = num_experts
         self.expert_mems = expert_mems
@@ -88,28 +99,35 @@ class EPLBService():
         # --- 2. 处理共享专家 ---
         self.process_share_expert(placement, shared_expert_id, used_mems)
         # --- 3. 阶段1：满足约束的初始分配 ---
-        initial_load_data = LoadData(placement=placement, shared_expert_id=shared_expert_id,
-                                      total_traffic=total_traffic, used_mems=used_mems,
-                                      origin_device_to_expert=origin_device_to_expert,
-                                     sorted_experts=sorted_experts, expert_trans_tensor=expert_trans_tensor)
+        initial_load_data = LoadData(
+            placement=placement,
+            shared_expert_id=shared_expert_id,
+            total_traffic=total_traffic,
+            used_mems=used_mems,
+            origin_device_to_expert=origin_device_to_expert,
+            sorted_experts=sorted_experts,
+            expert_trans_tensor=expert_trans_tensor,
+        )
         device_to_expert = self.initial_placement(initial_load_data)
         # --- 4. 阶段2：迭代复制优化minmax目标 ---
-        optimize_load_data = LoadData(placement=placement, shared_expert_id=shared_expert_id,
-                                      total_traffic=total_traffic, used_mems=used_mems,
-                                      global_expert_load=global_expert_load, device_to_expert=device_to_expert)
+        optimize_load_data = LoadData(
+            placement=placement,
+            shared_expert_id=shared_expert_id,
+            total_traffic=total_traffic,
+            used_mems=used_mems,
+            global_expert_load=global_expert_load,
+            device_to_expert=device_to_expert,
+        )
         self.optimize_min_max(optimize_load_data)
 
         return {
             "final_placement": placement,
             "final_memory_usage": used_mems,
             "device_to_expert_map": device_to_expert,
-            "expert_trans_tensor": expert_trans_tensor
+            "expert_trans_tensor": expert_trans_tensor,
         }
 
-    def optimize_min_max(
-            self,
-            load_data: LoadData
-        ):
+    def optimize_min_max(self, load_data: LoadData):
         pass
 
     def initial_placement(self, load_data: LoadData):
@@ -139,9 +157,22 @@ class EPLBService():
                 load_data.used_mems[best_device] += self.expert_mems[expert_id]
                 logger.debug(
                     f"  -> Place high-load expert {expert_id} to device {best_device} "
-                    f"(Current memory: {load_data.used_mems[best_device]:.1f}GB)")
+                    f"(Current memory: {load_data.used_mems[best_device]:.1f}GB)"
+                )
             else:
                 # 报错：如果每个专家连一个初始位置都找不到，说明无解
+                logger.error(
+                    "[MindIE-SD/eplb] Expert initial placement failed. "
+                    "issue=no device has enough memory for expert, expert_id=%s, expected_free_memory>=%sGB, "
+                    "actual_device_memory=%sGB, actual_used_memory=%sGB. "
+                    "possible_cause=EPLB memory configuration cannot fit every expert. "
+                    "Troubleshooting: increase expert_per_rank/redundant memory budget, reduce expert size, "
+                    "or check world_size and expert_num settings.",
+                    expert_id,
+                    self.expert_mems[expert_id],
+                    self.device_mems,
+                    load_data.used_mems,
+                )
                 raise MemoryError(
                     f"Error：expert {expert_id} (need {self.expert_mems[expert_id]}GB) "
                     f"Unable to locate initial position for this expert on any device, check memory configuration."
@@ -166,12 +197,25 @@ class EPLBService():
 
     def process_share_expert(self, placement, shared_expert_id, used_mems):
         if shared_expert_id is not None:
-            logger.debug(f"--- [Preprocessing] Shared Expert {shared_expert_id} detected, "
-                         f"forcing deployment on all devices ---")
+            logger.debug(
+                f"--- [Preprocessing] Shared Expert {shared_expert_id} detected, forcing deployment on all devices ---"
+            )
             shared_mem = self.expert_mems[shared_expert_id]
             for i in range(self.num_devices):
                 # 检查内存是否足够
                 if self.device_mems[i] < shared_mem:
+                    logger.error(
+                        "[MindIE-SD/eplb] Shared expert placement failed. "
+                        "issue=device memory is insufficient for shared expert, device_id=%s, shared_expert_id=%s, "
+                        "expected_device_memory>=%sGB, actual_device_memory=%sGB. "
+                        "possible_cause=shared expert memory requirement exceeds one or more device budgets. "
+                        "Troubleshooting: increase per-device expert memory budget, reduce shared expert size, "
+                        "or adjust EPLB deployment configuration.",
+                        i,
+                        shared_expert_id,
+                        shared_mem,
+                        self.device_mems[i],
+                    )
                     raise MemoryError(
                         f"Device {i} (memory {self.device_mems[i]}GB) cannot accommodate the shared expert."
                         f"{shared_expert_id} (need {shared_mem}GB)。"
@@ -185,16 +229,30 @@ class A2ARedundantExpertService(EPLBService):
     """
     面向All-to-all通信方式下的冗余专家动态调度
     """
-    def __init__(self, num_devices, num_experts, expert_mems, device_mems, cost_local, cost_remote,
-                max_move_number, load_balance_threshold):
-        super().__init__(
-            num_devices, num_experts, expert_mems, device_mems, cost_local, cost_remote,
-            max_move_number, load_balance_threshold)
 
-    def optimize_min_max(
-            self,
-            load_data: LoadData
-        ):
+    def __init__(
+        self,
+        num_devices,
+        num_experts,
+        expert_mems,
+        device_mems,
+        cost_local,
+        cost_remote,
+        max_move_number,
+        load_balance_threshold,
+    ):
+        super().__init__(
+            num_devices,
+            num_experts,
+            expert_mems,
+            device_mems,
+            cost_local,
+            cost_remote,
+            max_move_number,
+            load_balance_threshold,
+        )
+
+    def optimize_min_max(self, load_data: LoadData):
         logger.debug("--- [Phase 2] Starting iterative replication optimization.---")
         iteration = 1
         while True:
@@ -216,19 +274,19 @@ class A2ARedundantExpertService(EPLBService):
 
             bottleneck_device = np.argmax(current_loads)
             max_load = np.max(current_loads)
-            logger.debug(f"\nRound {iteration} | The current system bottleneck (maximum load): {max_load:,.0f} "
-                         f"(on device {bottleneck_device})")
+            logger.debug(
+                f"\nRound {iteration} | The current system bottleneck (maximum load): {max_load:,.0f} "
+                f"(on device {bottleneck_device})"
+            )
 
             # 遍历所有可能的“复制操作”
             # “复制操作”是指将专家 j 复制到设备 i，前提是 i 上没有 j，且内存足够。
             for expert_id in range(self.num_experts):
-
                 # 跳过已被强制部署的共享专家
                 if load_data.shared_expert_id is not None and expert_id == load_data.shared_expert_id:
                     continue
 
                 for device_id in range(self.num_devices):
-
                     # 如果专家已经存在于此设备，或内存不足，则跳过
                     if load_data.placement[device_id, expert_id] == 1:
                         continue
@@ -259,8 +317,9 @@ class A2ARedundantExpertService(EPLBService):
             # --- 迭代停止 ---
             # 当找不到任何一个收益分数更大的机会时 (所有可能的专家复制，带来的内存开销都得不偿失)，或者内存不足而无法操作时，算法停止。
             if best_move is None:
-                logger.debug("\n--- [Phase 2] Optimization completed: No more beneficial replication operations "
-                             "found.---")
+                logger.debug(
+                    "\n--- [Phase 2] Optimization completed: No more beneficial replication operations found.---"
+                )
                 break
 
             # 执行本轮找到的最佳移动
@@ -269,11 +328,13 @@ class A2ARedundantExpertService(EPLBService):
             load_data.device_to_expert[dev_to_add].append(exp_to_add)
             load_data.used_mems[dev_to_add] += self.expert_mems[exp_to_add]
 
-            logger.debug(f"  -> Best Move: Copy Expert {exp_to_add} to Device {dev_to_add} "
-                         f"(Benefit Score: {max_score:,.2f})")
+            logger.debug(
+                f"  -> Best Move: Copy Expert {exp_to_add} to Device {dev_to_add} (Benefit Score: {max_score:,.2f})"
+            )
             logger.debug(f"     Load benefit: Reduced load by {move_gain:,.0f} for Device {dev_to_add}")
-            logger.debug(f"     New memory status: "
-                         f"{load_data.used_mems[dev_to_add]:.1f}GB / {self.device_mems[dev_to_add]}GB")
+            logger.debug(
+                f"     New memory status: {load_data.used_mems[dev_to_add]:.1f}GB / {self.device_mems[dev_to_add]}GB"
+            )
 
             iteration += 1
 
@@ -282,10 +343,28 @@ class AGRedundantExpertService(EPLBService):
     """
     面向All-Gather通信方式下的冗余专家动态调度
     """
-    def __init__(self, num_devices, num_experts, expert_mems, device_mems, cost_local, cost_remote,
-                 max_move_number, load_balance_threshold):
-        super().__init__(num_devices, num_experts, expert_mems, device_mems, cost_local, cost_remote,
-                         max_move_number, load_balance_threshold)
+
+    def __init__(
+        self,
+        num_devices,
+        num_experts,
+        expert_mems,
+        device_mems,
+        cost_local,
+        cost_remote,
+        max_move_number,
+        load_balance_threshold,
+    ):
+        super().__init__(
+            num_devices,
+            num_experts,
+            expert_mems,
+            device_mems,
+            cost_local,
+            cost_remote,
+            max_move_number,
+            load_balance_threshold,
+        )
 
     @staticmethod
     def get_expert_total_demand(total_traffic):
@@ -313,8 +392,10 @@ class AGRedundantExpertService(EPLBService):
 
             bottleneck_device = np.argmax(current_loads)
             max_load = np.max(current_loads)
-            logger.debug(f"\nRound {iteration} | The current system bottleneck (maximum load): {max_load:,.0f} "
-                         f"(on device {bottleneck_device})")
+            logger.debug(
+                f"\nRound {iteration} | The current system bottleneck (maximum load): {max_load:,.0f} "
+                f"(on device {bottleneck_device})"
+            )
             logger.debug(f" Devices load: {[f'{device_load:,.0f}' for device_load in current_loads]}")
 
             # --- 修改点 4: 重写收益评估逻辑 ---
@@ -367,8 +448,9 @@ class AGRedundantExpertService(EPLBService):
                         best_move = (device_id, expert_id, gain)
 
             if best_move is None:
-                logger.debug("\n--- [Phase 2] Optimization completed: No more beneficial replication operations "
-                             "found.---")
+                logger.debug(
+                    "\n--- [Phase 2] Optimization completed: No more beneficial replication operations found.---"
+                )
                 break
 
             dev_to_add, exp_to_add, move_gain = best_move
@@ -376,11 +458,13 @@ class AGRedundantExpertService(EPLBService):
             load_data.device_to_expert[dev_to_add].append(exp_to_add)
             load_data.used_mems[dev_to_add] += self.expert_mems[exp_to_add]
 
-            logger.debug(f"  -> Best Move: Copy Expert {exp_to_add} to Device {dev_to_add} "
-                         f"(Benefit Score: {max_score:,.2f})")
+            logger.debug(
+                f"  -> Best Move: Copy Expert {exp_to_add} to Device {dev_to_add} (Benefit Score: {max_score:,.2f})"
+            )
             logger.debug(f"     Load benefit: System maximum load reduced by {move_gain:,.0f}")
-            logger.debug(f"     New memory status: "
-                         f"{load_data.used_mems[dev_to_add]:.1f}GB / {self.device_mems[dev_to_add]}GB")
+            logger.debug(
+                f"     New memory status: {load_data.used_mems[dev_to_add]:.1f}GB / {self.device_mems[dev_to_add]}GB"
+            )
 
             iteration += 1
 
@@ -389,10 +473,28 @@ class ExpertExchangeService(EPLBService):
     """
     基于专家交换的动态调度方案
     """
-    def __init__(self, num_devices, num_experts, expert_mems, device_mems, cost_local, cost_remote,
-                 max_move_number, load_balance_threshold):
-        super().__init__(num_devices, num_experts, expert_mems, device_mems, cost_local, cost_remote,
-                         max_move_number, load_balance_threshold)
+
+    def __init__(
+        self,
+        num_devices,
+        num_experts,
+        expert_mems,
+        device_mems,
+        cost_local,
+        cost_remote,
+        max_move_number,
+        load_balance_threshold,
+    ):
+        super().__init__(
+            num_devices,
+            num_experts,
+            expert_mems,
+            device_mems,
+            cost_local,
+            cost_remote,
+            max_move_number,
+            load_balance_threshold,
+        )
 
     def initial_placement(self, load_data: LoadData):
         device_to_expert = load_data.origin_device_to_expert.copy()
@@ -403,8 +505,8 @@ class ExpertExchangeService(EPLBService):
             device_to_expert = {}
             for device_id in range(self.num_devices):
                 expert_end_index = (device_id + 1) * (self.num_experts // self.num_devices)
-                device_loads[device_id] = load_data.total_traffic[device_id, expert_start_index: expert_end_index].sum()
-                device_to_expert[device_id] = [i for i in range(expert_start_index, expert_end_index)]
+                device_loads[device_id] = load_data.total_traffic[device_id, expert_start_index:expert_end_index].sum()
+                device_to_expert[device_id] = list(range(expert_start_index, expert_end_index))
                 for expert_id in range(expert_start_index, expert_end_index):
                     load_data.used_mems[device_id] += self.expert_mems[expert_id]
                 expert_start_index = expert_end_index
@@ -426,8 +528,10 @@ class ExpertExchangeService(EPLBService):
             delta_load = (max_load - min_load) // 2
             logger.debug(f"--- Max-min device load diff {delta_load * 2}")
             if delta_load * 2 < self.load_balance_threshold:
-                logger.debug(f"------------ Max-min device load diff less than {self.load_balance_threshold} "
-                             f"End the iteration ---------------------")
+                logger.debug(
+                    f"------------ Max-min device load diff less than {self.load_balance_threshold} "
+                    f"End the iteration ---------------------"
+                )
                 break
 
             # 通过两个设备上的专家负载，计算专家间两两交换后带来的负载差与设备负载差的差值矩阵，形成一个二维矩阵，此时值最小的i,j，就是我们要交换的两个专家
@@ -437,7 +541,7 @@ class ExpertExchangeService(EPLBService):
                 max_load_device_traffic = load_data.total_traffic[max_device_index, expert_max_idx]
                 min_load_device_traffic = load_data.total_traffic[min_device_index, expert_min_idx]
             else:
-                raise ParametersInvalid(f"[greedy] expert not in index list")
+                raise ParametersInvalid("[greedy] expert not in index list")
 
             trans_traffic = np.abs((max_load_device_traffic[:, np.newaxis] - min_load_device_traffic) - delta_load)
             # 找到 trans_traffic 中最小值的全局索引
@@ -454,28 +558,39 @@ class ExpertExchangeService(EPLBService):
                 experid_from_min_to_max = expert_min_idx[experid_from_min_to_max_index]
 
                 # 检查条件：目标设备上不能已包含对方专家
-                if (experid_from_min_to_max not in device_to_expert.get(max_device_index, []) and
-                        experid_from_max_to_min not in device_to_expert.get(min_device_index, [])):
+                if experid_from_min_to_max not in device_to_expert.get(
+                    max_device_index, []
+                ) and experid_from_max_to_min not in device_to_expert.get(min_device_index, []):
                     # 找到满足条件的交换对，跳出循环
                     break
             else:
                 logger.debug("\n--- No more beneficial replication operations found.---")
                 break
 
-            move_expert_load = (load_data.total_traffic[max_device_index, experid_from_max_to_min]
-                                - load_data.total_traffic[min_device_index, experid_from_min_to_max])
+            move_expert_load = (
+                load_data.total_traffic[max_device_index, experid_from_max_to_min]
+                - load_data.total_traffic[min_device_index, experid_from_min_to_max]
+            )
 
             # 计算模拟移动后的两个设备间的负载差，和之前的负载差相比，计算收益，收益大于0则执行移动
             new_delta_load = abs((max_load - move_expert_load) - (min_load + move_expert_load)) // 2
             gain = delta_load - new_delta_load
             if gain > 0:
                 # 执行移动前进行防御性检查
-                if (max_device_index in device_to_expert and
-                        min_device_index in device_to_expert):
+                if max_device_index in device_to_expert and min_device_index in device_to_expert:
                     # 执行移动
                     device_to_expert[max_device_index][experid_from_max_to_min_index] = experid_from_min_to_max
                     device_to_expert[min_device_index][experid_from_min_to_max_index] = experid_from_max_to_min
                 else:
+                    logger.error(
+                        "[MindIE-SD/eplb] Expert exchange failed. "
+                        "issue=device index is missing from device_to_expert, expected_devices=(%s,%s), "
+                        "actual_devices=%s. possible_cause=EPLB placement state is inconsistent before exchange. "
+                        "Troubleshooting: inspect device_to_expert construction and load report rank coverage.",
+                        max_device_index,
+                        min_device_index,
+                        list(device_to_expert.keys()),
+                    )
                     raise IndexError("Device or expert index out of bounds")
 
                 device_loads[max_device_index] -= move_expert_load
@@ -490,7 +605,8 @@ class ExpertExchangeService(EPLBService):
                     f"device {min_device_index} load "
                     f"reduced by {load_data.total_traffic[min_device_index, experid_from_min_to_max]}, "
                     f"device {max_device_index} load "
-                    f"increased {load_data.total_traffic[min_device_index, experid_from_min_to_max]}. ")
+                    f"increased {load_data.total_traffic[min_device_index, experid_from_min_to_max]}. "
+                )
                 logger.debug(f"--- Latest Max-min device load diff: {new_delta_load * 2}")
 
                 # 记录1、移动专家数，2、更新内存，3、更新专家交换映射矩阵
@@ -501,10 +617,12 @@ class ExpertExchangeService(EPLBService):
                 load_data.used_mems[max_device_index] += self.expert_mems[experid_from_min_to_max]
                 load_data.used_mems[max_device_index] -= self.expert_mems[experid_from_max_to_min]
 
-                i = experid_from_max_to_min_index + (max_device_index
-                                                    * (load_data.expert_trans_tensor.shape[0] // self.num_devices))
-                j = experid_from_min_to_max_index + (min_device_index
-                                                    * (load_data.expert_trans_tensor.shape[0] // self.num_devices))
+                i = experid_from_max_to_min_index + (
+                    max_device_index * (load_data.expert_trans_tensor.shape[0] // self.num_devices)
+                )
+                j = experid_from_min_to_max_index + (
+                    min_device_index * (load_data.expert_trans_tensor.shape[0] // self.num_devices)
+                )
                 load_data.expert_trans_tensor[:, [i, j]] = load_data.expert_trans_tensor[:, [j, i]]
                 logger.debug(f"--- Current load status: {device_loads} ---")
         return device_to_expert
@@ -525,7 +643,7 @@ def process_final_placement(results, num_experts):
             if expert in device_experts:
                 device_indices[device_index].append(device_index)
             else:
-                device_indices[device_index].append(random.choice(revert_list[expert]))
+                device_indices[device_index].append(random.choice(revert_list[expert]))  # nosec B311
     local_expert_list = []
 
     for _, val in current_placement.items():
@@ -588,16 +706,19 @@ def eplb_greedy(**kwargs):
 
     # 定义每个场景关联的算法服务
     handlers = {
-        'A2A': A2ARedundantExpertService(world_size, expert_num, expert_mems, device_mems, cost_local, cost_remote,
-                                         max_move, load_balance_threshold),
-        'AG': AGRedundantExpertService(world_size, expert_num, expert_mems, device_mems, cost_local, cost_remote,
-                                       max_move, load_balance_threshold),
-        'EX': ExpertExchangeService(world_size, expert_num, expert_mems, device_mems, cost_local, cost_remote,
-                                       max_move, load_balance_threshold)
+        'A2A': A2ARedundantExpertService(
+            world_size, expert_num, expert_mems, device_mems, cost_local, cost_remote, max_move, load_balance_threshold
+        ),
+        'AG': AGRedundantExpertService(
+            world_size, expert_num, expert_mems, device_mems, cost_local, cost_remote, max_move, load_balance_threshold
+        ),
+        'EX': ExpertExchangeService(
+            world_size, expert_num, expert_mems, device_mems, cost_local, cost_remote, max_move, load_balance_threshold
+        ),
     }
     algorithm_service = handlers.get(algorithm_type)
     result = algorithm_service.placement_greedy(current_pattern, device_to_expert)
     output = process_final_placement(result, expert_num)
     device_indices, local_expert_indices, local_expert_list, expert_trans_tensor = output
-    logger.info(f"current_placement:{local_expert_list}")
+    logger.debug("[MindIE-SD/eplb] Current expert placement computed. local_expert_list=%s.", local_expert_list)
     return update, device_indices, local_expert_indices, local_expert_list, expert_trans_tensor

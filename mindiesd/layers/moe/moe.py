@@ -72,8 +72,8 @@ def _log_moe_config_once(dispatcher_cls, tokens_full, reduce_results):
         return
     dispatcher_name = "dynamic" if dispatcher_cls.__name__ == "DynamicDispatcher" else "static"
     comm_type = get_moe_comm_type().value
-    logger.info(
-        "MindIE-SD moe config: dispatcher=%s, comm_type=%s, tokens_full=%s, reduce_results=%s.",
+    logger.debug(
+        "[MindIE-SD/moe] MoE config resolved. dispatcher=%s, comm_type=%s, tokens_full=%s, reduce_results=%s.",
         dispatcher_name,
         comm_type,
         tokens_full,

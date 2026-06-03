@@ -12,10 +12,11 @@
 from pathlib import Path
 from functools import wraps
 import os
-from typing import Dict, Callable
+from typing import Callable
 import torch
 from torch.library import Library
 from ..utils import file_utils, ParametersInvalid, is_npu_available
+from ..utils.logs.logging import logger
 
 
 MINDIE_NS = "mindiesd"  # 固定命名空间，与 torch.ops.mindiesd 对应
@@ -37,10 +38,7 @@ def _load_mindie_ops_library() -> None:
     ops_path = file_utils.standardize_path(str(ops_path))
     ops_file = os.path.join(ops_path, "libPTAExtensionOPS.so")
 
-    file_utils.check_file_safety(
-        ops_file,
-        permission_mode=file_utils.BINARY_FILE_PERMISSION
-    )
+    file_utils.check_file_safety(ops_file, permission_mode=file_utils.BINARY_FILE_PERMISSION)
     torch.ops.load_library(ops_file)
 
 
@@ -70,22 +68,18 @@ if torch.__version__.startswith("2.1"):
 
     def _compatible_register_fake(op_name: str):
         """Compatibility wrapper for PyTorch 2.1 fake registration."""
+
         def decorator(fake_func: Callable):
             @wraps(fake_func)
             def wrapper(*args, **kwargs):
                 # Ensure all tensor inputs are on Meta device (required for PyTorch 2.1)
-                args = [
-                    a.to(device="meta") if isinstance(a, torch.Tensor) else a
-                    for a in args
-                ]
-                kwargs = {
-                    k: v.to(device="meta") if isinstance(v, torch.Tensor) else v
-                    for k, v in kwargs.items()
-                }
+                args = [a.to(device="meta") if isinstance(a, torch.Tensor) else a for a in args]
+                kwargs = {k: v.to(device="meta") if isinstance(v, torch.Tensor) else v for k, v in kwargs.items()}
                 return fake_func(*args, **kwargs)
 
             _lib.impl(op_name, wrapper, "Meta")
             return fake_func
+
         return decorator
 else:
     # PyTorch 2.2+ 使用 register_fake 或 impl_abstract
@@ -97,7 +91,6 @@ else:
     def _compatible_register_fake(op_name: str):
         """Compatibility wrapper for PyTorch 2.2+ fake registration."""
         return _native_register_fake(op_name)
-
 
 
 def register_mindie_fake_op(op_name: str):
@@ -115,11 +108,25 @@ def register_mindie_fake_op(op_name: str):
         Decorator function that registers the fake implementation.
     """
     if not is_npu_available():
+
         def dummy_decorator(func):
             return func
+
         return dummy_decorator
 
     if not check_mindie_operator_exists(op_name):
+        logger.error(
+            "[MindIE-SD/layers] MindIE custom operator registration failed. "
+            "issue=operator is not found in torch.ops.%s, op_name=%s, expected=%s::%s exists. "
+            "possible_cause=custom operator shared library was not loaded or TORCH_LIBRARY registration is missing. "
+            "Troubleshooting: check libPTAExtensionOPS.so path, ASCEND_CUSTOM_OPP_PATH, operator build output, "
+            "and torch.ops.%s registry.",
+            MINDIE_NS,
+            op_name,
+            MINDIE_NS,
+            op_name,
+            MINDIE_NS,
+        )
         raise RuntimeError(
             f"MindIE operator {MINDIE_NS}::{op_name} not found! "
             "Ensure the SO library is loaded and the operator is registered with TORCH_LIBRARY."

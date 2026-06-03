@@ -10,32 +10,25 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-import time
 import atexit
-from dataclasses import dataclass
-import logging
 from typing import Optional, Union
 
 import zmq
 import torch
-import torch_npu
-from .utils.exception import TorchError, ParametersInvalid
-
-logger = logging.getLogger(__name__)
+from .utils.exception import ParametersInvalid
+from .utils.logs.logging import logger
 
 
 class ShareMemoryManager:
-    def __init__(self,
-                 instance_world_size: int,
-                 instance_id: int,
-                 master_addr: str = "127.0.0.1",
-                 base_port: int = 5555):
+    def __init__(
+        self, instance_world_size: int, instance_id: int, master_addr: str = "127.0.0.1", base_port: int = 5555
+    ):
         self.instance_world_size = instance_world_size
         self.instance_id = instance_id
         self.device_id = torch.npu.current_device()
         self.master_addr = master_addr
         self.base_port = base_port
-        self.is_master = (instance_id == 0)
+        self.is_master = instance_id == 0
 
         self.pub_port = self.base_port + self.device_id + 100
         self.rep_port = self.pub_port + 1
@@ -72,7 +65,7 @@ class ShareMemoryManager:
                     self.rep_socket.send(b"ACK")
                     ready_count += 1
                 except zmq.Again as e:
-                    raise TimeoutError(f"Master timeout waiting for child processes ready") from e
+                    raise TimeoutError("Master timeout waiting for child processes ready") from e
 
             logger.debug("Master broadcasting handle on tcp://%s:%s", self.master_addr, self.pub_port)
             self.pub_socket.send_pyobj(handle)
@@ -80,8 +73,7 @@ class ShareMemoryManager:
             return handle
         else:
             logger.debug(
-                "Device %s subscribing to handle on tcp://%s:%s",
-                self.device_id, self.master_addr, self.pub_port
+                "Device %s subscribing to handle on tcp://%s:%s", self.device_id, self.master_addr, self.pub_port
             )
             self.req_socket.send(b"READY")
             self.req_socket.recv()
@@ -98,10 +90,9 @@ ZMQ_CONTEXT = zmq.Context.instance()
 manager: Optional[ShareMemoryManager] = None
 
 
-def init_share_memory(instance_world_size: int,
-                             instance_id: int,
-                             master_addr: str = "127.0.0.1",
-                             base_port: int = 5555) -> ShareMemoryManager:
+def init_share_memory(
+    instance_world_size: int, instance_id: int, master_addr: str = "127.0.0.1", base_port: int = 5555
+) -> ShareMemoryManager:
     """
     设置共享内存管理器实例
     Args:
@@ -118,23 +109,21 @@ def init_share_memory(instance_world_size: int,
 
 
 def get_share_memory_manager() -> ShareMemoryManager:
-    global manager
     if not manager:
-        raise ParametersInvalid("ShareMemoryManager has not been initialized."
-            "Please call init_share_memory first.")
+        raise ParametersInvalid("ShareMemoryManager has not been initialized.Please call init_share_memory first.")
     return manager
 
 
-def _check_device_and_dtype(module: torch.nn.Module,
-                            target_device: Optional[torch.device],
-                            target_dtype: Optional[torch.dtype]):
+def _check_device_and_dtype(
+    module: torch.nn.Module, target_device: Optional[torch.device], target_dtype: Optional[torch.dtype]
+):
     cur_device = next(module.parameters()).device
     cpu_device = torch.device("cpu")
     meta_device = torch.device("meta")
 
     if cur_device == cpu_device and (target_device is None or target_device == cpu_device):
         return True, torch.nn.Module.to(module, target_device, target_dtype), None, None
-    if cur_device == meta_device or target_device == meta_device:
+    if meta_device in (cur_device, target_device):
         return True, torch.nn.Module.to(module, target_device, target_dtype), None, None
 
     device_id = torch.npu.current_device()
@@ -150,9 +139,9 @@ def _check_device_and_dtype(module: torch.nn.Module,
     return False, None, npu_device, device_id
 
 
-def share_memory(module: torch.nn.Module,
-                    device: Optional[Union[str, torch.device]] = None,
-                    dtype: Optional[torch.dtype] = None) -> torch.nn.Module:
+def share_memory(
+    module: torch.nn.Module, device: Optional[Union[str, torch.device]] = None, dtype: Optional[torch.dtype] = None
+) -> torch.nn.Module:
     """
     Args:
         module (torch.nn.Module): 待迁移的模型实例（必传，强类型校验）
@@ -173,8 +162,13 @@ def share_memory(module: torch.nn.Module,
     target_dtype = dtype
 
     cur_device = next(module.parameters()).device
-    logger.debug("%s from device '%s' to device '%s' and dtype '%s'",
-                type(module).__name__, cur_device, target_device, target_dtype)
+    logger.debug(
+        "%s from device '%s' to device '%s' and dtype '%s'",
+        type(module).__name__,
+        cur_device,
+        target_device,
+        target_dtype,
+    )
 
     should_fallback, fallback_result, _, _ = _check_device_and_dtype(module, target_device, target_dtype)
     if should_fallback:
@@ -192,7 +186,7 @@ def share_memory(module: torch.nn.Module,
         else:
             new_tensor = torch.empty_like(param, device=target_device)
             recv_storage = sm_manager.broadcast_handle(None)
-            rebuild_storage = torch.UntypedStorage._new_shared_npu(*recv_storage)
+            rebuild_storage = torch.UntypedStorage._new_shared_npu(*recv_storage)  # pylint: disable=no-member
             new_tensor.set_(rebuild_storage)
             param.data = new_tensor.view(param.shape)
 

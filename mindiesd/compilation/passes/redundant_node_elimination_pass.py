@@ -10,15 +10,12 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-import logging
 import operator
 
 import torch
-import torch.fx as fx
+from torch import fx
 
 from .gm_pass_base import GraphModulePass
-
-logger = logging.getLogger(__name__)
 
 
 def get_node_shape(node: torch.fx.node) -> torch.Size | None:
@@ -57,9 +54,7 @@ class ReduandantNodeEliminationPass(GraphModulePass):
                 memory_format = node.kwargs.get("memory_format")
 
                 # None (default) and torch.preserve_format are both no-ops
-                is_noop_clone = (memory_format is None) or (
-                    memory_format == torch.preserve_format
-                )
+                is_noop_clone = (memory_format is None) or (memory_format == torch.preserve_format)
 
                 if is_noop_clone:
                     # The input to the clone is the first argument
@@ -80,10 +75,7 @@ class ReduandantNodeEliminationPass(GraphModulePass):
                 split_sizes_arg = node.args[1]
 
                 # We can only optimize if split_sizes is a constant list/tuple
-                if (
-                    isinstance(split_sizes_arg, (list, tuple))
-                    and len(split_sizes_arg) == 1
-                ):
+                if isinstance(split_sizes_arg, (list, tuple)) and len(split_sizes_arg) == 1:
                     # This split operation produces a list of 1 tensor,
                     # which is just the original input tensor.
                     input_tensor_node = node.args[0]
@@ -98,11 +90,7 @@ class ReduandantNodeEliminationPass(GraphModulePass):
                     # Iterate over a static list of users
                     for user_node in list(node.users.keys()):
                         # Check if the user is `getitem(self, 0)`
-                        if (
-                            user_node.target == operator.getitem
-                            and len(user_node.args) == 2
-                            and user_node.args[1] == 0
-                        ):
+                        if user_node.target == operator.getitem and len(user_node.args) == 2 and user_node.args[1] == 0:
                             users_to_replace.append(user_node)
                         else:
                             # This node is used in a way we don't support
@@ -121,10 +109,7 @@ class ReduandantNodeEliminationPass(GraphModulePass):
                         graph.erase_node(node)
                         modified = True
 
-            elif (
-                node.target == torch.ops.aten.view.default
-                or node.target == torch.ops.aten.reshape.default
-            ):
+            elif node.target in (torch.ops.aten.view.default, torch.ops.aten.reshape.default):
                 # remove unused view nodes if the shape is the same as input
                 # we rely on the shape info via shape propagation
                 input_node_shape = get_node_shape(node.args[0])

@@ -13,12 +13,13 @@
 import contextlib
 import dataclasses
 import importlib
-import logging
 from typing import Any
 
 import torch
 
-logger = logging.getLogger(__name__)
+from ..utils.logs.logging import logger
+
+DEBUG_LOG_LEVEL = 10
 
 # ---------------------------------------------------------------------------
 # NPU 可用性检测
@@ -130,13 +131,17 @@ def create_aclgraph_backend():
             entry = entries[input_shape]
 
             # D2: input address debug validation
-            if logger.isEnabledFor(logging.DEBUG) and entry.input_addresses is not None:
+            if logger.isEnabledFor(DEBUG_LOG_LEVEL) and entry.input_addresses is not None:
                 new_addrs = [x.data_ptr() for x in args if isinstance(x, torch.Tensor)]
                 for i, (old_addr, new_addr) in enumerate(zip(entry.input_addresses, new_addrs)):
                     if old_addr != new_addr:
                         logger.warning(
-                            "ACLGraph input address mismatch at position %d: "
-                            "captured=%d, current=%d",
+                            "[MindIE-SD/compilation] ACLGraph input address changed. "
+                            "issue=input data_ptr differs from captured graph buffer, index=%d, "
+                            "expected_data_ptr=%d, actual_data_ptr=%d. "
+                            "possible_cause=caller reused the graph with a different tensor storage. "
+                            "Troubleshooting: confirm input tensors are copied into static buffers before replay; "
+                            "enable DEBUG graph logs to inspect the capture and replay sequence.",
                             i,
                             old_addr,
                             new_addr,
@@ -153,6 +158,18 @@ def create_aclgraph_backend():
                 if static_buf.data_ptr() == new_inp.data_ptr():
                     continue
                 if static_buf.shape != new_inp.shape or static_buf.dtype != new_inp.dtype:
+                    logger.error(
+                        "[MindIE-SD/compilation] ACLGraph input validation failed. "
+                        "issue=input shape or dtype differs from captured graph, index=%d, "
+                        "expected_shape=%s, expected_dtype=%s, actual_shape=%s, actual_dtype=%s. "
+                        "possible_cause=model graph was replayed with incompatible inputs. "
+                        "Troubleshooting: use the same shape and dtype as graph capture or trigger a new graph capture.",
+                        i,
+                        tuple(static_buf.shape),
+                        static_buf.dtype,
+                        tuple(new_inp.shape),
+                        new_inp.dtype,
+                    )
                     raise RuntimeError(
                         f"ACLGraph input mismatch at position {i}: "
                         f"captured {tuple(static_buf.shape)}/{static_buf.dtype}, "

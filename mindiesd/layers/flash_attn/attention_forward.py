@@ -127,9 +127,13 @@ def check_input_params(input_params):
 def get_manual_attention_op_type(attn_param, op_type):
     if is_a5_device() and op_type in _A5_DEPRECATED_OP_TYPES:
         logger.warning(
-            "'%s' is not supported on A5 devices and has been routed to 'fused_attn_score'. "
-            "Please switch to 'fused_attn_score' (or remove the manual op_type) to silence this warning.",
+            "[MindIE-SD/flash_attn] Manual attention operator remapped for A5. "
+            "issue=manual op_type is not supported on A5, expected_op_type=fused_attn_score, actual_op_type=%s, "
+            "q_seqlen=%s, kv_seqlen=%s. possible_cause=the requested operator is deprecated on A5 devices. "
+            "Troubleshooting: set op_type='fused_attn_score' or remove the manual op_type setting.",
             op_type,
+            attn_param.q_seqlen,
+            attn_param.kv_seqlen,
         )
         return "fused_attn_score"
 
