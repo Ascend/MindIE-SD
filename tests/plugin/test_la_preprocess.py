@@ -10,17 +10,27 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+# pylint: disable=duplicate-code
+
+import os
+import sys
 import unittest
 import torch
-import torch_npu
-import sys
-import os
+
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from mindiesd.utils.get_platform import is_a5_device  # noqa: E402
 
 if os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU":
     torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
+@unittest.skipIf(is_a5_device(), "la_preprocess (ascend_laser_preprocess) is unsupported on A5.")
 class TestLaPreprocessMindieSd(unittest.TestCase):
     def setUp(self):
         self.device = torch.device("npu:0")
@@ -100,10 +110,21 @@ class TestLaPreprocessMindieSd(unittest.TestCase):
             self.query, self.key, self.value, self.align_len
         )
 
-        scale_value = self.head_dim ** -0.5
+        scale_value = self.head_dim**-0.5
         _, attention_out = torch.ops.mindiesd.la(
-            processed_query, processed_key, processed_value, None, None, None,
-            scale_value, self.head_num, "BNSD", 1.0, 2147483647, 1, True
+            processed_query,
+            processed_key,
+            processed_value,
+            None,
+            None,
+            None,
+            scale_value,
+            self.head_num,
+            "BNSD",
+            1.0,
+            2147483647,
+            1,
+            True,
         )
 
         expected_shape = (self.batch, self.head_num, self.qseqlen, self.head_dim)
@@ -152,16 +173,17 @@ class TestLaPreprocessMindieSd(unittest.TestCase):
         batch_sizes = [1, 2, 4]
         for batch in batch_sizes:
             with self.subTest(batch_size=batch):
-                query = torch.randn((batch, self.qseqlen, self.head_num, self.head_dim),
-                                  device=self.device, dtype=self.dtype)
-                key = torch.randn((batch, self.kvseqlen, self.head_num, self.head_dim),
-                                device=self.device, dtype=self.dtype)
-                value = torch.randn((batch, self.kvseqlen, self.head_num, self.head_dim),
-                                  device=self.device, dtype=self.dtype)
-
-                out_query, out_key, out_value = torch.ops.mindiesd.la_preprocess(
-                    query, key, value, self.align_len
+                query = torch.randn(
+                    (batch, self.qseqlen, self.head_num, self.head_dim), device=self.device, dtype=self.dtype
                 )
+                key = torch.randn(
+                    (batch, self.kvseqlen, self.head_num, self.head_dim), device=self.device, dtype=self.dtype
+                )
+                value = torch.randn(
+                    (batch, self.kvseqlen, self.head_num, self.head_dim), device=self.device, dtype=self.dtype
+                )
+
+                out_query, out_key, out_value = torch.ops.mindiesd.la_preprocess(query, key, value, self.align_len)
 
                 padded_qseqlen = self._get_padded_length(self.qseqlen, self.align_len)
                 padded_kvseqlen = self._get_padded_length(self.kvseqlen, self.align_len)
@@ -177,16 +199,17 @@ class TestLaPreprocessMindieSd(unittest.TestCase):
         head_nums = [4, 8, 16]
         for head_num in head_nums:
             with self.subTest(head_num=head_num):
-                query = torch.randn((self.batch, self.qseqlen, head_num, self.head_dim),
-                                  device=self.device, dtype=self.dtype)
-                key = torch.randn((self.batch, self.kvseqlen, head_num, self.head_dim),
-                                device=self.device, dtype=self.dtype)
-                value = torch.randn((self.batch, self.kvseqlen, head_num, self.head_dim),
-                                  device=self.device, dtype=self.dtype)
-
-                out_query, out_key, out_value = torch.ops.mindiesd.la_preprocess(
-                    query, key, value, self.align_len
+                query = torch.randn(
+                    (self.batch, self.qseqlen, head_num, self.head_dim), device=self.device, dtype=self.dtype
                 )
+                key = torch.randn(
+                    (self.batch, self.kvseqlen, head_num, self.head_dim), device=self.device, dtype=self.dtype
+                )
+                value = torch.randn(
+                    (self.batch, self.kvseqlen, head_num, self.head_dim), device=self.device, dtype=self.dtype
+                )
+
+                out_query, out_key, out_value = torch.ops.mindiesd.la_preprocess(query, key, value, self.align_len)
 
                 padded_qseqlen = self._get_padded_length(self.qseqlen, self.align_len)
                 padded_kvseqlen = self._get_padded_length(self.kvseqlen, self.align_len)
@@ -202,16 +225,17 @@ class TestLaPreprocessMindieSd(unittest.TestCase):
         seq_lens = [(512, 256), (1024, 512), (2048, 1024)]
         for qseqlen, kvseqlen in seq_lens:
             with self.subTest(qseqlen=qseqlen, kvseqlen=kvseqlen):
-                query = torch.randn((self.batch, qseqlen, self.head_num, self.head_dim),
-                                  device=self.device, dtype=self.dtype)
-                key = torch.randn((self.batch, kvseqlen, self.head_num, self.head_dim),
-                                device=self.device, dtype=self.dtype)
-                value = torch.randn((self.batch, kvseqlen, self.head_num, self.head_dim),
-                                  device=self.device, dtype=self.dtype)
-
-                out_query, out_key, out_value = torch.ops.mindiesd.la_preprocess(
-                    query, key, value, self.align_len
+                query = torch.randn(
+                    (self.batch, qseqlen, self.head_num, self.head_dim), device=self.device, dtype=self.dtype
                 )
+                key = torch.randn(
+                    (self.batch, kvseqlen, self.head_num, self.head_dim), device=self.device, dtype=self.dtype
+                )
+                value = torch.randn(
+                    (self.batch, kvseqlen, self.head_num, self.head_dim), device=self.device, dtype=self.dtype
+                )
+
+                out_query, out_key, out_value = torch.ops.mindiesd.la_preprocess(query, key, value, self.align_len)
 
                 padded_qseqlen = self._get_padded_length(qseqlen, self.align_len)
                 padded_kvseqlen = self._get_padded_length(kvseqlen, self.align_len)

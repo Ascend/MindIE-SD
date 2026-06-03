@@ -18,12 +18,16 @@ from .sparse_flash_attn_rf_v2 import (
     rain_fusion_attention,
     get_blockwise_mask,
     do_tensor_inv_rearrange,
-    do_tensor_rearrange_pooling
+    do_tensor_rearrange_pooling,
 )
 from .sparse_flash_attn_ada_bsa import get_estimate_mask, ada_block_sparse_attention
 from .sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
 from ...utils.exception import ParametersInvalid
+from ...utils.get_platform import is_a5_device
+from ...utils.logs.logging import logger
+
 MAX_TOKEN = 2147483647
+A5_V3_INNER_PRECISE = 4
 
 
 def check_params(input_layout, sparse_type):
@@ -31,6 +35,44 @@ def check_params(input_layout, sparse_type):
         raise ParametersInvalid(f"The input_layout must in ['BSND', 'BNSD'], but got {input_layout}.")
     if sparse_type not in [None, 'rf_v2', 'rf_v3', 'ada_bsa']:
         raise ParametersInvalid(f"sparse_type must be None, 'rf_v2', 'rf_v3' or 'ada_bsa', but got {sparse_type}.")
+
+
+def _resolve_sparse_type_for_a5(sparse_type, inner_precise):
+    """Route deprecated sparse types to their A5 replacements.
+
+    Returns the (possibly remapped) ``sparse_type`` together with the
+    ``inner_precise`` value that should be forwarded downstream.
+    """
+    if not is_a5_device():
+        return sparse_type, inner_precise
+
+    if sparse_type == "ada_bsa":
+        raise ParametersInvalid(
+            "sparse_type='ada_bsa' is not supported on A5 devices. "
+            "Please wait for the v2 (next generation) operator; "
+            "in the meantime use sparse_type='rf_v3' or fall back to the dense path (sparse_type=None)."
+        )
+
+    if sparse_type == "rf_v2":
+        if inner_precise != A5_V3_INNER_PRECISE:
+            logger.debug(
+                "[MindIE-SD/flash_attn] Sparse attention type remapped for A5. "
+                "sparse_type=rf_v2, actual_sparse_type=rf_v3, expected_inner_precise=%s, actual_inner_precise=%s. "
+                "possible_cause=rf_v2 is deprecated on A5 and rf_v3 requires a fixed inner_precise value. "
+                "Troubleshooting: set sparse_type='rf_v3' and inner_precise=%s explicitly.",
+                A5_V3_INNER_PRECISE,
+                inner_precise,
+                A5_V3_INNER_PRECISE,
+            )
+        else:
+            logger.debug(
+                "[MindIE-SD/flash_attn] Sparse attention type remapped for A5. "
+                "sparse_type=rf_v2, actual_sparse_type=rf_v3. possible_cause=rf_v2 is deprecated on A5. "
+                "Troubleshooting: set sparse_type='rf_v3' explicitly."
+            )
+        return "rf_v3", A5_V3_INNER_PRECISE
+
+    return sparse_type, inner_precise
 
 
 def sparse_attention(
@@ -53,7 +95,7 @@ def sparse_attention(
     keep_recent: Optional[bool] = True,
     cdf_threshold: float = 1.0,
     sparsity: float = 0.0,
-    **kwargs
+    **kwargs,
 ):
     """
     Args:
@@ -78,8 +120,13 @@ def sparse_attention(
             The tensor layout, either 'BSND' or 'BNSD'.
         inner_precise (int, default to 0):
             0 represents high-precision; 1 represents high-performance.
+            On A5 devices, when sparse_type='rf_v2' is routed to 'rf_v3', this value is forced to 4
+            because the v3 operator requires inner_precise=4 on 950 chips.
         sparse_type (str, default to None):
-            Sparse type, only supports: 'rf_v2', 'ada_bsa'.
+            Sparse type, only supports: 'rf_v2', 'rf_v3', 'ada_bsa'.
+            On A5 devices:
+              - 'rf_v2' is automatically routed to 'rf_v3' (higher-performance equivalent).
+              - 'ada_bsa' raises ParametersInvalid; a successor operator is planned for the next release.
         txt_len:
             Length of text sequence. Only takes effect when sparse_type is 'rf_v2'.
         block_size (int, default to 128):
@@ -98,15 +145,17 @@ def sparse_attention(
             Sparse ratio, the value range is [0, 1], where 0 represents not using sparse algo.
     """
     check_params(input_layout, sparse_type)
+    sparse_type, inner_precise = _resolve_sparse_type_for_a5(sparse_type, inner_precise)
     batch, head_dim = q.shape[0], q.shape[-1]
-    scale = head_dim ** -0.5 if scale is None else scale
+    scale = head_dim**-0.5 if scale is None else scale
 
     if sparse_type == "rf_v2":
         q_rf, k_rf, v_rf, qkv_pool = do_tensor_rearrange_pooling(
             q, k, v, txt_len, block_size, latent_shape_q, latent_shape_k, input_layout
         )
         select_idx, select_num_idx = get_blockwise_mask(
-                qkv_pool, txt_len, sparsity, scale, block_size, latent_shape_q, latent_shape_k, input_layout)
+            qkv_pool, txt_len, sparsity, scale, block_size, latent_shape_q, latent_shape_k, input_layout
+        )
 
         if input_layout == "BSND":
             q_seq, kv_seq = q_rf.shape[1], k_rf.shape[1]
@@ -121,7 +170,9 @@ def sparse_attention(
         actual_seq_lengths_kv = [kv_seq for _ in range(batch)]
 
         out = rain_fusion_attention(
-            q_rf, k_rf, v_rf,
+            q_rf,
+            k_rf,
+            v_rf,
             scale=scale,
             head_num=head_num,
             input_layout=layout,
@@ -130,14 +181,16 @@ def sparse_attention(
             blockshape=[block_size, block_size],
             actual_seq_lengths=actual_seq_lengths,
             actual_seq_lengths_kv=actual_seq_lengths_kv,
-            inner_precise=inner_precise
+            inner_precise=inner_precise,
         )
         if layout == "TND":
             out = out.reshape(batch, q_seq, head_num, head_dim)
         out = do_tensor_inv_rearrange(out, txt_len, latent_shape_q, latent_shape_k, input_layout)
     elif sparse_type == "rf_v3":
         out, _ = bsa_sparse_attention_v3(
-            q, k, v,
+            q,
+            k,
+            v,
             latent_shape_q=latent_shape_q,
             latent_shape_k=latent_shape_k,
             txt_len=txt_len,
@@ -150,7 +203,9 @@ def sparse_attention(
         )
     elif sparse_type == "ada_bsa":
         smask, sct = get_estimate_mask(
-            q, k, v,
+            q,
+            k,
+            v,
             scale=scale,
             head_num=head_num,
             is_causal=is_causal,
@@ -159,25 +214,31 @@ def sparse_attention(
             keep_recent=keep_recent,
             sparsity=sparsity,
             cdf_threshold=cdf_threshold,
-            sparse_size=block_size
+            sparse_size=block_size,
         )
         out = ada_block_sparse_attention(
-            q, k, v,
-            smask, sct,
+            q,
+            k,
+            v,
+            smask,
+            sct,
             scale=scale,
             head_num=head_num,
             is_causal=is_causal,
             input_layout=input_layout,
-            sparse_size=block_size
+            sparse_size=block_size,
         )
     elif sparse_type is None:
-        out = torch_npu.npu_fusion_attention(
-            q, k, v,
+        out = torch_npu.npu_fusion_attention(  # pylint: disable=no-member
+            q,
+            k,
+            v,
             input_layout=input_layout,
             scale=scale,
             pre_tockens=MAX_TOKEN,
             next_tockens=MAX_TOKEN,
-            head_num=head_num)[0]
+            head_num=head_num,
+        )[0]
     else:
         raise ParametersInvalid(f"sparse_type must be None, 'rf_v2' or 'ada_bsa', but got {sparse_type}.")
     return out

@@ -16,8 +16,9 @@ from pathlib import Path
 
 def set_environment_variables():
     current_script_dir = Path(__file__).resolve().parent
-    custom_op_path1 = os.path.join(current_script_dir, "ops/vendors/aie_ascendc")
-    custom_op_path2 = os.path.join(current_script_dir, "ops/vendors/customize")
+    custom_transformer_path = os.path.join(current_script_dir, "ops/vendors/customize_transformer")
+    aie_ascendc_path = os.path.join(current_script_dir, "ops/vendors/aie_ascendc")
+    customize_path = os.path.join(current_script_dir, "ops/vendors/customize")
     old_custom_op_path = os.environ.get("ASCEND_CUSTOM_OPP_PATH", "")
-    new_custom_op_path = f"{custom_op_path1}:{custom_op_path2}:{old_custom_op_path}"
+    new_custom_op_path = f"{custom_transformer_path}:{aie_ascendc_path}:{customize_path}:{old_custom_op_path}"
     os.environ["ASCEND_CUSTOM_OPP_PATH"] = new_custom_op_path

@@ -14,6 +14,20 @@ import itertools
 import torch
 from torch.nn import ModuleList
 
+from .utils.logs.logging import logger
+
+
+def _log_offload_param_error(issue, expected, actual, troubleshooting):
+    logger.error(
+        "[MindIE-SD/offload] Offload parameter validation failed. "
+        "issue=%s, expected=%s, actual=%s. possible_cause=caller passed invalid offload configuration. "
+        "Troubleshooting: %s",
+        issue,
+        expected,
+        actual,
+        troubleshooting,
+    )
+
 
 def enable_offload(model, blocks, min_reserved_blocks_count=2):
     """
@@ -87,26 +101,68 @@ def enable_offload(model, blocks, min_reserved_blocks_count=2):
         >>>
     """
     if not isinstance(model, torch.nn.Module):
+        _log_offload_param_error(
+            "model type mismatch",
+            "torch.nn.Module",
+            type(model).__name__,
+            "pass a torch.nn.Module instance as model",
+        )
         raise TypeError(f"model must be torch.nn.Module type, current type: {type(model).__name__}")
 
     if not isinstance(blocks, ModuleList):
+        _log_offload_param_error(
+            "blocks type mismatch",
+            "torch.nn.ModuleList",
+            type(blocks).__name__,
+            "pass model blocks as torch.nn.ModuleList",
+        )
         raise TypeError(f"blocks must be ModuleList, current type: {type(blocks).__name__}")
 
     if not blocks:
+        _log_offload_param_error(
+            "blocks is empty",
+            "len(blocks)>0",
+            len(blocks),
+            "provide at least one block before enabling offload",
+        )
         raise ValueError("blocks cannot be empty list")
 
     for i, block in enumerate(blocks):
         if not isinstance(block, torch.nn.Module):
+            _log_offload_param_error(
+                "block type mismatch",
+                "torch.nn.Module",
+                f"blocks[{i}]={type(block).__name__}",
+                "ensure every item in blocks is a torch.nn.Module",
+            )
             raise TypeError(f"blocks[{i}] must be torch.nn.Module type, current type: {type(block).__name__}")
 
     if not isinstance(min_reserved_blocks_count, int):
+        _log_offload_param_error(
+            "min_reserved_blocks_count type mismatch",
+            "int",
+            type(min_reserved_blocks_count).__name__,
+            "pass an integer min_reserved_blocks_count",
+        )
         raise TypeError(
             f"min_reserved_blocks_count must be int type, current type: {type(min_reserved_blocks_count).__name__}"
         )
     if min_reserved_blocks_count < 0:
+        _log_offload_param_error(
+            "min_reserved_blocks_count is negative",
+            "min_reserved_blocks_count>=0",
+            min_reserved_blocks_count,
+            "set min_reserved_blocks_count to a non-negative integer",
+        )
         raise ValueError(f"min_reserved_blocks_count must be >= 0, current value: {min_reserved_blocks_count}")
 
     if min_reserved_blocks_count >= len(blocks):
+        _log_offload_param_error(
+            "min_reserved_blocks_count exceeds block count",
+            "min_reserved_blocks_count<len(blocks)",
+            f"min_reserved_blocks_count={min_reserved_blocks_count}, len(blocks)={len(blocks)}",
+            "reduce min_reserved_blocks_count or provide more blocks",
+        )
         raise ValueError(
             f"min_reserved_blocks_count must be < len(blocks), "
             f"current value: {min_reserved_blocks_count}, blocks length: {len(blocks)}"

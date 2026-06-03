@@ -33,6 +33,12 @@ class MoERoutingInput:
     router_logits: torch.Tensor
     top_k: int
     renormalize: bool = False
+    k_group: int = 1
+    group_count: int = 1
+    group_select_mode: int = 0
+    norm_type: int = 0
+    routed_scaling_factor: float = 1.0
+    eps: float = 1e-20
     custom_routing_function: Any = None
 
 

@@ -10,6 +10,7 @@
 # MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+import os
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -68,12 +69,14 @@ def torch_moe_reference(
     return weighted.sum(dim=1)
 
 
-def torch_select_experts(router_logits, top_k, renormalize):
+def torch_select_experts(router_logits, top_k, renormalize, routed_scaling_factor=1.0):
     topk_result = router_logits.softmax(dim=-1).topk(top_k, dim=-1)
     topk_weights = topk_result.values
     topk_ids = topk_result.indices.to(torch.int32)
     if renormalize:
         topk_weights = topk_weights / topk_weights.sum(dim=-1, keepdim=True)
+    if routed_scaling_factor != 1.0:
+        topk_weights = topk_weights * routed_scaling_factor
     return topk_weights, topk_ids
 
 
@@ -85,10 +88,13 @@ def run_static_moe(**kwargs):
     combine_output = kwargs.pop("combine_output", torch.randn_like(kwargs["hidden_states"]))
     dispatched_hidden_states = dispatch_result[0]
     mlp_output = kwargs.pop("mlp_output", torch.randn_like(dispatched_hidden_states))
+    topk_weights = torch.ones(kwargs["hidden_states"].shape[0], kwargs["top_k"])
+    topk_ids = torch.zeros(kwargs["hidden_states"].shape[0], kwargs["top_k"], dtype=torch.int32)
     with patch.object(StaticDispatcher, "dispatch", return_value=dispatch_result) as mock_dispatch:
         with patch.object(StaticDispatcher, "combine", return_value=combine_output):
             with patch("mindiesd.layers.moe.moe_mlp.unquant_apply_mlp", return_value=mlp_output):
-                output = moe(**kwargs)
+                with patch("mindiesd.layers.moe.moe.select_experts", return_value=(topk_weights, topk_ids)):
+                    output = moe(**kwargs)
     return output, mock_dispatch
 
 
@@ -98,6 +104,8 @@ def run_dynamic_moe(**kwargs):
         mock_dispatch_result(kwargs["hidden_states"].shape[0], kwargs["hidden_states"].shape[-1]),
     )
     prepare_output = (kwargs["hidden_states"], kwargs["router_logits"], kwargs["hidden_states"].shape)
+    topk_weights = torch.ones(kwargs["hidden_states"].shape[0], kwargs["top_k"])
+    topk_ids = torch.zeros(kwargs["hidden_states"].shape[0], kwargs["top_k"], dtype=torch.int32)
     with patch.object(DynamicDispatcher, "prepare", return_value=prepare_output) as mock_prepare:
         with patch.object(DynamicDispatcher, "dispatch", return_value=dispatch_result) as mock_dispatch:
             with patch.object(DynamicDispatcher, "combine", return_value=torch.randn_like(kwargs["hidden_states"])):
@@ -107,7 +115,8 @@ def run_dynamic_moe(**kwargs):
                         "finalize",
                         return_value=torch.randn_like(kwargs["hidden_states"]),
                     ):
-                        output = moe(**kwargs)
+                        with patch("mindiesd.layers.moe.moe.select_experts", return_value=(topk_weights, topk_ids)):
+                            output = moe(**kwargs)
     return output, mock_prepare, mock_dispatch
 
 
@@ -116,11 +125,15 @@ class TestMoeFunction(unittest.TestCase):
         DynamicDispatcher._split_cpu_buffers.clear()
         set_moe_comm_context()
 
+    @unittest.skipIf(
+        os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
+        "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.",
+    )
     def test_static_moe_matches_torch_reference(self):
         torch.manual_seed(2026)
         cases = (
-            dict(top_k=1, renormalize=False, with_bias=False, dtype=torch.float16),
-            dict(top_k=2, renormalize=True, with_bias=True, dtype=torch.bfloat16),
+            dict(top_k=1, renormalize=False, routed_scaling_factor=1.0, with_bias=False, dtype=torch.float16),
+            dict(top_k=2, renormalize=True, routed_scaling_factor=0.5, with_bias=True, dtype=torch.bfloat16),
         )
         for case in cases:
             with self.subTest(**case):
@@ -140,6 +153,7 @@ class TestMoeFunction(unittest.TestCase):
                     router_logits,
                     case["top_k"],
                     renormalize=case["renormalize"],
+                    routed_scaling_factor=case["routed_scaling_factor"],
                 )
                 expected = torch_moe_reference(
                     hidden_states=hidden_states,
@@ -152,21 +166,26 @@ class TestMoeFunction(unittest.TestCase):
                 )
                 actual = moe(
                     hidden_states=hidden_states.to(device=device, dtype=dtype),
-                    w13_weight=w13_weight.to(device=device, dtype=dtype),
-                    w2_weight=w2_weight.to(device=device, dtype=dtype),
                     router_logits=router_logits.to(device=device, dtype=dtype),
                     num_experts=num_experts,
                     top_k=case["top_k"],
+                    w13_weight=w13_weight.to(device=device, dtype=dtype),
+                    w2_weight=w2_weight.to(device=device, dtype=dtype),
                     w13_bias=w13_bias.to(device=device, dtype=dtype) if w13_bias is not None else None,
                     w2_bias=w2_bias.to(device=device, dtype=dtype) if w2_bias is not None else None,
-                    tokens_full=True,
-                    reduce_results=False,
                     dispatcher_type="static",
+                    tokens_full=True,
                     renormalize=case["renormalize"],
+                    routed_scaling_factor=case["routed_scaling_factor"],
+                    reduce_results=False,
                 )
 
                 torch.testing.assert_close(actual.cpu().float(), expected.float(), atol=5e-2, rtol=5e-2)
 
+    @unittest.skipIf(
+        os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
+        "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
+    )
     def test_default_dispatcher_selection_and_static_override(self):
         ep_group = MagicMock(spec=dist.ProcessGroup)
 
@@ -188,6 +207,10 @@ class TestMoeFunction(unittest.TestCase):
         static_dispatch.assert_called_once()
         unused_dynamic_dispatch.assert_not_called()
 
+    @unittest.skipIf(
+        os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
+        "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
+    )
     def test_resolve_dispatcher_class_by_device_and_override(self):
         ep_group = MagicMock(spec=dist.ProcessGroup)
 
@@ -201,10 +224,18 @@ class TestMoeFunction(unittest.TestCase):
         self.assertIs(resolve_dispatcher_class("static"), StaticDispatcher)
         self.assertIs(resolve_dispatcher_class("dynamic"), DynamicDispatcher)
 
+    @unittest.skipIf(
+        os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
+        "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
+    )
     def test_resolve_dispatcher_class_rejects_dynamic_without_ep(self):
         with self.assertRaises(ParametersInvalid):
             resolve_dispatcher_class("dynamic")
 
+    @unittest.skipIf(
+        os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
+        "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
+    )
     def test_dispatcher_type_overrides_default_routing_to_dynamic(self):
         kwargs = make_moe_kwargs(num_experts=4, tokens_full=True, dispatcher_type="dynamic")
         ep_group = MagicMock(spec=dist.ProcessGroup)

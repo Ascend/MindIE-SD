@@ -20,12 +20,11 @@
 #include "sparse_block_estimate.h"
 #include "layernorm.h"
 #include "block_sparse_attention.h"
+#include "quant_flash_attn.h"
+#include "quant_flash_attn_metadata.h"
 
-
-TORCH_LIBRARY(mindiesd, m)
-{
-    m.def(
-        "la(Tensor query, Tensor key, Tensor value, \
+TORCH_LIBRARY(mindiesd, m) {
+    m.def("la(Tensor query, Tensor key, Tensor value, \
         Tensor? atten_mask=None, Tensor? alibi_mask=None, Tensor? \
         drop_mask=None, float scale_value=1.0, int head_num=2, str input_layout='BNSD', \
         float keep_prob=1.0, int pre_tokens=2147483647, int next_tokens=1, \
@@ -65,11 +64,30 @@ TORCH_LIBRARY(mindiesd, m)
         int num_key_value_heads=1, float scale_value=1.0, int inner_precise=0, \
         int[]? actual_seq_lengths=None, int[]? actual_seq_lengths_kv=None, \
         int softmax_lse_flag=0) -> (Tensor, Tensor)");
+    m.def("quant_flash_attn(Tensor query, Tensor key, Tensor value, \
+        Tensor q_descale, Tensor k_descale, Tensor v_descale, \
+        int q_quant_mode, int k_quant_mode, int v_quant_mode, \
+        Tensor? block_table=None, Tensor? cu_seqlens_q=None, Tensor? cu_seqlens_kv=None, \
+        Tensor? seqused_q=None, Tensor? seqused_kv=None, \
+        Tensor? sinks=None, Tensor? attn_mask=None, Tensor? metadata=None, \
+        int? q_dtype=None, int? k_dtype=None, int? v_dtype=None, \
+        int? q_descale_dtype=None, int? k_descale_dtype=None, int? v_descale_dtype=None, \
+        int quant_block_size_qs=128, int quant_block_size_ks=256, int quant_block_size_vs=256, \
+        float softmax_scale=1.0, int mask_mode=1, int win_left=-1, int win_right=-1, \
+        int max_seqlen_q=-1, int max_seqlen_kv=-1, \
+        str layout_q='BSND', str layout_kv='BSND', str layout_out='BSND', \
+        int softmax_precision=0, int return_softmax_lse=0) -> (Tensor, Tensor)");
+    m.def("quant_flash_attn_metadata(int num_heads_q, int num_heads_kv, int head_dim, \
+        int q_quant_mode, int k_quant_mode, int v_quant_mode, *, \
+        Tensor? cu_seqlens_q=None, Tensor? cu_seqlens_kv=None, \
+        Tensor? seqused_q=None, Tensor? seqused_kv=None, \
+        int? batch_size=None, int? max_seqlen_q=None, int? max_seqlen_kv=None, \
+        int? q_dtype=None, int? k_dtype=None, int? v_dtype=None, \
+        int? mask_mode=None, int? win_left=None, int? win_right=None, \
+        str? layout_q=None, str? layout_kv=None, str? layout_out=None) -> Tensor");
 }
 
-
-TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m)
-{
+TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m) {
     m.impl("la", &la_mindie_sd_impl_npu);
     m.impl("adaln", &adaln_mindie_sd_impl_npu);
     m.impl("adaln_v2", &adaln_v2_mindie_sd_impl_npu);
@@ -79,4 +97,8 @@ TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m)
     m.impl("sparse_block_estimate", &sparse_block_estimate_mindie_sd_impl_npu);
     m.impl("layernorm", &layernorm_mindie_sd_impl_npu);
     m.impl("block_sparse_attention", &block_sparse_attention_impl_npu);
+    m.impl("quant_flash_attn", &quant_flash_attn_impl_npu);
+    m.impl("quant_flash_attn_metadata", &quant_flash_attn_metadata_impl_npu);
 }
+
+TORCH_LIBRARY_IMPL(mindiesd, CatchAll, m) { m.impl("quant_flash_attn_metadata", &quant_flash_attn_metadata_impl_npu); }

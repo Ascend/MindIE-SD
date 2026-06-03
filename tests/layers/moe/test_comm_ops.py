@@ -10,6 +10,7 @@
 # MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+import os
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -19,6 +20,10 @@ from mindiesd.layers.moe.comm_ops import all_gather, all_reduce, all_to_all_sing
 from mindiesd.utils import ParametersInvalid
 
 
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
+    "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
+)
 class TestCommOps(unittest.TestCase):
     def setUp(self):
         self.group = MagicMock()

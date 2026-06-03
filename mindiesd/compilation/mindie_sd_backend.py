@@ -10,12 +10,10 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-import functools
-import logging
 from typing import Any, Callable, Optional, Sequence
 
 import torch
-import torch.fx as fx
+from torch import fx
 from torch._dynamo.backends.common import aot_autograd
 from torch._inductor.freezing import freeze
 from ._custom_decomposition import select_custom_decomp_table
@@ -23,6 +21,7 @@ from ._custom_decomposition import select_custom_decomp_table
 try:
     from torch.fx.passes.graph_transform_observer import GraphTransformObserver
 except ImportError:
+
     class GraphTransformObserver:
         def __init__(self, gm, passname, subsystem=None, log_url=None):
             self.gm = gm
@@ -36,6 +35,7 @@ except ImportError:
         def apply_graph_pass(self, pass_func):
             pass_func(self.gm.graph)
 
+
 from .compiliation_config import CompilationConfig
 
 from .aclgraph_backend import npu_graph_available, create_aclgraph_backend
@@ -43,13 +43,15 @@ from .aclgraph_backend import npu_graph_available, create_aclgraph_backend
 from .passes import activate_pattern_once
 from .passes.register_pattern_to_pass import patterns
 from .passes.redundant_node_elimination_pass import ReduandantNodeEliminationPass
+from ..utils.logs.logging import logger
 
-logger = logging.getLogger(__name__)
+DEBUG_LOG_LEVEL = 10
 
 
 def decompose_auto_functionalized(graph: fx.Graph):
     try:
         from torch._inductor.fx_passes.post_grad import decompose_auto_functionalized as original_decompose
+
         return original_decompose(graph)
     except ImportError:
         for node in list(graph.nodes):
@@ -83,7 +85,11 @@ class MindieSDBackend:
             graph = self.compile(graph, example_inputs)
             return create_aclgraph_backend()(graph, example_inputs)
         if CompilationConfig.aclgraph_only and npu_graph_available:
-            logger.info("Using ACLGraph backend with torch.npu.graph")
+            logger.debug(
+                "[MindIE-SD/compilation] ACLGraph backend selected. aclgraph_only=%s, npu_graph_available=%s.",
+                CompilationConfig.aclgraph_only,
+                npu_graph_available,
+            )
             return create_aclgraph_backend()(graph, example_inputs)
         else:
             # Use default backend
@@ -99,7 +105,7 @@ class MindieSDBackend:
             log_url=CompilationConfig.graph_log_url,
         ).apply_gm_pass(ReduandantNodeEliminationPass())
         logger.debug("Graph after redundant node elimination pass:")
-        if logger.isEnabledFor(logging.DEBUG):
+        if logger.isEnabledFor(DEBUG_LOG_LEVEL):
             logger.debug(graph.print_readable(print_output=False))
 
     @classmethod
@@ -112,7 +118,7 @@ class MindieSDBackend:
             log_url=CompilationConfig.graph_log_url,
         ).apply_gm_pass(patterns)
         logger.debug("Graph after pattern matching:")
-        if logger.isEnabledFor(logging.DEBUG):
+        if logger.isEnabledFor(DEBUG_LOG_LEVEL):
             logger.debug(graph.print_readable(print_output=False))
 
     @classmethod
@@ -132,9 +138,7 @@ class MindieSDBackend:
     ) -> tuple[Callable, Optional[Any]]:
         def freezing_compile(compile_inner, aot_autograd_gm, example_inputs):
             # Freeze the graph first before passing to AOT Autograd.
-            frozen_gm, preserved_arg_indices = freeze(
-                gm, aot_autograd_gm, example_inputs
-            )
+            frozen_gm, preserved_arg_indices = freeze(gm, aot_autograd_gm, example_inputs)
             example_inputs = [example_inputs[ind] for ind in preserved_arg_indices]
             optimized_function = compile_inner(frozen_gm, example_inputs)
 
@@ -149,7 +153,7 @@ class MindieSDBackend:
 
         def graph_rewrite_before_freezing(fx_graph, inputs):
             logger.debug("Graph before compiling:")
-            if logger.isEnabledFor(logging.DEBUG):
+            if logger.isEnabledFor(DEBUG_LOG_LEVEL):
                 logger.debug(fx_graph.print_readable(print_output=False))
             self.__class__.apply_redundant_node_elimination_pass(fx_graph, inputs)
             self.__class__.apply_pattern_match_passes(fx_graph, inputs)
@@ -160,7 +164,7 @@ class MindieSDBackend:
             # make sure we add freezing passes after constant folding
             self.__class__.apply_decompose_auto_functionalized_pass(fx_graph)
             logger.debug("Graph after compiling:")
-            if logger.isEnabledFor(logging.DEBUG):
+            if logger.isEnabledFor(DEBUG_LOG_LEVEL):
                 logger.debug(fx_graph.print_readable(print_output=False))
             return fx_graph
 

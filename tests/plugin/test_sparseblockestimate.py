@@ -10,12 +10,19 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-import unittest
-import torch
-import torch_npu
+# pylint: disable=duplicate-code
+
 import os
-import math
+import sys
+import unittest
 import numpy as np
+import torch
+
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from mindiesd.utils.get_platform import is_a5_device  # noqa: E402
 
 if os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU":
     torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
@@ -33,18 +40,20 @@ def softmax_flash(src, inmax=None, insum=None, update=False):
         dst = np.exp(src - x_max)
         exp_max = np.exp(inmax - x_max)
         x_sum = np.sum(dst, axis=-1, keepdims=True)
-        x_sum = exp_max * insum +  x_sum
+        x_sum = exp_max * insum + x_sum
     return dst, x_max, x_sum, exp_max
 
-def align_s_dim(q,block_size = 128):
-    B,N,S,D = q.shape
-    target_length = (S + block_size-1)//block_size * block_size
-    if(S==target_length):
+
+def align_s_dim(q, block_size=128):
+    B, N, S, D = q.shape
+    target_length = (S + block_size - 1) // block_size * block_size
+    if S == target_length:
         return q
     else:
-        aligned_q = torch.zeros(B,N,target_length,D,dtype = q.dtype,device = q.device)
-        aligned_q[:,:,:S,:] = q
+        aligned_q = torch.zeros(B, N, target_length, D, dtype=q.dtype, device=q.device)
+        aligned_q[:, :, :S, :] = q
     return aligned_q
+
 
 def sparse_estimate_cpu(query, key, causal, blocksize=128, stride=8, threshold=0.5, force_sparse=1.0):
     reduce_size = blocksize // stride
@@ -55,28 +64,29 @@ def sparse_estimate_cpu(query, key, causal, blocksize=128, stride=8, threshold=0
     M, N = 128, 1024
     FLASH = True
 
-    for bi in range(bs):
+    for bi in range(bs):  # pylint: disable=too-many-nested-blocks
         for ni in range(nq):
-            qtimes = (seq + M*stride -1) // (M*stride)
+            qtimes = (seq + M * stride - 1) // (M * stride)
             for outeridx in range(qtimes):
-                m = M * stride if outeridx < qtimes - 1 else seq - outeridx* (M*stride)
-                q = query[bi, ni, outeridx* (M*stride):  outeridx* (M*stride)+m, :]
+                m = M * stride if outeridx < qtimes - 1 else seq - outeridx * (M * stride)
+                q = query[bi, ni, outeridx * (M * stride) : outeridx * (M * stride) + m, :]
                 if m % stride > 0:
-                    z = np.zeros((stride-m % stride, dim), dtype=np.float32)
+                    z = np.zeros((stride - m % stride, dim), dtype=np.float32)
                     q = np.concatenate([q, z], axis=-2)
                 q = q.reshape(-1, stride, dim)[:, ::-1, :]
                 q = q.reshape(-1, stride * dim)
 
                 kseq = seq if not causal else (outeridx * M * stride + m) // stride * stride
-                ktimes = (kseq + N*stride -1) // (N*stride)
+                ktimes = (kseq + N * stride - 1) // (N * stride)
                 first_reduce_gm = []
                 x_max_loop_ub = []
                 x_max, x_sum = None, 0
 
                 for innerIdx in range(ktimes):
                     n = N * stride if innerIdx < ktimes - 1 else kseq - innerIdx * (N * stride)
-                    if causal: n = n // stride * stride # 尾块是diag 舍弃
-                    k = key[bi, ni // gqa, innerIdx * (N * stride): innerIdx * (N * stride) + n, :]  # (n, dim)
+                    if causal:
+                        n = n // stride * stride  # 尾块是diag 舍弃
+                    k = key[bi, ni // gqa, innerIdx * (N * stride) : innerIdx * (N * stride) + n, :]  # (n, dim)
 
                     # 补零到 stride 的整数倍
                     if n % stride > 0:
@@ -91,9 +101,10 @@ def sparse_estimate_cpu(query, key, causal, blocksize=128, stride=8, threshold=0
                         if innerIdx == 0:
                             p, x_max, x_sum, exp_max = softmax_flash(p)
                         else:
+                            # pylint: disable-next=unsupported-assignment-operation
                             p, x_max[:], x_sum[:], exp_max = softmax_flash(p, x_max, x_sum, True)
                     else:
-                        p = np.exp(p-20.0)
+                        p = np.exp(p - 20.0)
                         x_sum = x_sum + p.sum(axis=-1, keepdims=True)
 
                     # first reduce
@@ -127,25 +138,29 @@ def sparse_estimate_cpu(query, key, causal, blocksize=128, stride=8, threshold=0
                 offset = outeridx * M // reduce_size
                 for i in range(reduce_ub.shape[0]):
                     if causal and offset + i <= 1:
-                        mask[bi, ni, offset + i, :offset + i+1] = True
+                        mask[bi, ni, offset + i, : offset + i + 1] = True
                         continue
-                    to_sort = reduce_ub[i, :offset+i+1].copy() if causal else reduce_ub[i] # include diag
+                    to_sort = reduce_ub[i, : offset + i + 1].copy() if causal else reduce_ub[i]  # include diag
                     to_sort[-1] = 0
 
                     score = -np.sort(-to_sort, axis=-1).astype(np.float32)
                     cnt = (score.cumsum(axis=-1) < threshold * score.sum(axis=-1)).astype(np.int32).sum(axis=-1) + 1
                     if cnt > 0:
-                        if cnt > force_sparse * score.shape[-1] and force_sparse > 0 :
+                        if cnt > force_sparse * score.shape[-1] and force_sparse > 0:
                             cnt = int(force_sparse * score.shape[-1])
-                        guard = score[cnt-1]
-                        to_sort[0] = guard +1
-                        if not causal: to_sort[-1] = guard + 1
-                        mask[bi, ni, offset + i, :to_sort.shape[-1]] = (to_sort >= guard).astype(np.bool_)
+                        guard = score[cnt - 1]
+                        to_sort[0] = guard + 1
+                        if not causal:
+                            to_sort[-1] = guard + 1
+                        mask[bi, ni, offset + i, : to_sort.shape[-1]] = (to_sort >= guard).astype(np.bool_)
 
     return mask
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
+@unittest.skipIf(is_a5_device(), "sparse_block_estimate is unsupported on A5.")
 class TestSparseBlockEstimate(unittest.TestCase):
     def setUp(self):
         np.random.seed(0)
@@ -158,7 +173,7 @@ class TestSparseBlockEstimate(unittest.TestCase):
         self.qseqlen = 8192
         self.head_dim = 128
         self.dtype = torch.bfloat16
-        self.input_layout="BNSD"
+        self.input_layout = "BNSD"
         self.stride = 8
         self.sparse_size = 128
         self.threshold = 0.85
@@ -166,7 +181,7 @@ class TestSparseBlockEstimate(unittest.TestCase):
         self.causal = False
         self.keep_sink = True
         self.keep_recent = True
-        self.scale_value = self.head_dim ** -0.5 / self.stride
+        self.scale_value = self.head_dim**-0.5 / self.stride
 
         self.query_shape = (self.batch, self.head_num, self.qseqlen, self.head_dim)
         self.key_value_shape = (self.batch, self.head_num, self.qseqlen, self.head_dim)
@@ -188,13 +203,13 @@ class TestSparseBlockEstimate(unittest.TestCase):
 
         return query, key
 
-
     def test_bsa_estimate_mindie_sd_output_shape(self):
         query, key = self.bsa_estimate_preprocess_input()
         smask, sct = torch.ops.mindiesd.sparse_block_estimate(
             query=query.to(self.device),
             key=key.to(self.device),
-            actual_seq_lengths=None, actual_seq_lengths_kv=None,
+            actual_seq_lengths=None,
+            actual_seq_lengths_kv=None,
             input_layout=self.input_layout,
             stride=self.stride,
             sparse_size=self.sparse_size,
@@ -205,7 +220,7 @@ class TestSparseBlockEstimate(unittest.TestCase):
             causal=self.causal,
             keep_sink=self.keep_sink,
             keep_recent=self.keep_recent,
-            row_sparse=self.row_sparse
+            row_sparse=self.row_sparse,
         )
 
         self.assertEqual(smask.shape, self.smask_shape, "Output shape does not match expected shape.")
@@ -217,7 +232,8 @@ class TestSparseBlockEstimate(unittest.TestCase):
         smask, sct = torch.ops.mindiesd.sparse_block_estimate(
             query=query.to(self.device),
             key=key.to(self.device),
-            actual_seq_lengths=None, actual_seq_lengths_kv=None,
+            actual_seq_lengths=None,
+            actual_seq_lengths_kv=None,
             input_layout=self.input_layout,
             stride=self.stride,
             sparse_size=self.sparse_size,
@@ -228,27 +244,33 @@ class TestSparseBlockEstimate(unittest.TestCase):
             causal=self.causal,
             keep_sink=self.keep_sink,
             keep_recent=self.keep_recent,
-            row_sparse=self.row_sparse
+            row_sparse=self.row_sparse,
         )
-        smask_cpu = sparse_estimate_cpu(query.float().numpy(), key.float().numpy(),
-                                        self.causal, blocksize=self.sparse_size, stride=self.stride,
-                                        threshold=self.threshold, force_sparse=self.row_sparse)
+        smask_cpu = sparse_estimate_cpu(
+            query.float().numpy(),
+            key.float().numpy(),
+            self.causal,
+            blocksize=self.sparse_size,
+            stride=self.stride,
+            threshold=self.threshold,
+            force_sparse=self.row_sparse,
+        )
 
         # compare result
-        smask = smask.cpu()[:, :, :, :smask_cpu.shape[-1]].reshape(self.batch,self.head_num,-1).numpy().astype(np.int32)
-        smask_cpu = smask_cpu.reshape(self.batch, self.head_num,-1)
+        smask = (
+            smask.cpu()[:, :, :, : smask_cpu.shape[-1]].reshape(self.batch, self.head_num, -1).numpy().astype(np.int32)
+        )
+        smask_cpu = smask_cpu.reshape((self.batch, self.head_num, -1))
         for i in range(self.batch):
             for j in range(self.head_num):
-                total_selected_blocks = smask_cpu[i,j,:].sum()
-                diff_num = (smask[i,j,:] != smask_cpu[i,j,:]).sum()
+                total_selected_blocks = smask_cpu[i, j, :].sum()
+                diff_num = (smask[i, j, :] != smask_cpu[i, j, :]).sum()
                 diff_num_ratio = diff_num / total_selected_blocks
 
-                omitted_blocks = (smask[i,j,:] < smask_cpu[i,j,:]).sum()
+                omitted_blocks = (smask[i, j, :] < smask_cpu[i, j, :]).sum()
                 omitted_blocks_ratio = omitted_blocks / total_selected_blocks
-                self.assertLess(diff_num_ratio, 0.02,
-                                "diff_num_ratio should < 0.02.")
-                self.assertLess(omitted_blocks_ratio, 0.01,
-                                "omitted_blocks_ratio should < 0.01.")
+                self.assertLess(diff_num_ratio, 0.02, "diff_num_ratio should < 0.02.")
+                self.assertLess(omitted_blocks_ratio, 0.01, "omitted_blocks_ratio should < 0.01.")
 
     def test_invalid_layout(self):
         query, key = self.bsa_estimate_preprocess_input()
@@ -256,7 +278,8 @@ class TestSparseBlockEstimate(unittest.TestCase):
             smask, sct = torch.ops.mindiesd.sparse_block_estimate(
                 query=query.to(self.device),
                 key=key.to(self.device),
-                actual_seq_lengths=None, actual_seq_lengths_kv=None,
+                actual_seq_lengths=None,
+                actual_seq_lengths_kv=None,
                 input_layout="TND",
                 stride=self.stride,
                 sparse_size=self.sparse_size,
@@ -267,7 +290,9 @@ class TestSparseBlockEstimate(unittest.TestCase):
                 causal=self.causal,
                 keep_sink=self.keep_sink,
                 keep_recent=self.keep_recent,
-                row_sparse=self.row_sparse
+                row_sparse=self.row_sparse,
             )
+
+
 if __name__ == "__main__":
     unittest.main(argv=[''], exit=False)

@@ -11,7 +11,6 @@
 # See the Mulan PSL v2 for more details.
 import unittest
 import torch
-from packaging.version import Version
 
 from mindiesd.layers._custom_ops import (
     laser_attention,
@@ -20,23 +19,37 @@ from mindiesd.layers._custom_ops import (
 import os
 import sys
 from pathlib import Path
+
 sys.path.append(str(Path(__file__).parent.parent.parent))
-from mindiesd.compilation import MindieSDBackend
+from mindiesd.compilation import MindieSDBackend  # pylint: disable=no-name-in-module
+from mindiesd.utils.get_platform import is_a5_device
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
+@unittest.skipIf(
+    is_a5_device(), "laser_attention / laser_attention_preprocess are unsupported on A5; routed elsewhere."
+)
 class TestCustomOps(unittest.TestCase):
-
     def test_laser_attention_fake_shape(self):
-
         class LaserAttentionModel(torch.nn.Module):
-            def forward(self,
-                query, key, value,
-                atten_mask, alibi_mask, drop_mask,
-                scale_value, head_num, input_layout,
-                keep_prob, pre_tokens, next_tokens,
-                is_high_precision):
-
+            def forward(
+                self,
+                query,
+                key,
+                value,
+                atten_mask,
+                alibi_mask,
+                drop_mask,
+                scale_value,
+                head_num,
+                input_layout,
+                keep_prob,
+                pre_tokens,
+                next_tokens,
+                is_high_precision,
+            ):
                 return laser_attention(
                     query=query,
                     key=key,
@@ -78,23 +91,39 @@ class TestCustomOps(unittest.TestCase):
         compiled_model = torch.compile(model, backend=MindieSDBackend())
 
         output_original = model(
-            query, key, value,
-            atten_mask, alibi_mask, drop_mask,
-            scale_value, head_num, input_layout,
-            keep_prob, pre_tokens, next_tokens,
-            is_high_precision)
+            query,
+            key,
+            value,
+            atten_mask,
+            alibi_mask,
+            drop_mask,
+            scale_value,
+            head_num,
+            input_layout,
+            keep_prob,
+            pre_tokens,
+            next_tokens,
+            is_high_precision,
+        )
         output_compiled = compiled_model(
-            query, key, value,
-            atten_mask, alibi_mask, drop_mask,
-            scale_value, head_num, input_layout,
-            keep_prob, pre_tokens, next_tokens,
-            is_high_precision)
+            query,
+            key,
+            value,
+            atten_mask,
+            alibi_mask,
+            drop_mask,
+            scale_value,
+            head_num,
+            input_layout,
+            keep_prob,
+            pre_tokens,
+            next_tokens,
+            is_high_precision,
+        )
 
         self.assertEqual(output_original.shape, output_compiled.shape)
 
     def test_laser_attention_preprocess_fake_shape(self):
-
-
         class LaserAttentionPreprocessModel(torch.nn.Module):
             def forward(self, query, key, value, align_len):
                 return laser_attention_preprocess(query, key, value, align_len)
@@ -118,6 +147,7 @@ class TestCustomOps(unittest.TestCase):
         self.assertEqual(len(output_original), len(output_compiled))
         for orig, comp in zip(output_original, output_compiled):
             self.assertEqual(orig.shape, comp.shape)
+
 
 if __name__ == '__main__':
     unittest.main()

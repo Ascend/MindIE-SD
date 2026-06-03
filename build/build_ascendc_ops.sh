@@ -41,7 +41,7 @@ function help_info() {
     echo "                     For example: -n \"flash_attention_score\" or -n \"flash_attention_score;flash_attention_score_grad\""
     echo
     echo "-c|--compute-unit    Specifies the chip type. If there are multiple values, separate them with semicolons and use quotation marks. The default is ascend910b."
-    echo "                     For example: -c \"ascend910b\" or -c \"ascend910b;ascend310p\""
+    echo "                     For example: -c \"ascend910b\" or -c \"ascend910b;ascend310p;ascend950\""
     echo
     echo "--cov                Compiles with cov."
     echo
@@ -114,6 +114,7 @@ function gen_bisheng(){
 }
 
 function build_package(){
+    build custom_aicpu_kernels
     build package
 }
 

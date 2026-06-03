@@ -20,13 +20,18 @@ from .attention_operate import device_duo_op, device_800_op, device_a5_op, Atten
 from .prompt_flash_attn import PromptFlashAttention  # noqa: F401
 from .fused_attn_score import FlashAttentionScore  # noqa: F401
 from .ascend_laser_attention import AscendLaserAttention  # noqa: F401
-from ...utils.get_platform import get_npu_device, NPUDevice
+from ...utils.get_platform import get_npu_device, NPUDevice, is_a5_device
 from ...utils.exception import ParametersInvalid
 from ...utils.logs.logging import logger
 
 TEST_COUNT = 5
 WARM_UP_COUNT = 2
 ATTN_DICT = {}
+
+# Operators that have been removed from the A5 registry; static-table or default
+# selections that resolve to one of these names must transparently fall back to
+# 'fused_attn_score' so existing models keep working after the A5 upgrade.
+_A5_DEPRECATED_OP_TYPES = {"ascend_laser_attention", "prompt_flash_attn"}
 
 
 def attention_math(query, key, value, attn_mask, scale, head_first=False):
@@ -69,8 +74,21 @@ def get_attention_function_static(attn_param):
             "defaulting to the standard operation type and layout."
         )
 
-        op_type = "prompt_flash_attn"  # default
+        op_type = "fused_attn_score"  # default
         layout = "BNSD"
+
+    if is_a5_device() and op_type in _A5_DEPRECATED_OP_TYPES:
+        logger.warning(
+            "[MindIE-SD/flash_attn] Static-table attention operator remapped for A5. "
+            "issue=static-table op_type is not supported on A5, expected_op_type=fused_attn_score, "
+            "actual_op_type=%s, q_seqlen=%s, kv_seqlen=%s. "
+            "possible_cause=the static attention table contains a deprecated A5 operator. "
+            "Troubleshooting: refresh the static table entry to use fused_attn_score.",
+            op_type,
+            attn_param.q_seqlen,
+            attn_param.kv_seqlen,
+        )
+        op_type = "fused_attn_score"
     return get_attention_function(attn_param, op_type, layout)
 
 
@@ -83,7 +101,10 @@ def get_attention_function(attn_param, op_type, layout):
     elif npu_device == NPUDevice.A5:
         op_registry = device_a5_op.get_all()
     else:
-        raise ParametersInvalid("Platform invalid. Please check env.")
+        raise ParametersInvalid(
+            f"Platform invalid. expected one of {[item.name for item in NPUDevice if item != NPUDevice.UNDEFINED]}, "
+            f"actual={npu_device}. Please check env."
+        )
 
     if op_type not in op_registry:
         raise ParametersInvalid(
@@ -119,7 +140,10 @@ def get_attention_function_runtime(attn_param, query, key, value, attn_mask=None
     elif npu_device == NPUDevice.A5:
         all_op = device_a5_op.get_all()
     else:
-        raise ParametersInvalid("Platform invalid.")
+        raise ParametersInvalid(
+            f"Platform invalid. expected one of {[item.name for item in NPUDevice if item != NPUDevice.UNDEFINED]}, "
+            f"actual={npu_device}."
+        )
 
     func_lists = get_test_func_lists(attn_param, all_op)
     if len(func_lists) == 0:

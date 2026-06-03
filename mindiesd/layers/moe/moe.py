@@ -72,8 +72,8 @@ def _log_moe_config_once(dispatcher_cls, tokens_full, reduce_results):
         return
     dispatcher_name = "dynamic" if dispatcher_cls.__name__ == "DynamicDispatcher" else "static"
     comm_type = get_moe_comm_type().value
-    logger.info(
-        "MindIE-SD moe config: dispatcher=%s, comm_type=%s, tokens_full=%s, reduce_results=%s.",
+    logger.debug(
+        "[MindIE-SD/moe] MoE config resolved. dispatcher=%s, comm_type=%s, tokens_full=%s, reduce_results=%s.",
         dispatcher_name,
         comm_type,
         tokens_full,
@@ -84,39 +84,49 @@ def _log_moe_config_once(dispatcher_cls, tokens_full, reduce_results):
 
 def moe(
     hidden_states: torch.Tensor,
-    w13_weight: torch.Tensor,
-    w2_weight: torch.Tensor,
     router_logits: torch.Tensor,
     num_experts: int,
     top_k: int,
+    w13_weight: torch.Tensor,
+    w2_weight: torch.Tensor,
     w13_bias: torch.Tensor | None = None,
     w2_bias: torch.Tensor | None = None,
-    tokens_full: bool = True,
-    reduce_results: bool = True,
-    dispatcher_type: str | None = None,
     tp_group: dist.ProcessGroup | None = None,
     ep_group: dist.ProcessGroup | None = None,
+    dispatcher_type: str | None = None,
+    tokens_full: bool = True,
+    k_group: int = 1,
+    group_count: int = 1,
+    group_select_mode: int = 0,
+    routing_method: str = "softmax",
     renormalize: bool = False,
+    routed_scaling_factor: float = 1.0,
     custom_routing_function: Callable | None = None,
+    reduce_results: bool = True,
 ) -> torch.Tensor:
     """Run the staged MoE forward pass on NPU."""
 
     validate_moe_inputs(
         hidden_states=hidden_states,
-        w13_weight=w13_weight,
-        w2_weight=w2_weight,
         router_logits=router_logits,
         num_experts=num_experts,
         top_k=top_k,
+        w13_weight=w13_weight,
+        w2_weight=w2_weight,
         w13_bias=w13_bias,
         w2_bias=w2_bias,
-        tokens_full=tokens_full,
-        reduce_results=reduce_results,
-        dispatcher_type=dispatcher_type,
         tp_group=tp_group,
         ep_group=ep_group,
+        dispatcher_type=dispatcher_type,
+        tokens_full=tokens_full,
+        k_group=k_group,
+        group_count=group_count,
+        group_select_mode=group_select_mode,
+        routing_method=routing_method,
         renormalize=renormalize,
+        routed_scaling_factor=routed_scaling_factor,
         custom_routing_function=custom_routing_function,
+        reduce_results=reduce_results,
     )
 
     set_moe_comm_context(tp_group=tp_group, ep_group=ep_group)
@@ -134,7 +144,12 @@ def moe(
         hidden_states=prepared_hidden_states,
         router_logits=prepared_router_logits,
         top_k=top_k,
+        k_group=k_group,
+        group_count=group_count,
+        group_select_mode=group_select_mode,
+        routing_method=routing_method,
         renormalize=renormalize,
+        routed_scaling_factor=routed_scaling_factor,
         custom_routing_function=custom_routing_function,
     )
     topk_weights, topk_ids = select_experts(routing_input)

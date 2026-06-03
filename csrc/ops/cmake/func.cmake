@@ -100,6 +100,7 @@ function(op_add_depend_directory)
         endif()
     endforeach()
 
+    list(REMOVE_DUPLICATES _OP_DEPEND_DIR_LIST)
     list(SORT _OP_DEPEND_DIR_LIST)
     set(${DEP_OP_DIR_LIST} ${_OP_DEPEND_DIR_LIST} PARENT_SCOPE)
 endfunction()
@@ -280,11 +281,19 @@ function(add_ops_src_copy)
 
     if (NOT TARGET ${SRC_COPY_TARGET_NAME})
         set(_BUILD_FLAG ${SRC_COPY_DST}/${SRC_COPY_TARGET_NAME}.done)
-        add_custom_command(OUTPUT ${_BUILD_FLAG}
-                COMMAND mkdir -p ${SRC_COPY_DST}
-                COMMAND cp -rf ${SRC_COPY_SRC}/op_kernel/* ${SRC_COPY_DST}
-                COMMAND touch ${_BUILD_FLAG}
-        )
+        file(GLOB_RECURSE _OP_KERNEL_FILES "${SRC_COPY_SRC}/op_kernel/*")
+        if (_OP_KERNEL_FILES)
+            add_custom_command(OUTPUT ${_BUILD_FLAG}
+                    COMMAND ${CMAKE_COMMAND} -E make_directory ${SRC_COPY_DST}
+                    COMMAND ${CMAKE_COMMAND} -E copy_directory "${SRC_COPY_SRC}/op_kernel" "${SRC_COPY_DST}"
+                    COMMAND ${CMAKE_COMMAND} -E touch ${_BUILD_FLAG}
+            )
+        else()
+            add_custom_command(OUTPUT ${_BUILD_FLAG}
+                    COMMAND ${CMAKE_COMMAND} -E make_directory ${SRC_COPY_DST}
+                    COMMAND ${CMAKE_COMMAND} -E touch ${_BUILD_FLAG}
+            )
+        endif()
 
         add_custom_target(${SRC_COPY_TARGET_NAME}
                 DEPENDS ${_BUILD_FLAG}
@@ -314,7 +323,10 @@ function(add_bin_compile_target)
 
     foreach(_op_info ${BINARY_OP_INFO})
         get_filename_component(_op_name "${_op_info}" NAME)
-        set(${_op_name}_dir ${_op_info})
+        file(GLOB_RECURSE _op_kernel_files "${_op_info}/op_kernel/*")
+        if (_op_kernel_files)
+            set(${_op_name}_dir ${_op_info})
+        endif()
     endforeach()
 
     set(_ops_target_list)
@@ -370,7 +382,7 @@ function(add_bin_compile_target)
                             SRC
                             ${CMAKE_SOURCE_DIR}/${depend_info}
                             DST
-                            ${SRC_OUT_DIR}/${_depend_op_name}
+                            ${_OUT_DIR}/${_depend_op_name}/op_kernel
                             COMPUTE_UNIT
                             ${BINARY_COMPUTE_UNIT}
                             BE_RELIED

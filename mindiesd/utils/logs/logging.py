@@ -29,7 +29,9 @@ BACKUP_OWNER_SHIP = 0o440
 FILE_OWNER_SHIP = 0o640
 PATH_OWNER_SHIP = 0o750
 MB = 1024 * 1024
-MAX_LOG_STRING_LEN = 256
+MAX_LOG_STRING_LEN = 2048
+LOG_COMPONENT = "[MindIE-SD/log]"
+
 
 def get_pid():
     return os.getpid()
@@ -44,16 +46,32 @@ def check_owner_permission(file_path, max_mode) -> bool:
     file_owner = os.stat(file_path).st_uid
     cur_owner = get_uid()
     if file_owner != cur_owner:
-        logging.warning("File doesn't belong to current user.")
+        logging.warning(
+            "%s File owner validation failed. issue=file owner mismatch, path=%s, expected_uid=%s, actual_uid=%s. "
+            "Possible cause: the log file or directory was created by another user. "
+            "Troubleshooting: check file ownership and change it to the current service user before enabling log output.",
+            LOG_COMPONENT,
+            file_path,
+            cur_owner,
+            file_owner,
+        )
         return False
 
     # check permission
-    file_mode = os.stat(file_path).st_mode & 0o777 # use 777 as mask to get 3-digit octal number
-    file_mode_bin = bin(file_mode)[2:].zfill(9) # transeform into 9-bit binary number
-    max_mode_bin = bin(max_mode)[2:].zfill(9) # transeform into 9-bit binary number
-    for i in range(9): # 9 means 9-bit binary number, checking every bit
-        if file_mode_bin[i] > max_mode_bin[i]: # 2 means the head of binary number '0b'
-            logging.warning("The permission of file is higher than %s.", oct(max_mode))
+    file_mode = os.stat(file_path).st_mode & 0o777  # use 777 as mask to get 3-digit octal number
+    file_mode_bin = bin(file_mode)[2:].zfill(9)  # transeform into 9-bit binary number
+    max_mode_bin = bin(max_mode)[2:].zfill(9)  # transeform into 9-bit binary number
+    for i in range(9):  # 9 means 9-bit binary number, checking every bit
+        if file_mode_bin[i] > max_mode_bin[i]:  # 2 means the head of binary number '0b'
+            logging.warning(
+                "%s File permission validation failed. issue=permission is higher than allowed, path=%s, "
+                "expected_mode<=%s, actual_mode=%s. Possible cause: log file permission is too open. "
+                "Troubleshooting: use chmod to reduce the file permission and retry.",
+                LOG_COMPONENT,
+                file_path,
+                oct(max_mode),
+                oct(file_mode),
+            )
             return False
 
     return True
@@ -67,7 +85,13 @@ def check_path(file_path, checking_conf=False):
     # check if the path is symbolic link
     trimmed_path = file_path.rstrip("/")
     if os.path.islink(trimmed_path):
-        logging.warning("File path is a soft link.")
+        logging.warning(
+            "%s Log path validation failed. issue=symbolic link is not allowed, path=%s. "
+            "Possible cause: MINDIE_LOG_PATH points to a symlink. "
+            "Troubleshooting: set MINDIE_LOG_PATH to a real directory path.",
+            LOG_COMPONENT,
+            trimmed_path,
+        )
         return False
 
     if checking_conf:
@@ -81,6 +105,7 @@ class MindIELogFileHandler(BaseRotatingHandler):
     Adapt from logging's TimedRotatingHandler and RotationFileHandler to combine both of their features.
     Beside, add more detail about controlling log files' owner ships and rotation.
     """
+
     def __init__(self, real_log_path, max_file_num, max_file_size, rotate_cycle_num, rotate_cycle):
         encoding = io.text_encoding(None)
         now_time_str = time.strftime("_%Y%m%d%H%M%S", time.localtime())
@@ -94,7 +119,7 @@ class MindIELogFileHandler(BaseRotatingHandler):
         self._max_file_num = max_file_num
         self._rotate_cycle_num = rotate_cycle_num
         self._rotate_cycle = rotate_cycle
-        self._next_rollover = self._get_rollover_timepoint() # use time() since it is easier to compute
+        self._next_rollover = self._get_rollover_timepoint()  # use time() since it is easier to compute
 
         # Be aware that, at this point, _cur_log_file is not created yet since the use of delay mode.
         log_path_files = os.listdir(real_log_path)
@@ -104,7 +129,7 @@ class MindIELogFileHandler(BaseRotatingHandler):
             time_str = self._get_time_str(it)
             if time_str and real_file_path.startswith(real_log_path) and os.path.exists(real_file_path):
                 log_files.append((real_file_path, time_str))
-        self._history_files = sorted(log_files, key=lambda x : x[1])
+        self._history_files = sorted(log_files, key=lambda x: x[1])
         # Deal with history file number by deleting oldest one
         self._delete_file_by_number()
         self._delete_file_by_time()
@@ -162,7 +187,7 @@ class MindIELogFileHandler(BaseRotatingHandler):
         cur_time_str = self._get_time_str(cur_log_name)
         self._history_files.append((self._cur_log_file, cur_time_str))
 
-        # delete oldest file by file number constaint
+        # delete oldest file by file number constraint
         self._delete_file_by_number()
 
         # delete oldest file by time
@@ -203,7 +228,7 @@ class MindIELogFileHandler(BaseRotatingHandler):
         # rollover timepoint is everyday's midnight, no log file will have log that cross two days.
         now = time.time()
         tomorrow = datetime.fromtimestamp(now) + timedelta(days=1)
-        tomorrow_midnight = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 0, 0, 0) # midnight is 00:00
+        tomorrow_midnight = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 0, 0, 0)  # midnight is 00:00
         rollover_timepoint = int(time.mktime(tomorrow_midnight.timetuple()))
         return rollover_timepoint
 
@@ -267,6 +292,14 @@ class MindIELogFileHandler(BaseRotatingHandler):
             case "yearly":
                 return self._check_year(log_date, cur_date)
             case _:
+                logging.warning(
+                    "%s Log rotation validation failed. issue=unknown rotate cycle, expected=%s, actual=%s. "
+                    "Possible cause: MINDIE_LOG_ROTATE contains an unsupported cycle. "
+                    "Troubleshooting: set rotate cycle to daily, weekly, monthly, or yearly.",
+                    LOG_COMPONENT,
+                    "daily|weekly|monthly|yearly",
+                    self._rotate_cycle,
+                )
                 raise ValueError(f"Unknown rotate cycle: {self._rotate_cycle}")
 
     def _remove_oldest_log(self):
@@ -276,8 +309,12 @@ class MindIELogFileHandler(BaseRotatingHandler):
 
     def _open(self):
         create_flags = os.O_RDWR | os.O_CREAT
-        open_func = os.fdopen(os.open(self._cur_log_file, create_flags, FILE_OWNER_SHIP),
-                              self.mode, encoding=self.encoding, errors=self.errors)
+        open_func = os.fdopen(
+            os.open(self._cur_log_file, create_flags, FILE_OWNER_SHIP),
+            self.mode,
+            encoding=self.encoding,
+            errors=self.errors,
+        )
         return open_func
 
 
@@ -294,6 +331,14 @@ def str_to_loglevel(level_str):
         case "CRITICAL":
             return logging.CRITICAL
         case _:
+            logging.warning(
+                "%s Log level validation failed. issue=unknown log level, expected=%s, actual=%s. "
+                "Possible cause: MINDIE_LOG_LEVEL contains an unsupported value. "
+                "Troubleshooting: set log level to critical, error, warn, info, debug, or null.",
+                LOG_COMPONENT,
+                "critical|error|warn|info|debug|null",
+                level_str,
+            )
             raise ValueError(f"Unknown log level: {level_str}")
 
 
@@ -301,7 +346,7 @@ class LoggerFormatter(logging.Formatter):
     def formatTime(self, record, datefmt=None):
         dt = datetime.fromtimestamp(record.created).astimezone()
         formatted_time = dt.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3] + " " + dt.strftime('%z %Z')
-        return f"{formatted_time[:23]}{formatted_time[24:27]}:{formatted_time[27:]}" # change 0800 to 08:00
+        return f"{formatted_time[:23]}{formatted_time[24:27]}:{formatted_time[27:]}"  # change 0800 to 08:00
 
     def format(self, record):
         original = logging.Formatter.format(self, record)
@@ -312,15 +357,19 @@ class LoggerFormatter(logging.Formatter):
             if len(message) > MAX_LOG_STRING_LEN:
                 message = message[:MAX_LOG_STRING_LEN]
             invalid_chars = {
-                '\f', '\r', '\b', '\t', '\v', '\n',
-                '\u000A', '\u000D', '\u000C', '\u000B',
-                '\u0008', '\u007F', '\u0009'
+                '\f',
+                '\r',
+                '\b',
+                '\t',
+                '\v',
+                '\n',
+                '\u007f',
             }
             for char in invalid_chars:
                 message = message.replace(char, "")
             message = re.sub(R"[ ]+", " ", message)
         else:
-            message = f'log is None!'
+            message = 'log is None!'
         return message
 
 
@@ -339,17 +388,23 @@ def create_directory_with_permissions(real_log_path, permission) -> bool:
         try:
             os.makedirs(current_path, mode=permission, exist_ok=True)
         except Exception:
-            logging.warning("Failed to create log directory.")
+            logging.warning(
+                "%s Log directory creation failed. issue=failed to create directory, path=%s, expected_mode=%s. "
+                "Possible cause: parent path permission is insufficient or the path is invalid. "
+                "Troubleshooting: check parent directory permission, disk status, and MINDIE_LOG_PATH.",
+                LOG_COMPONENT,
+                current_path,
+                oct(permission),
+            )
             return False
     return True
 
 
 def init_logger():
-    global logger
     log_level = str_to_loglevel(ENV.component_log_level)
     logger.setLevel(log_level)
     if ENV.disable_log:
-        logger.disabled=True
+        logger.disabled = True
         return logger
 
     if ENV.component_log_verbose in POSITIVE_BOOLEAN:
@@ -357,9 +412,7 @@ def init_logger():
             '%(asctime)s [%(process)d] [%(thread)d] [MindIE-SD] [%(levelname)s] %(filename)s:%(lineno)d: %(message)s'
         )
     else:
-        formatter = LoggerFormatter(
-            '%(asctime)s [%(levelname)s]: %(message)s'
-        )
+        formatter = LoggerFormatter('%(asctime)s [MindIE-SD] [%(levelname)s] %(message)s')
 
     if ENV.component_log_stdout in POSITIVE_BOOLEAN:
         print_handler = logging.StreamHandler(stream=sys.stdout)
@@ -370,11 +423,11 @@ def init_logger():
     if ENV.component_log_to_file in POSITIVE_BOOLEAN:
         # check and standarlize the path
         log_base_path = ENV.mindie_log_path
-        log_base_path = os.path.expanduser(log_base_path) # expand '~'
+        log_base_path = os.path.expanduser(log_base_path)  # expand '~'
         # relative path
         if not log_base_path.startswith("/"):
             log_base_path = os.path.join(MINDIE_DEFAULTS_LOG_PATH, log_base_path)
-            log_base_path = os.path.expanduser(log_base_path) # expand '~'
+            log_base_path = os.path.expanduser(log_base_path)  # expand '~'
 
         real_log_path = ""
         if check_path(log_base_path):
@@ -384,17 +437,26 @@ def init_logger():
             debug_log_path = os.path.join(real_log_path, "debug")
             need_add_handler = create_directory_with_permissions(debug_log_path, PATH_OWNER_SHIP)
             if need_add_handler:
-                file_handler = MindIELogFileHandler(debug_log_path,
-                                                    max_file_num=ENV.rotate_max_file_num,
-                                                    max_file_size=ENV.rotate_max_file_size*MB,
-                                                    rotate_cycle_num=ENV.rotate_cycle_num,
-                                                    rotate_cycle=ENV.rotate_cycle)
+                file_handler = MindIELogFileHandler(
+                    debug_log_path,
+                    max_file_num=ENV.rotate_max_file_num,
+                    max_file_size=ENV.rotate_max_file_size * MB,
+                    rotate_cycle_num=ENV.rotate_cycle_num,
+                    rotate_cycle=ENV.rotate_cycle,
+                )
                 file_handler.setFormatter(formatter)
                 file_handler.setLevel(log_level)
                 logger.addHandler(file_handler)
         else:
-            logging.warning("The log file path is invalid or does not exist. The log cannot be saved!")
+            logging.warning(
+                "%s Log file path validation failed. issue=invalid log path, path=%s. "
+                "Possible cause: path is empty, too long, a symlink, or inaccessible. "
+                "Troubleshooting: check MINDIE_LOG_PATH and directory permission; logs will only be printed to stdout.",
+                LOG_COMPONENT,
+                log_base_path,
+            )
     logger.propagate = False
+    return logger
 
 
 logger = logging.getLogger('mindie-sd')

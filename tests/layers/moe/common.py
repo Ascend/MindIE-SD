@@ -16,11 +16,11 @@ import torch
 def make_moe_kwargs(num_tokens=3, num_experts=2, hidden_size=4, intermediate_size=8, **overrides):
     kwargs = dict(
         hidden_states=torch.randn(num_tokens, hidden_size),
-        w13_weight=torch.randn(num_experts, hidden_size, 2 * intermediate_size),
-        w2_weight=torch.randn(num_experts, intermediate_size, hidden_size),
         router_logits=torch.randn(num_tokens, num_experts),
         num_experts=num_experts,
         top_k=1,
+        w13_weight=torch.randn(num_experts, hidden_size, 2 * intermediate_size),
+        w2_weight=torch.randn(num_experts, intermediate_size, hidden_size),
     )
     kwargs.update(overrides)
     return kwargs

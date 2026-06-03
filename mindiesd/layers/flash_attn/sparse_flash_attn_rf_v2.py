@@ -10,18 +10,23 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-import os
-from pathlib import Path
 import math
 import torch
 from einops import rearrange
 from .. import _custom_ops as ops
-from . import attention_forward
 from ...utils.exception import ParametersInvalid
-from ...utils import file_utils
+from ...utils.get_platform import is_a5_device
 
 
-def avgpool(input_tensor, pool_size=128, input_layout='BNSD'): # BSND in,  BSND out
+_A5_RF_V2_UNSUPPORTED_MSG = (
+    "sparse_flash_attn_rf_v2 (rain_fusion_attention) is not supported on A5 devices. "
+    "Please use the public API 'mindiesd.layers.flash_attn.sparse_attention' (which routes 'rf_v2' "
+    "to 'rf_v3' automatically on A5), or call 'sparse_flash_attn_rf_v3.bsa_sparse_attention_v3' "
+    "directly for the higher-performance equivalent."
+)
+
+
+def avgpool(input_tensor, pool_size=128, input_layout='BNSD'):  # BSND in,  BSND out
     if input_layout == "BSND":
         batch, seqlen, headnum, dim = input_tensor.shape
 
@@ -29,13 +34,13 @@ def avgpool(input_tensor, pool_size=128, input_layout='BNSD'): # BSND in,  BSND 
         tail_size = seqlen % pool_size
 
         if num_full_blocks > 0:
-            full_blocks = input_tensor[:, :num_full_blocks * pool_size, :, :]
+            full_blocks = input_tensor[:, : num_full_blocks * pool_size, :, :]
             full_blocks_reshaped = full_blocks.view(batch, num_full_blocks, pool_size, headnum, dim)
             full_pooled = full_blocks_reshaped.mean(dim=2)
         else:
             full_pooled = torch.empty(0, device=input_tensor.device)
         if tail_size > 0:
-            tail_block = input_tensor[:, num_full_blocks * pool_size:, :, :]
+            tail_block = input_tensor[:, num_full_blocks * pool_size :, :, :]
             tail_reshaped = tail_block.view(batch, 1, tail_size, headnum, dim)
             tail_pooled = tail_reshaped.mean(dim=2)
         else:
@@ -52,13 +57,13 @@ def avgpool(input_tensor, pool_size=128, input_layout='BNSD'): # BSND in,  BSND 
         num_full_blocks = seqlen // pool_size
         tail_size = seqlen % pool_size
         if num_full_blocks > 0:
-            full_blocks = input_tensor[:, :, :num_full_blocks * pool_size, :]
+            full_blocks = input_tensor[:, :, : num_full_blocks * pool_size, :]
             full_blocks_reshaped = full_blocks.view(batch, headnum, num_full_blocks, pool_size, dim)
             full_pooled = full_blocks_reshaped.mean(dim=3)
         else:
             full_pooled = torch.empty(0, device=input_tensor.device)
         if tail_size > 0:
-            tail_block = input_tensor[:, :, num_full_blocks * pool_size:, :]
+            tail_block = input_tensor[:, :, num_full_blocks * pool_size :, :]
             tail_reshaped = tail_block.view(batch, headnum, 1, tail_size, dim)
             tail_pooled = tail_reshaped.mean(dim=3)
         else:
@@ -93,10 +98,16 @@ def get_mask_index(mask):
 
 def get_blockwise_mask(
     qkv_pool,
-    txt_len, sparsity, scale, pool_size,
-    latent_shape_q, latent_shape_k,
-    input_layout, return_binary=False,
-    protect_first_frame=True):
+    txt_len,
+    sparsity,
+    scale,
+    pool_size,
+    latent_shape_q,
+    latent_shape_k,
+    input_layout,
+    return_binary=False,
+    protect_first_frame=True,
+):
     tq, hq, wq = latent_shape_q
     first_frame_len = hq * wq
 
@@ -157,8 +168,15 @@ def rearrange_with_remaining(tensor, latent_shape_q, latent_shape_k, input_layou
             if wq % 8 != 0:
                 tensor_hwt, tensor_w_r = torch.split(tensor_hwt, wq - (wq % 8), dim=3)
                 tensor_w_r = tensor_w_r.reshape(b, frame_num - 1, -1, n, d)
-            tensor_hwt = rearrange(tensor_hwt, 'b f (hn hb) (wn wb) n d -> b f (hn wn hb wb) n d', f=frame_num - 1,
-                                   hb=8, wb=8, hn=hq // 8, wn=wq // 8)
+            tensor_hwt = rearrange(
+                tensor_hwt,
+                'b f (hn hb) (wn wb) n d -> b f (hn wn hb wb) n d',
+                f=frame_num - 1,
+                hb=8,
+                wb=8,
+                hn=hq // 8,
+                wn=wq // 8,
+            )
             if hq % 8 != 0:
                 tensor_hwt = torch.cat((tensor_hwt, tensor_h_r), dim=2)
             if wq % 8 != 0:
@@ -166,8 +184,15 @@ def rearrange_with_remaining(tensor, latent_shape_q, latent_shape_k, input_layou
             tensor_hwt = tensor_hwt.reshape(b, -1, n, d)
             tensor_hwt = torch.cat([tensor_first, tensor_hwt], dim=1)
         else:
-            tensor_hwt = rearrange(tensor, 'b (f hn hb wn wb) n d -> b (f hn wn hb wb) n d', f=frame_num, hb=8, wb=8,
-                                hn=hq // 8, wn=wq // 8)
+            tensor_hwt = rearrange(
+                tensor,
+                'b (f hn hb wn wb) n d -> b (f hn wn hb wb) n d',
+                f=frame_num,
+                hb=8,
+                wb=8,
+                hn=hq // 8,
+                wn=wq // 8,
+            )
     else:
         b, n, s, d = tensor.shape
         if (hq % 8 != 0) or (wq % 8 != 0):
@@ -182,8 +207,15 @@ def rearrange_with_remaining(tensor, latent_shape_q, latent_shape_k, input_layou
             if wq % 8 != 0:
                 tensor_hwt, tensor_w_r = torch.split(tensor_hwt, wq - (wq % 8), dim=4)
                 tensor_w_r = tensor_w_r.reshape(b, n, frame_num - 1, -1, d)
-            tensor_hwt = rearrange(tensor_hwt, 'b n f (hn hb) (wn wb) d -> b n f (hn wn hb wb) d', f=frame_num - 1,
-                                hb=8, wb=8, hn=hq // 8, wn=wq // 8)
+            tensor_hwt = rearrange(
+                tensor_hwt,
+                'b n f (hn hb) (wn wb) d -> b n f (hn wn hb wb) d',
+                f=frame_num - 1,
+                hb=8,
+                wb=8,
+                hn=hq // 8,
+                wn=wq // 8,
+            )
             if hq % 8 != 0:
                 tensor_hwt = torch.cat((tensor_hwt, tensor_h_r), dim=3)
             if wq % 8 != 0:
@@ -191,8 +223,15 @@ def rearrange_with_remaining(tensor, latent_shape_q, latent_shape_k, input_layou
             tensor_hwt = tensor_hwt.reshape(b, n, -1, d)
             tensor_hwt = torch.cat([tensor_first, tensor_hwt], dim=2)
         else:
-            tensor_hwt = rearrange(tensor, 'b n (f hn hb wn wb) d -> b n (f hn wn hb wb) d', f=frame_num, hb=8, wb=8,
-                                hn=hq // 8, wn=wq // 8)
+            tensor_hwt = rearrange(
+                tensor,
+                'b n (f hn hb wn wb) d -> b n (f hn wn hb wb) d',
+                f=frame_num,
+                hb=8,
+                wb=8,
+                hn=hq // 8,
+                wn=wq // 8,
+            )
     return tensor_hwt
 
 
@@ -232,8 +271,15 @@ def inv_rearrange_with_remaining(tensor, latent_shape_q, latent_shape_k, input_l
             if r_w != 0:
                 tensor_w_r = parts[idx]
 
-            tensor_hwt = rearrange(tensor_hwt, 'b f (hn wn hb wb) n d -> b f (hn hb) (wn wb) n d', f=frame_num - 1,
-                                   hb=8, wb=8, hn=hq // 8, wn=wq // 8)
+            tensor_hwt = rearrange(
+                tensor_hwt,
+                'b f (hn wn hb wb) n d -> b f (hn hb) (wn wb) n d',
+                f=frame_num - 1,
+                hb=8,
+                wb=8,
+                hn=hq // 8,
+                wn=wq // 8,
+            )
 
             if r_w != 0:
                 tensor_w_r = tensor_w_r.reshape(b, frame_num - 1, h_main, r_w, n, d)
@@ -246,8 +292,15 @@ def inv_rearrange_with_remaining(tensor, latent_shape_q, latent_shape_k, input_l
             tensor_hwt = tensor_hwt.reshape(b, -1, n, d)
             tensor_hwt = torch.cat([tensor_first, tensor_hwt], dim=1)
         else:
-            tensor_hwt = rearrange(tensor, 'b (f hn wn hb wb) n h -> b (f hn hb wn wb) n h', f=frame_num, hb=8, wb=8,
-                                hn=hq // 8, wn=wq // 8)
+            tensor_hwt = rearrange(
+                tensor,
+                'b (f hn wn hb wb) n h -> b (f hn hb wn wb) n h',
+                f=frame_num,
+                hb=8,
+                wb=8,
+                hn=hq // 8,
+                wn=wq // 8,
+            )
     else:
         b, n, s, d = tensor.shape
         if (r_h != 0) or (r_w != 0):
@@ -270,8 +323,15 @@ def inv_rearrange_with_remaining(tensor, latent_shape_q, latent_shape_k, input_l
             if r_w != 0:
                 tensor_w_r = parts[idx]
 
-            tensor_hwt = rearrange(tensor_hwt, 'b n f (hn wn hb wb) d -> b n f (hn hb) (wn wb) d', f=frame_num - 1,
-                                   hb=8, wb=8, hn=hq // 8, wn=wq // 8)
+            tensor_hwt = rearrange(
+                tensor_hwt,
+                'b n f (hn wn hb wb) d -> b n f (hn hb) (wn wb) d',
+                f=frame_num - 1,
+                hb=8,
+                wb=8,
+                hn=hq // 8,
+                wn=wq // 8,
+            )
 
             if r_w != 0:
                 tensor_w_r = tensor_w_r.reshape(b, n, frame_num - 1, h_main, r_w, d)
@@ -284,8 +344,15 @@ def inv_rearrange_with_remaining(tensor, latent_shape_q, latent_shape_k, input_l
             tensor_hwt = tensor_hwt.reshape(b, n, -1, d)
             tensor_hwt = torch.cat([tensor_first, tensor_hwt], dim=2)
         else:
-            tensor_hwt = rearrange(tensor, 'b n (f hn wn hb wb) h -> b n (f hn hb wn wb) h', f=frame_num, hb=8, wb=8,
-                                hn=hq // 8, wn=wq // 8)
+            tensor_hwt = rearrange(
+                tensor,
+                'b n (f hn wn hb wb) h -> b n (f hn hb wn wb) h',
+                f=frame_num,
+                hb=8,
+                wb=8,
+                hn=hq // 8,
+                wn=wq // 8,
+            )
     return tensor_hwt
 
 
@@ -315,7 +382,6 @@ def do_tensor_rearrange_pooling(query, key, value, text_len, pool_size, latent_s
         tensor_pool = avgpool(tensor, pool_size, input_layout)
     query_, key_, value_ = torch.chunk(tensor, 3, dim=0)
     return query_, key_, value_, tensor_pool
-
 
 
 def do_tensor_inv_rearrange(tensor, text_len, latent_shape_q, latent_shape_k, input_layout):
@@ -360,12 +426,17 @@ def rain_fusion_attention(
     blockshape=None,
     actual_seq_lengths=None,
     actual_seq_lengths_kv=None,
-    inner_precise=0
+    inner_precise=0,
 ):
+    if is_a5_device():
+        raise ParametersInvalid(_A5_RF_V2_UNSUPPORTED_MSG)
 
     out, _ = ops.rain_fusion_attention(
-        query, key, value,
-        select_idx, select_num_idx,
+        query,
+        key,
+        value,
+        select_idx,
+        select_num_idx,
         blockshape,
         attn_mask=None,
         actual_seq_qlen=actual_seq_lengths,
@@ -374,8 +445,10 @@ def rain_fusion_attention(
         q_input_layout=input_layout,
         kv_input_layout=input_layout,
         head_num=head_num,
-        mask_type=0, scale=scale,
+        mask_type=0,
+        scale=scale,
         inner_precise=inner_precise,
-        block_size=0)
+        block_size=0,
+    )
 
     return out

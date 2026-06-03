@@ -16,14 +16,22 @@ from typing import Dict
 from collections import OrderedDict
 from functools import wraps
 import torch
-import torch.nn as nn
+from torch import nn
 import safetensors
 from .mode import QuantAlgorithm
 from .config import QuantConfig, LayerQuantConfig, TimestepPolicyConfig
-from .mode import W4A4_LIST,W8A8_LIST
+from .mode import W4A4_LIST, W8A8_LIST
 from .utils import replace_rank_suffix, get_quant_weight, extract_constructor_args, MAX_WEIGHT_SIZE
-from .layer import (W4A4QuantLinear, W4A4MXFP4DualQuantLinear, W8A8QuantLinear, W8A8TimeStepQuantLinear,
-                    WeightQuantLinear, FP8RotateQuantFA, W8A8MXFP8QuantLinear, W4A4MXFP4QuantLinear)
+from .layer import (
+    W4A4QuantLinear,
+    W4A4MXFP4DualQuantLinear,
+    W8A8QuantLinear,
+    W8A8TimeStepQuantLinear,
+    WeightQuantLinear,
+    FP8RotateQuantFA,
+    W8A8MXFP8QuantLinear,
+    W4A4MXFP4QuantLinear,
+)
 from ..utils import ParametersInvalid, ConfigError
 from ..utils import file_utils
 from ..utils.logs.logging import logger
@@ -35,7 +43,7 @@ def get_key_patterns(layer_name):
         f'{layer_name}.weight',
         f'{layer_name}',
         f'{layer_name}.fa_q.scale',
-        f'{layer_name}.quant_type'
+        f'{layer_name}.quant_type',
     ]
     return key_patterns
 
@@ -47,9 +55,7 @@ def weight_quantize(name, layer, cfg, quant_weights, **kwargs):
 
 
 def w8a16_quantize(name, layer, cfg, quant_weights, **kwargs):
-    quant_map = OrderedDict([
-        (nn.Linear, WeightQuantLinear)
-    ])
+    quant_map = OrderedDict([(nn.Linear, WeightQuantLinear)])
 
     # 如果模型指定了类的匹配规则，优先匹配模型指定的
     user_dict = kwargs.get('map', None)
@@ -129,8 +135,13 @@ def smooth_quantize_w8a8(name, layer, cfg, quant_weights, **kwargs):
     else:
         init_params[bias] = False
 
-    if cfg.quant_algo in [QuantAlgorithm.W8A8_DYNAMIC, QuantAlgorithm.W8A8_MXFP8, QuantAlgorithm.W4A4_DYNAMIC,
-                          QuantAlgorithm.W4A4_MXFP4_DUALSCALE, QuantAlgorithm.W4A4_MXFP4_DYNAMIC]:
+    if cfg.quant_algo in [
+        QuantAlgorithm.W8A8_DYNAMIC,
+        QuantAlgorithm.W8A8_MXFP8,
+        QuantAlgorithm.W4A4_DYNAMIC,
+        QuantAlgorithm.W4A4_MXFP4_DUALSCALE,
+        QuantAlgorithm.W4A4_MXFP4_DYNAMIC,
+    ]:
         init_params['is_dynamic'] = True
 
     init_params['weights'] = quant_weights
@@ -158,7 +169,6 @@ def smooth_quantize(name, layer, cfg, quant_weights, **kwargs):
 def add_fa_quant(layer, cfg, prefix, quant_weights):
     if cfg.quant_algo in [QuantAlgorithm.FP8_DYNAMIC]:
         layer.fa_quant = FP8RotateQuantFA(prefix, quant_weights)
-    return
 
 
 def get_layer_quant_mode(name, layer, cfg):
@@ -198,14 +208,15 @@ def modify_graph(model, modified_layers):
 def get_cfg_and_weights(quant_des_path):
     quant_des_path, filename, rank = replace_rank_suffix(quant_des_path)
     quant_algo_str = "quant_algo"
-    with file_utils.safe_open(quant_des_path, "r", encoding="utf-8",
-                              permission_mode=file_utils.CONFIG_FILE_PERMISSION) as reader:
+    with file_utils.safe_open(
+        quant_des_path, "r", encoding="utf-8", permission_mode=file_utils.CONFIG_FILE_PERMISSION
+    ) as reader:
         data = reader.read()
     quant_des_dict = json.loads(data, strict=False)
-    logger.info(f"Quant Description Filename:{filename}")
+    logger.debug("[MindIE-SD/quantization] Quant description loaded. filename=%s.", filename)
 
     if not quant_des_dict:
-        raise ParametersInvalid(f"quant_des_dict is none!")
+        raise ParametersInvalid("quant_des_dict is none!")
     exclude_layers = [k for k, v in quant_des_dict.items() if v == "FLOAT"]
     valid_values = {item.value for item in QuantAlgorithm}  # 预计算有效值集合
     quantized_layers = {
@@ -215,7 +226,7 @@ def get_cfg_and_weights(quant_des_path):
     }
     quant_algo = quant_des_dict.get("model_quant_type", None)
     if quant_algo is None:
-        raise ParametersInvalid(f"quant_algo must be the type of QuantAlgorithm.")
+        raise ParametersInvalid("quant_algo must be the type of QuantAlgorithm.")
 
     quant_config = {"quant_algo": quant_algo}
     quant_config.update({'exclude_layers': tuple(exclude_layers)})
@@ -233,10 +244,11 @@ def get_cfg_and_weights(quant_des_path):
         weight_name = f'quant_model_weight_{quant_algo.lower()}.safetensors'
     quant_weight_path = os.path.join(quant_weight_dir, weight_name)
     quant_weight_path = file_utils.standardize_path(quant_weight_path)
-    file_utils.check_file_safety(quant_weight_path,
-        permission_mode=file_utils.MODELDATA_FILE_PERMISSION, max_file_size=MAX_WEIGHT_SIZE)
+    file_utils.check_file_safety(
+        quant_weight_path, permission_mode=file_utils.MODELDATA_FILE_PERMISSION, max_file_size=MAX_WEIGHT_SIZE
+    )
     quant_weights = safetensors.safe_open(quant_weight_path, framework="pytorch")
-    logger.info(f"Quant Weight Path:{quant_weight_path}")
+    logger.debug("[MindIE-SD/quantization] Quant weight file loaded. path=%s.", quant_weight_path)
 
     return cfg, quant_weights
 
@@ -256,8 +268,9 @@ def validate_quantize_params(func):
 
         timestep_config = kwargs.get('timestep_config')
         if timestep_config is not None and not isinstance(timestep_config, TimestepPolicyConfig):
-            raise ParametersInvalid(f"Timestep_config must be the type of TimestepPolicyConfig,"
-                "but currently got {type(timestep_config)}.")
+            raise ParametersInvalid(
+                f"Timestep_config must be the type of TimestepPolicyConfig, but currently got {type(timestep_config)}."
+            )
 
         dtype = kwargs.get('dtype', torch.bfloat16)
         if not isinstance(dtype, torch.dtype) or dtype not in (torch.float16, torch.bfloat16):
@@ -265,9 +278,11 @@ def validate_quantize_params(func):
 
         module_map = kwargs.get('map', None)
         if module_map is not None:
-            if not isinstance(module_map, Dict) or \
-                    not all(isinstance(v, nn.Module) for v in module_map.values()) or \
-                    not all(isinstance(k, nn.Module) for k in module_map.keys()):
+            if (
+                not isinstance(module_map, Dict)
+                or not all(isinstance(v, nn.Module) for v in module_map.values())
+                or not all(isinstance(k, nn.Module) for k in module_map.keys())
+            ):
                 raise ParametersInvalid("The data type of map must be dictionary, and its KVType must be nn.Module.")
 
         return func(model, quant_des_path, **kwargs)
@@ -301,7 +316,7 @@ def quantize(model, quant_des_path, **kwargs):
         return model
 
     modified_layers = []
-    rank = int(os.getenv("RANK", 0))
+    rank = int(os.getenv("RANK", "0"))
 
     for name, layer in model.named_modules():
         # 跳过回退层
@@ -324,18 +339,22 @@ def quantize(model, quant_des_path, **kwargs):
         if layer_quant_mode.contains_activation_and_weight_quant():
             quant_layer, is_modified = smooth_quantize(name, layer, layer_quant_cfg, quant_weights, **kwargs)
             if is_modified:
-                logger.debug(f"W8A8 Quant layer name:%s, Quant class name:%s.", name, quant_layer.__class__.__name__)
+                logger.debug("W8A8 Quant layer name:%s, Quant class name:%s.", name, quant_layer.__class__.__name__)
                 modified_layers.append((name, quant_layer))
         elif layer_quant_mode.check_weight_only_mode():
             quant_layer, is_modified = weight_quantize(name, layer, layer_quant_cfg, quant_weights, **kwargs)
             if is_modified:
-                logger.debug(f"Weight Quant layer name:%s, Quant class name:%s.", name, quant_layer.__class__.__name__)
+                logger.debug("Weight Quant layer name:%s, Quant class name:%s.", name, quant_layer.__class__.__name__)
                 modified_layers.append((name, quant_layer))
         elif layer_quant_mode.contains_fa_quantization():
             add_fa_quant(layer, layer_quant_cfg, name, quant_weights)
             if rank == 0:
-                logger.info(f"FA Quant layer name:%s, Quant class name:%s, Quant algo:%s.",
-                            name, layer.__class__.__name__, layer_quant_cfg.quant_algo)
+                logger.debug(
+                    "FA Quant layer name:%s, Quant class name:%s, Quant algo:%s.",
+                    name,
+                    layer.__class__.__name__,
+                    layer_quant_cfg.quant_algo,
+                )
 
     # 执行改图
     modify_graph(model, modified_layers)

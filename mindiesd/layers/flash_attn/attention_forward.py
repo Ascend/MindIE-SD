@@ -14,11 +14,21 @@ import torch
 
 from .common import AttentionParam
 from .attention_func import (
-    attention_math, get_attention_function, get_attention_function_static, get_attention_function_runtime)
+    attention_math,
+    get_attention_function,
+    get_attention_function_static,
+    get_attention_function_runtime,
+)
 from ...utils.exception import ParametersInvalid
+from ...utils.get_platform import is_a5_device
 from ...utils.logs.logging import logger
 
 ASCEND_LASER_ATTENTION_MIN_SEQLEN = 2048
+
+# Operators that are no longer supported on A5; manual / static dispatch must
+# transparently route them to ``fused_attn_score`` so existing user code can
+# migrate without modification.
+_A5_DEPRECATED_OP_TYPES = {"ascend_laser_attention", "prompt_flash_attn"}
 
 
 def attention_forward(query, key, value, attn_mask=None, scale=None, fused=True, head_first=False, **kwargs):
@@ -48,6 +58,7 @@ def attention_forward(query, key, value, attn_mask=None, scale=None, fused=True,
                 manual: Manually setting the fusion operator type.
             op_type ('str'): Operator type, supports 'prompt_flash_attn', 'fused_attn_score', 'ascend_laser_attention'.
                 Only takes effect when opt_mode is set to 'manual'.
+                Note: 'ascend_laser_attention' and 'prompt_flash_attn' is automatically routed to 'fused_attn_score' on A5 devices.
             layout ('str'): Operator layout, supports 'BNSD', 'BSND', 'BSH'.
                 Only takes effect when opt_mode is set to 'manual'.
     """
@@ -56,12 +67,14 @@ def attention_forward(query, key, value, attn_mask=None, scale=None, fused=True,
     check_input_params(input_params)
     if not head_first:
         attn_param = AttentionParam(
-            query.shape[0], query.shape[-2], query.shape[-1], query.shape[1], key.shape[1], query.dtype, head_first)
+            query.shape[0], query.shape[-2], query.shape[-1], query.shape[1], key.shape[1], query.dtype, head_first
+        )
     else:
         attn_param = AttentionParam(
-            query.shape[0], query.shape[1], query.shape[-1], query.shape[2], key.shape[2], query.dtype, head_first)
+            query.shape[0], query.shape[1], query.shape[-1], query.shape[2], key.shape[2], query.dtype, head_first
+        )
     if scale is None:
-        scale = attn_param.head_dim ** -0.5
+        scale = attn_param.head_dim**-0.5
     if not fused:
         return attention_math(query, key, value, attn_mask, scale, head_first)
 
@@ -74,9 +87,7 @@ def attention_forward(query, key, value, attn_mask=None, scale=None, fused=True,
         op_type_env = os.getenv("MINDIE_SD_FA_TYPE")
         op_type = op_type_env or kwargs.get("op_type", "fused_attn_score")
         if op_type not in supported_fa_types:
-            raise ParametersInvalid(
-                f"Unsupported FA type: '{op_type}'. "
-                f"Supported values: {supported_fa_types}")
+            raise ParametersInvalid(f"Unsupported FA type: '{op_type}'. Supported values: {supported_fa_types}")
         layout = kwargs.get("layout", "BNSD")
         op_type = get_manual_attention_op_type(attn_param, op_type)
 
@@ -84,8 +95,10 @@ def attention_forward(query, key, value, attn_mask=None, scale=None, fused=True,
     elif opt_mode == "runtime":
         attn_func = get_attention_function_runtime(attn_param, query, key, value, attn_mask, scale)
     else:
-        raise ParametersInvalid(f"The input 'opt_mode':{opt_mode} is invalid. "
-            f"The list of supported options is ['runtime', 'static', 'manual']")
+        raise ParametersInvalid(
+            f"The input 'opt_mode':{opt_mode} is invalid. "
+            f"The list of supported options is ['runtime', 'static', 'manual']"
+        )
     return attn_func(query, key, value, attn_mask, scale)
 
 
@@ -112,11 +125,25 @@ def check_input_params(input_params):
 
 
 def get_manual_attention_op_type(attn_param, op_type):
+    if is_a5_device() and op_type in _A5_DEPRECATED_OP_TYPES:
+        logger.warning(
+            "[MindIE-SD/flash_attn] Manual attention operator remapped for A5. "
+            "issue=manual op_type is not supported on A5, expected_op_type=fused_attn_score, actual_op_type=%s, "
+            "q_seqlen=%s, kv_seqlen=%s. possible_cause=the requested operator is deprecated on A5 devices. "
+            "Troubleshooting: set op_type='fused_attn_score' or remove the manual op_type setting.",
+            op_type,
+            attn_param.q_seqlen,
+            attn_param.kv_seqlen,
+        )
+        return "fused_attn_score"
+
     if op_type != "ascend_laser_attention":
         return op_type
 
-    if (attn_param.q_seqlen < ASCEND_LASER_ATTENTION_MIN_SEQLEN or
-            attn_param.kv_seqlen < ASCEND_LASER_ATTENTION_MIN_SEQLEN):
+    if (
+        attn_param.q_seqlen < ASCEND_LASER_ATTENTION_MIN_SEQLEN
+        or attn_param.kv_seqlen < ASCEND_LASER_ATTENTION_MIN_SEQLEN
+    ):
         logger.debug(
             "Warning: fall back 'ascend_laser_attention' to 'fused_attn_score' because "
             "q_seqlen=%s or kv_seqlen=%s is smaller than %s.",
