@@ -225,6 +225,8 @@ if (BUILD_OPEN_PROJECT)
                 OPTIONS ${OPS_COMPILE_OPTIONS}
         )
     endif()
+
+    add_custom_target(custom_aicpu_kernels)
 endif ()
 
 add_subdirectory(utils)
@@ -235,6 +237,12 @@ op_add_subdirectory(OP_LIST OP_DIR_LIST)
 
 foreach (OP_DIR ${OP_DIR_LIST})
     add_subdirectory(${OP_DIR}/op_host)
+endforeach ()
+
+foreach (OP_DIR ${OP_DIR_LIST})
+    if (EXISTS "${OP_DIR}/op_kernel_aicpu/CMakeLists.txt")
+        add_subdirectory(${OP_DIR}/op_kernel_aicpu)
+    endif ()
 endforeach ()
 
 set(OP_DEPEND_DIR_LIST)

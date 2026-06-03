@@ -37,18 +37,35 @@ if [ ! -f ${msopgen} ]; then
     exit 1
 fi
 
+function sync_aicpu_ops_to_transformer_vendor(){
+    src_cpu_dir="${current_script_dir}/vendors/aie_ascendc/op_impl/cpu"
+    dst_cpu_dir="${current_script_dir}/vendors/customize_transformer/op_impl/cpu"
+
+    if [ -d "$src_cpu_dir" ]; then
+        echo "Syncing AICPU op_impl from aie_ascendc to customize_transformer..."
+        mkdir -p "$dst_cpu_dir"
+        cp -a "$src_cpu_dir/." "$dst_cpu_dir/"
+    fi
+}
+
 function build_ops(){
     ori_path=${PWD}
     cd ${current_script_dir}
     rm -rf vendors
-    source ${current_script_dir}/build_ascendc_ops.sh -n 'laser_attention;la_preprocess;ada_block_sparse_attention;sparse_block_estimate' -c 'ascend910;ascend910b;ascend910_93'
+    source ${current_script_dir}/build_ascendc_ops.sh -n 'laser_attention;la_preprocess;ada_block_sparse_attention;sparse_block_estimate;quant_flash_attn;quant_flash_attn_metadata' -c 'ascend910;ascend910b;ascend910_93;ascend950'
     source ${current_script_dir}/build_tik_ops.sh
+    sync_aicpu_ops_to_transformer_vendor
     rm -rf ${current_script_dir}/vendors/aie_ascendc/bin
     rm -rf ${current_script_dir}/vendors/customize/bin
+    rm -rf ${current_script_dir}/vendors/customize_transformer/bin
     so_files=$(find "${current_script_dir}/vendors" -name "*.so" -type f 2>/dev/null)
     if [ -n "$so_files" ]; then
         echo "Stripping .so files..."
         for so_file in $so_files; do
+            if [[ "$so_file" == *"/op_impl/cpu/aicpu_kernel/impl/"* ]]; then
+                echo "Skipping AICPU kernel so: $so_file"
+                continue
+            fi
             strip "$so_file"
         done
     fi
