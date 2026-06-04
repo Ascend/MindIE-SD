@@ -92,27 +92,52 @@ def create_aclgraph_backend():
     def _get_input_shape(inputs):
         return tuple(arg.shape if isinstance(arg, torch.Tensor) else () for arg in inputs)
 
+    def _evict_if_needed():
+        max_entries = CompilationConfig.aclgraph_max_entries
+        if 0 < max_entries <= len(entries):
+            oldest_key = next(iter(entries))
+            del entries[oldest_key]
+
+    def _make_static_inputs(inputs):
+        lazy = CompilationConfig.aclgraph_lazy_capture
+        static_inputs = []
+        for input_val in inputs:
+            if isinstance(input_val, torch.Tensor):
+                # Lazy capture uses fresh inference inputs that are never
+                # modified by Dynamo, so detach() (shared storage) is safe.
+                # Eager capture receives Dynamo example inputs whose storage
+                # may be reused after the backend returns, so clone() is
+                # required to keep stable, independent buffers.
+                buf = input_val.detach() if lazy else input_val.detach().clone()
+                if buf.device.type != "npu" and torch.npu.is_available():
+                    buf = buf.npu()
+                static_inputs.append(buf)
+            else:
+                static_inputs.append(input_val)
+        return static_inputs
+
     def _capture_graph(gm, inputs):
         input_shape = _get_input_shape(inputs)
         if input_shape not in entries:
+            _evict_if_needed()
+
             aclgraph = torch.npu.NPUGraph()
             pool = _get_global_graph_pool()
 
-            input_addresses = [x.data_ptr() for x in inputs if isinstance(x, torch.Tensor)]
+            static_inputs = _make_static_inputs(inputs)
+            input_addresses = [x.data_ptr() for x in static_inputs if isinstance(x, torch.Tensor)]
 
-            # C4: GC disable during capture to avoid slowdown from repeated
-            # collection across graph captures.
             with contextlib.ExitStack() as stack:
                 stack.enter_context(_patch_fn("gc.collect", lambda: None))
                 if hasattr(torch.npu, "empty_cache"):
                     stack.enter_context(_patch_fn("torch.npu.empty_cache", lambda: None))
 
                 with torch.npu.graph(npu_graph=aclgraph, pool=pool):
-                    output = gm(*inputs)
+                    output = gm(*static_inputs)
 
             entries[input_shape] = _ACLGraphEntry(
                 aclgraph=aclgraph,
-                static_inputs=list(inputs),
+                static_inputs=static_inputs,
                 output=output,
                 input_addresses=input_addresses,
                 copy_stream=None,
@@ -120,7 +145,7 @@ def create_aclgraph_backend():
         return input_shape
 
     def aclgraph_backend(gm, example_inputs):
-        if example_inputs:
+        if example_inputs and not CompilationConfig.aclgraph_lazy_capture:
             _capture_graph(gm, example_inputs)
 
         def compiled_fn(*args):
