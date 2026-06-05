@@ -1,0 +1,103 @@
+# ============================================================================
+# Dockerfile for vLLM-Omni with MindIE-SD (Ubuntu, A3)
+# ============================================================================
+# Description:
+#   Build a combined image of vLLM-Omni and MindIE-SD on top of the
+#   vLLM-Omni base image, enabling multi-modal LLM and Stable Diffusion
+#   inference in a single container.
+#
+# Components installed:
+#   mindiesd        - MindIE Stable Diffusion inference engine (pip)
+#   msprobe         - Precision debugging tool (pip)
+#   msmodelslim     - Model compression / quantization tool (pip)
+#   msprof-analyze  - MindStudio Profiler analysis tool (pip)
+#   msprof          - NPU profiling tool (bundled with CANN, no extra install)
+#
+# Base image:
+#   quay.io/ascend/vllm-omni:v0.20.0-a3 (CANN-based, Ubuntu, aarch64)
+#
+# Build:
+#   docker build -t quay.io/ascend/vllm-omni-mindiesd:v0.20.0-cann8.5.1-A3-ubuntu22.04-py3.11-aarch64 \
+#       -f Dockerfile.a3.ubuntu .
+#
+# Run:
+#   docker run -it --rm --name=vllm-omni-mindiesd \
+#       --privileged \
+#       --shm-size=1g \
+#       --device /dev/davinci0 \
+#       --device /dev/davinci1 \
+#       --device /dev/davinci2 \
+#       --device /dev/davinci3 \
+#       --device /dev/davinci_manager \
+#       --device /dev/devmm_svm \
+#       --device /dev/hisi_hdc \
+#       -v /usr/local/dcmi:/usr/local/dcmi \
+#       -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+#       -v /usr/local/Ascend/driver/lib64/:/usr/local/Ascend/driver/lib64/ \
+#       -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
+#       -v /etc/ascend_install.info:/etc/ascend_install.info \
+#       -v /root/.cache:/root/.cache \
+#       quay.io/ascend/vllm-omni-mindiesd:v0.20.0-cann8.5.1-A3-ubuntu22.04-py3.11-aarch64 \
+#       bash
+# ============================================================================
+
+FROM quay.io/ascend/vllm-omni:v0.20.0-a3
+
+# --------------------------------------------------------------------------
+# Metadata labels (OCI image spec)
+# --------------------------------------------------------------------------
+LABEL maintainer="Ascend Container Team"
+LABEL description="vLLM-Omni with MindIE-SD for multi-modal LLM and Stable Diffusion inference on Ascend NPU"
+LABEL org.opencontainers.image.title="vllm-omni-mindiesd"
+LABEL org.opencontainers.image.version="v0.20.0"
+LABEL org.opencontainers.image.description="vLLM-Omni + MindIE-SD combined image with Ascend tuning/debugging tools"
+
+# --------------------------------------------------------------------------
+# Environment variables for banner
+# --------------------------------------------------------------------------
+ENV ASCEND_SOFTWARE_NAME="vLLM-Omni + MindIE-SD"
+ENV ASCEND_SOFTWARE_VERSION="v0.20.0"
+
+# --------------------------------------------------------------------------
+# 1. Install MindIE-SD (Stable Diffusion inference engine)
+# --------------------------------------------------------------------------
+RUN pip install --no-cache-dir \
+    --trusted-host ascend.devcloud.huaweicloud.com \
+    -i https://ascend.devcloud.huaweicloud.com/pypi/simple/ \
+    mindiesd==3.0.0
+
+# --------------------------------------------------------------------------
+# 2. Install msprobe (precision debugging tool)
+#    --no-deps: base image already provides click, lxml, requests, rich, etc.
+# --------------------------------------------------------------------------
+RUN pip install --no-cache-dir --no-deps msprobe==0.1.4
+
+# --------------------------------------------------------------------------
+# 3. Install msmodelslim (model compression / quantization tool)
+# --------------------------------------------------------------------------
+RUN export PIP_EXTRA_INDEX_URL=https://mirrors.huaweicloud.com/ascend/repos/pypi && \
+    pip install --no-cache-dir msmodelslim==8.2.1
+
+# --------------------------------------------------------------------------
+# 4. Install msprof-analyze (MindStudio Profiler analysis tool)
+#    --no-deps: base image already provides click, tabulate, networkx,
+#    jinja2, PyYaml, tqdm, prettytable, ijson, numpy, pandas, etc.
+# --------------------------------------------------------------------------
+RUN export PIP_EXTRA_INDEX_URL=https://mirrors.huaweicloud.com/ascend/repos/pypi && \
+    pip install --no-cache-dir --no-deps msprof-analyze==26.0.0
+
+# --------------------------------------------------------------------------
+# Copy banner script
+# --------------------------------------------------------------------------
+COPY scripts/banner.sh /usr/local/bin/banner.sh
+RUN chmod +x /usr/local/bin/banner.sh
+
+# --------------------------------------------------------------------------
+# Entrypoint & CMD
+#   Base image sets ENTRYPOINT [] (empty) and CMD ["/bin/bash"].
+#   We override ENTRYPOINT with banner.sh; the banner script uses
+#   exec "$@" to chain into CMD, so the original behavior is preserved.
+#   ENV VLLM_WORKER_MULTIPROC_METHOD=spawn from base image is inherited.
+# --------------------------------------------------------------------------
+ENTRYPOINT ["/usr/local/bin/banner.sh"]
+CMD ["/bin/bash"]
