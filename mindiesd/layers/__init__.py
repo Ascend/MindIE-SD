@@ -19,7 +19,7 @@ from .adalayernorm import layernorm_scale_shift
 from .muls_add import muls_add
 from .rope import rotary_position_embedding
 from .fused_moe import fused_moe
-from .flash_attn.sparse_linear_attn import SparseLinearAttention
+from .flash_attn import SparseLinearAttention
 
 __all__ = [
     "RMSNorm",
