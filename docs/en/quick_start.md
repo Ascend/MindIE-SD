@@ -8,17 +8,52 @@ Before running inference, complete the environment preparation and install MindI
 
 ## Run inference
 
-Install the model-specific dependencies and then run inference.
+### 1. Get inference scripts
 
-Clone the Wan2.1 model repository anywhere, install its requirements, and run the inference script from the MindIE SD workspace. Adjust the weight path as needed, for example `/home/{user}/Wan2.1-T2V-14B`. Parameter details are documented in [parameter_config.md](../../examples/wan/parameter_config.md).
+Clone the Wan2.1 inference script repository from Modelers and install its dependencies:
 
 ```bash
 git clone https://modelers.cn/MindIE/Wan2.1.git && cd Wan2.1
 pip install -r requirements.txt
+```
 
+### 2. Get model weights
+
+The repository above contains inference scripts and **does not include model weights**. Weights must be downloaded separately. For Wan2.1, the following models are available:
+
+| Model | Description | Weights |
+|-------|-------------|---------|
+| Wan2.1-T2V-14B | Text-to-video | [HuggingFace](https://huggingface.co/Wan-AI/Wan2.1-T2V-14B) |
+| Wan2.1-I2V-14B-480P | Image-to-video (480P) | [HuggingFace](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-480P) |
+| Wan2.1-I2V-14B-720P | Image-to-video (720P) | [HuggingFace](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-720P) |
+
+After downloading, the weight directory should look like this (using Wan2.1-T2V-14B as an example):
+
+```text
+Wan2.1-T2V-14B/
+├── config.json
+├── model_index.json
+├── models/
+│   ├── dit/
+│   ├── vae/
+│   └── text_encoder/
+└── ...
+```
+
+> **Note**
+>
+> - Ascend-adapted models are also available on [Modelers - MindIE](https://modelers.cn/models/MindIE).
+> - For other models (FLUX.1-dev, HunyuanVideo, etc.), see the links in the [supported matrix](features/supported_matrix.md).
+
+### 3. Run inference
+
+Set the weight path via the `model_base` parameter and run the inference script. Parameter details are documented in [parameter_config.md](../../examples/wan/parameter_config.md).
+
+```bash
 # 8-card inference for Wan2.1-T2V-14B
 cp MindIE-SD/examples/wan/infer_t2v.sh ./
-bash infer_t2v.sh --model_base="/home/{user}/Wan2.1-T2V-14B"
+export model_base="/path/to/Wan2.1-T2V-14B"
+bash infer_t2v.sh
 ```
 
 ## Acceleration results

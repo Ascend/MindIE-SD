@@ -13,9 +13,9 @@
 
 | 产品名称 | 版本 |
 | -------- | ------ |
-| CANN | 8.5.1 |
+| CANN | 9.0.0 |
 | Ascend Extension for PyTorch | 7.3.0 |
-| Ascend HDK | 版本配套关系参见 [CANN版本配套说明](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/850/releasenote/releasenote_0000.html)（注：CANN 8.5.1和CANN 8.5.0版本配套的HDK版本一致） |
+| Ascend HDK | 版本配套关系参见 [CANN版本配套说明](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/900/releasenote/releasenote_0000.html) |
 
 # 版本兼容性说明
 
@@ -25,7 +25,7 @@ MindIE SD各组件需要配套使用，请勿跨版本混用各组件。
 
 | CANN | Ascend Extension for PyTorch |
 | ---- | ---------------------------- |
-| 8.5.1 | 7.3.0                        |
+| 9.0.0 | 7.3.0                        |
 
 # 版本使用注意事项
 

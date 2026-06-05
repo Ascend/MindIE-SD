@@ -177,7 +177,7 @@ docker exec <容器名> bash -lc 'source /usr/local/Ascend/ascend-toolkit/set_en
 |--------|---------|---------|
 | PyTorch | >= 2.6 | 升级 PyTorch 版本 |
 | torch_npu | >= 2.6，与 PyTorch 主版本匹配 | 升级 torch_npu |
-| CANN | >= 8.0.0，含 bisheng 编译器 | 升级 CANN SDK |
+| CANN | >= 9.0.0，含 bisheng 编译器 | 升级 CANN SDK |
 | Python | >= 3.10 | 升级 Python |
 | cmake / build / wheel | 可用 | `pip install cmake build wheel` |
 
@@ -244,10 +244,12 @@ npu-smi info -l
 
 | 依赖 | 要求 |
 |---|---|
-| CANN | >= 8.0.0，含 bisheng 编译器 |
+| CANN | >= 9.0.0，含 bisheng 编译器 |
 | Python | >= 3.10 |
-| PyTorch | 2.6 / 2.7 / 2.8 / 2.9 |
+| PyTorch | 2.6 / 2.7 / 2.8 / 2.9 / 2.10 |
 | torch_npu | 与 PyTorch 版本匹配 |
+| triton | 3.5.0（部署使用时需要） |
+| triton-ascend | 3.2.1（部署使用时需要） |
 | 环境变量 | `source /usr/local/Ascend/ascend-toolkit/set_env.sh` |
 | 编译工具 | cmake, build, wheel (`pip install build wheel`) |
 

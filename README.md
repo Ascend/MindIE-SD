@@ -40,6 +40,10 @@
 |- tests              // 测试用例
 ```
 
+## 📦 安装指南
+
+安装步骤和环境依赖详见[安装指导](docs/zh/installation.md)。
+
 ## 🚀 架构介绍及关键特性
 
 MindIE SD 架构和关键特性详见[架构介绍](docs/zh/architecture.md)。
