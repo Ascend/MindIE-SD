@@ -26,6 +26,17 @@ class MoEPrepareInput:
 
 
 @dataclass(frozen=True)
+class MoEPrepareOutput:
+    """Output produced by the dispatcher prepare stage."""
+
+    hidden_states: torch.Tensor
+    router_logits: torch.Tensor
+    original_shape: Any
+    mlp_output_dtype: torch.dtype
+    dynamic_scale: torch.Tensor | None = None
+
+
+@dataclass(frozen=True)
 class MoERoutingInput:
     """Input consumed by expert selection."""
 
@@ -43,15 +54,15 @@ class MoERoutingInput:
 
 
 @dataclass(frozen=True)
-class MoETokenDispatchInput:
-    """Input consumed by the dispatcher token-routing stage."""
+class MoEWeights:
+    """Dense and quantized weights consumed by grouped expert MLP computation."""
 
-    hidden_states: torch.Tensor
-    topk_weights: torch.Tensor
-    topk_ids: torch.Tensor
-    num_experts: int
-    top_k: int
-    local_num_experts: int
+    w13_weight: torch.Tensor
+    w2_weight: torch.Tensor
+    w13_bias: torch.Tensor | None = None
+    w2_bias: torch.Tensor | None = None
+    w13_weight_scale: torch.Tensor | None = None
+    w2_weight_scale: torch.Tensor | None = None
 
 
 @dataclass(frozen=True)
@@ -76,13 +87,36 @@ class MoEDynamicCombineMetadata:
 
 
 @dataclass(frozen=True)
+class MoETokenDispatchInput:
+    """Input consumed by the dispatcher token-routing stage."""
+
+    hidden_states: torch.Tensor
+    topk_weights: torch.Tensor
+    topk_ids: torch.Tensor
+    num_experts: int
+    top_k: int
+    local_num_experts: int
+    dynamic_scale: torch.Tensor | None = None
+
+
+@dataclass(frozen=True)
+class MoETokenDispatchOutput:
+    """Output produced by the dispatcher token-routing stage."""
+
+    hidden_states: torch.Tensor
+    group_list: torch.Tensor
+    group_list_type: int
+    combine_metadata: Any
+    dynamic_scale: torch.Tensor | None = None
+
+
+@dataclass(frozen=True)
 class MoEMlpComputeInput:
     """Input consumed by grouped expert MLP computation."""
 
     hidden_states: torch.Tensor
     group_list: torch.Tensor
     group_list_type: int
-    w13_weight: torch.Tensor
-    w2_weight: torch.Tensor
-    w13_bias: torch.Tensor | None = None
-    w2_bias: torch.Tensor | None = None
+    weights: MoEWeights
+    mlp_output_dtype: torch.dtype
+    dynamic_scale: torch.Tensor | None = None

@@ -27,9 +27,11 @@ from .comm_ops import (
 from .moe_dataclass import (
     MoEDynamicCombineMetadata,
     MoEPrepareInput,
+    MoEPrepareOutput,
     MoEStaticCombineMetadata,
+    MoETokenDispatchOutput,
 )
-from .moe_context import MoECommType, get_moe_comm_type, get_moe_group
+from .moe_context import MoECommType, get_moe_comm_type, get_moe_group, is_moe_quant
 
 
 class TokenDispatcher(ABC):
@@ -72,16 +74,34 @@ class StaticDispatcher(TokenDispatcher):
 
         if not tokens_full and moe_group is not None:
             # Static MoE computes a replicated full-token result before returning rank-local shards.
+            dynamic_scale = None
+            if is_moe_quant():
+                flat_hidden, dynamic_scale = torch_npu.npu_dynamic_quant(flat_hidden)
             flat_hidden = all_gather(flat_hidden, moe_group)
             flat_router = all_gather(flat_router, moe_group)
+            if dynamic_scale is not None:
+                dynamic_scale = all_gather(dynamic_scale, moe_group)
+            return MoEPrepareOutput(
+                hidden_states=flat_hidden,
+                router_logits=flat_router,
+                original_shape=hidden_states.shape,
+                mlp_output_dtype=hidden_states.dtype,
+                dynamic_scale=dynamic_scale,
+            )
 
-        return flat_hidden, flat_router, hidden_states.shape
+        return MoEPrepareOutput(
+            hidden_states=flat_hidden,
+            router_logits=flat_router,
+            original_shape=hidden_states.shape,
+            mlp_output_dtype=hidden_states.dtype,
+        )
 
     @classmethod
     def dispatch(cls, token_dispatch_input):
         hidden_states = token_dispatch_input.hidden_states
         topk_ids = token_dispatch_input.topk_ids
         topk_weights = token_dispatch_input.topk_weights
+        dynamic_scale = token_dispatch_input.dynamic_scale
         restore_shape = hidden_states.shape
         num_tokens = hidden_states.shape[0]
         active_expert_range = cls._get_active_expert_range(
@@ -99,19 +119,21 @@ class StaticDispatcher(TokenDispatcher):
         output = torch_npu.npu_moe_init_routing_v2(
             hidden_states,
             topk_ids,
+            scale=dynamic_scale,
             active_num=num_tokens * token_dispatch_input.top_k,
             expert_num=token_dispatch_input.num_experts,
             expert_tokens_num_type=1,
             expert_tokens_num_flag=True,
             active_expert_range=active_expert_range,
-            quant_mode=-1,
+            quant_mode=1 if is_moe_quant() and dynamic_scale is None else -1,
         )
-        sorted_hidden_states, expanded_row_idx, expert_tokens = output[:3]
-        return (
-            sorted_hidden_states,
-            expert_tokens.to(torch.int64),
-            1,
-            MoEStaticCombineMetadata(
+        sorted_hidden_states, expanded_row_idx, expert_tokens, dynamic_scale = output[:4]
+        return MoETokenDispatchOutput(
+            hidden_states=sorted_hidden_states,
+            dynamic_scale=dynamic_scale if is_moe_quant() else None,
+            group_list=expert_tokens.to(torch.int64),
+            group_list_type=1,
+            combine_metadata=MoEStaticCombineMetadata(
                 topk_weights=local_topk_weights,
                 restore_shape=restore_shape,
                 expanded_row_idx=expanded_row_idx,
@@ -167,6 +189,7 @@ class StaticDispatcher(TokenDispatcher):
 
 class DynamicDispatcher(TokenDispatcher):
     _split_cpu_buffers = {}
+    _split_copy_events = {}
 
     @classmethod
     def prepare(cls, prepare_input: MoEPrepareInput):
@@ -178,7 +201,12 @@ class DynamicDispatcher(TokenDispatcher):
         flat_router = router_logits.reshape(-1, router_logits.shape[-1])
         if not tokens_full:
             # Rank-local inputs are already in the layout required by dynamic MoE.
-            return flat_hidden, flat_router, hidden_states.shape
+            return MoEPrepareOutput(
+                hidden_states=flat_hidden,
+                router_logits=flat_router,
+                original_shape=hidden_states.shape,
+                mlp_output_dtype=hidden_states.dtype,
+            )
 
         rank = dist.get_rank(moe_group)
         world_size = dist.get_world_size(moe_group)
@@ -189,10 +217,11 @@ class DynamicDispatcher(TokenDispatcher):
             flat_router = F.pad(flat_router, (0, 0, 0, pad_size))
         hidden_shards = torch.tensor_split(flat_hidden, world_size, dim=0)
         router_shards = torch.tensor_split(flat_router, world_size, dim=0)
-        return (
-            hidden_shards[rank].contiguous(),
-            router_shards[rank].contiguous(),
-            (hidden_states.shape, original_num_tokens),
+        return MoEPrepareOutput(
+            hidden_states=hidden_shards[rank].contiguous(),
+            router_logits=router_shards[rank].contiguous(),
+            original_shape=(hidden_states.shape, original_num_tokens),
+            mlp_output_dtype=hidden_states.dtype,
         )
 
     @classmethod
@@ -204,11 +233,12 @@ class DynamicDispatcher(TokenDispatcher):
 
         (
             permuted_local_tokens,
+            dynamic_scale,
             reversed_local_mapping,
-            tokens_per_expert,
             input_splits,
             output_splits,
-            global_local_expert_indices,
+            global_token_counts_per_local_expert,
+            split_copy_event,
             hidden_shape,
         ) = cls._dispatch_preprocess(
             hidden_states=hidden_states,
@@ -218,6 +248,21 @@ class DynamicDispatcher(TokenDispatcher):
             ep_group=moe_group,
         )
 
+        tokens_per_expert = global_token_counts_per_local_expert.sum(dim=0)
+        expert_ids_per_ep_rank = None
+        if token_dispatch_input.local_num_experts > 1:
+            expert_ids_per_ep_rank = torch.arange(
+                token_dispatch_input.num_experts,
+                dtype=torch.int32,
+                device=topk_ids.device,
+            )
+            expert_ids_per_ep_rank = expert_ids_per_ep_rank % token_dispatch_input.local_num_experts
+
+        split_copy_event.synchronize()
+        input_splits = input_splits.tolist()
+        output_splits = output_splits.tolist()
+        if dynamic_scale is not None:
+            dynamic_scale = all_to_all_single(dynamic_scale, output_splits, input_splits, moe_group)
         global_tokens = all_to_all_single(
             permuted_local_tokens,
             output_splits,
@@ -225,17 +270,32 @@ class DynamicDispatcher(TokenDispatcher):
             moe_group,
         )
         reversed_global_mapping = None
-        if global_local_expert_indices is not None:
+        if expert_ids_per_ep_rank is not None:
+            global_local_expert_indices = torch.repeat_interleave(
+                expert_ids_per_ep_rank,
+                global_token_counts_per_local_expert.reshape(-1).to(torch.int32),
+                output_size=global_tokens.shape[0],
+            )
+            if dynamic_scale is not None:
+                scale_was_1d = dynamic_scale.dim() == 1
+                scale_for_permute = dynamic_scale.unsqueeze(-1) if scale_was_1d else dynamic_scale
+                dynamic_scale, _ = torch_npu.npu_moe_token_permute(
+                    scale_for_permute,
+                    global_local_expert_indices,
+                )
+                if scale_was_1d:
+                    dynamic_scale = dynamic_scale.squeeze(-1)
             global_tokens, reversed_global_mapping = torch_npu.npu_moe_token_permute(
                 global_tokens,
                 global_local_expert_indices,
             )
 
-        return (
-            global_tokens,
-            tokens_per_expert,
-            1,
-            MoEDynamicCombineMetadata(
+        return MoETokenDispatchOutput(
+            hidden_states=global_tokens,
+            dynamic_scale=dynamic_scale,
+            group_list=tokens_per_expert,
+            group_list_type=1,
+            combine_metadata=MoEDynamicCombineMetadata(
                 topk_weights=topk_weights,
                 hidden_shape=hidden_shape,
                 input_splits=input_splits,
@@ -267,10 +327,10 @@ class DynamicDispatcher(TokenDispatcher):
     def _dispatch_preprocess(cls, hidden_states, topk_ids, num_experts, local_num_experts, ep_group):
         hidden_shape = hidden_states.shape
         (
-            tokens_per_expert,
-            input_splits_cpu,
-            output_splits_cpu,
-            global_local_expert_indices,
+            input_splits,
+            output_splits,
+            global_token_counts_per_local_expert,
+            split_copy_event,
             num_out_tokens,
         ) = cls._preprocess(
             topk_ids=topk_ids,
@@ -283,15 +343,17 @@ class DynamicDispatcher(TokenDispatcher):
             indices=topk_ids,
             num_out_tokens=num_out_tokens,
         )
-        input_splits = input_splits_cpu.tolist()
-        output_splits = output_splits_cpu.tolist()
+        dynamic_scale = None
+        if is_moe_quant():
+            permuted_tokens, dynamic_scale = torch_npu.npu_dynamic_quant(permuted_tokens)
         return (
             permuted_tokens,
+            dynamic_scale,
             reversed_local_mapping,
-            tokens_per_expert,
             input_splits,
             output_splits,
-            global_local_expert_indices,
+            global_token_counts_per_local_expert,
+            split_copy_event,
             hidden_shape,
         )
 
@@ -323,25 +385,14 @@ class DynamicDispatcher(TokenDispatcher):
         num_global_tokens_per_local_expert = num_global_tokens_per_expert[:, local_start:local_end]
         output_splits = num_global_tokens_per_local_expert.sum(dim=-1)
         output_splits_cpu = cls._copy_split_sizes_to_cpu(output_splits, ep_size, "output")
-        num_tokens_per_local_expert = num_global_tokens_per_local_expert.sum(dim=0)
+        split_copy_event = cls._get_split_copy_event(topk_ids.device)
+        split_copy_event.record(torch.npu.current_stream())
 
-        if local_num_experts <= 1:
-            global_local_expert_indices = None
-        else:
-            expert_ids_per_ep_rank = torch.tensor(
-                [expert_id % local_num_experts for expert_id in range(num_experts)],
-                dtype=torch.int32,
-                device=topk_ids.device,
-            )
-            global_local_expert_indices = torch.repeat_interleave(
-                expert_ids_per_ep_rank,
-                num_global_tokens_per_local_expert.reshape(-1),
-            )
         return (
-            num_tokens_per_local_expert,
             input_splits_cpu,
             output_splits_cpu,
-            global_local_expert_indices,
+            num_global_tokens_per_local_expert,
+            split_copy_event,
             topk_ids.numel(),
         )
 
@@ -360,6 +411,14 @@ class DynamicDispatcher(TokenDispatcher):
             buffer = torch.empty(ep_size, dtype=torch.int32, device=torch.device("cpu"), pin_memory=True)
             cls._split_cpu_buffers[key] = buffer
         return buffer
+
+    @classmethod
+    def _get_split_copy_event(cls, device):
+        event = cls._split_copy_events.get(device)
+        if event is None:
+            event = torch.npu.Event()
+            cls._split_copy_events[device] = event
+        return event
 
     @classmethod
     def finalize(

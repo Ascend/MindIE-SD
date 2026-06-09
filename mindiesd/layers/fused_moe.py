@@ -15,6 +15,7 @@ from collections.abc import Callable
 import torch
 import torch.distributed as dist
 
+from ..quantization.config import QuantConfig
 from ..utils import ParametersInvalid
 from .moe import moe
 
@@ -28,6 +29,9 @@ def fused_moe(
     w2_weight: torch.Tensor,
     w13_bias: torch.Tensor | None = None,
     w2_bias: torch.Tensor | None = None,
+    quant_config: QuantConfig | None = None,
+    w13_weight_scale: torch.Tensor | None = None,
+    w2_weight_scale: torch.Tensor | None = None,
     tp_group: dist.ProcessGroup | None = None,
     ep_group: dist.ProcessGroup | None = None,
     dispatcher_type: str | None = None,
@@ -44,8 +48,8 @@ def fused_moe(
 ) -> torch.Tensor:
     """Run MoE through the public fused-MoE entry.
 
-    The current version exposes the fused-op switch for forward compatibility.
-    Unsupported fused-op scenarios fall back to the staged MoE path.
+    The current version exposes the fused-op switch for forward compatibility,
+    while all calls fall back to the small-op MoE network.
 
     Args:
         hidden_states (torch.Tensor):
@@ -69,6 +73,12 @@ def fused_moe(
         w2_bias (torch.Tensor, optional):
             Optional down projection bias with shape
             ``[local_experts, hidden_size]``.
+        quant_config (QuantConfig, optional):
+            MindIE-SD quantization config.
+        w13_weight_scale (torch.Tensor, optional):
+            Quantization scale for w13_weight.
+        w2_weight_scale (torch.Tensor, optional):
+            Quantization scale for w2_weight.
         tp_group (optional):
             Tensor-parallel process group used for MoE TP communication.
         ep_group (optional):
@@ -104,7 +114,7 @@ def fused_moe(
             is used with ``tokens_full=True``.
         use_fused_op (bool, optional):
             Whether to use the real fused MoE op. The current version does not
-            support this path and falls back to staged MoE.
+            support this path and falls back to the small-op MoE network.
 
     Returns:
         torch.Tensor: Output activations with the same shape as ``hidden_states``.
@@ -121,6 +131,9 @@ def fused_moe(
         "w2_weight": w2_weight,
         "w13_bias": w13_bias,
         "w2_bias": w2_bias,
+        "quant_config": quant_config,
+        "w13_weight_scale": w13_weight_scale,
+        "w2_weight_scale": w2_weight_scale,
         "tp_group": tp_group,
         "ep_group": ep_group,
         "dispatcher_type": dispatcher_type,

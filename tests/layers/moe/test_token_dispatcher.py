@@ -16,20 +16,46 @@ from unittest.mock import MagicMock, patch
 
 import torch
 import torch.distributed as dist
+import torch_npu
 
 from mindiesd.layers.moe.moe_dataclass import (
     MoEDynamicCombineMetadata,
     MoEPrepareInput,
+    MoEPrepareOutput,
     MoETokenDispatchInput,
 )
-from mindiesd.layers.moe.moe_context import set_moe_comm_context
+from mindiesd.layers.moe.moe_context import set_moe_comm_context, set_moe_context
 from mindiesd.layers.moe.token_dispatcher import DynamicDispatcher, StaticDispatcher
+from mindiesd.quantization.mode import QuantAlgorithm
+
+
+def make_token_dispatch_input(
+    hidden_states,
+    topk_weights,
+    topk_ids,
+    num_experts=2,
+    top_k=1,
+    local_num_experts=2,
+    dynamic_scale=None,
+):
+    input_kwargs = {
+        "hidden_states": hidden_states,
+        "topk_weights": topk_weights,
+        "topk_ids": topk_ids,
+        "num_experts": num_experts,
+        "top_k": top_k,
+        "local_num_experts": local_num_experts,
+    }
+    if dynamic_scale is not None:
+        input_kwargs["dynamic_scale"] = dynamic_scale
+    return MoETokenDispatchInput(**input_kwargs)
 
 
 class TestTokenDispatcher(unittest.TestCase):
     def setUp(self):
         DynamicDispatcher._split_cpu_buffers.clear()
-        set_moe_comm_context()
+        DynamicDispatcher._split_copy_events.clear()
+        set_moe_context()
 
     @unittest.skipIf(
         os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
@@ -51,12 +77,13 @@ class TestTokenDispatcher(unittest.TestCase):
                 prepare_output = DynamicDispatcher.prepare(prepare_input)
         set_moe_comm_context()
 
-        prepared_hidden_states, prepared_router_logits, original_shape = prepare_output
-        self.assertEqual(original_shape, (hidden_states.shape, hidden_states.shape[0]))
-        self.assertTrue(torch.equal(prepared_hidden_states[0], hidden_states[2]))
-        self.assertTrue(torch.equal(prepared_router_logits[0], router_logits[2]))
-        self.assertTrue(torch.equal(prepared_hidden_states[1], torch.zeros(4)))
-        self.assertTrue(torch.equal(prepared_router_logits[1], torch.zeros(4)))
+        self.assertIsInstance(prepare_output, MoEPrepareOutput)
+        self.assertEqual(prepare_output.original_shape, (hidden_states.shape, hidden_states.shape[0]))
+        self.assertIsNone(prepare_output.dynamic_scale)
+        self.assertTrue(torch.equal(prepare_output.hidden_states[0], hidden_states[2]))
+        self.assertTrue(torch.equal(prepare_output.router_logits[0], router_logits[2]))
+        self.assertTrue(torch.equal(prepare_output.hidden_states[1], torch.zeros(4)))
+        self.assertTrue(torch.equal(prepare_output.router_logits[1], torch.zeros(4, dtype=router_logits.dtype)))
 
     @unittest.skipIf(
         os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
@@ -64,21 +91,22 @@ class TestTokenDispatcher(unittest.TestCase):
     )
     def test_dynamic_ep_dispatch_uses_all_to_all_path(self):
         device = torch.device("npu")
-        hidden_states = torch.randn(2, 4, device=device)
+        hidden_states = torch.randn(2, 4, device=device, dtype=torch.bfloat16)
         topk_ids = torch.tensor([[0, 1], [0, 1]], dtype=torch.int32, device=device)
         topk_weights = torch.ones(2, 2, device=device)
         ep_group = MagicMock(spec=dist.ProcessGroup)
 
         with patch("torch.distributed.get_world_size", return_value=2):
             set_moe_comm_context(ep_group=ep_group)
+            split_copy_event = MagicMock()
             with patch.object(
                 DynamicDispatcher,
                 "_preprocess",
                 return_value=(
-                    torch.tensor([2], device=device),
                     torch.tensor([2, 2], dtype=torch.int32),
                     torch.tensor([2, 2], dtype=torch.int32),
-                    None,
+                    torch.tensor([[2], [2]], device=device),
+                    split_copy_event,
                     4,
                 ),
             ):
@@ -86,7 +114,7 @@ class TestTokenDispatcher(unittest.TestCase):
                     "mindiesd.layers.moe.token_dispatcher.all_to_all_single",
                     side_effect=lambda input_tensor, output_splits, input_splits, group: input_tensor,
                 ) as all_to_all:
-                    token_dispatch_input = MoETokenDispatchInput(
+                    token_dispatch_input = make_token_dispatch_input(
                         hidden_states=hidden_states,
                         topk_weights=topk_weights,
                         topk_ids=topk_ids,
@@ -94,12 +122,65 @@ class TestTokenDispatcher(unittest.TestCase):
                         top_k=2,
                         local_num_experts=1,
                     )
-                    global_tokens, _, group_list_type, _ = DynamicDispatcher.dispatch(token_dispatch_input)
+                    dispatch_output = DynamicDispatcher.dispatch(token_dispatch_input)
             set_moe_comm_context()
 
-        self.assertEqual(group_list_type, 1)
+        self.assertEqual(dispatch_output.group_list_type, 1)
         self.assertEqual(all_to_all.call_count, 1)
-        self.assertEqual(global_tokens.shape, torch.Size([4, 4]))
+        split_copy_event.synchronize.assert_called_once()
+        self.assertIsNone(dispatch_output.dynamic_scale)
+        self.assertEqual(dispatch_output.hidden_states.shape, torch.Size([4, 4]))
+
+    @unittest.skipIf(
+        os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
+        "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
+    )
+    def test_dynamic_w8a8_dynamic_dispatch_quantizes_before_all_to_all(self):
+        hidden_states = torch.randn(2, 4)
+        quant_hidden = torch.randint(-8, 8, (4, 4), dtype=torch.int8)
+        dynamic_scale = torch.randn(4)
+        topk_ids = torch.tensor([[0, 1], [0, 1]], dtype=torch.int32)
+        topk_weights = torch.ones(2, 2)
+        ep_group = MagicMock(spec=dist.ProcessGroup)
+
+        with patch("torch.distributed.get_world_size", return_value=2):
+            set_moe_context(ep_group=ep_group, quant_algo=QuantAlgorithm.W8A8_DYNAMIC)
+            split_copy_event = MagicMock()
+            with patch.object(
+                DynamicDispatcher,
+                "_preprocess",
+                return_value=(
+                    torch.tensor([2, 2], dtype=torch.int32),
+                    torch.tensor([2, 2], dtype=torch.int32),
+                    torch.tensor([[2], [2]]),
+                    split_copy_event,
+                    4,
+                ),
+            ):
+                with patch(
+                    "torch_npu.npu_moe_token_permute",
+                    return_value=(hidden_states.repeat(2, 1), torch.arange(4)),
+                ):
+                    with patch("torch_npu.npu_dynamic_quant", return_value=(quant_hidden, dynamic_scale)):
+                        with patch(
+                            "mindiesd.layers.moe.token_dispatcher.all_to_all_single",
+                            side_effect=lambda input_tensor, output_splits, input_splits, group: input_tensor,
+                        ) as all_to_all:
+                            token_dispatch_input = make_token_dispatch_input(
+                                hidden_states=hidden_states,
+                                topk_weights=topk_weights,
+                                topk_ids=topk_ids,
+                                num_experts=2,
+                                top_k=2,
+                                local_num_experts=1,
+                            )
+                            dispatch_output = DynamicDispatcher.dispatch(token_dispatch_input)
+            set_moe_context()
+
+        self.assertIs(dispatch_output.hidden_states, quant_hidden)
+        self.assertIs(dispatch_output.dynamic_scale, dynamic_scale)
+        self.assertEqual(all_to_all.call_count, 2)
+        split_copy_event.synchronize.assert_called_once()
 
     @unittest.skipIf(
         os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
@@ -124,7 +205,7 @@ class TestTokenDispatcher(unittest.TestCase):
             with patch("torch.distributed.get_world_size", return_value=2):
                 set_moe_comm_context(ep_group=ep_group)
                 output = DynamicDispatcher.combine(
-                    hidden_states=torch.randn(4, 4, device=device),
+                    hidden_states=torch.randn(4, 4, device=device, dtype=torch.bfloat16),
                     combine_metadata=metadata,
                 )
             set_moe_comm_context()
@@ -144,23 +225,124 @@ class TestTokenDispatcher(unittest.TestCase):
         with patch("torch.distributed.get_world_size", return_value=2):
             with patch("torch.distributed.get_rank", return_value=1):
                 set_moe_comm_context(ep_group=MagicMock(spec=dist.ProcessGroup))
-                token_dispatch_input = MoETokenDispatchInput(
-                    hidden_states=torch.randn(2, 4, device=device),
+                token_dispatch_input = make_token_dispatch_input(
+                    hidden_states=torch.randn(2, 4, device=device, dtype=torch.bfloat16),
                     topk_weights=topk_weights,
                     topk_ids=topk_ids,
                     num_experts=4,
                     top_k=2,
                     local_num_experts=2,
                 )
-                _, _, _, combine_metadata = StaticDispatcher.dispatch(token_dispatch_input)
+                dispatch_output = StaticDispatcher.dispatch(token_dispatch_input)
                 set_moe_comm_context()
 
         self.assertTrue(
             torch.equal(
-                combine_metadata.topk_weights.cpu(),
+                dispatch_output.combine_metadata.topk_weights.cpu(),
                 torch.tensor([[0.0, 1.0], [1.0, 0.0]]),
             )
         )
+
+    @unittest.skipIf(
+        os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
+        "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
+    )
+    def test_static_w8a8_dynamic_dispatch_uses_init_routing_quant_output(self):
+        hidden_states = torch.randn(2, 4)
+        topk_ids = torch.tensor([[0], [1]], dtype=torch.int32)
+        topk_weights = torch.ones(2, 1)
+        sorted_hidden_states = torch.randint(-8, 8, (2, 4), dtype=torch.int8)
+        expanded_row_idx = torch.arange(2, dtype=torch.int32)
+        expert_tokens = torch.tensor([1, 1], dtype=torch.int32)
+        dynamic_scale = torch.randn(2)
+        token_dispatch_input = make_token_dispatch_input(
+            hidden_states=hidden_states,
+            topk_weights=topk_weights,
+            topk_ids=topk_ids,
+        )
+
+        set_moe_context(quant_algo=QuantAlgorithm.W8A8_DYNAMIC)
+        with patch(
+            "torch_npu.npu_moe_init_routing_v2",
+            return_value=(sorted_hidden_states, expanded_row_idx, expert_tokens, dynamic_scale),
+        ) as init_routing:
+            dispatch_output = StaticDispatcher.dispatch(token_dispatch_input)
+        set_moe_context()
+
+        self.assertIs(dispatch_output.hidden_states, sorted_hidden_states)
+        self.assertIs(dispatch_output.dynamic_scale, dynamic_scale)
+        self.assertEqual(init_routing.call_args.kwargs["quant_mode"], 1)
+
+    @unittest.skipIf(
+        os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
+        "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
+    )
+    def test_static_w8a8_dynamic_dispatch_reuses_prepare_quant_scale(self):
+        hidden_states = torch.randint(-8, 8, (2, 4), dtype=torch.int8)
+        topk_ids = torch.tensor([[0], [1]], dtype=torch.int32)
+        topk_weights = torch.ones(2, 1)
+        dynamic_scale = torch.randn(2)
+        sorted_hidden_states = torch.randint(-8, 8, (2, 4), dtype=torch.int8)
+        expanded_row_idx = torch.arange(2, dtype=torch.int32)
+        expert_tokens = torch.tensor([1, 1], dtype=torch.int32)
+        token_dispatch_input = make_token_dispatch_input(
+            hidden_states=hidden_states,
+            topk_weights=topk_weights,
+            topk_ids=topk_ids,
+            dynamic_scale=dynamic_scale,
+        )
+
+        set_moe_context(quant_algo=QuantAlgorithm.W8A8_DYNAMIC)
+        with patch(
+            "torch_npu.npu_moe_init_routing_v2",
+            return_value=(sorted_hidden_states, expanded_row_idx, expert_tokens, dynamic_scale),
+        ) as init_routing:
+            dispatch_output = StaticDispatcher.dispatch(token_dispatch_input)
+        set_moe_context()
+
+        self.assertIs(dispatch_output.dynamic_scale, dynamic_scale)
+        self.assertIs(init_routing.call_args.kwargs["scale"], dynamic_scale)
+        self.assertEqual(init_routing.call_args.kwargs["quant_mode"], -1)
+
+    @unittest.skipIf(
+        os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
+        "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.",
+    )
+    def test_static_w8a8_dynamic_dispatch_matches_internal_quant_path(self):
+        device = torch.device("npu")
+        cases = (
+            dict(name="bf16", dtype=torch.bfloat16),
+            dict(name="fp16", dtype=torch.float16),
+        )
+        for case in cases:
+            with self.subTest(case=case["name"]):
+                dtype = case["dtype"]
+                hidden_states = (torch.randn(4, 4, device=device, dtype=dtype) / 10).contiguous()
+                topk_ids = torch.tensor([[0], [1], [0], [1]], dtype=torch.int32, device=device)
+                topk_weights = torch.ones(4, 1, device=device)
+
+                set_moe_context(quant_algo=QuantAlgorithm.W8A8_DYNAMIC)
+                internal_quant_output = StaticDispatcher.dispatch(
+                    make_token_dispatch_input(
+                        hidden_states=hidden_states,
+                        topk_weights=topk_weights,
+                        topk_ids=topk_ids,
+                    )
+                )
+                quant_hidden, dynamic_scale = torch_npu.npu_dynamic_quant(hidden_states)
+                prepare_quant_output = StaticDispatcher.dispatch(
+                    make_token_dispatch_input(
+                        hidden_states=quant_hidden,
+                        topk_weights=topk_weights,
+                        topk_ids=topk_ids,
+                        dynamic_scale=dynamic_scale,
+                    )
+                )
+                set_moe_context()
+
+                torch.testing.assert_close(prepare_quant_output.hidden_states, internal_quant_output.hidden_states)
+                torch.testing.assert_close(prepare_quant_output.dynamic_scale, internal_quant_output.dynamic_scale)
+                torch.testing.assert_close(prepare_quant_output.group_list, internal_quant_output.group_list)
 
     @unittest.skipIf(
         os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
@@ -179,13 +361,50 @@ class TestTokenDispatcher(unittest.TestCase):
         with patch("torch.distributed.all_gather_into_tensor") as all_gather:
             with patch("torch.distributed.get_world_size", return_value=2):
                 set_moe_comm_context(ep_group=ep_group)
-                prepared_hidden_states, prepared_router_logits, original_shape = StaticDispatcher.prepare(prepare_input)
+                prepare_output = StaticDispatcher.prepare(prepare_input)
             set_moe_comm_context()
 
-        self.assertEqual(original_shape, hidden_states.shape)
-        self.assertEqual(prepared_hidden_states.shape, torch.Size([8, 4]))
-        self.assertEqual(prepared_router_logits.shape, torch.Size([8, 4]))
+        self.assertIsInstance(prepare_output, MoEPrepareOutput)
+        self.assertEqual(prepare_output.original_shape, hidden_states.shape)
+        self.assertIsNone(prepare_output.dynamic_scale)
+        self.assertEqual(prepare_output.hidden_states.shape, torch.Size([8, 4]))
+        self.assertEqual(prepare_output.router_logits.shape, torch.Size([8, 4]))
         self.assertEqual(all_gather.call_count, 2)
+
+    @unittest.skipIf(
+        os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
+        "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
+    )
+    def test_static_w8a8_dynamic_prepare_quantizes_before_all_gather(self):
+        hidden_states = torch.randn(4, 4)
+        router_logits = torch.randn(4, 4)
+        quant_hidden = torch.randint(-8, 8, hidden_states.shape, dtype=torch.int8)
+        dynamic_scale = torch.randn(hidden_states.shape[0])
+        ep_group = MagicMock(spec=dist.ProcessGroup)
+        prepare_input = MoEPrepareInput(
+            hidden_states=hidden_states,
+            router_logits=router_logits,
+            tokens_full=False,
+        )
+
+        def fake_all_gather(tensor, group):
+            return tensor.repeat(2, *([1] * (tensor.dim() - 1)))
+
+        with patch("torch.distributed.get_world_size", return_value=2):
+            set_moe_context(ep_group=ep_group, quant_algo=QuantAlgorithm.W8A8_DYNAMIC)
+            with patch("torch_npu.npu_dynamic_quant", return_value=(quant_hidden, dynamic_scale)) as dynamic_quant:
+                with patch("mindiesd.layers.moe.token_dispatcher.all_gather", side_effect=fake_all_gather):
+                    prepare_output = StaticDispatcher.prepare(prepare_input)
+            set_moe_context()
+
+        dynamic_quant.assert_called_once()
+        self.assertTrue(torch.equal(dynamic_quant.call_args.args[0], hidden_states))
+        self.assertIsInstance(prepare_output, MoEPrepareOutput)
+        self.assertEqual(prepare_output.original_shape, hidden_states.shape)
+        self.assertEqual(prepare_output.hidden_states.dtype, torch.int8)
+        self.assertTrue(torch.equal(prepare_output.hidden_states, quant_hidden.repeat(2, 1)))
+        self.assertTrue(torch.equal(prepare_output.router_logits, router_logits.repeat(2, 1)))
+        self.assertTrue(torch.equal(prepare_output.dynamic_scale, dynamic_scale.repeat(2)))
 
     @unittest.skipIf(
         os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
