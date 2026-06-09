@@ -37,6 +37,17 @@ if [ ! -f ${msopgen} ]; then
     exit 1
 fi
 
+base_ascendc_ops='laser_attention;la_preprocess;ada_block_sparse_attention;sparse_block_estimate'
+cann_9_required_ops='quant_flash_attn;quant_flash_attn_metadata'
+ascendc_ops="${base_ascendc_ops}"
+cann_version_file="${local_toolkit}/compiler/version.info"
+if [ -f "${cann_version_file}" ] && grep -Eq '^Version=([0-8])(\.|$)' "${cann_version_file}"; then
+    cann_version=$(grep -E '^Version=' "${cann_version_file}" | head -n 1 | cut -d= -f2)
+    echo "Warning: ops ${cann_9_required_ops} require CANN >= 9.0, current CANN is ${cann_version}. Skip compiling them."
+else
+    ascendc_ops="${ascendc_ops};${cann_9_required_ops}"
+fi
+
 function sync_aicpu_ops_to_transformer_vendor(){
     src_cpu_dir="${current_script_dir}/vendors/aie_ascendc/op_impl/cpu"
     dst_cpu_dir="${current_script_dir}/vendors/customize_transformer/op_impl/cpu"
@@ -52,7 +63,7 @@ function build_ops(){
     ori_path=${PWD}
     cd ${current_script_dir}
     rm -rf vendors
-    source ${current_script_dir}/build_ascendc_ops.sh -n 'laser_attention;la_preprocess;ada_block_sparse_attention;sparse_block_estimate;quant_flash_attn;quant_flash_attn_metadata' -c 'ascend910;ascend910b;ascend910_93;ascend950'
+    source ${current_script_dir}/build_ascendc_ops.sh -n "${ascendc_ops}" -c 'ascend910;ascend910b;ascend910_93;ascend950'
     source ${current_script_dir}/build_tik_ops.sh
     sync_aicpu_ops_to_transformer_vendor
     rm -rf ${current_script_dir}/vendors/aie_ascendc/bin

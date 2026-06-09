@@ -11,15 +11,18 @@
 # See the Mulan PSL v2 for more details.
 import os
 import unittest
-from unittest import mock
 from unittest.mock import patch
 import torch
 import torch_npu
 
-from mindiesd.quantization.layer import W8A8QuantLinear, WeightQuantLinear, W8A8TimeStepQuantLinear, \
-    W8A8MXFP8QuantLinear
+from mindiesd.quantization.layer import (
+    W8A8QuantLinear,
+    WeightQuantLinear,
+    W8A8TimeStepQuantLinear,
+    W8A8MXFP8QuantLinear,
+)
 from mindiesd.quantization.mode import QuantAlgorithm
-from mindiesd.quantization.utils import get_quant_weight, TimestepManager
+from mindiesd.quantization.utils import TimestepManager
 
 
 class MockSafeTensorHandler:
@@ -54,14 +57,13 @@ def mock_npu_quant_matmul(*args, **kwargs):
     return output
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestQuantLinearFloat16(unittest.TestCase):
     def setUp(self):
         self.stream = torch_npu.npu.current_stream()
-        dtype_mocks = {
-            'float8_e4m3fn': torch.float16,
-            'float8_e8m0fnu': torch.float16
-        }
+        dtype_mocks = {'float8_e4m3fn': torch.float16, 'float8_e8m0fnu': torch.float16}
         for dtype_name, dtype_val in dtype_mocks.items():
             if not hasattr(torch_npu, dtype_name):
                 setattr(torch_npu, dtype_name, dtype_val)
@@ -72,6 +74,7 @@ class TestQuantLinearFloat16(unittest.TestCase):
 
         def mock_npu_dtype_cast(tensor, dtype):
             return tensor
+
         torch_npu.npu_dtype_cast = mock_npu_dtype_cast
 
         if not hasattr(torch_npu, 'npu_dynamic_mx_quant'):
@@ -86,10 +89,12 @@ class TestQuantLinearFloat16(unittest.TestCase):
             "0.input_scale": torch.ones(1, dtype=torch.float16),
             "0.input_offset": torch.ones(1, dtype=torch.int8),
             "0.weight": torch.ones(out_features, in_features, dtype=torch.int8),
-            "0.bias": torch.ones(out_features, dtype=torch.float32)
+            "0.bias": torch.ones(out_features, dtype=torch.float32),
         }
-        linear = W8A8QuantLinear(in_features, out_features, bias=True,
-            weights=create_mock_handler(weights), prefix="0", dtype=torch.float16).npu()
+        linear = W8A8QuantLinear(
+            in_features, out_features, bias=True, weights=create_mock_handler(weights), prefix="0", dtype=torch.float16
+        ).npu()
+        self.assertEqual(linear.input_offset.dtype, torch.int8)
 
         x = torch.randn(32, 8, 4, in_features).to(torch.float16).npu()
         output = linear(x)
@@ -106,10 +111,17 @@ class TestQuantLinearFloat16(unittest.TestCase):
             "0.input_scale": torch.ones(1, dtype=torch.float16),
             "0.input_offset": torch.ones(1, dtype=torch.float16),
             "0.weight": torch.ones(out_features, in_features, dtype=torch.int8),
-            "0.bias": torch.ones(out_features, dtype=torch.float32)
+            "0.bias": torch.ones(out_features, dtype=torch.float32),
         }
-        linear = W8A8QuantLinear(in_features, out_features, bias=True,
-            is_dynamic=False, weights=create_mock_handler(weights), prefix="0", dtype=torch.float16).npu()
+        linear = W8A8QuantLinear(
+            in_features,
+            out_features,
+            bias=True,
+            is_dynamic=False,
+            weights=create_mock_handler(weights),
+            prefix="0",
+            dtype=torch.float16,
+        ).npu()
 
         x = torch.randn(2, 32, in_features).to(torch.float16).npu()
         output = linear.quant_matmul(x)
@@ -127,12 +139,20 @@ class TestQuantLinearFloat16(unittest.TestCase):
             "0.input_scale": torch.ones(100, 1, dtype=torch.float16),
             "0.input_offset": torch.ones(100, 1, dtype=torch.float16),
             "0.weight": torch.ones(out_features, in_features, dtype=torch.int8),
-            "0.bias": torch.ones(out_features, dtype=torch.float32)
+            "0.bias": torch.ones(out_features, dtype=torch.float32),
         }
         TimestepManager.set_timestep_idx_max(10)
         TimestepManager.set_timestep_idx(10)
-        linear = W8A8TimeStepQuantLinear(in_features, out_features, bias=True,
-            is_dynamic=False, weights=create_mock_handler(weights), prefix="0", dtype=torch.float16, t_idx=5).npu()
+        linear = W8A8TimeStepQuantLinear(
+            in_features,
+            out_features,
+            bias=True,
+            is_dynamic=False,
+            weights=create_mock_handler(weights),
+            prefix="0",
+            dtype=torch.float16,
+            t_idx=5,
+        ).npu()
         x = torch.randn(2, 32, in_features).to(torch.float16).npu()
         output = linear.forward(x)
         self.stream.synchronize()
@@ -149,12 +169,20 @@ class TestQuantLinearFloat16(unittest.TestCase):
             "0.input_scale": torch.ones(100, 1, dtype=torch.float16),
             "0.input_offset": torch.ones(100, 1, dtype=torch.float16),
             "0.weight": torch.ones(out_features, in_features, dtype=torch.int8),
-            "0.bias": torch.ones(out_features, dtype=torch.float32)
+            "0.bias": torch.ones(out_features, dtype=torch.float32),
         }
         TimestepManager.set_timestep_idx_max(10)
         TimestepManager.set_timestep_idx(1)
-        linear = W8A8TimeStepQuantLinear(in_features, out_features, bias=True,
-            is_dynamic=False, weights=create_mock_handler(weights), prefix="0", dtype=torch.float16, t_idx=5).npu()
+        linear = W8A8TimeStepQuantLinear(
+            in_features,
+            out_features,
+            bias=True,
+            is_dynamic=False,
+            weights=create_mock_handler(weights),
+            prefix="0",
+            dtype=torch.float16,
+            t_idx=5,
+        ).npu()
         x = torch.randn(2, 32, in_features).to(torch.float16).npu()
         output = linear.forward(x)
         self.stream.synchronize()
@@ -170,11 +198,19 @@ class TestQuantLinearFloat16(unittest.TestCase):
             "0.input_scale": torch.ones(1, dtype=torch.float16),
             "0.input_offset": torch.ones(1, dtype=torch.float16),
             "0.weight": torch.ones(out_features, in_features, dtype=torch.int8),
-            "0.bias": torch.ones(out_features, dtype=torch.float32)
+            "0.bias": torch.ones(out_features, dtype=torch.float32),
         }
         mul_scale = torch.ones(in_features, dtype=torch.float32)
-        linear = W8A8QuantLinear(in_features, out_features, bias=True, is_dynamic=False,
-            weights=create_mock_handler(weights), prefix="0", dtype=torch.float16, mul_scale=mul_scale).npu()
+        linear = W8A8QuantLinear(
+            in_features,
+            out_features,
+            bias=True,
+            is_dynamic=False,
+            weights=create_mock_handler(weights),
+            prefix="0",
+            dtype=torch.float16,
+            mul_scale=mul_scale,
+        ).npu()
 
         x = torch.randn(2, 32, in_features).to(torch.float16).npu()
         output = linear.forward(x)
@@ -191,11 +227,18 @@ class TestQuantLinearFloat16(unittest.TestCase):
             "0.input_scale": torch.ones(1, dtype=torch.float16),
             "0.input_offset": torch.ones(1, dtype=torch.float16),
             "0.weight": torch.ones(out_features, in_features, dtype=torch.int8),
-            "0.bias": torch.ones(out_features, dtype=torch.float32)
+            "0.bias": torch.ones(out_features, dtype=torch.float32),
         }
-        linear = W8A8QuantLinear(in_features, out_features, bias=True, is_dynamic=False,
-            weights=create_mock_handler(weights), prefix="0",
-                dtype=torch.float16, fuse_algo=QuantAlgorithm.W8A8).npu()
+        linear = W8A8QuantLinear(
+            in_features,
+            out_features,
+            bias=True,
+            is_dynamic=False,
+            weights=create_mock_handler(weights),
+            prefix="0",
+            dtype=torch.float16,
+            fuse_algo=QuantAlgorithm.W8A8,
+        ).npu()
 
         x = torch.randn(2, 32, in_features).to(torch.int8).npu()
         output = linear.forward(x)
@@ -209,10 +252,17 @@ class TestQuantLinearFloat16(unittest.TestCase):
         weights = {
             "0.weight_scale": torch.ones(out_features, dtype=torch.float16),
             "0.weight": torch.ones(out_features, in_features, dtype=torch.int8),
-            "0.bias": torch.ones(out_features, dtype=torch.float32)
+            "0.bias": torch.ones(out_features, dtype=torch.float32),
         }
-        linear = W8A8QuantLinear(in_features, out_features, bias=True, is_dynamic=True,
-            weights=create_mock_handler(weights), prefix="0", dtype=torch.float16).npu()
+        linear = W8A8QuantLinear(
+            in_features,
+            out_features,
+            bias=True,
+            is_dynamic=True,
+            weights=create_mock_handler(weights),
+            prefix="0",
+            dtype=torch.float16,
+        ).npu()
 
         x = torch.randn(2, 32, in_features).to(torch.float16).npu()
         output = linear.forward(x)
@@ -226,11 +276,19 @@ class TestQuantLinearFloat16(unittest.TestCase):
         weights = {
             "0.weight_scale": torch.ones(out_features, dtype=torch.float16),
             "0.weight": torch.ones(out_features, in_features, dtype=torch.int8),
-            "0.bias": torch.ones(out_features, dtype=torch.float32)
+            "0.bias": torch.ones(out_features, dtype=torch.float32),
         }
         mul_scale = torch.ones(in_features, dtype=torch.float32)
-        linear = W8A8QuantLinear(in_features, out_features, bias=True, is_dynamic=True,
-            weights=create_mock_handler(weights), prefix="0", dtype=torch.float16, mul_scale=mul_scale).npu()
+        linear = W8A8QuantLinear(
+            in_features,
+            out_features,
+            bias=True,
+            is_dynamic=True,
+            weights=create_mock_handler(weights),
+            prefix="0",
+            dtype=torch.float16,
+            mul_scale=mul_scale,
+        ).npu()
 
         x = torch.randn(2, 32, in_features).to(torch.float16).npu()
         output = linear.forward(x)
@@ -245,11 +303,10 @@ class TestQuantLinearFloat16(unittest.TestCase):
         weights = {
             "0.weight_scale": torch.ones(out_features, 2, dtype=torch.float16),
             "0.weight": torch.ones(out_features, in_features, dtype=torch.float16),
-            "0.bias": torch.ones(out_features, dtype=torch.float32)
+            "0.bias": torch.ones(out_features, dtype=torch.float32),
         }
         linear = W8A8MXFP8QuantLinear(
-            in_features, out_features, bias=True,
-            weights=create_mock_handler(weights), prefix="0", dtype=torch.float16
+            in_features, out_features, bias=True, weights=create_mock_handler(weights), prefix="0", dtype=torch.float16
         ).npu()
 
         x = torch.randn(2, 32, in_features).to(torch.float16).npu()
@@ -269,14 +326,18 @@ class TestQuantLinearFloat16(unittest.TestCase):
         weights = {
             "0.weight_scale": torch.ones(out_features, 2, dtype=torch.float16),
             "0.weight": torch.ones(out_features, in_features, dtype=torch.float16),
-            "0.bias": torch.ones(out_features, dtype=torch.float32)
+            "0.bias": torch.ones(out_features, dtype=torch.float32),
         }
         mul_scale = torch.ones(in_features, dtype=torch.float32)
 
         linear = W8A8MXFP8QuantLinear(
-            in_features, out_features, bias=True,
-            weights=create_mock_handler(weights), prefix="0", dtype=torch.float16,
-            mul_scale=mul_scale
+            in_features,
+            out_features,
+            bias=True,
+            weights=create_mock_handler(weights),
+            prefix="0",
+            dtype=torch.float16,
+            mul_scale=mul_scale,
         ).npu()
 
         x = torch.randn(4, 16, in_features).to(torch.float16).npu()
@@ -288,7 +349,9 @@ class TestQuantLinearFloat16(unittest.TestCase):
         self.assertEqual(linear.mul_scale.shape, (in_features,))
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestQuantLinearBFloat16(unittest.TestCase):
     def setUp(self):
         self.stream = torch_npu.npu.current_stream()
@@ -302,10 +365,12 @@ class TestQuantLinearBFloat16(unittest.TestCase):
             "0.input_scale": torch.ones(1, dtype=torch.bfloat16),
             "0.input_offset": torch.ones(1, dtype=torch.bfloat16),
             "0.weight": torch.ones(out_features, in_features, dtype=torch.int8),
-            "0.bias": torch.ones(out_features, dtype=torch.float32)
+            "0.bias": torch.ones(out_features, dtype=torch.float32),
         }
-        linear = W8A8QuantLinear(in_features, out_features, bias=True,
-            weights=create_mock_handler(weights), prefix="0").npu()
+        linear = W8A8QuantLinear(
+            in_features, out_features, bias=True, weights=create_mock_handler(weights), prefix="0"
+        ).npu()
+        self.assertEqual(linear.input_offset.dtype, torch.bfloat16)
 
         x = torch.randn(32, 8, 4, in_features).to(torch.bfloat16).npu()
         output = linear(x)
@@ -322,10 +387,11 @@ class TestQuantLinearBFloat16(unittest.TestCase):
             "0.input_scale": torch.ones(1, dtype=torch.bfloat16),
             "0.input_offset": torch.ones(1, dtype=torch.bfloat16),
             "0.weight": torch.ones(out_features, in_features, dtype=torch.int8),
-            "0.bias": torch.ones(out_features, dtype=torch.float32)
+            "0.bias": torch.ones(out_features, dtype=torch.float32),
         }
-        linear = W8A8QuantLinear(in_features, out_features, bias=True,
-            is_dynamic=False, weights=create_mock_handler(weights), prefix="0").npu()
+        linear = W8A8QuantLinear(
+            in_features, out_features, bias=True, is_dynamic=False, weights=create_mock_handler(weights), prefix="0"
+        ).npu()
 
         x = torch.randn(2, 32, in_features).to(torch.bfloat16).npu()
         output = linear.forward(x)
@@ -339,10 +405,11 @@ class TestQuantLinearBFloat16(unittest.TestCase):
         weights = {
             "0.weight_scale": torch.ones(out_features, dtype=torch.bfloat16),
             "0.weight": torch.ones(out_features, in_features, dtype=torch.int8),
-            "0.bias": torch.ones(out_features, dtype=torch.float32)
+            "0.bias": torch.ones(out_features, dtype=torch.float32),
         }
-        linear = W8A8QuantLinear(in_features, out_features, bias=True,
-            is_dynamic=True, weights=create_mock_handler(weights), prefix="0").npu()
+        linear = W8A8QuantLinear(
+            in_features, out_features, bias=True, is_dynamic=True, weights=create_mock_handler(weights), prefix="0"
+        ).npu()
 
         x = torch.randn(2, 32, in_features).to(torch.bfloat16).npu()
         output = linear.forward(x)
@@ -351,8 +418,9 @@ class TestQuantLinearBFloat16(unittest.TestCase):
         self.assertIsInstance(output, torch.Tensor)
 
 
-
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestWeightQuantLinearBFloat16(unittest.TestCase):
     def setUp(self):
         self.stream = torch_npu.npu.current_stream()
@@ -362,17 +430,13 @@ class TestWeightQuantLinearBFloat16(unittest.TestCase):
             "0.weight_scale": torch.ones(self.out_features, dtype=torch.bfloat16),
             "0.weight_offset": torch.ones(self.out_features, dtype=torch.bfloat16),
             "0.weight": torch.ones(self.out_features, self.in_features, dtype=torch.int8),
-            "0.bias": torch.ones(self.out_features, dtype=torch.float32)
+            "0.bias": torch.ones(self.out_features, dtype=torch.float32),
         }
 
     def test_init(self):
         # Test initialization of WeightQuantLinear
         linear = WeightQuantLinear(
-            self.in_features,
-            self.out_features,
-            bias=True,
-            weights=create_mock_handler(self.weights),
-            prefix="0"
+            self.in_features, self.out_features, bias=True, weights=create_mock_handler(self.weights), prefix="0"
         ).npu()
 
         # Verify attributes are set correctly
@@ -386,11 +450,7 @@ class TestWeightQuantLinearBFloat16(unittest.TestCase):
     def test_forward_2d(self):
         # Test forward pass with 2D input
         linear = WeightQuantLinear(
-            self.in_features,
-            self.out_features,
-            bias=True,
-            weights=create_mock_handler(self.weights),
-            prefix="0"
+            self.in_features, self.out_features, bias=True, weights=create_mock_handler(self.weights), prefix="0"
         ).npu()
 
         x = torch.randn(32, self.in_features).to(torch.bfloat16).npu()
@@ -404,11 +464,7 @@ class TestWeightQuantLinearBFloat16(unittest.TestCase):
     def test_forward_3d(self):
         # Test forward pass with 3D input (testing _flatten_linear)
         linear = WeightQuantLinear(
-            self.in_features,
-            self.out_features,
-            bias=True,
-            weights=create_mock_handler(self.weights),
-            prefix="0"
+            self.in_features, self.out_features, bias=True, weights=create_mock_handler(self.weights), prefix="0"
         ).npu()
 
         x = torch.randn(8, 32, self.in_features).to(torch.bfloat16).npu()
@@ -438,7 +494,9 @@ class TestWeightQuantLinearBFloat16(unittest.TestCase):
         self.assertIsInstance(output, torch.Tensor)
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestWeightQuantLinearFloat(unittest.TestCase):
     def setUp(self):
         self.stream = torch_npu.npu.current_stream()
@@ -448,7 +506,7 @@ class TestWeightQuantLinearFloat(unittest.TestCase):
             "0.weight_scale": torch.ones(self.out_features, dtype=torch.float16),
             "0.weight_offset": torch.ones(self.out_features, dtype=torch.float16),
             "0.weight": torch.ones(self.out_features, self.in_features, dtype=torch.int8),
-            "0.bias": torch.ones(self.out_features, dtype=torch.float16)
+            "0.bias": torch.ones(self.out_features, dtype=torch.float16),
         }
 
     def test_init(self):
@@ -459,7 +517,7 @@ class TestWeightQuantLinearFloat(unittest.TestCase):
             bias=True,
             weights=create_mock_handler(self.weights),
             prefix="0",
-            dtype=torch.float16
+            dtype=torch.float16,
         ).npu()
 
         # Verify attributes are set correctly
@@ -478,7 +536,7 @@ class TestWeightQuantLinearFloat(unittest.TestCase):
             bias=True,
             weights=create_mock_handler(self.weights),
             prefix="0",
-            dtype=torch.float16
+            dtype=torch.float16,
         ).npu()
 
         x = torch.randn(32, self.in_features).to(torch.float16).npu()
@@ -497,7 +555,7 @@ class TestWeightQuantLinearFloat(unittest.TestCase):
             bias=True,
             weights=create_mock_handler(self.weights),
             prefix="0",
-            dtype=torch.float16
+            dtype=torch.float16,
         ).npu()
 
         x = torch.randn(8, 32, self.in_features).to(torch.float16).npu()
@@ -516,7 +574,7 @@ class TestWeightQuantLinearFloat(unittest.TestCase):
             bias=True,
             weights=create_mock_handler(self.weights),
             prefix="0",
-            dtype=torch.float16
+            dtype=torch.float16,
         ).npu()
 
         x = torch.randn(4, 8, 32, self.in_features).to(torch.float16).npu()
