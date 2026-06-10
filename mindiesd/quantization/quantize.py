@@ -12,14 +12,15 @@
 
 import json
 import os
-from typing import Dict
+from fnmatch import fnmatch
+from typing import Dict, Optional
 from collections import OrderedDict
 from functools import wraps
 import torch
 from torch import nn
 import safetensors
 from .mode import QuantAlgorithm
-from .config import QuantConfig, LayerQuantConfig, TimestepPolicyConfig
+from .config import QuantConfig, LayerQuantConfig, TimestepPolicyConfig, OnlineQuantConfig
 from .mode import W4A4_LIST, W8A8_LIST
 from .utils import replace_rank_suffix, get_quant_weight, extract_constructor_args, MAX_WEIGHT_SIZE
 from .layer import (
@@ -31,6 +32,10 @@ from .layer import (
     FP8RotateQuantFA,
     W8A8MXFP8QuantLinear,
     W4A4MXFP4QuantLinear,
+    W8A8OnlineQuantLinear,
+    W8A8MXFP8OnlineQuantLinear,
+    W4A4MXFP4OnlineQuantLinear,
+    W4A4MXFP4DualOnlineQuantLinear,
 )
 from ..utils import ParametersInvalid, ConfigError
 from ..utils import file_utils
@@ -255,56 +260,86 @@ def get_cfg_and_weights(quant_des_path):
 
 def validate_quantize_params(func):
     @wraps(func)
-    def wrapper(model: nn.Module, quant_des_path: str, **kwargs):
-        # 检查 model 类型
+    def wrapper(
+        model: nn.Module,
+        quant_des_path: Optional[str] = None,
+        online_config: Optional[OnlineQuantConfig] = None,
+        **kwargs,
+    ):
         if not isinstance(model, nn.Module):
             raise ParametersInvalid(f"The model must be the type of nn.Module, but currently got {type(model)}.")
 
-        # 检查 quant_des_path 路径有效性
-        if not isinstance(quant_des_path, str) or not quant_des_path.strip():
-            raise ConfigError("Invalid string path for quant_des_path.")
-        quant_des_path = file_utils.standardize_path(quant_des_path)
-        file_utils.check_file_safety(quant_des_path, permission_mode=file_utils.MODELDATA_FILE_PERMISSION)
-
-        timestep_config = kwargs.get('timestep_config')
-        if timestep_config is not None and not isinstance(timestep_config, TimestepPolicyConfig):
+        if quant_des_path is not None and online_config is not None:
             raise ParametersInvalid(
-                f"Timestep_config must be the type of TimestepPolicyConfig, but currently got {type(timestep_config)}."
+                "quant_des_path and online_config are mutually exclusive. Please provide only one of them."
             )
+
+        if quant_des_path is None and online_config is None:
+            raise ParametersInvalid("Either quant_des_path or online_config must be provided.")
 
         dtype = kwargs.get('dtype', torch.bfloat16)
         if not isinstance(dtype, torch.dtype) or dtype not in (torch.float16, torch.bfloat16):
             raise ParametersInvalid(f"Dtype must be torch.float16 or torch.bfloat16, but currently got {type(dtype)}.")
 
-        module_map = kwargs.get('map', None)
-        if module_map is not None:
-            if (
-                not isinstance(module_map, Dict)
-                or not all(isinstance(v, nn.Module) for v in module_map.values())
-                or not all(isinstance(k, nn.Module) for k in module_map.keys())
-            ):
-                raise ParametersInvalid("The data type of map must be dictionary, and its KVType must be nn.Module.")
+        if quant_des_path is not None:
+            if not isinstance(quant_des_path, str) or not quant_des_path.strip():
+                raise ConfigError("Invalid string path for quant_des_path.")
+            quant_des_path = file_utils.standardize_path(quant_des_path)
+            file_utils.check_file_safety(quant_des_path, permission_mode=file_utils.MODELDATA_FILE_PERMISSION)
 
-        return func(model, quant_des_path, **kwargs)
+            timestep_config = kwargs.get('timestep_config')
+            if timestep_config is not None and not isinstance(timestep_config, TimestepPolicyConfig):
+                raise ParametersInvalid(
+                    "Timestep_config must be the type of TimestepPolicyConfig,"
+                    "but currently got {type(timestep_config)}."
+                )
+
+            module_map = kwargs.get('map', None)
+            if module_map is not None:
+                if (
+                    not isinstance(module_map, Dict)
+                    or not all(isinstance(v, nn.Module) for v in module_map.values())
+                    or not all(isinstance(k, nn.Module) for k in module_map.keys())
+                ):
+                    raise ParametersInvalid(
+                        "The data type of map must be dictionary, and its KVType must be nn.Module."
+                    )
+
+        if online_config is not None:
+            if not isinstance(online_config, OnlineQuantConfig):
+                raise ParametersInvalid(
+                    f"online_config must be the type of OnlineQuantConfig, but currently got {type(online_config)}."
+                )
+
+        return func(model, quant_des_path, online_config, **kwargs)
 
     return wrapper
 
 
-# kwargs = cfg自定义配置， map自定义匹配规则
 @validate_quantize_params
-def quantize(model, quant_des_path, **kwargs):
+def quantize(model, quant_des_path=None, online_config=None, **kwargs):
     r"""
-    The method is used to quant model.
+    The method is used to quantize model. Supports two mutually exclusive modes:
+
+    1. Offline quantization: provide quant_des_path (path to msModelSlim exported quantization descriptor).
+    2. Online quantization: provide online_config (OnlineQuantConfig specifying quantization type and fallback layers).
 
     Args:
         model: Floating point models that need to be quantized.
-        quant_des_path: The absolute path of the quantized weight descripter exported by modelslim.
+        quant_des_path: The absolute path of the quantized weight descriptor exported by modelslim.
+                        Mutually exclusive with online_config.
+        online_config: OnlineQuantConfig specifying the quantization type and fallback layers.
+                       Mutually exclusive with quant_des_path.
         **kwargs:
-            timestep_config: When using timetstep quantization, TimestepPolicyConfig needs to be passed in.
-            dtype: Dtype specifies the type of the inverse quantization.
+            timestep_config: When using timestep quantization, TimestepPolicyConfig needs to be passed in.
+            dtype: Dtype specifies the type of the inverse quantization (default: torch.bfloat16).
+            map: Custom layer matching dictionary (offline mode only).
     Returns:
-        Quantntifild Model.
+        Quantized Model.
     """
+    if online_config is not None:
+        return _online_quantize_impl(model, online_config, **kwargs)
+
     cfg, quant_weights = get_cfg_and_weights(quant_des_path)
 
     if not isinstance(cfg, QuantConfig):
@@ -360,4 +395,88 @@ def quantize(model, quant_des_path, **kwargs):
     modify_graph(model, modified_layers)
     torch.npu.empty_cache()
 
+    return model
+
+
+_ONLINE_QUANT_LAYER_MAP = {
+    QuantAlgorithm.W8A8_DYNAMIC: W8A8OnlineQuantLinear,
+    QuantAlgorithm.W8A8_MXFP8: W8A8MXFP8OnlineQuantLinear,
+    QuantAlgorithm.W4A4_MXFP4_DYNAMIC: W4A4MXFP4OnlineQuantLinear,
+    QuantAlgorithm.W4A4_MXFP4_DUALSCALE: W4A4MXFP4DualOnlineQuantLinear,
+    QuantAlgorithm.W8A8: W8A8OnlineQuantLinear,
+}
+
+_W4A4_QUANT_TYPES = (
+    QuantAlgorithm.W4A4_MXFP4_DYNAMIC,
+    QuantAlgorithm.W4A4_MXFP4_DUALSCALE,
+)
+
+
+def _match_fallback(layer_name, fallback_layers):
+    for pattern, algo in fallback_layers.items():
+        if fnmatch(layer_name, pattern):
+            return algo
+    return None
+
+
+def _online_quantize_impl(model, online_config, **kwargs):
+    quant_type = online_config.quant_type
+    fallback_layers = online_config.fallback_layers or {}
+    fallback_timesteps = online_config.fallback_timesteps
+    dtype = kwargs.get('dtype', torch.bfloat16)
+
+    main_quant_cls = _ONLINE_QUANT_LAYER_MAP.get(quant_type)
+    if main_quant_cls is None:
+        raise ParametersInvalid(
+            f"Unsupported online quantization type: {quant_type}. "
+            f"Supported types: {list(_ONLINE_QUANT_LAYER_MAP.keys())}"
+        )
+
+    logger.info(
+        "Online quantization started with quant_type=%s, fallback_layers=%s, fallback_timesteps=%s",
+        quant_type,
+        fallback_layers,
+        fallback_timesteps,
+    )
+
+    modified_layers = []
+    for name, layer in model.named_modules():
+        if not isinstance(layer, nn.Linear):
+            continue
+
+        fallback_algo = _match_fallback(name, fallback_layers)
+
+        if fallback_algo == QuantAlgorithm.W16A16:
+            logger.debug("Layer %s keeps W16A16 (no quantization).", name)
+            continue
+
+        if fallback_algo is not None:
+            fallback_cls = _ONLINE_QUANT_LAYER_MAP.get(fallback_algo)
+            if fallback_cls is None:
+                raise ParametersInvalid(
+                    f"Unsupported fallback algorithm: {fallback_algo} for layer {name}. "
+                    f"Supported fallback types: {list(_ONLINE_QUANT_LAYER_MAP.keys())}"
+                )
+            quant_layer = fallback_cls(layer, dtype=dtype)
+            logger.debug(
+                "Fallback layer name:%s, algo:%s, class:%s.", name, fallback_algo, quant_layer.__class__.__name__
+            )
+        elif quant_type in _W4A4_QUANT_TYPES:
+            quant_layer = main_quant_cls(layer, dtype=dtype, fallback_timesteps=fallback_timesteps)
+            logger.debug(
+                "Online quant layer name:%s, class:%s, fallback_timesteps:%s.",
+                name,
+                quant_layer.__class__.__name__,
+                fallback_timesteps,
+            )
+        else:
+            quant_layer = main_quant_cls(layer, dtype=dtype)
+            logger.debug("Online quant layer name:%s, class:%s.", name, quant_layer.__class__.__name__)
+
+        modified_layers.append((name, quant_layer))
+
+    modify_graph(model, modified_layers)
+    torch.npu.empty_cache()
+
+    logger.info("Online quantization completed. %d layers quantized.", len(modified_layers))
     return model

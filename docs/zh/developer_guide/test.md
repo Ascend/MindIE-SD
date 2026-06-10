@@ -1,8 +1,21 @@
 # 测试
 
-## CPU 友好单元测试
+MindIE SD 的测试套件支持在有或无昇腾 NPU 硬件的环境下运行。无 NPU 硬件时也可执行 CPU 兼容的测试。
 
-推荐优先使用仓库当前提供的 CPU 友好 UT 入口，生成覆盖率与测试产物。
+## 测试环境说明
+
+测试分为两类：
+
+| 类型 | 说明 | 是否需要 NPU |
+|------|------|:---:|
+| CPU 兼容测试 | 配置解析、工具函数、量化参数校验、编译逻辑等 | 否 |
+| NPU 依赖测试 | 自定义算子精度、Flash Attention、模型张量运算等 | 是 |
+
+## 测试入口
+
+### 入口一：CPU 友好单元测试（推荐无 NPU 用户使用）
+
+`run_UT_test.sh` 始终以 CPU 模式运行，适合无 NPU 硬件的开发环境。
 
 ```bash
 python -m pip install -r requirements.txt
@@ -19,19 +32,39 @@ bash tests/run_UT_test.sh
 
 仓库中的 `tests/scripts/check_coverage.py` 用于在 CI 中校验新增 Python 文件的覆盖率门禁。
 
-## 全量测试入口
+### 入口二：全量测试（支持三种模式）
 
-当环境具备 Ascend/NPU 运行栈时，可使用现有包装脚本执行全量或按模式测试：
+`run_test.sh` 通过参数控制测试范围，支持以下三种模式：
+
+**1. 全量测试（默认）**
+
+执行所有 CPU 兼容测试和 NPU 依赖测试：
 
 ```bash
-bash tests/run_test.sh --all
+cd tests/
+bash run_test.sh --all
 ```
 
-可选参数：
+不传参数时默认执行全量测试：
 
-- `--cpu_only`
-- `--npu_only`
-- `--all`
+```bash
+cd tests/
+bash run_test.sh
+```
+
+**2. 仅执行 CPU 兼容测试（无需 NPU 硬件）**
+
+```bash
+cd tests/
+bash run_test.sh --cpu_only
+```
+
+**3. 仅执行 NPU 依赖测试（需要 NPU 硬件）**
+
+```bash
+cd tests/
+bash run_test.sh --npu_only
+```
 
 ## LA 单算子精度测试
 

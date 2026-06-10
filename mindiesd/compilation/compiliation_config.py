@@ -28,6 +28,8 @@ class CompilationConfig:
     aclgraph_only: bool = False
     aclgraph_with_compile: bool = False
     safe_output_mode: bool = True
+    aclgraph_lazy_capture: bool = False
+    aclgraph_max_entries: int = 0
 
     def __init__(self):
         raise RuntimeError("CompilationConfig is a static class, do not instantiate it")

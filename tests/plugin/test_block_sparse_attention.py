@@ -10,10 +10,13 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+# pylint: disable=duplicate-code
+
 import os
 import sys
 import math
 import unittest
+
 import numpy as np
 import torch
 
@@ -22,12 +25,15 @@ _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+from mindiesd.utils.get_platform import is_a5_device  # noqa: E402
+
 # 加载自定义库
 if os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU":
     torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
 
 
 # CPU reference implementation
+
 
 def block_sparse_attention_cpu(query, key, value, block_sparse_mask, blocksize=128):
     """CPU reference: block_sparse_mask (int8 [B,N,q_blocks,kv_blocks]); 1=attend, 0=skip."""
@@ -36,48 +42,48 @@ def block_sparse_attention_cpu(query, key, value, block_sparse_mask, blocksize=1
     gqa = nq // nkv
     output = torch.zeros(bs, nq, seq, dim, dtype=torch.float32)
 
-    query_f  = query.float().cpu().numpy()
-    key_f    = key.float().cpu().numpy()
-    value_f  = value.float().cpu().numpy()
-    mask_np  = block_sparse_mask.cpu().numpy()
+    query_f = query.float().cpu().numpy()
+    key_f = key.float().cpu().numpy()
+    value_f = value.float().cpu().numpy()
+    mask_np = block_sparse_mask.cpu().numpy()
 
     for bi in range(bs):
         for ni in range(nq):
             num_blocks = math.ceil(seq / blocksize)
             for s1 in range(num_blocks):
-                mask_block = mask_np[bi, ni, s1, :num_blocks]           # [kv_blocks]
-                mask_seq   = np.repeat(mask_block, blocksize)[:seq].astype(bool)
+                mask_block = mask_np[bi, ni, s1, :num_blocks]  # [kv_blocks]
+                mask_seq = np.repeat(mask_block, blocksize)[:seq].astype(bool)
                 start = s1 * blocksize
-                end   = min((s1 + 1) * blocksize, seq)
-                q     = query_f[bi, ni, start:end]                      # [q_len, dim]
+                end = min((s1 + 1) * blocksize, seq)
+                q = query_f[bi, ni, start:end]  # [q_len, dim]
                 k_idx = ni // gqa
-                k     = key_f[bi, k_idx][mask_seq]
-                v     = value_f[bi, k_idx][mask_seq]
+                k = key_f[bi, k_idx][mask_seq]
+                v = value_f[bi, k_idx][mask_seq]
                 if k.shape[0] == 0:
                     out = np.zeros((end - start, dim), dtype=np.float32)
                 else:
                     p = q @ k.T / np.sqrt(dim)
                     p = p - p.max(axis=-1, keepdims=True)
                     exp_p = np.exp(p)
-                    attn  = exp_p / (exp_p.sum(axis=-1, keepdims=True) + 1e-12)
-                    out   = attn @ v
+                    attn = exp_p / (exp_p.sum(axis=-1, keepdims=True) + 1e-12)
+                    out = attn @ v
                 output[bi, ni, start:end] = torch.from_numpy(out)
     return output
 
 
 def ref_compare(golden, actual, err):
-    golden      = golden.to(torch.float32)
+    golden = golden.to(torch.float32)
     golden_nmax = torch.clamp(torch.abs(golden), min=1)
-    abs_error   = torch.abs(actual.to(torch.float32) - golden)
-    EB          = torch.mean(abs_error / golden_nmax)
-    result      = (abs_error <= err * golden_nmax).all() and EB <= err / 2
+    abs_error = torch.abs(actual.to(torch.float32) - golden)
+    EB = torch.mean(abs_error / golden_nmax)
+    result = (abs_error <= err * golden_nmax).all() and EB <= err / 2
     return EB.item(), result.item(), abs_error.max().item()
 
 
 def make_block_sparse_mask(batch, head_num, seq_len, sparse_size, sparsity=0.5, seed=42):
     """Generate random int8 block_sparse_mask [B, N, q_blocks, kv_blocks]."""
     rng = np.random.default_rng(seed)
-    q_blocks  = math.ceil(seq_len / sparse_size)
+    q_blocks = math.ceil(seq_len / sparse_size)
     kv_blocks = math.ceil(seq_len / sparse_size)
     mask = (rng.random((batch, head_num, q_blocks, kv_blocks)) > sparsity).astype(np.int8)
     # Ensure at least one block per row is 1.
@@ -96,34 +102,34 @@ def make_block_sparse_mask(batch, head_num, seq_len, sparse_size, sparsity=0.5, 
 # invalid values (0xFFFFFFFF) in non-Meta paths. The two test files must run
 # in separate processes.
 
-@unittest.skipIf(
-    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
-    "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
-)
-class TestNpuBlockSparseAttentionNPU(unittest.TestCase):
 
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
+@unittest.skipIf(not is_a5_device(), "Block Sparse Attention requires A5 (950) NPU.")
+class TestNpuBlockSparseAttentionNPU(unittest.TestCase):
     def setUp(self):
-        self.device      = torch.device("npu:0")
+        self.device = torch.device("npu:0")
         torch.npu.set_device(self.device)
-        self.batch       = 1
-        self.head_num    = 1
-        self.head_dim    = 128
-        self.seq_len     = 75392   # minimum viable sequence length
+        self.batch = 1
+        self.head_num = 1
+        self.head_dim = 128
+        self.seq_len = 75392  # minimum viable sequence length
         self.sparse_size = 128
-        self.scale       = self.head_dim ** -0.5
+        self.scale = self.head_dim**-0.5
         # 950 series: inner_precise=4 (op vendor requirement); others: 1 (fp16 fast)
         dev_name = torch.npu.get_device_properties(self.device).name
         self.inner_precise = 4 if "950" in dev_name else 1
 
     def _full_mask(self):
         """All-ones block_sparse_mask [B, N, q_blocks, kv_blocks]."""
-        q_blocks  = math.ceil(self.seq_len / self.sparse_size)
+        q_blocks = math.ceil(self.seq_len / self.sparse_size)
         kv_blocks = math.ceil(self.seq_len / self.sparse_size)
         return torch.ones(self.batch, self.head_num, q_blocks, kv_blocks, dtype=torch.int8)
 
-    def _call_op(self, q, k, v, mask, layout="BNSD",
-                 actual_seq_lengths=None, actual_seq_lengths_kv=None,
-                 softmax_lse_flag=0):
+    def _call_op(
+        self, q, k, v, mask, layout="BNSD", actual_seq_lengths=None, actual_seq_lengths_kv=None, softmax_lse_flag=0
+    ):
         # Default actual_seq_lengths if not provided.
         if actual_seq_lengths is None:
             actual_seq_lengths = [self.seq_len] * self.batch
@@ -170,7 +176,11 @@ class TestNpuBlockSparseAttentionNPU(unittest.TestCase):
         mask = self._full_mask()
         seq_lens = [S] * B
         attn_out, lse = self._call_op(
-            q, k, v, mask, layout="TND",
+            q,
+            k,
+            v,
+            mask,
+            layout="TND",
             actual_seq_lengths=seq_lens,
             actual_seq_lengths_kv=seq_lens,
         )

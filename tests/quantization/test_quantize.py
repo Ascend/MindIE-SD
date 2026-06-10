@@ -9,19 +9,28 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
+# pylint: disable=abstract-method,duplicate-code
 import os
 import importlib
 import unittest
 from unittest import mock
 import json
 import torch
-import torch.nn as nn
-from mindiesd.quantization.config import QuantConfig, LayerQuantConfig
-from mindiesd.quantization.layer import W8A8QuantBaseLinear, WeightQuantLinear, FP8RotateQuantFA, W8A8MXFP8QuantLinear, W4A4QuantLinear, W4A4MXFP4QuantLinear
+from torch import nn
+from mindiesd.quantization.config import QuantConfig, LayerQuantConfig, OnlineQuantConfig
+from mindiesd.quantization.layer import (
+    W8A8QuantBaseLinear,
+    WeightQuantLinear,
+    FP8RotateQuantFA,
+    W8A8MXFP8QuantLinear,
+    W4A4QuantLinear,
+    W4A4MXFP4QuantLinear,
+)
 from mindiesd.quantization.mode import QuantAlgorithm
 from mindiesd.quantization.quantize import smooth_quantize_w8a8, smooth_quantize, quantize
 from mindiesd.quantization.quantize import weight_quantize, w8a16_quantize, add_fa_quant
 from mindiesd.quantization.quantize import get_cfg_and_weights
+from mindiesd.quantization.quantize import _online_quantize_impl
 from mindiesd.utils import ParametersInvalid, ConfigError
 from mindiesd.utils.get_platform import NPUDevice, get_npu_device
 
@@ -48,7 +57,34 @@ def create_mock_handler(mock_data):
     return MockSafeTensorHandler(mock_data)
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+class FakeOnlineQuantLinear(nn.Module):
+    init_records = []
+
+    def __init__(self, original_linear, dtype=torch.bfloat16, fallback_timesteps=None):
+        super().__init__()
+        self.input_feature = original_linear.in_features
+        self.output_feature = original_linear.out_features
+        self.dtype = dtype
+        self.fallback_timesteps = fallback_timesteps
+        self.register_buffer(
+            "weight", torch.empty(original_linear.out_features, original_linear.in_features), persistent=False
+        )
+        FakeOnlineQuantLinear.init_records.append(
+            {
+                "dtype": dtype,
+                "fallback_timesteps": fallback_timesteps,
+                "in_features": original_linear.in_features,
+                "out_features": original_linear.out_features,
+            }
+        )
+
+    def forward(self, x):
+        return torch.empty(*x.shape[:-1], self.output_feature, dtype=self.dtype)
+
+
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestSmoothQuantize(unittest.TestCase):
     def setUp(self):
         in_features = 10
@@ -59,7 +95,7 @@ class TestSmoothQuantize(unittest.TestCase):
             "0.input_scale": torch.ones(1, dtype=torch.float16),
             "0.input_offset": torch.ones(1, dtype=torch.float16),
             "0.weight": torch.ones(out_features, in_features, dtype=torch.int8),
-            "0.bias": torch.ones(out_features, dtype=torch.float32)
+            "0.bias": torch.ones(out_features, dtype=torch.float32),
         }
         self.weights2 = {
             "0.linear.quant_bias": torch.ones(out_features, dtype=torch.int32),
@@ -68,18 +104,18 @@ class TestSmoothQuantize(unittest.TestCase):
             "0.linear.input_offset": torch.ones(1, dtype=torch.float16),
             "0.linear.weight": torch.ones(out_features, in_features, dtype=torch.int8),
             "0.linear.bias": torch.ones(out_features, dtype=torch.float32),
-            "0.div.mul_scale": torch.ones(out_features, dtype=torch.float32)
+            "0.div.mul_scale": torch.ones(out_features, dtype=torch.float32),
         }
         self.weights3 = {
             "0.weight": torch.ones(out_features, in_features, dtype=torch.int8),
             "0.weight_scale": torch.ones(out_features, out_features, dtype=torch.float32),
-            "0.bias": torch.ones(out_features, dtype=torch.float32)
+            "0.bias": torch.ones(out_features, dtype=torch.float32),
         }
         self.weights4 = {
             "0.linear.weight": torch.ones(out_features, in_features, dtype=torch.int8),
             "0.linear.weight_scale": torch.ones(out_features, out_features, dtype=torch.float32),
             "0.linear.bias": torch.ones(out_features, dtype=torch.float32),
-            "0.div.mul_scale": torch.ones(out_features, dtype=torch.float32)
+            "0.div.mul_scale": torch.ones(out_features, dtype=torch.float32),
         }
         in_features_w4a4 = 8
         out_features_w4a4 = 8
@@ -87,12 +123,12 @@ class TestSmoothQuantize(unittest.TestCase):
             "0.linear.weight": torch.ones(out_features_w4a4, in_features_w4a4, dtype=torch.int8),
             "0.linear.weight_scale": torch.ones(out_features_w4a4, out_features_w4a4, dtype=torch.float32),
             "0.linear.bias": torch.ones(out_features_w4a4, dtype=torch.float32),
-            "0.div.mul_scale": torch.ones(out_features_w4a4, dtype=torch.float32)
+            "0.div.mul_scale": torch.ones(out_features_w4a4, dtype=torch.float32),
         }
         self.weights6 = {
             "0.weight": torch.ones(out_features_w4a4, in_features_w4a4, dtype=torch.float8_e4m3fn),
             "0.weight_scale": torch.ones(out_features_w4a4, out_features_w4a4, dtype=torch.uint8),
-            "0.bias": torch.ones(out_features_w4a4, dtype=torch.float32)
+            "0.bias": torch.ones(out_features_w4a4, dtype=torch.float32),
         }
 
     def test_smooth_quantize_w8a8_with_linear(self):
@@ -168,7 +204,9 @@ class TestSmoothQuantize(unittest.TestCase):
         self.assertFalse(is_modified)
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestQuantize(unittest.TestCase):
     def setUp(self):
         in_features = 10
@@ -180,12 +218,12 @@ class TestQuantize(unittest.TestCase):
             "0.input_scale": torch.ones(1, dtype=torch.float16),
             "0.input_offset": torch.ones(1, dtype=torch.float16),
             "0.weight": torch.ones(out_features, in_features, dtype=torch.int8),
-            "0.bias": torch.ones(out_features, dtype=torch.float32)
+            "0.bias": torch.ones(out_features, dtype=torch.float32),
         }
         self.weights2 = {
             "0.weight_scale": torch.ones(1, dtype=torch.bfloat16),
             "0.weight": torch.ones(out_features, in_features, dtype=torch.int8),
-            "0.bias": torch.ones(out_features, dtype=torch.float32)
+            "0.bias": torch.ones(out_features, dtype=torch.float32),
         }
 
     @mock.patch.object(quantize_module, "get_cfg_and_weights")  # 装饰器指定被mock的函数
@@ -207,14 +245,15 @@ class TestQuantize(unittest.TestCase):
     @mock.patch.object(quantize_module, "get_cfg_and_weights")  # 装饰器指定被mock的函数
     def test_quantize_with_excluded_layer(self, mock_func):
         model = nn.Sequential(nn.Linear(10, 10))
-        cfg = LayerQuantConfig(quantized_layers={"1": QuantConfig(quant_algo=QuantAlgorithm.W8A8,
-            exclude_layers=tuple(["0"]))})
+        cfg = LayerQuantConfig(
+            quantized_layers={"1": QuantConfig(quant_algo=QuantAlgorithm.W8A8, exclude_layers=tuple(["0"]))}
+        )
         mock_func.return_value = (cfg, create_mock_handler(self.weights))
         quantized_model = quantize.__wrapped__(model, "path", custom_cfg=cfg)
         self.assertEqual(quantized_model, model)
 
     @mock.patch.object(quantize_module, "get_cfg_and_weights")  # 装饰器指定被mock的函数
-    def test_quantize_with_w8a8_layer(self, mock_func):
+    def test_quantize_with_w8a8_dynamic_layer(self, mock_func):
         model = nn.Sequential(nn.Linear(10, 10))
         cfg = LayerQuantConfig(quantized_layers={"0": QuantConfig(quant_algo=QuantAlgorithm.W8A8)})
         mock_func.return_value = cfg, create_mock_handler(self.weights)
@@ -222,7 +261,7 @@ class TestQuantize(unittest.TestCase):
         self.assertIsInstance(quantized_model[0], W8A8QuantBaseLinear)
 
     @mock.patch.object(quantize_module, "get_cfg_and_weights")  # 装饰器指定被mock的函数
-    def test_quantize_with_w8a8_layer(self, mock_func):
+    def test_quantize_with_w8a8_timestep_layer(self, mock_func):
         model = nn.Sequential(nn.Linear(10, 10))
         cfg = LayerQuantConfig(quantized_layers={"0": QuantConfig(quant_algo=QuantAlgorithm.W8A8_DYNAMIC)})
         mock_func.return_value = cfg, create_mock_handler(self.weights)
@@ -254,7 +293,6 @@ class TestQuantize(unittest.TestCase):
         quantized_model = quantize.__wrapped__(model, "path", custom_cfg=cfg)
         self.assertIsInstance(quantized_model[0], W8A8QuantBaseLinear)
 
-
     @mock.patch.object(quantize_module, "get_cfg_and_weights")  # 装饰器指定被mock的函数
     def test_quantize_with_w8a16_layer(self, mock_func):
         model = nn.Sequential(nn.Linear(10, 10))
@@ -274,7 +312,7 @@ class TestQuantize(unittest.TestCase):
         # Test invalid config case
         model = nn.Sequential(nn.Linear(10, 10))
         with self.assertRaises(ParametersInvalid):
-            quantized_model = quantize(model, "path/to/quant_des.json")
+            quantize(model, "path/to/quant_des.json")
 
     @mock.patch("mindiesd.utils.file_utils.safe_open")
     @mock.patch("mindiesd.utils.file_utils.check_file_safety")
@@ -285,10 +323,126 @@ class TestQuantize(unittest.TestCase):
         # Test file error case
         model = nn.Sequential(nn.Linear(10, 10))
         with self.assertRaises(FileNotFoundError):
-            quantized_model = quantize(model, "path/to/quant_des.json")
+            quantize(model, "path/to/quant_des.json")
+
+    @mock.patch.object(torch.npu, "empty_cache")
+    def test_quantize_with_online_config(self, mock_empty_cache):
+        model = nn.Sequential(nn.Linear(10, 8), nn.ReLU(), nn.Linear(8, 4))
+        config = OnlineQuantConfig(quant_type=QuantAlgorithm.W8A8_MXFP8)
+        FakeOnlineQuantLinear.init_records = []
+
+        with mock.patch.dict(
+            quantize_module._ONLINE_QUANT_LAYER_MAP,
+            {QuantAlgorithm.W8A8_MXFP8: FakeOnlineQuantLinear},
+        ):
+            quantized_model = quantize.__wrapped__(model, online_config=config, dtype=torch.float16)
+
+        self.assertIs(quantized_model, model)
+        self.assertIsInstance(model[0], FakeOnlineQuantLinear)
+        self.assertIsInstance(model[1], nn.ReLU)
+        self.assertIsInstance(model[2], FakeOnlineQuantLinear)
+        self.assertEqual(
+            [record["dtype"] for record in FakeOnlineQuantLinear.init_records], [torch.float16, torch.float16]
+        )
+        mock_empty_cache.assert_called_once()
+
+    @mock.patch.object(torch.npu, "empty_cache")
+    def test_online_quantize_with_fallback_layers_and_timesteps(self, mock_empty_cache):
+        model = nn.ModuleDict(
+            {
+                "main": nn.Linear(8, 8),
+                "skip": nn.Linear(8, 8),
+                "fallback": nn.Linear(8, 8),
+            }
+        )
+        config = OnlineQuantConfig(
+            quant_type=QuantAlgorithm.W4A4_MXFP4_DYNAMIC,
+            fallback_layers={"skip": QuantAlgorithm.W16A16, "fallback": QuantAlgorithm.W8A8},
+            fallback_timesteps=[3, 7],
+        )
+        FakeOnlineQuantLinear.init_records = []
+
+        with mock.patch.dict(
+            quantize_module._ONLINE_QUANT_LAYER_MAP,
+            {
+                QuantAlgorithm.W4A4_MXFP4_DYNAMIC: FakeOnlineQuantLinear,
+                QuantAlgorithm.W8A8: FakeOnlineQuantLinear,
+            },
+        ):
+            quantized_model = _online_quantize_impl(model, config, dtype=torch.bfloat16)
+
+        self.assertIs(quantized_model, model)
+        self.assertIsInstance(model["main"], FakeOnlineQuantLinear)
+        self.assertIsInstance(model["skip"], nn.Linear)
+        self.assertIsInstance(model["fallback"], FakeOnlineQuantLinear)
+        self.assertEqual(FakeOnlineQuantLinear.init_records[0]["fallback_timesteps"], [3, 7])
+        self.assertIsNone(FakeOnlineQuantLinear.init_records[1]["fallback_timesteps"])
+        mock_empty_cache.assert_called_once()
+
+    def test_quantize_rejects_mixed_offline_and_online_config(self):
+        model = nn.Sequential(nn.Linear(10, 10))
+        config = OnlineQuantConfig(quant_type=QuantAlgorithm.W8A8_DYNAMIC)
+
+        with self.assertRaises(ParametersInvalid):
+            quantize(model, "path/to/quant_des.json", online_config=config)
+
+    def test_quantize_rejects_missing_quant_source(self):
+        model = nn.Sequential(nn.Linear(10, 10))
+
+        with self.assertRaises(ParametersInvalid):
+            quantize(model)
+
+    def test_quantize_rejects_invalid_dtype(self):
+        model = nn.Sequential(nn.Linear(10, 10))
+        config = OnlineQuantConfig(quant_type=QuantAlgorithm.W8A8_DYNAMIC)
+
+        with self.assertRaises(ParametersInvalid):
+            quantize(model, online_config=config, dtype=torch.float32)
+
+    def test_quantize_rejects_invalid_online_config_type(self):
+        model = nn.Sequential(nn.Linear(10, 10))
+
+        with self.assertRaises(ParametersInvalid):
+            quantize(model, online_config={})
+
+    def test_quantize_rejects_invalid_quant_des_path(self):
+        model = nn.Sequential(nn.Linear(10, 10))
+
+        with self.assertRaises(ConfigError):
+            quantize(model, "")
+
+    @mock.patch("mindiesd.utils.file_utils.check_file_safety")
+    @mock.patch("mindiesd.utils.file_utils.standardize_path", side_effect=lambda path: path)
+    def test_quantize_rejects_invalid_timestep_config(self, _mock_standardize, _mock_check_safety):
+        model = nn.Sequential(nn.Linear(10, 10))
+
+        with self.assertRaises(ParametersInvalid):
+            quantize(model, "path/to/quant_des.json", timestep_config="invalid")
+
+    @mock.patch("mindiesd.utils.file_utils.check_file_safety")
+    @mock.patch("mindiesd.utils.file_utils.standardize_path", side_effect=lambda path: path)
+    def test_quantize_rejects_invalid_module_map(self, _mock_standardize, _mock_check_safety):
+        model = nn.Sequential(nn.Linear(10, 10))
+
+        with self.assertRaises(ParametersInvalid):
+            quantize(model, "path/to/quant_des.json", map={"linear": W8A8QuantBaseLinear})
+
+    @mock.patch.object(torch.npu, "empty_cache")
+    def test_online_quantize_rejects_unsupported_mutated_fallback(self, _mock_empty_cache):
+        model = nn.Sequential(nn.Linear(10, 10))
+        config = OnlineQuantConfig(
+            quant_type=QuantAlgorithm.W8A8_DYNAMIC,
+            fallback_layers={"0": QuantAlgorithm.W8A8},
+        )
+        config.fallback_layers["0"] = QuantAlgorithm.NO_QUANT
+
+        with self.assertRaises(ParametersInvalid):
+            _online_quantize_impl(model, config)
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestWeightQuantize(unittest.TestCase):
     def setUp(self):
         in_features = 8
@@ -297,7 +451,7 @@ class TestWeightQuantize(unittest.TestCase):
             "0.weight": torch.ones(out_features, in_features, dtype=torch.int8),
             "0.bias": torch.ones(out_features, dtype=torch.float32),
             "0.weight_scale": torch.ones(out_features, dtype=torch.float16),
-            "0.weight_offset": torch.ones(out_features, dtype=torch.float16)
+            "0.weight_offset": torch.ones(out_features, dtype=torch.float16),
         }
 
     def test_weight_quantize_with_w8a16(self):
@@ -344,7 +498,9 @@ class TestWeightQuantize(unittest.TestCase):
         self.assertTrue(is_modified)
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestAddFAQuant(unittest.TestCase):
     def setUp(self):
         self.weights = {
@@ -355,8 +511,7 @@ class TestAddFAQuant(unittest.TestCase):
     def test_add_fa_quant_with_valid_layer(self):
         # 创建一个具有必要属性的模拟层
         class MockLayer(nn.Module):
-            def __init__(self):
-                super().__init__()
+            pass
 
         layer = MockLayer()
         cfg = QuantConfig(quant_algo=QuantAlgorithm.FP8_DYNAMIC)
@@ -372,16 +527,14 @@ class TestAddFAQuant(unittest.TestCase):
         self.assertFalse(hasattr(layer, 'fa_quant'))
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestGetCfgAndWeights(unittest.TestCase):
     def setUp(self):
         self.quant_des_path = "path/to/quant_des.json"
         self.quant_weight_path = "path/to/quant_model_weight_w8a8.safetensors"
-        self.quant_des_dict = {
-            "model_quant_type": "W8A8",
-            "layer1": "W8A8",
-            "layer2": "FLOAT"
-        }
+        self.quant_des_dict = {"model_quant_type": "W8A8", "layer1": "W8A8", "layer2": "FLOAT"}
         self.quant_weights = {"weight": torch.ones(1)}
 
     @mock.patch("mindiesd.utils.file_utils.safe_open")

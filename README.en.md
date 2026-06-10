@@ -2,6 +2,10 @@
 
 MindIE SD is an Ascend-focused inference acceleration toolkit for Stable Diffusion and related multimodal generation workloads.
 
+## Installation
+
+See the [Installation Guide](docs/en/installing_guide.md) for setup instructions and environment requirements.
+
 ## Highlights
 
 - Ascend-friendly custom operators and fused kernels
@@ -20,7 +24,7 @@ pip install -r requirements.txt
 
 ## Documentation
 
-- English overview: [docs/en/README.md](docs/en/README.md)
+- English overview: [docs/en/README.md](docs/en/index.md)
 - English quick start: [docs/en/quick_start.md](docs/en/quick_start.md)
 - English installation guide: [docs/en/installing_guide.md](docs/en/installing_guide.md)
 - English user guide: [docs/en/menu_user_manual.md](docs/en/menu_user_manual.md)
@@ -32,7 +36,7 @@ pip install -r requirements.txt
 - English sparse quantization: [docs/en/features/sparse_quantization.md](docs/en/features/sparse_quantization.md)
 - Chinese overview: [docs/zh/index.md](docs/zh/index.md)
 - Chinese quick start: [docs/zh/quick_start.md](docs/zh/quick_start.md)
-- Chinese installation guide: [docs/zh/installing_guide.md](docs/zh/installing_guide.md)
+- Chinese installation guide: [docs/zh/installing_guide.md](docs/zh/installation.md)
 - Chinese architecture: [docs/zh/architecture.md](docs/zh/architecture.md)
 
 ## Community and governance

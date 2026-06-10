@@ -1,8 +1,21 @@
 # Test Guide
 
-## CPU-Friendly Unit Tests
+The MindIE SD test suite supports running with or without Ascend NPU hardware. CPU-compatible tests can be executed even when no NPU hardware is available.
 
-Use the CPU-friendly UT entrypoint first when you want coverage output and test artifacts without relying on the full NPU runtime stack.
+## Test environment overview
+
+Tests fall into two categories:
+
+| Type | Description | NPU required |
+|------|-------------|:---:|
+| CPU-compatible | Configuration parsing, utility functions, quantization parameter validation, compilation logic, etc. | No |
+| NPU-dependent | Custom operator accuracy, Flash Attention, tensor operations on device, etc. | Yes |
+
+## Test entry points
+
+### Option 1: CPU-friendly unit tests (recommended for users without NPU)
+
+`run_UT_test.sh` always runs in CPU mode, making it suitable for development environments without NPU hardware.
 
 ```bash
 python -m pip install -r requirements.txt
@@ -19,19 +32,39 @@ Artifacts are generated under `tests/UT/`, including:
 
 The repository also provides `tests/scripts/check_coverage.py` for CI coverage gating on newly added Python files.
 
-## Full Test Entry
+### Option 2: Full tests (three modes)
 
-When the Ascend/NPU runtime stack is available, run the wrapper script for the full test entry:
+`run_test.sh` accepts a flag to control the test scope. Three modes are available:
+
+**1. All tests (default)**
+
+Run both CPU-compatible and NPU-dependent tests:
 
 ```bash
-bash tests/run_test.sh --all
+cd tests/
+bash run_test.sh --all
 ```
 
-Available options:
+When no flag is given, the default is to run all tests:
 
-- `--cpu_only`
-- `--npu_only`
-- `--all`
+```bash
+cd tests/
+bash run_test.sh
+```
+
+**2. CPU-compatible tests only (no NPU hardware required)**
+
+```bash
+cd tests/
+bash run_test.sh --cpu_only
+```
+
+**3. NPU-dependent tests only (requires NPU hardware)**
+
+```bash
+cd tests/
+bash run_test.sh --npu_only
+```
 
 ## LA Operator Accuracy Test
 

@@ -16,13 +16,19 @@ from enum import Enum
 import torch
 import torch.distributed as dist
 
+from ...quantization.config import QuantConfig
+from ...quantization.mode import QuantAlgorithm
 from ...utils import ParametersInvalid
 from .moe_dataclass import (
     MoEMlpComputeInput,
     MoEPrepareInput,
     MoERoutingInput,
     MoETokenDispatchInput,
+    MoETokenDispatchOutput,
+    MoEWeights,
 )
+
+MOE_SUPPORTED_QUANT_ALGOS = (QuantAlgorithm.NO_QUANT, QuantAlgorithm.W8A8_DYNAMIC)
 
 
 def validate_moe_inputs(
@@ -34,6 +40,9 @@ def validate_moe_inputs(
     w2_weight: torch.Tensor,
     w13_bias: torch.Tensor | None = None,
     w2_bias: torch.Tensor | None = None,
+    quant_config: QuantConfig | None = None,
+    w13_weight_scale: torch.Tensor | None = None,
+    w2_weight_scale: torch.Tensor | None = None,
     tp_group: dist.ProcessGroup | None = None,
     ep_group: dist.ProcessGroup | None = None,
     dispatcher_type: str | None = None,
@@ -46,8 +55,8 @@ def validate_moe_inputs(
     routed_scaling_factor: float = 1.0,
     custom_routing_function: Callable | None = None,
     reduce_results: bool = True,
-) -> None:
-    """Validate public MoE inputs at the beginning of the MoE invocation."""
+) -> QuantAlgorithm:
+    """Validate public MoE inputs and return the normalized quantization algorithm."""
     if not isinstance(hidden_states, torch.Tensor):
         raise ParametersInvalid(f"hidden_states must be a torch.Tensor, but got {type(hidden_states)}.")
     if not isinstance(router_logits, torch.Tensor):
@@ -60,6 +69,16 @@ def validate_moe_inputs(
         raise ParametersInvalid(f"w13_bias must be a torch.Tensor or None, but got {type(w13_bias)}.")
     if w2_bias is not None and not isinstance(w2_bias, torch.Tensor):
         raise ParametersInvalid(f"w2_bias must be a torch.Tensor or None, but got {type(w2_bias)}.")
+
+    if quant_config is not None and not isinstance(quant_config, QuantConfig):
+        raise ParametersInvalid(f"quant_config must be a QuantConfig or None, but got {type(quant_config)}.")
+    quant_algo = QuantAlgorithm.NO_QUANT if quant_config is None else quant_config.quant_algo or QuantAlgorithm.NO_QUANT
+    if quant_algo not in MOE_SUPPORTED_QUANT_ALGOS:
+        raise ParametersInvalid(f"Unsupported MoE quantization algorithm: {quant_algo}.")
+    if quant_algo == QuantAlgorithm.NO_QUANT and (w13_weight_scale is not None or w2_weight_scale is not None):
+        raise ParametersInvalid("w13_weight_scale and w2_weight_scale must be None.")
+    if quant_algo != QuantAlgorithm.NO_QUANT and (w13_weight_scale is None or w2_weight_scale is None):
+        raise ParametersInvalid("w13_weight_scale and w2_weight_scale must be provided.")
 
     if not isinstance(num_experts, int) or isinstance(num_experts, bool):
         raise ParametersInvalid(f"num_experts must be an integer, but got {type(num_experts)}.")
@@ -158,7 +177,6 @@ def validate_moe_inputs(
             "w2_bias shape must match w2_weight expert and output dimensions, "
             f"but got bias={tuple(w2_bias.shape)}, weight={tuple(w2_weight.shape)}."
         )
-
     if ep_group is not None:
         ep_size = dist.get_world_size(ep_group)
         if num_experts % ep_size != 0:
@@ -182,6 +200,7 @@ def validate_moe_inputs(
             "top_k cannot exceed the number of experts in selected groups, "
             f"but got top_k={top_k}, k_group={k_group}, experts_per_group={experts_per_group}."
         )
+    return quant_algo
 
 
 class MoECommType(Enum):
@@ -195,6 +214,7 @@ class MoECommType(Enum):
 _TP_GROUP = None
 _EP_GROUP = None
 _MOE_COMM_TYPE = MoECommType.NONE
+_MOE_QUANT_ALGO = QuantAlgorithm.NO_QUANT
 
 
 def set_moe_comm_context(tp_group=None, ep_group=None) -> None:
@@ -213,6 +233,28 @@ def set_moe_comm_context(tp_group=None, ep_group=None) -> None:
 def get_moe_comm_type() -> MoECommType:
     """Return the resolved MoE communication mode."""
     return _MOE_COMM_TYPE
+
+
+def set_moe_quant_algo(quant_algo: QuantAlgorithm = QuantAlgorithm.NO_QUANT) -> None:
+    """Store the current MoE quantization algorithm."""
+    global _MOE_QUANT_ALGO
+    _MOE_QUANT_ALGO = quant_algo
+
+
+def get_moe_quant_algo() -> QuantAlgorithm:
+    """Return the current MoE quantization algorithm."""
+    return _MOE_QUANT_ALGO
+
+
+def is_moe_quant() -> bool:
+    """Return whether the current MoE path uses quantization."""
+    return _MOE_QUANT_ALGO != QuantAlgorithm.NO_QUANT
+
+
+def set_moe_context(tp_group=None, ep_group=None, quant_algo: QuantAlgorithm = QuantAlgorithm.NO_QUANT) -> None:
+    """Set MoE context."""
+    set_moe_comm_context(tp_group=tp_group, ep_group=ep_group)
+    set_moe_quant_algo(quant_algo)
 
 
 def get_moe_group():
@@ -264,13 +306,33 @@ def build_routing_input(
     )
 
 
+def build_moe_weights(
+    w13_weight: torch.Tensor,
+    w2_weight: torch.Tensor,
+    w13_bias: torch.Tensor | None = None,
+    w2_bias: torch.Tensor | None = None,
+    w13_weight_scale: torch.Tensor | None = None,
+    w2_weight_scale: torch.Tensor | None = None,
+) -> MoEWeights:
+    """Build the expert weight payload."""
+    return MoEWeights(
+        w13_weight=w13_weight,
+        w2_weight=w2_weight,
+        w13_bias=w13_bias,
+        w2_bias=w2_bias,
+        w13_weight_scale=w13_weight_scale,
+        w2_weight_scale=w2_weight_scale,
+    )
+
+
 def build_token_dispatch_input(
     hidden_states: torch.Tensor,
     topk_weights: torch.Tensor,
     topk_ids: torch.Tensor,
     num_experts: int,
     top_k: int,
-    w13_weight: torch.Tensor,
+    weights: MoEWeights,
+    dynamic_scale: torch.Tensor | None = None,
 ) -> MoETokenDispatchInput:
     """Build the token-dispatch input wrapper."""
     return MoETokenDispatchInput(
@@ -279,26 +341,22 @@ def build_token_dispatch_input(
         topk_ids=topk_ids,
         num_experts=num_experts,
         top_k=top_k,
-        local_num_experts=w13_weight.shape[0],
+        local_num_experts=weights.w13_weight.shape[0],
+        dynamic_scale=dynamic_scale,
     )
 
 
 def build_mlp_compute_input(
-    hidden_states: torch.Tensor,
-    group_list: torch.Tensor,
-    group_list_type: int,
-    w13_weight: torch.Tensor,
-    w2_weight: torch.Tensor,
-    w13_bias: torch.Tensor | None = None,
-    w2_bias: torch.Tensor | None = None,
+    dispatch_output: MoETokenDispatchOutput,
+    weights: MoEWeights,
+    mlp_output_dtype: torch.dtype,
 ) -> MoEMlpComputeInput:
     """Build the grouped-MLP input wrapper."""
     return MoEMlpComputeInput(
-        hidden_states=hidden_states,
-        group_list=group_list,
-        group_list_type=group_list_type,
-        w13_weight=w13_weight,
-        w2_weight=w2_weight,
-        w13_bias=w13_bias,
-        w2_bias=w2_bias,
+        hidden_states=dispatch_output.hidden_states,
+        dynamic_scale=dispatch_output.dynamic_scale,
+        group_list=dispatch_output.group_list,
+        group_list_type=dispatch_output.group_list_type,
+        weights=weights,
+        mlp_output_dtype=mlp_output_dtype,
     )

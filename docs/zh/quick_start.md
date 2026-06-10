@@ -6,15 +6,52 @@
 
 ## 模型下载与运行
 
-在任意路径下载 Wan2.1 模型仓，并安装模型仓所需依赖。用户可根据需要自行设置权重路径（例：`/home/{用户名}/Wan2.1-T2V-14B`）和推理脚本中的模型参数，参数解释详情请参见[参数配置](../../examples/wan/parameter_config.md)。
+### 1. 获取推理脚本
+
+从魔乐社区克隆 Wan2.1 推理脚本仓库，并安装依赖：
 
 ```bash
 git clone https://modelers.cn/MindIE/Wan2.1.git && cd Wan2.1
 pip install -r requirements.txt
+```
 
+### 2. 获取模型权重
+
+上述仓库包含推理脚本，**不包含模型权重文件**。权重需要单独下载，以 Wan2.1 为例，支持以下模型：
+
+| 模型 | 说明 | 权重下载 |
+|------|------|----------|
+| Wan2.1-T2V-14B | 文生视频 | [HuggingFace](https://huggingface.co/Wan-AI/Wan2.1-T2V-14B) |
+| Wan2.1-I2V-14B-480P | 图生视频（480P） | [HuggingFace](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-480P) |
+| Wan2.1-I2V-14B-720P | 图生视频（720P） | [HuggingFace](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-720P) |
+
+下载完成后，权重目录结构应如下（以 Wan2.1-T2V-14B 为例）：
+
+```text
+Wan2.1-T2V-14B/
+├── config.json
+├── model_index.json
+├── models/
+│   ├── dit/
+│   ├── vae/
+│   └── text_encoder/
+└── ...
+```
+
+> **说明**
+>
+> - 除 HuggingFace 外，也可从 [modelscope](https://modelscope.cn/models) 获取模型权重。
+> - 如需下载其他模型的权重（FLUX.1-dev、HunyuanVideo 等），请参见[模型/框架支持情况](features/supported_matrix.md)中的链接。
+
+### 3. 运行推理
+
+将权重路径设置到 `model_base` 参数，运行推理脚本。参数解释详情请参见[参数配置](../../examples/wan/parameter_config.md)。
+
+```bash
 # Wan2.1-T2V-14B 8 卡推理
 cp MindIE-SD/examples/wan/infer_t2v.sh ./
-model_base="/mnt/share/weight/Wan2.1-T2V-14B" bash infer_t2v.sh
+export model_base="/path/to/Wan2.1-T2V-14B"
+bash infer_t2v.sh
 ```
 
 ## 加速效果展示

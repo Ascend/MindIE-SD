@@ -17,23 +17,26 @@ from unittest.mock import MagicMock, patch
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
+import torch_npu
 
 from mindiesd.layers.moe import moe
 from mindiesd.layers.moe.moe import resolve_dispatcher_class
 from mindiesd.layers.moe.moe_context import set_moe_comm_context
+from mindiesd.layers.moe.moe_dataclass import MoEPrepareOutput, MoETokenDispatchOutput
 from mindiesd.layers.moe.token_dispatcher import DynamicDispatcher, StaticDispatcher
 from mindiesd.utils import ParametersInvalid
 from mindiesd.utils.get_platform import NPUDevice
 
-from .common import make_moe_kwargs
+from .common import make_moe_kwargs, make_w8a8_dynamic_quant_config
 
 
 def mock_dispatch_result(num_tokens=3, hidden_size=4):
-    return (
-        torch.randn(num_tokens, hidden_size),
-        torch.tensor([2, 1]),
-        1,
-        object(),
+    return MoETokenDispatchOutput(
+        hidden_states=torch.randn(num_tokens, hidden_size),
+        dynamic_scale=None,
+        group_list=torch.tensor([2, 1]),
+        group_list_type=1,
+        combine_metadata=object(),
     )
 
 
@@ -70,6 +73,7 @@ def torch_moe_reference(
 
 
 def torch_select_experts(router_logits, top_k, renormalize, routed_scaling_factor=1.0):
+    router_logits = router_logits.float()
     topk_result = router_logits.softmax(dim=-1).topk(top_k, dim=-1)
     topk_weights = topk_result.values
     topk_ids = topk_result.indices.to(torch.int32)
@@ -86,15 +90,24 @@ def run_static_moe(**kwargs):
         mock_dispatch_result(kwargs["hidden_states"].shape[0], kwargs["hidden_states"].shape[-1]),
     )
     combine_output = kwargs.pop("combine_output", torch.randn_like(kwargs["hidden_states"]))
-    dispatched_hidden_states = dispatch_result[0]
+    dispatched_hidden_states = dispatch_result.hidden_states
     mlp_output = kwargs.pop("mlp_output", torch.randn_like(dispatched_hidden_states))
     topk_weights = torch.ones(kwargs["hidden_states"].shape[0], kwargs["top_k"])
     topk_ids = torch.zeros(kwargs["hidden_states"].shape[0], kwargs["top_k"], dtype=torch.int32)
-    with patch.object(StaticDispatcher, "dispatch", return_value=dispatch_result) as mock_dispatch:
-        with patch.object(StaticDispatcher, "combine", return_value=combine_output):
-            with patch("mindiesd.layers.moe.moe_mlp.unquant_apply_mlp", return_value=mlp_output):
-                with patch("mindiesd.layers.moe.moe.select_experts", return_value=(topk_weights, topk_ids)):
-                    output = moe(**kwargs)
+    with (
+        patch.object(StaticDispatcher, "dispatch", return_value=dispatch_result) as mock_dispatch,
+        patch.object(
+            StaticDispatcher,
+            "combine",
+            return_value=combine_output,
+        ),
+        patch("mindiesd.layers.moe.moe.unified_apply_mlp", return_value=mlp_output),
+        patch(
+            "mindiesd.layers.moe.moe.select_experts",
+            return_value=(topk_weights, topk_ids),
+        ),
+    ):
+        output = moe(**kwargs)
     return output, mock_dispatch
 
 
@@ -103,26 +116,45 @@ def run_dynamic_moe(**kwargs):
         "dispatch_result",
         mock_dispatch_result(kwargs["hidden_states"].shape[0], kwargs["hidden_states"].shape[-1]),
     )
-    prepare_output = (kwargs["hidden_states"], kwargs["router_logits"], kwargs["hidden_states"].shape)
+    prepare_output = MoEPrepareOutput(
+        hidden_states=kwargs["hidden_states"],
+        router_logits=kwargs["router_logits"],
+        original_shape=kwargs["hidden_states"].shape,
+        mlp_output_dtype=kwargs["hidden_states"].dtype,
+    )
     topk_weights = torch.ones(kwargs["hidden_states"].shape[0], kwargs["top_k"])
     topk_ids = torch.zeros(kwargs["hidden_states"].shape[0], kwargs["top_k"], dtype=torch.int32)
-    with patch.object(DynamicDispatcher, "prepare", return_value=prepare_output) as mock_prepare:
-        with patch.object(DynamicDispatcher, "dispatch", return_value=dispatch_result) as mock_dispatch:
-            with patch.object(DynamicDispatcher, "combine", return_value=torch.randn_like(kwargs["hidden_states"])):
-                with patch("mindiesd.layers.moe.moe_mlp.unquant_apply_mlp"):
-                    with patch.object(
-                        DynamicDispatcher,
-                        "finalize",
-                        return_value=torch.randn_like(kwargs["hidden_states"]),
-                    ):
-                        with patch("mindiesd.layers.moe.moe.select_experts", return_value=(topk_weights, topk_ids)):
-                            output = moe(**kwargs)
+    with (
+        patch.object(DynamicDispatcher, "prepare", return_value=prepare_output) as mock_prepare,
+        patch.object(
+            DynamicDispatcher,
+            "dispatch",
+            return_value=dispatch_result,
+        ) as mock_dispatch,
+        patch.object(
+            DynamicDispatcher,
+            "combine",
+            return_value=torch.randn_like(kwargs["hidden_states"]),
+        ),
+        patch("mindiesd.layers.moe.moe.unified_apply_mlp"),
+        patch.object(
+            DynamicDispatcher,
+            "finalize",
+            return_value=torch.randn_like(kwargs["hidden_states"]),
+        ),
+        patch(
+            "mindiesd.layers.moe.moe.select_experts",
+            return_value=(topk_weights, topk_ids),
+        ),
+    ):
+        output = moe(**kwargs)
     return output, mock_prepare, mock_dispatch
 
 
 class TestMoeFunction(unittest.TestCase):
     def setUp(self):
         DynamicDispatcher._split_cpu_buffers.clear()
+        DynamicDispatcher._split_copy_events.clear()
         set_moe_comm_context()
 
     @unittest.skipIf(
@@ -132,8 +164,10 @@ class TestMoeFunction(unittest.TestCase):
     def test_static_moe_matches_torch_reference(self):
         torch.manual_seed(2026)
         cases = (
-            dict(top_k=1, renormalize=False, routed_scaling_factor=1.0, with_bias=False, dtype=torch.float16),
+            dict(top_k=1, renormalize=False, routed_scaling_factor=1.0, with_bias=False, dtype=torch.bfloat16),
             dict(top_k=2, renormalize=True, routed_scaling_factor=0.5, with_bias=True, dtype=torch.bfloat16),
+            dict(top_k=1, renormalize=False, routed_scaling_factor=1.0, with_bias=False, dtype=torch.float16),
+            dict(top_k=2, renormalize=True, routed_scaling_factor=0.5, with_bias=True, dtype=torch.float16),
         )
         for case in cases:
             with self.subTest(**case):
@@ -150,7 +184,7 @@ class TestMoeFunction(unittest.TestCase):
                 w13_bias = torch.randn(num_experts, 2 * intermediate_size) / 10 if case["with_bias"] else None
                 w2_bias = torch.randn(num_experts, hidden_size) / 10 if case["with_bias"] else None
                 topk_weights, topk_ids = torch_select_experts(
-                    router_logits,
+                    router_logits.to(dtype=dtype),
                     case["top_k"],
                     renormalize=case["renormalize"],
                     routed_scaling_factor=case["routed_scaling_factor"],
@@ -247,6 +281,57 @@ class TestMoeFunction(unittest.TestCase):
 
         dynamic_dispatch.assert_called_once()
         static_dispatch.assert_not_called()
+
+
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
+    "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.",
+)
+class TestMoeW8A8Dynamic(unittest.TestCase):
+    def setUp(self):
+        set_moe_comm_context()
+
+    def test_w8a8_dynamic_moe_produces_correct_output_shape_and_dtype(self):
+        torch.manual_seed(2026)
+        device = torch.device("npu")
+        num_tokens = 4
+        hidden_size = 32
+        intermediate_size = 32
+        num_experts = 2
+        dtype = torch.bfloat16
+
+        hidden_states = (torch.randn(num_tokens, hidden_size, device=device, dtype=dtype) / 10).contiguous()
+        router_logits = torch.randn(num_tokens, num_experts, device=device, dtype=dtype) / 10
+
+        # Int8 weights in NZ format
+        w13_weight = torch_npu.npu_format_cast(
+            torch.randint(-8, 8, (num_experts, hidden_size, 2 * intermediate_size), dtype=torch.int8, device=device),
+            29,
+        )
+        w2_weight = torch_npu.npu_format_cast(
+            torch.randint(-8, 8, (num_experts, intermediate_size, hidden_size), dtype=torch.int8, device=device),
+            29,
+        )
+        w13_weight_scale = torch.rand(num_experts, 2 * intermediate_size, device=device, dtype=dtype)
+        w2_weight_scale = torch.rand(num_experts, hidden_size, device=device, dtype=dtype)
+
+        output = moe(
+            hidden_states=hidden_states,
+            router_logits=router_logits,
+            num_experts=num_experts,
+            top_k=1,
+            w13_weight=w13_weight,
+            w2_weight=w2_weight,
+            quant_config=make_w8a8_dynamic_quant_config(),
+            w13_weight_scale=w13_weight_scale,
+            w2_weight_scale=w2_weight_scale,
+            dispatcher_type="static",
+            tokens_full=True,
+            reduce_results=False,
+        )
+
+        self.assertEqual(tuple(output.shape), (num_tokens, hidden_size))
+        self.assertEqual(output.dtype, dtype)
 
 
 if __name__ == "__main__":

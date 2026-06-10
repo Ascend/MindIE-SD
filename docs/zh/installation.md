@@ -8,9 +8,21 @@ MindIE SD是一个 Python 包，它基于PyTorch构建，可以轻松集成到 P
 
 * OS: Linux
 * Python: >=3.10
-* Pytorch：2.6, 2.7, 2.8, 2.9
-* torch-npu: 2.6, 2.7, 2.8, 2.9
-* CANN: 8.5.1
+* Pytorch：2.6, 2.7, 2.8, 2.9, 2.10
+* torch-npu: 2.6, 2.7, 2.8, 2.9, 2.10
+* CANN: 9.0.0
+* triton: 3.5.0
+* triton-ascend: 3.2.1
+
+#### CANN 安装
+
+MindIE SD 依赖 CANN Toolkit开发套件包和 CANN ops 算子包，请参考 [CANN 软件安装指南](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/900/softwareinst/instg/instg_0000.html?OS=openEuler&InstallType=netyum) 完成安装。根据安装方式、操作系统等选择安装场景，选择完成后单击“开始阅读”，按“安装CANN”章节进行安装。
+
+安装完成后，执行以下命令设置环境变量（以默认安装路径为例）：
+
+```bash
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
+```
 
 #### 注意事项
 

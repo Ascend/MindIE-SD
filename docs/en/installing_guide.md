@@ -8,7 +8,7 @@ This section describes how to prepare and use a MindIE container image.
 
 1. Install the driver and firmware.
 
-   Make sure the host already has the NPU driver and firmware installed. If not, see the [CANN Software Installation Guide](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/850alpha002/softwareinst/instg/instg_quick.html?Mode=PmIns&OS=openEuler&Software=cannToolKit) and choose the appropriate installation scenario.
+   Make sure the host already has the NPU driver and firmware installed. If not, see the [CANN Software Installation Guide](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/900/softwareinst/instg/instg_0000.html?OS=openEuler&InstallType=netyum) and choose the appropriate installation scenario.
 
    - Installation method: install on a physical machine.
    - Operating system: choose the operating system used in your environment.
@@ -83,7 +83,7 @@ This section describes how to prepare a full development environment on a physic
 
 1. Install the driver and firmware.
 
-   Make sure the host already has the NPU driver and firmware installed. If not, follow the [CANN Software Installation Guide](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/850alpha002/softwareinst/instg/instg_quick.html?Mode=PmIns&OS=openEuler&Software=cannToolKit) and choose the matching installation scenario.
+   Make sure the host already has the NPU driver and firmware installed. If not, follow the [CANN Software Installation Guide](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/900/softwareinst/instg/instg_0000.html?OS=openEuler&InstallType=netyum) and choose the matching installation scenario.
 
    - Installation method: install on a physical machine.
    - Operating system: choose the operating system used in your environment.
@@ -96,14 +96,14 @@ This section describes how to prepare a full development environment on a physic
    - the CANN Toolkit development package
    - the CANN Kernels operator package
 
-   Follow the [CANN Software Installation Guide](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/850alpha002/softwareinst/instg/instg_quick.html?Mode=PmIns&OS=openEuler&Software=cannToolKit) and choose the physical-machine CANN installation path.
+   Follow the [CANN Software Installation Guide](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/900/softwareinst/instg/instg_0000.html?OS=openEuler&InstallType=netyum) and choose the physical-machine CANN installation path.
 
 3. Install PyTorch and Torch NPU.
 
    Required packages include:
 
-   - the PyTorch wheel package, version 2.1.0
-   - the `torch_npu` wheel package
+   - the PyTorch wheel package, version 2.6 / 2.7 / 2.8 / 2.9 / 2.10
+   - the `torch_npu` wheel package, matching the PyTorch version
 
    - Install PyTorch by following the [Ascend Extension for PyTorch installation guide](https://www.hiascend.com/document/detail/zh/Pytorch/720/configandinstg/instg/insg_0004.html).
    - Install `torch_npu` by following the optional extension module guide in the same documentation set.
@@ -118,7 +118,7 @@ This section describes how to prepare a full development environment on a physic
 
 4. Install other environment dependencies.
 
-   Install the model-specific dependencies required for inference:
+   Install the model-specific dependencies required for inference. This includes `triton` and `triton-ascend` as runtime dependencies:
 
    ```bash
    pip install -r requirements.txt

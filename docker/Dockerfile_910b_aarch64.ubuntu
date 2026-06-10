@@ -81,9 +81,9 @@ RUN rm -f /etc/localtime && \
     locale-gen en_US.UTF-8 zh_CN.UTF-8
 
 RUN cd /tmp && \
-    wget https://ascend-repo.obs.cn-east-2.myhuaweicloud.com/CANN/CANN%208.5.1/Ascend-cann-toolkit_8.5.1_linux-aarch64.run --no-check-certificate && \
-    wget https://ascend-repo.obs.cn-east-2.myhuaweicloud.com/CANN/CANN%208.5.1/Ascend-cann-910b-ops_8.5.1_linux-aarch64.run --no-check-certificate && \
-    wget https://ascend-repo.obs.cn-east-2.myhuaweicloud.com/CANN/CANN%208.5.1/Ascend-cann-nnal_8.5.1_linux-aarch64.run --no-check-certificate && \
+    wget https://ascend-repo.obs.cn-east-2.myhuaweicloud.com/CANN/CANN%209.0.0/Ascend-cann-toolkit_9.0.0_linux-aarch64.run --no-check-certificate && \
+    wget https://ascend-repo.obs.cn-east-2.myhuaweicloud.com/CANN/CANN%209.0.0/Ascend-cann-910b-ops_9.0.0_linux-aarch64.run --no-check-certificate && \
+    wget https://ascend-repo.obs.cn-east-2.myhuaweicloud.com/CANN/CANN%209.0.0/Ascend-cann-nnal_9.0.0_linux-aarch64.run --no-check-certificate && \
     chmod 777 /tmp/*.run && \
     yes | ./Ascend-cann-toolkit_*_linux-aarch64.run --install --quiet && \
     . /usr/local/Ascend/ascend-toolkit/set_env.sh && \

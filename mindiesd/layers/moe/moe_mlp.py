@@ -13,22 +13,34 @@
 import torch
 import torch_npu
 
+from ...quantization.mode import QuantAlgorithm
+from .moe_context import get_moe_quant_algo
 from .moe_dataclass import MoEMlpComputeInput
 
+torch_npu.npu.config.allow_internal_format = True
 
-def unquant_apply_mlp(
-    hidden_states: torch.Tensor,
-    w13_weight: torch.Tensor,
-    w2_weight: torch.Tensor,
-    group_list: torch.Tensor,
-    group_list_type: int = 1,
-    w13_bias: torch.Tensor | None = None,
-    w2_bias: torch.Tensor | None = None,
-) -> torch.Tensor:
+
+def _ensure_nz_weight(weight: torch.Tensor) -> torch.Tensor:
+    if torch_npu.get_npu_format(weight) == 29:
+        return weight
+    return torch_npu.npu_format_cast(weight, 29)
+
+
+def unquant_apply_mlp(mlp_input: MoEMlpComputeInput) -> torch.Tensor:
+    hidden_states = mlp_input.hidden_states
+    weights = mlp_input.weights
+    w13_weight = weights.w13_weight
+    w2_weight = weights.w2_weight
+    w13_bias = weights.w13_bias
+    w2_bias = weights.w2_bias
+    group_list = mlp_input.group_list
+    group_list_type = mlp_input.group_list_type
+    bias_dtype = torch.float32 if hidden_states.dtype == torch.bfloat16 else hidden_states.dtype
+
     gate_up = torch_npu.npu_grouped_matmul(
         x=[hidden_states],
         weight=[w13_weight],
-        bias=[w13_bias.to(dtype=torch.float32)] if w13_bias is not None else None,
+        bias=[w13_bias.to(dtype=bias_dtype)] if w13_bias is not None else None,
         split_item=2,
         group_list_type=group_list_type,
         group_type=0,
@@ -38,7 +50,7 @@ def unquant_apply_mlp(
     return torch_npu.npu_grouped_matmul(
         x=[act_out],
         weight=[w2_weight],
-        bias=[w2_bias.to(dtype=torch.float32)] if w2_bias is not None else None,
+        bias=[w2_bias.to(dtype=bias_dtype)] if w2_bias is not None else None,
         split_item=2,
         group_list_type=group_list_type,
         group_type=0,
@@ -46,13 +58,49 @@ def unquant_apply_mlp(
     )[0]
 
 
-def apply_mlp(mlp_input: MoEMlpComputeInput) -> torch.Tensor:
-    return unquant_apply_mlp(
-        hidden_states=mlp_input.hidden_states,
-        w13_weight=mlp_input.w13_weight,
-        w2_weight=mlp_input.w2_weight,
-        group_list=mlp_input.group_list,
-        group_list_type=mlp_input.group_list_type,
-        w13_bias=mlp_input.w13_bias,
-        w2_bias=mlp_input.w2_bias,
+def w8a8_dynamic_apply_mlp(mlp_input: MoEMlpComputeInput) -> torch.Tensor:
+    """W8A8 dynamic quantized grouped expert MLP."""
+    hidden_states = mlp_input.hidden_states
+    weights = mlp_input.weights
+    w13_weight = _ensure_nz_weight(weights.w13_weight)
+    w2_weight = _ensure_nz_weight(weights.w2_weight)
+    w13_weight_scale = weights.w13_weight_scale
+    w2_weight_scale = weights.w2_weight_scale
+    group_list = mlp_input.group_list
+    group_list_type = mlp_input.group_list_type
+    per_token_scale = mlp_input.dynamic_scale
+    mlp_output_dtype = mlp_input.mlp_output_dtype
+
+    if per_token_scale is None:
+        quant_hidden, per_token_scale = torch_npu.npu_dynamic_quant(hidden_states)
+    else:
+        quant_hidden = hidden_states
+
+    swiglu_out, swiglu_out_scale, _ = torch_npu.npu_grouped_matmul_swiglu_quant(
+        x=quant_hidden,
+        weight=w13_weight,
+        weight_scale=w13_weight_scale,
+        x_scale=per_token_scale,
+        group_list=group_list if group_list_type == 0 else group_list.cumsum(dim=0),
     )
+
+    return torch_npu.npu_grouped_matmul(
+        x=[swiglu_out],
+        weight=[w2_weight],
+        scale=[w2_weight_scale],
+        per_token_scale=[swiglu_out_scale],
+        split_item=2,
+        group_list_type=group_list_type,
+        group_type=0,
+        group_list=group_list,
+        output_dtype=mlp_output_dtype,
+    )[0]
+
+
+def unified_apply_mlp(mlp_input: MoEMlpComputeInput) -> torch.Tensor:
+    quant_algo = get_moe_quant_algo()
+    if quant_algo == QuantAlgorithm.NO_QUANT:
+        return unquant_apply_mlp(mlp_input)
+    if quant_algo == QuantAlgorithm.W8A8_DYNAMIC:
+        return w8a8_dynamic_apply_mlp(mlp_input)
+    raise ValueError(f"Unsupported MoE quantization algorithm: {quant_algo}")

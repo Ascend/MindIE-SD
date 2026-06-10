@@ -38,7 +38,7 @@ version = { attr = "version.__version__" }
 include = ["mindiesd", "mindiesd.*"]
 
 [tool.setuptools.package-data]
-mindiesd = ["plugin/*.so", "ops/**/*"]
+mindiesd = ["plugin/*.so", "plugin/**/*.so", "ops/**/*"]
 
 [tool.ruff]
 line-length = 100

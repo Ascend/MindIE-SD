@@ -8,7 +8,7 @@ The main CI build chain is kept in place:
 
 - `ubuntu:24.04`
 - Python `3.11.4`
-- CANN `8.5.1`
+- CANN `9.0.0`
 - `torch 2.9.0`
 - matching `torch_npu`
 
