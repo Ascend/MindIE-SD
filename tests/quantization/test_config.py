@@ -14,16 +14,16 @@ import sys
 import unittest
 from typing import Dict, List
 
-from mindiesd.quantization.config import QuantConfig, LayerQuantConfig, TimestepPolicyConfig
-from mindiesd.quantization.mode import W8A8_LIST
+from mindiesd.quantization.config import QuantConfig, LayerQuantConfig, OnlineQuantConfig, TimestepPolicyConfig
 from mindiesd.quantization.mode import QuantAlgorithm, QuantMode
 
 sys.path.append('../')
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU."
+)
 class TestQuantConfig(unittest.TestCase):
-
     def test_parse_from_dict(self):
         # Test creating QuantConfig from a dictionary
         config_dict = {'quant_algo': QuantAlgorithm.W8A8}
@@ -39,7 +39,6 @@ class TestQuantConfig(unittest.TestCase):
         config = QuantConfig(quant_algo=None)
         self.assertIsInstance(config.layer_quantization_mode, QuantMode)
 
-
     def test_serialize_to_dict(self):
         # Test converting QuantConfig to a dictionary
         config = QuantConfig(quant_algo=QuantAlgorithm.W8A8)
@@ -47,9 +46,10 @@ class TestQuantConfig(unittest.TestCase):
         self.assertEqual(config_dict['quant_algo'], QuantAlgorithm.W8A8)
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU."
+)
 class TestLayerQuantConfig(unittest.TestCase):
-
     def test_init(self):
         # Test initializing LayerQuantConfig with valid parameters
         quantized_layers = {'layer1': QuantConfig(quant_algo=QuantAlgorithm.W8A8)}
@@ -78,7 +78,6 @@ class TestLayerQuantConfig(unittest.TestCase):
         config = LayerQuantConfig(quantized_layers={})
         self.assertIsInstance(config.quant_algorithms_list, List)
 
-
     def test_serialize_to_dict(self):
         # Test converting LayerQuantConfig to a dictionary
         quantized_layers = {'layer1': QuantConfig(quant_algo=QuantAlgorithm.W8A8)}
@@ -94,7 +93,69 @@ class TestLayerQuantConfig(unittest.TestCase):
         self.assertIsInstance(config.quantized_layers['layer1'], QuantConfig)
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU."
+)
+class TestOnlineQuantConfig(unittest.TestCase):
+    def test_init_with_supported_quant_type_and_fallbacks(self):
+        config = OnlineQuantConfig(
+            quant_type=QuantAlgorithm.W4A4_MXFP4_DYNAMIC,
+            fallback_layers={"*.proj": QuantAlgorithm.W8A8, "head": QuantAlgorithm.W16A16},
+            fallback_timesteps=range(2, 4),
+        )
+
+        self.assertEqual(config.quant_type, QuantAlgorithm.W4A4_MXFP4_DYNAMIC)
+        self.assertEqual(config.fallback_layers["*.proj"], QuantAlgorithm.W8A8)
+        self.assertEqual(config.fallback_timesteps, [2, 3])
+
+    def test_parse_from_dict_and_serialize(self):
+        config = OnlineQuantConfig.parse_from_dict(
+            {
+                "quant_type": "W4A4_MXFP4",
+                "fallback_layers": {"decoder.*": "W8A8"},
+                "fallback_timesteps": [1, 5],
+            }
+        )
+
+        self.assertEqual(config.quant_type, QuantAlgorithm.W4A4_MXFP4_DYNAMIC)
+        self.assertEqual(config.fallback_layers["decoder.*"], QuantAlgorithm.W8A8)
+        self.assertEqual(
+            config.serialize_to_dict(),
+            {
+                "quant_type": "W4A4_MXFP4",
+                "fallback_layers": {"decoder.*": "W8A8"},
+                "fallback_timesteps": [1, 5],
+            },
+        )
+
+    def test_fallback_timesteps_only_support_w4a4(self):
+        with self.assertRaises(Exception):
+            OnlineQuantConfig(
+                quant_type=QuantAlgorithm.W8A8_DYNAMIC,
+                fallback_timesteps=[1],
+            )
+
+    def test_reject_invalid_online_quant_config_values(self):
+        invalid_configs = [
+            {"quant_type": "W8A8_DYNAMIC"},
+            {"quant_type": QuantAlgorithm.NO_QUANT},
+            {"fallback_layers": []},
+            {"fallback_layers": {1: QuantAlgorithm.W8A8}},
+            {"fallback_layers": {"layer": "W8A8"}},
+            {"fallback_layers": {"layer": QuantAlgorithm.NO_QUANT}},
+            {"quant_type": QuantAlgorithm.W4A4_MXFP4_DYNAMIC, "fallback_timesteps": "1"},
+            {"quant_type": QuantAlgorithm.W4A4_MXFP4_DYNAMIC, "fallback_timesteps": [1, "2"]},
+        ]
+
+        for config in invalid_configs:
+            with self.subTest(config=config):
+                with self.assertRaises(Exception):
+                    OnlineQuantConfig(**config)
+
+
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU."
+)
 class TestTimeStepPolicyConfig(unittest.TestCase):
     def setUp(self):
         """在每个测试方法前创建一个新的配置实例"""
@@ -154,5 +215,7 @@ class TestTimeStepPolicyConfig(unittest.TestCase):
     def test_get_strategy_for_unregistered_step(self):
         """测试获取未注册时间步的策略，应返回默认策略"""
         self.assertEqual(self.config.get_strategy(999), "dynamic")
+
+
 if __name__ == '__main__':
     unittest.main()

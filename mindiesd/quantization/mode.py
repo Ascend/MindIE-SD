@@ -15,6 +15,7 @@ from enum import IntFlag, auto
 from typing import Optional
 import sys
 from ..utils import ParametersInvalid
+
 if sys.version_info >= (3, 11):
     from enum import StrEnum
 else:
@@ -36,15 +37,17 @@ class QuantAlgorithm(StrEnum):
     W4A16_GPTQ = "W4A16_GPTQ"
     W8A8_PER_CHANNEL = "W8A8_PER_CHANNEL"
     W8A8_PER_TENSOR = "W8A8_PER_TENSOR"
-    W8A8_PER_CHANNEL_PER_TOKEN = "W8A8_PER_CHANNEL_PER_TOKEN"
+    W8A8_PER_CHANNEL_PER_TOKEN = "W8A8_PER_CHANNEL_PER_TOKEN"  # nosec B105
     W8A8_PER_CHANNEL_PER_TENSOR = "W8A8_PER_CHANNEL_PER_TENSOR"
-    W8A8_PER_TENSOR_PER_TOKEN = "W8A8_PER_TENSOR_PER_TOKEN"
+    W8A8_PER_TENSOR_PER_TOKEN = "W8A8_PER_TENSOR_PER_TOKEN"  # nosec B105
     INT8 = "INT8"
     MIXED_PERCISION = "MIXED_PERCISION"
     FP8_DYNAMIC = "FP8_DYNAMIC"
     NO_QUANT = "NO_QUANT"
     W4A4_MXFP4_SVD = "W4A4_MXFP4_SVD"
     W4A4_MXFP4_DUALSCALE = "W4A4_MXFP4_DUALSCALE"
+    W4A8 = "W4A8"
+    W16A16 = "W16A16"
 
 
 W8A8_LIST = [
@@ -104,7 +107,7 @@ class QuantFlag(IntFlag):
     VALID_FLAG = COUNT - 1
 
 
-class QuantMode():
+class QuantMode:
     def __init__(self, flag: QuantFlag = 0):
         self.flag = flag
 
@@ -113,7 +116,6 @@ class QuantMode():
 
     @staticmethod
     def from_descriptor(desc: QuantModeDescriptor):
-
         def raise_error(info: str):
             raise ParametersInvalid(f"Invalid quantization mode descriptor {desc}, err info:{info}")
 
@@ -174,8 +176,7 @@ class QuantMode():
             QuantAlgorithm.W8A16_GPTQ: QuantMode.use_weight_only(use_int4_weights=False, per_group=True),
             QuantAlgorithm.W8A8_PER_CHANNEL: QuantMode.use_smooth_quant(per_token=False, per_channel=True),
             QuantAlgorithm.W8A8_PER_TENSOR: QuantMode.use_smooth_quant(per_token=False, per_channel=False),
-            QuantAlgorithm.W8A8_PER_CHANNEL_PER_TENSOR: QuantMode.use_smooth_quant(per_token=False,
-                                                                                      per_channel=True),
+            QuantAlgorithm.W8A8_PER_CHANNEL_PER_TENSOR: QuantMode.use_smooth_quant(per_token=False, per_channel=True),
             QuantAlgorithm.W8A8: QuantMode.use_smooth_quant(per_token=False, per_channel=False),
             QuantAlgorithm.W8A8_TIMESTEP: QuantMode.use_smooth_quant(per_token=False, per_channel=False),
             QuantAlgorithm.W8A8_DYNAMIC: QuantMode.use_smooth_quant(per_token=False, per_channel=False),
@@ -222,7 +223,6 @@ class QuantMode():
 
     def check_weight_int4_only_with_group(self):
         return self.check_weight_int4_only() and self._any(QuantFlag.PER_GROUP)
-
 
     def to_dict(self):
         return {

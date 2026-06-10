@@ -3,9 +3,11 @@ build/build/
 build/plugin_build/
 build/custom_project_tik/
 build/output/
+build/lib/
 build/vendors/
 build/bdist.linux-*/
 build/lib/
+fusion_result.json
 dist/
 mindiesd.egg-info/
 mindiesd/ops/
