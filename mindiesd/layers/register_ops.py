@@ -20,6 +20,55 @@ from ..utils.logs.logging import logger
 
 
 MINDIE_NS = "mindiesd"  # 固定命名空间，与 torch.ops.mindiesd 对应
+PLUGIN_LIBRARY_NAME = "libPTAExtensionOPS.so"
+PLUGIN_VARIANT_ENV = "MINDIESD_PLUGIN_VARIANT"
+SUPPORTED_TORCH_PLUGIN_VARIANTS = {
+    "2.6": "torch26",
+    "2.7": "torch27",
+    "2.8": "torch28",
+    "2.9": "torch29",
+    "2.10": "torch210",
+}
+
+
+def _get_torch_major_minor(version: str) -> str:
+    version_core = version.split("+", maxsplit=1)[0]
+    parts = version_core.split(".")
+    if len(parts) < 2:
+        raise RuntimeError(f"Cannot parse torch version: {version}")
+    return ".".join(parts[:2])
+
+
+def _has_plugin_variants(ops_path: str) -> bool:
+    return any((Path(ops_path) / variant).is_dir() for variant in SUPPORTED_TORCH_PLUGIN_VARIANTS.values())
+
+
+def _select_mindie_ops_file(ops_path: str) -> str:
+    forced_variant = os.environ.get(PLUGIN_VARIANT_ENV, "").strip()
+    if forced_variant:
+        if forced_variant not in SUPPORTED_TORCH_PLUGIN_VARIANTS.values():
+            raise RuntimeError(
+                f"Unsupported {PLUGIN_VARIANT_ENV}={forced_variant}. "
+                f"Expected one of: {', '.join(SUPPORTED_TORCH_PLUGIN_VARIANTS.values())}."
+            )
+        return os.path.join(ops_path, forced_variant, PLUGIN_LIBRARY_NAME)
+
+    torch_version_key = _get_torch_major_minor(torch.__version__)
+    variant = SUPPORTED_TORCH_PLUGIN_VARIANTS.get(torch_version_key)
+    variants_exist = _has_plugin_variants(ops_path)
+    if variant:
+        variant_ops_file = os.path.join(ops_path, variant, PLUGIN_LIBRARY_NAME)
+        if os.path.isfile(variant_ops_file) or variants_exist:
+            return variant_ops_file
+
+    if variants_exist:
+        supported_versions = ", ".join(SUPPORTED_TORCH_PLUGIN_VARIANTS)
+        raise RuntimeError(
+            f"Unsupported torch version {torch.__version__} for MindIE-SD plugin variants. "
+            f"Supported torch major.minor versions: {supported_versions}."
+        )
+
+    return os.path.join(ops_path, PLUGIN_LIBRARY_NAME)
 
 
 def _load_mindie_ops_library() -> None:
@@ -36,7 +85,7 @@ def _load_mindie_ops_library() -> None:
 
     ops_path = current_path.parents[1] / "plugin"
     ops_path = file_utils.standardize_path(str(ops_path))
-    ops_file = os.path.join(ops_path, "libPTAExtensionOPS.so")
+    ops_file = _select_mindie_ops_file(ops_path)
 
     file_utils.check_file_safety(ops_file, permission_mode=file_utils.BINARY_FILE_PERMISSION)
     torch.ops.load_library(ops_file)

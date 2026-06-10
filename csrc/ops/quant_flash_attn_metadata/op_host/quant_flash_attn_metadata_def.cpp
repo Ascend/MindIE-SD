@@ -11,8 +11,34 @@
  */
 
 #include "register/op_def_registry.h"
+#include <cstdlib>
+#include <string>
 
 namespace ops {
+namespace {
+bool IsSocEnabled(const char *socVersion) {
+    const char *computeUnit = std::getenv("ASCEND_COMPUTE_UNIT");
+    if (computeUnit == nullptr || computeUnit[0] == '\0') {
+        return true;
+    }
+
+    std::string units(computeUnit);
+    std::string soc(socVersion);
+    size_t start = 0;
+    while (start <= units.size()) {
+        size_t end = units.find(';', start);
+        std::string item = units.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        if (item == soc) {
+            return true;
+        }
+        if (end == std::string::npos) {
+            break;
+        }
+        start = end + 1;
+    }
+    return false;
+}
+} // namespace
 
 class QuantFlashAttnMetadata : public OpDef {
   public:
@@ -80,7 +106,9 @@ class QuantFlashAttnMetadata : public OpDef {
             .ExtendCfgInfo("coreType.value", "AICPU")
             .ExtendCfgInfo("jitCompile.flag", "static_false,dynamic_false");
 
-        this->AICore().AddConfig("ascend950", aicore_config);
+        if (IsSocEnabled("ascend950")) {
+            this->AICore().AddConfig("ascend950", aicore_config);
+        }
     }
 };
 

@@ -21,12 +21,19 @@ import subprocess
 import shutil
 from setuptools import setup, find_packages
 from setuptools.command.build_py import build_py as _build_py
+from setuptools.dist import Distribution
 from wheel.bdist_wheel import bdist_wheel as _bdist_wheel  # pylint: disable=no-name-in-module
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 os.environ["SOURCE_DATE_EPOCH"] = "315532800"
 VERSION_FILE = os.path.join(os.path.abspath(os.path.dirname(__file__)), "version.py")
+WHEEL_MODE_ENV = "MINDIESD_WHEEL_MODE"
+MULTI_TORCH_PLUGIN_DIR_ENV = "MINDIESD_MULTI_TORCH_PLUGIN_DIR"
+SKIP_OPS_BUILD_ENV = "MINDIESD_SKIP_OPS_BUILD"
+FIXED_WHEEL_MODE = "fixed"
+MULTI_TORCH_WHEEL_MODE = "multi_torch"
+SUPPORTED_TORCH_PLUGIN_VARIANTS = ("torch26", "torch27", "torch28", "torch29", "torch210")
 
 
 def get_mindiesd_version():
@@ -56,6 +63,21 @@ def get_python_version():
         raise RuntimeError("Cannot get Python version. Please ensure Python is properly installed.") from e
 
 
+def get_wheel_mode():
+    mode = os.environ.get(WHEEL_MODE_ENV, FIXED_WHEEL_MODE).strip().lower()
+    if mode not in (FIXED_WHEEL_MODE, MULTI_TORCH_WHEEL_MODE):
+        raise RuntimeError(
+            f"Unsupported {WHEEL_MODE_ENV}={mode}. Expected one of: {FIXED_WHEEL_MODE}, {MULTI_TORCH_WHEEL_MODE}."
+        )
+
+    logging.info("Wheel build mode is: %s", mode)
+    return mode
+
+
+def is_env_enabled(env_name):
+    return os.environ.get(env_name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def copy_so_files(src_dir, dest_dir):
     if not os.path.exists(dest_dir):
         os.makedirs(dest_dir)
@@ -69,6 +91,32 @@ def copy_so_files(src_dir, dest_dir):
         dest_file = os.path.join(dest_dir, so_file)
         shutil.copy2(src_file, dest_file)
         logging.info("Copied %s to %s", src_file, dest_file)
+
+
+def copy_multi_torch_plugin_files(proj_root):
+    src_root = os.environ.get(
+        MULTI_TORCH_PLUGIN_DIR_ENV,
+        os.path.join(proj_root, "build", "torch_plugin_variants"),
+    )
+    dest_root = os.path.join(proj_root, "mindiesd", "plugin")
+
+    logging.info("Using multi torch plugin source directory: %s", src_root)
+    missing_variants = []
+    for variant in SUPPORTED_TORCH_PLUGIN_VARIANTS:
+        variant_src_dir = os.path.join(src_root, variant)
+        variant_dest_dir = os.path.join(dest_root, variant)
+        so_file = os.path.join(variant_src_dir, "libPTAExtensionOPS.so")
+        if not os.path.isfile(so_file):
+            missing_variants.append(variant)
+            continue
+
+        copy_so_files(variant_src_dir, variant_dest_dir)
+
+    if missing_variants:
+        raise RuntimeError(
+            "Missing multi torch plugin .so files for variants: %s. "
+            "Expected files under %s/<variant>/libPTAExtensionOPS.so." % (", ".join(missing_variants), src_root)
+        )
 
 
 def ensure_plugin_init():
@@ -150,6 +198,7 @@ class CustomBuildPy(_build_py):
     def run(self):
         proj_root = os.path.abspath(os.getcwd())
         build_dir = os.path.join(proj_root, 'build')
+        wheel_mode = get_wheel_mode()
 
         logging.info("%s", "=" * 60)
         logging.info("Starting MindIE-SD Build Process")
@@ -166,7 +215,9 @@ class CustomBuildPy(_build_py):
 
         try:
             ops_dir = os.path.join(proj_root, 'csrc', 'ops')
-            if os.path.isdir(ops_dir):
+            if is_env_enabled(SKIP_OPS_BUILD_ENV):
+                logging.info("Skipping Ascend operators build because %s is enabled.", SKIP_OPS_BUILD_ENV)
+            elif os.path.isdir(ops_dir):
                 logging.info("%s", "=" * 60)
                 logging.info("Building Ascend operators...")
                 logging.info("%s", "=" * 60)
@@ -175,21 +226,28 @@ class CustomBuildPy(_build_py):
             else:
                 logging.warning("The path of custom op operators %s does not exist.", ops_dir)
 
-            plugin_dir = os.path.join(proj_root, 'csrc', 'plugin')
-            if os.path.isdir(plugin_dir):
-                logging.info("%s", "=" * 60)
-                logging.info("Building PyTorch plugins...")
-                logging.info("%s", "=" * 60)
-                build_plugin_script = os.path.join(build_dir, 'build_plugin.sh')
-                run_script(build_plugin_script, args=[build_dir], cwd=build_dir)
+            if wheel_mode == FIXED_WHEEL_MODE:
+                plugin_dir = os.path.join(proj_root, 'csrc', 'plugin')
+                if os.path.isdir(plugin_dir):
+                    logging.info("%s", "=" * 60)
+                    logging.info("Building PyTorch plugins...")
+                    logging.info("%s", "=" * 60)
+                    build_plugin_script = os.path.join(build_dir, 'build_plugin.sh')
+                    run_script(build_plugin_script, args=[build_dir], cwd=build_dir)
+                else:
+                    logging.warning("The path of op plugins %s does not exist.", plugin_dir)
             else:
-                logging.warning("The path of op plugins %s does not exist.", plugin_dir)
+                logging.info("%s", "=" * 60)
+                logging.info("Packaging prebuilt PyTorch plugin variants...")
+                logging.info("%s", "=" * 60)
+                copy_multi_torch_plugin_files(proj_root)
 
             merge_compile_commands(proj_root, build_dir)
 
-            source_dir = os.path.join(build_dir, 'plugin_build')
-            destination_dir = os.path.join(proj_root, 'mindiesd', 'plugin')
-            copy_so_files(source_dir, destination_dir)
+            if wheel_mode == FIXED_WHEEL_MODE:
+                source_dir = os.path.join(build_dir, 'plugin_build')
+                destination_dir = os.path.join(proj_root, 'mindiesd', 'plugin')
+                copy_so_files(source_dir, destination_dir)
 
             logging.info("%s", "=" * 60)
             logging.info("Build completed successfully!")
@@ -209,10 +267,21 @@ class BDistWheel(_bdist_wheel):
         self.root_is_pure = False
 
 
+class BinaryDistribution(Distribution):
+    def has_ext_modules(self):
+        return True
+
+
 if __name__ == "__main__":
     requirements = ["torch", "torch_npu"]
     mindie_sd_version = get_mindiesd_version()
+    build_wheel_mode = get_wheel_mode()
     ensure_plugin_init()
+    package_data = {"mindiesd": ["ops/**/*"]}
+    if build_wheel_mode == MULTI_TORCH_WHEEL_MODE:
+        package_data["mindiesd"].append("plugin/**/*.so")
+    else:
+        package_data["mindiesd"].append("plugin/*.so")
 
     setup(
         name="mindiesd",
@@ -225,6 +294,7 @@ if __name__ == "__main__":
         python_requires=">=3.10",
         include_package_data=True,
         packages=find_packages(),
-        package_data={"": ["*.so", "ops/**/*"]},
+        package_data=package_data,
         cmdclass={"build_py": CustomBuildPy, "bdist_wheel": BDistWheel},
+        distclass=BinaryDistribution,
     )

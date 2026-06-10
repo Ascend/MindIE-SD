@@ -63,7 +63,9 @@ function build_ops(){
     ori_path=${PWD}
     cd ${current_script_dir}
     rm -rf vendors
-    source ${current_script_dir}/build_ascendc_ops.sh -n "${ascendc_ops}" -c 'ascend910;ascend910b;ascend910_93;ascend950'
+    local ascend_op_name=${ASCEND_OP_NAME:-"${ascendc_ops}"}
+    local ascend_compute_unit=${ASCEND_COMPUTE_UNIT:-'ascend910;ascend910b;ascend910_93;ascend950'}
+    source ${current_script_dir}/build_ascendc_ops.sh -n "${ascend_op_name}" -c "${ascend_compute_unit}"
     source ${current_script_dir}/build_tik_ops.sh
     sync_aicpu_ops_to_transformer_vendor
     rm -rf ${current_script_dir}/vendors/aie_ascendc/bin
