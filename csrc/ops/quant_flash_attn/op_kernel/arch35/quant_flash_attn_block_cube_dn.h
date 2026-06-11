@@ -9,7 +9,6 @@
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PSL v2 for more details.
  */
-
 /*!
  * \file quant_flash_atten_block_cube_dn.h
  * \brief
@@ -407,6 +406,13 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
 
     __aicore__ inline void ComputeMm2(const RunInfo &info) {
         WaitFlag<HardEvent::MTE1_MTE2>(KV_EVENT0 + kvBufId);
+        if (info.actSingleLoopS2SizeAlign != info.actSingleLoopS2SizeAlign64) {
+            InitConstValueParams<uint16_t> PL1InitParams(1, static_cast<uint16_t>(info.actMSize / 2 / 2), 0, 0x0000);
+            uint32_t POffset = info.actSingleLoopS2SizeAlign * info.actMSize / 2 / 2;
+            Fill(pL1Tensor[POffset].template ReinterpretCast<uint16_t>(), PL1InitParams);
+            Fill(pL1Tensor[POffset * 2 + 32 * info.actMSize / 2 / 2].template ReinterpretCast<uint16_t>(),
+                PL1InitParams);
+        }
         CopyVGmToL1(info);
         CopyVScaleGmToL1(info);
         SetFlag<HardEvent::MTE2_MTE1>(KV_EVENT0 + kvBufId);
@@ -654,14 +660,14 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
 
     __aicore__ inline void CopyVGmToL1(const RunInfo &info) {
         uint64_t l1BaseOffset = kvBufId * (L1_KV_SIZE / sizeof(DATA_T));
-        uint32_t dstStride = info.actSingleLoopS2SizeAlign;
+        uint32_t dstStride = info.actSingleLoopS2SizeAlign64;
         FaL1Tensor<DATA_T, L1Format::NZ> l1Tensor{.tensor = kvL1Tensor[l1BaseOffset], .rowCount = dstStride};
 
         GmKvCoord gmCoord{.bIdx = info.bIdx,
             .n2Idx = info.n2Idx,
             .s2Idx = info.s2Idx,
             .dIdx = 0,
-            .s2DealSize = info.actSingleLoopS2Size,
+            .s2DealSize = info.actSingleLoopS2SizeAlign64,
             .dDealSize = headDimInt8};
         copyKvGmToL1(l1Tensor, valueGm, gmCoord);
     }
@@ -790,13 +796,13 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
     __aicore__ inline void CopyVScaleGmToL1(const RunInfo &info) {
         uint32_t offset = kvBufId * (L1_KV_DESCALE_SIZE / sizeof(SCALE_T));
         FaL1Tensor<SCALE_T, L1Format::NZ> l1Tensor{
-            .tensor = kvDescaleL1Tensor[offset], .rowCount = info.actSingleLoopS2Size / 64};
+            .tensor = kvDescaleL1Tensor[offset], .rowCount = info.actSingleLoopS2SizeAlign64 / 64};
 
         GmKvCoord gmCoord{.bIdx = info.bIdx,
             .n2Idx = info.n2Idx,
             .s2Idx = info.s2Idx / 64,
             .dIdx = 0,
-            .s2DealSize = info.actSingleLoopS2Size / 64,
+            .s2DealSize = info.actSingleLoopS2SizeAlign64 / 64,
             .dDealSize = 2 * constInfo.dSize};
 
         copyValueScaleGmToL1(l1Tensor, valueScaleGm, gmCoord);
@@ -806,7 +812,7 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
         LoadData2DParamsV2 loadData2DParamsB;
         loadData2DParamsB.mStartPosition = 0;
         loadData2DParamsB.kStartPosition = 0;
-        loadData2DParamsB.mStep = (info.actSingleLoopS2Size + 15) / 16;
+        loadData2DParamsB.mStep = (info.actSingleLoopS2SizeAlign64 + 15) / 16;
         loadData2DParamsB.kStep = info.actMSize / GetBlockElemCnt<QUANT_T>();
 
         loadData2DParamsB.srcStride = loadData2DParamsB.mStep;
@@ -818,7 +824,7 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
         load2DMxParamsB.xStartPosition = 0;
         load2DMxParamsB.yStartPosition = 0;
         load2DMxParamsB.xStep = constInfo.dSize / 16;
-        load2DMxParamsB.yStep = (info.actSingleLoopS2Size + 63) / 64;
+        load2DMxParamsB.yStep = (info.actSingleLoopS2SizeAlign64 + 63) / 64;
         load2DMxParamsB.srcStride =
             5; // S2BaseSIze=256，5由s2BaseSize / 64 + 1得到，1为解UB Bank冲突预留的一个Block，一次全拷过来
         load2DMxParamsB.dstStride = load2DMxParamsB.yStep;
@@ -835,10 +841,10 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
         LoadData2DParamsV2 loadData2DParamsA;
         loadData2DParamsA.mStartPosition = 0;
         loadData2DParamsA.kStartPosition = 0;
-        loadData2DParamsA.mStep = ((info.actSingleLoopS2Size + 15) / 16 + 3) / 4 * 4;
+        loadData2DParamsA.mStep = ((info.actSingleLoopS2SizeAlign64 + 15) / 16 + 3) / 4 * 4;
         loadData2DParamsA.kStep = constInfo.dSize / GetBlockElemCnt<QUANT_T>();
 
-        loadData2DParamsA.srcStride = (info.actSingleLoopS2Size + 15) / 16;
+        loadData2DParamsA.srcStride = (info.actSingleLoopS2SizeAlign64 + 15) / 16;
         loadData2DParamsA.dstStride = (constInfo.dSize + 15) / 16 + 1;
         loadData2DParamsA.ifTranspose = true;
 
@@ -846,7 +852,7 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
         load2DMxParamsA.xStartPosition = 0;
         load2DMxParamsA.yStartPosition = 0;
         load2DMxParamsA.xStep = (constInfo.dSize + 15) / 16;
-        load2DMxParamsA.yStep = (info.actSingleLoopS2Size + GetBlockElemCnt<QUANT_T>() - 1) /
+        load2DMxParamsA.yStep = (info.actSingleLoopS2SizeAlign64 + GetBlockElemCnt<QUANT_T>() - 1) /
             GetBlockElemCnt<QUANT_T>(); // 2Byte分形的行数，64个V在S2方向上的元素一组对应一个2Byte分形
         load2DMxParamsA.srcStride = load2DMxParamsA.yStep;
         load2DMxParamsA.dstStride = load2DMxParamsA.yStep;
@@ -862,7 +868,7 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
         MmadParams mmadParams;
         mmadParams.m = constInfo.dSize + 16;
         mmadParams.n = info.actMSize;
-        mmadParams.k = info.actSingleLoopS2Size;
+        mmadParams.k = info.actSingleLoopS2SizeAlign64;
         mmadParams.cmatrixInitVal = info.isC2Sync;
         mmadParams.cmatrixSource = false;
         mmadParams.disableGemv = true;

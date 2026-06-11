@@ -9,57 +9,23 @@
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PSL v2 for more details.
  */
-
 /*!
  * \file vf_softmax_dn_cast_nz_mxfp4.h
  * \brief
  */
 
-#ifndef SOFTMAX_DN_CAST_NZ_MXFP4_H_
-#define SOFTMAX_DN_CAST_NZ_MXFP4_H_
+#ifndef VF_SOFTMAX_DN_CAST_NZ_MXFP4_QS128_KVS256_H_
+#define VF_SOFTMAX_DN_CAST_NZ_MXFP4_QS128_KVS256_H_
 #include "kernel_tensor.h"
+#include "vf_common_def.h"
 namespace Mxfp4Api {
 using AscendC::LocalTensor;
 using namespace AscendC;
 using namespace MicroAPI;
 
-constexpr half LN2 = static_cast<half>(0.6931471806f);
-constexpr half INV_LN2 = static_cast<half>(1.4426950409f);
-constexpr half NEG_TWO_VALE = static_cast<half>(-2.0f);
-constexpr half TWO_VALE = static_cast<half>(2.0f);
-constexpr half MIN_VALUE = static_cast<half>(-65504.0f);
-
-constexpr static AscendC::MicroAPI::CastTrait castTraitZero = {
-    AscendC::MicroAPI::RegLayout::ZERO,
-    AscendC::MicroAPI::SatMode::SAT,
-    AscendC::MicroAPI::MaskMergeMode::ZEROING,
-    AscendC::RoundMode::CAST_ROUND,
-};
-
-constexpr static AscendC::MicroAPI::CastTrait castTraitOne = {
-    AscendC::MicroAPI::RegLayout::ONE,
-    AscendC::MicroAPI::SatMode::SAT,
-    AscendC::MicroAPI::MaskMergeMode::ZEROING,
-    AscendC::RoundMode::CAST_ROUND,
-};
-
-constexpr static AscendC::MicroAPI::CastTrait castTraitTwo = {
-    AscendC::MicroAPI::RegLayout::TWO,
-    AscendC::MicroAPI::SatMode::SAT,
-    AscendC::MicroAPI::MaskMergeMode::ZEROING,
-    AscendC::RoundMode::CAST_ROUND,
-};
-
-constexpr static AscendC::MicroAPI::CastTrait castTraitThree = {
-    AscendC::MicroAPI::RegLayout::THREE,
-    AscendC::MicroAPI::SatMode::SAT,
-    AscendC::MicroAPI::MaskMergeMode::ZEROING,
-    AscendC::RoundMode::CAST_ROUND,
-};
-
 template <bool clear_gmax, typename T, typename T2, bool hasAtten = false, uint16_t S2Base = 256, uint16_t S1Base = 128>
-__simd_vf__ inline void softmax_with_group_max_vf(__ubuf__ T2 *pDest, __ubuf__ T *s, __ubuf__ T *local_group_max,
-    __ubuf__ T *global_max, __ubuf__ uint8_t *indexesUb, const T dScale) {
+__simd_vf__ inline void softmax_with_group_max_qs128_kvs256_vf(__ubuf__ T2 *pDest, __ubuf__ T *s,
+    __ubuf__ T *local_group_max, __ubuf__ T *global_max, __ubuf__ uint8_t *indexesUb, const T dScale) {
     // ====================== 寄存器定义 ======================
     RegTensor<half> src_c0, src_c1, src_c2, src_c3;
     RegTensor<half> src_n0, src_n1, src_n2, src_n3;
@@ -78,7 +44,7 @@ __simd_vf__ inline void softmax_with_group_max_vf(__ubuf__ T2 *pDest, __ubuf__ T
     const uint16_t GROUP_COUNT = S2Base / ROWS_PER_GROUP;
     const uint16_t ROW_SUB_LOOP = 4;
     const uint16_t ITER_PER_GROUP = ROWS_PER_GROUP / ROW_SUB_LOOP;
-    uint32_t MID_VALID_CNT = S1Base * (ITER_PER_GROUP - 1);
+    uint32_t MID_VALID_CNT = S1Base * (GROUP_COUNT - 1);
 
     // ====================== 掩码定义 ======================
     MaskReg preg_all_16bit = CreateMask<uint16_t, MaskPattern::ALL>();
@@ -276,19 +242,19 @@ __simd_vf__ inline void softmax_with_group_max_vf(__ubuf__ T2 *pDest, __ubuf__ T
     }
 }
 
-template <bool clear_gmax, typename T, typename T2, bool hasAtten = false, uint16_t S2Base = 128, uint16_t S1Base = 128>
-__aicore__ inline void softmax_with_group_max(const LocalTensor<T2> &dstTensor, const LocalTensor<T> &srcTensor,
-    const LocalTensor<T> &local_group_max, const LocalTensor<T> &global_max, const LocalTensor<uint8_t> &indexesBuf,
-    const T scale) {
+template <bool clear_gmax, typename T, typename T2, bool hasAtten = false, uint16_t S2Base = 256, uint16_t S1Base = 128>
+__aicore__ inline void softmaxWithGroupMaxQs128Kvs256CallVF(const LocalTensor<T2> &dstTensor,
+    const LocalTensor<T> &srcTensor, const LocalTensor<T> &local_group_max, const LocalTensor<T> &global_max,
+    const LocalTensor<uint8_t> &indexesBuf, const T scale) {
     __ubuf__ T2 *pDest = (__ubuf__ T2 *)dstTensor.GetPhyAddr();
     __ubuf__ T *input_x_local_UB = (__ubuf__ T *)srcTensor.GetPhyAddr();
     __ubuf__ T *localGroupMax = (__ubuf__ T *)local_group_max.GetPhyAddr();
     __ubuf__ T *globalMax = (__ubuf__ T *)global_max.GetPhyAddr();
     __ubuf__ uint8_t *indexesUb = (__ubuf__ uint8_t *)indexesBuf.GetPhyAddr();
 
-    softmax_with_group_max_vf<clear_gmax, T, T2, hasAtten, S2Base, S1Base>(
+    softmax_with_group_max_qs128_kvs256_vf<clear_gmax, T, T2, hasAtten, S2Base, S1Base>(
         pDest, input_x_local_UB, localGroupMax, globalMax, indexesUb, scale);
 }
 
 }
-#endif // SOFTMAX_DN_CAST_NZ_MXFP4_H_
+#endif // VF_SOFTMAX_DN_CAST_NZ_MXFP4_QS128_KVS256_H_

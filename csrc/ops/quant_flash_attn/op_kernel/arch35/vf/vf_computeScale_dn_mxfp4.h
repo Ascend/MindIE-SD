@@ -9,7 +9,6 @@
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PSL v2 for more details.
  */
-
 /*!
  * \file vf_computeScale_dn_mxfp4.h
  * \brief
@@ -18,6 +17,7 @@
 #ifndef COMPUTESCALE_DN_MXFP4_H_
 #define COMPUTESCALE_DN_MXFP4_H_
 #include "kernel_tensor.h"
+#include "vf_common_def.h"
 namespace Mxfp4Api {
 using AscendC::LocalTensor;
 using namespace AscendC;
@@ -25,25 +25,6 @@ using namespace MicroAPI;
 
 #define VMULSCVT false
 #define DROPOUT false
-
-constexpr static AscendC::MicroAPI::CastTrait h2iZero = {
-    AscendC::MicroAPI::RegLayout::ZERO,
-    AscendC::MicroAPI::SatMode::UNKNOWN,
-    AscendC::MicroAPI::MaskMergeMode::ZEROING,
-    AscendC::RoundMode::CAST_ROUND,
-};
-
-constexpr static AscendC::MicroAPI::CastTrait h2iOne = {
-    AscendC::MicroAPI::RegLayout::ONE,
-    AscendC::MicroAPI::SatMode::UNKNOWN,
-    AscendC::MicroAPI::MaskMergeMode::ZEROING,
-    AscendC::RoundMode::CAST_ROUND,
-};
-
-constexpr half NUM_127 = static_cast<half>(127.0f);
-constexpr half NUM_NEG_125 = static_cast<half>(-125.0f);
-constexpr half ZERO_VALUE = static_cast<half>(0.0f);
-constexpr int16_t SHIFT_VALUE = 23;
 
 // T: half
 template <bool clear_gmax, typename T, uint16_t m = 128>
