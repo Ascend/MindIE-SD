@@ -60,9 +60,13 @@ constexpr int64_t CANN_DTYPE_HIFLOAT8 = 290;
 constexpr int64_t CANN_DTYPE_FLOAT8_E8M0 = 293;
 constexpr int64_t CANN_DTYPE_FLOAT4_E2M1 = 296;
 constexpr int64_t ACL_DTYPE_HIFLOAT8_VALUE = 34;
+constexpr int64_t ACL_DTYPE_FLOAT8_E5M2_VALUE = 35;
+constexpr int64_t ACL_DTYPE_FLOAT8_E4M3FN_VALUE = 36;
 constexpr int64_t ACL_DTYPE_FLOAT8_E8M0_VALUE = 37;
 constexpr int64_t ACL_DTYPE_FLOAT4_E2M1_VALUE = 40;
 constexpr aclDataType ACL_DTYPE_HIFLOAT8 = static_cast<aclDataType>(ACL_DTYPE_HIFLOAT8_VALUE);
+constexpr aclDataType ACL_DTYPE_FLOAT8_E5M2 = static_cast<aclDataType>(ACL_DTYPE_FLOAT8_E5M2_VALUE);
+constexpr aclDataType ACL_DTYPE_FLOAT8_E4M3FN = static_cast<aclDataType>(ACL_DTYPE_FLOAT8_E4M3FN_VALUE);
 constexpr aclDataType ACL_DTYPE_FLOAT8_E8M0 = static_cast<aclDataType>(ACL_DTYPE_FLOAT8_E8M0_VALUE);
 constexpr aclDataType ACL_DTYPE_FLOAT4_E2M1 = static_cast<aclDataType>(ACL_DTYPE_FLOAT4_E2M1_VALUE);
 extern thread_local char g_hashBuf[K_HASH_BUF_SIZE];
@@ -78,7 +82,8 @@ template <std::string_view const &ApiName> inline std::string GetWorkspaceSizeAp
 constexpr aclDataType K_ATEN_SCALAR_TYPE_TO_ACL_DATATYPE_TABLE[static_cast<int64_t>(at::ScalarType::NumOptions) + 1] = {
     ACL_UINT8, ACL_INT8, ACL_INT16, ACL_INT32, ACL_INT64, ACL_FLOAT16, ACL_FLOAT, ACL_DOUBLE, ACL_DT_UNDEFINED,
     ACL_COMPLEX64, ACL_COMPLEX128, ACL_BOOL, ACL_DT_UNDEFINED, ACL_DT_UNDEFINED, ACL_DT_UNDEFINED, ACL_BF16,
-    ACL_DT_UNDEFINED, ACL_DT_UNDEFINED, ACL_DT_UNDEFINED, ACL_DT_UNDEFINED};
+    ACL_DT_UNDEFINED, ACL_DT_UNDEFINED, ACL_DT_UNDEFINED, ACL_DT_UNDEFINED, ACL_DT_UNDEFINED, ACL_DT_UNDEFINED,
+    ACL_DT_UNDEFINED, ACL_DTYPE_FLOAT8_E5M2, ACL_DTYPE_FLOAT8_E4M3FN, ACL_DT_UNDEFINED, ACL_DT_UNDEFINED};
 
 inline aclDataType ConvertToAclDataType(at::ScalarType scalarType) {
     int64_t index = static_cast<int64_t>(scalarType);

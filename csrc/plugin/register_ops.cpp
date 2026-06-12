@@ -63,7 +63,9 @@ TORCH_LIBRARY(mindiesd, m) {
         str q_input_layout='BNSD', str kv_input_layout='BNSD', \
         int num_key_value_heads=1, float scale_value=1.0, int inner_precise=0, \
         int[]? actual_seq_lengths=None, int[]? actual_seq_lengths_kv=None, \
-        int softmax_lse_flag=0) -> (Tensor, Tensor)");
+        int softmax_lse_flag=0, \
+        Tensor? q_dequant_scale=None, Tensor? k_dequant_scale=None, \
+        Tensor? v_dequant_scale=None) -> (Tensor, Tensor)");
     m.def("quant_flash_attn(Tensor query, Tensor key, Tensor value, \
         Tensor q_descale, Tensor k_descale, Tensor v_descale, \
         int q_quant_mode, int k_quant_mode, int v_quant_mode, \
