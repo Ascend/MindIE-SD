@@ -42,7 +42,7 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 现在最简单的方式是通过pip源安装，我们的软件包名字叫mindiesd，与仓库名有些不一样。
 
 ```bash
-pip install --trusted-host ascend.devcloud.huaweicloud.com -i https://ascend.devcloud.huaweicloud.com/pypi/simple/ mindiesd
+pip install mindiesd
 ```
 
 ### 源码安装

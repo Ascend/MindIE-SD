@@ -19,35 +19,38 @@
 
 </div>
 
-## 🔍目录结构
-
-```txt
-|- benchmarks         // 提供核心kernel的性能看护和compilation的加速效果看护
-|- build              // 编译脚本
-|- csrc               // 昇腾kernel代码位置
-|- docs               // 项目文档
-|- examples
-  |- cache            // cache特性样例：使能cache进行模型加速
-  |- service          // 服务化样例：将命令行模式改造成服务化方式
-  |- wan              // 模型推理样例：模型推理命令以及参数配置
-|- mindiesd
-  |- cache_agent      // 高阶特性：提供cache能力
-  |- compilation      // 提供编译能力，基于fx graph实现自动改图（可依旧保持单算子下发）。
-  |- eplb             // 高阶特性：提供专家并行负载均衡能力
-  |- layers           // 提供基础的pytorch的layer接口
-  |- quantization     // 高阶特性：提供量化能力
-  |- utils            // 核心工具模块，提供共享的基础设施服务和通用功能
-|- tests              // 测试用例
-```
-
 ## 📦 安装指南
 
-安装步骤和环境依赖详见[安装指导](docs/zh/installation.md)。
+**快速开始**：
 
-## 🚀 架构介绍及关键特性
+```bash
+pip install mindiesd
+```
+
+其他安装方式和环依赖详见[安装指导](docs/zh/installation.md)。
+
+## 🚀 架构介绍
 
 MindIE SD 架构和关键特性详见[架构介绍](docs/zh/architecture.md)。
-MindIE SD 支持[魔乐社区](https://modelers.cn/models?name=MindIE&page=1&size=16)、vLLM Omni、Cache Dit等框架/社区，现已支持主流扩散模型，对于部分 diffusers 模型进行了昇腾硬件亲和的加速改造，详见[模型/框架支持情况](docs/zh/features/supported_matrix.md)，模型也支持手动改造，详见 examples。
+
+![MindIE SD架构图](docs/figures/architecture_overview.png)
+
+## ⚡️ 快速入门
+
+[快速开始](docs/zh/quick_start.md): 以wan2.1为例，介绍使用mindiesd后的整体加速效果。
+
+## 📚 开发文档
+
+[贡献指南](docs/zh/developer_guide/contribution_guide.md):说明如何提交 Issue、Pull Request 以及代码规范。
+[AI Agent支持](.agents/README.md): 介绍仓内默认使用的一些skills及使用agent辅助开发流程
+[测试验证](docs/zh/developer_guide/test.md):介绍单元测试样例运行流程
+
+## 🌐 生态支持
+
+以下项目已集成MindIE SD作为多模态推理后端：
+
++ [vLLM Omni](https://github.com/vllm-project/vllm-omni)
++ [Cache Dit](https://github.com/vipshop/cache-dit)
 
 ## 📝 Paper Citations
 
