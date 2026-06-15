@@ -65,7 +65,10 @@ from mindiesd import quantize
 | 参数 | 类型 | 必选 | 默认值 | 说明 |
 |------|------|------|--------|------|
 | `model` | `nn.Module` | 是 | - | 已初始化的浮点模型 |
-| `quant_json_path` | `str` | 是 | - | 量化描述符 JSON 路径，包含量化算法、层配置等信息 |
+| `quant_des_path` | `str` | 否 | `None` | 量化描述符 JSON 路径；未作为位置参数传入时，需要配置 `QuantConfig.quant_des_path` |
+| `quant_config` | `QuantConfig` | 否 | `None` | 统一量化配置，可承载 `quant_des_path`、`dtype`、`use_nz`、时间步策略和 `mxfp4_scale_alg` |
+
+`quantize` 会先解析量化描述符 JSON 为 `QuantConfig`，再与用户传入的 `quant_config` 合并；同一字段同时存在时，以用户传入的配置为准。旧接口中的 `timestep_config`、`timestep_policy`、`dtype`、`use_nz` 仍可继续传入，内部会自动收口到 `QuantConfig`。量化描述符路径既可以继续作为 `quantize` 的第二个参数传入，也可以写入 `QuantConfig(quant_des_path=...)`。
 
 #### 使用示例
 
@@ -77,18 +80,54 @@ model = quantize(model, "quant_model_description_w8a16_0.json")
 model.to("npu")
 ```
 
+等价配置式写法：
+
+```python
+from mindiesd import QuantConfig, quantize
+
+quant_config = QuantConfig(quant_des_path="quant_model_description_w8a16_0.json")
+model = quantize(model, quant_config=quant_config)
+model.to("npu")
+```
+
 时间步量化：
 
 ```python
-from mindiesd import TimestepManager
+from mindiesd import QuantConfig, TimestepManager, TimestepPolicyConfig
 
-model = quantize(model, "quant_model_description_w8a8_timestep_0.json",
-                 timestep_policy=TimestepPolicyConfig(...))
+timestep_policy = TimestepPolicyConfig()
+timestep_policy.register(range(0, 10), "static", target="w8a8_static_linear")
+
+quant_config = QuantConfig(timestep_config=timestep_policy)
+model = quantize(model, "quant_model_description_w8a8_timestep_0.json", quant_config=quant_config)
 
 for i, t in enumerate(timesteps):
     TimestepManager.set_timestep_idx(i)
     ...
 ```
+
+MXFP4 时间步回退：
+
+```python
+from mindiesd import QuantConfig, TimestepManager, TimestepPolicyConfig, quantize
+
+timestep_policy = TimestepPolicyConfig()
+timestep_policy.register(range(0, 4), "W4A8", target="w4a4_linear")
+timestep_policy.register(range(4, 50), "W4A4", target="w4a4_linear")
+
+quant_config = QuantConfig(
+    timestep_config=timestep_policy,
+    mxfp4_scale_alg=2,
+)
+
+model = quantize(model, "quant_model_description_w4a4_mxfp4_0.json", quant_config=quant_config)
+
+for i, timestep in enumerate(timesteps):
+    TimestepManager.set_timestep_idx(i)
+    noise_pred = model(latents, timestep, encoder_hidden_states)
+```
+
+模型侧需要在每个 denoise step 前设置 `TimestepManager.set_timestep_idx(i)`。这和 Wan2.2 `wan/text2video.py` 中按 step 遍历 `timesteps` 的使用方式一致，但本仓的策略语义不同：这里的 Linear 是 `W4A4` 与 `W4A8` 切换，不是原有动静态量化切换。Linear/MM 回退只切换激活值量化精度，权重仍保持 MXFP4。
 
 #### 量化权重文件命名
 
@@ -107,7 +146,7 @@ FA（Flash Attention）量化针对注意力计算中的 Q/K/V 激活值进行�
 
 ### 技术特点
 
-本仓库通过 `FP8_DYNAMIC` 算法提供 FA 量化能力，其处理流程分为三步：
+本仓库通过 `FP8_DYNAMIC` 和 `MXFP4_DYNAMIC` 算法提供 FA 量化能力。`FP8_DYNAMIC` 使用 FP8 块量化；`MXFP4_DYNAMIC` 复用自定义 `quant_flash_attn` AICore 算子，并支持按时间步在 `MXFP4`、`FP8`、`FLOAT` 间切换。
 
 **旋转（Rotate）**
 
@@ -147,6 +186,32 @@ model.to("npu")
 `quantize` 内部遍历模型各层，对匹配的 Attention 层自动调用 `add_fa_quant`，注入 `FP8RotateQuantFA` 模块，替换前向计算为旋转→块量化→FP8 Attention 的流程。
 
 FA 量化层通过 `FP8RotateQuantFA` 模块实现，见本节的旋转→块量化→FP8 Attention 流程说明。
+
+MXFP4 FA 使用示例：
+
+```python
+from mindiesd import QuantConfig, TimestepManager, TimestepPolicyConfig, quantize
+
+timestep_policy = TimestepPolicyConfig()
+timestep_policy.register(range(0, 2), "FLOAT", target="fa")
+timestep_policy.register(range(2, 8), "FP8", target="fa")
+timestep_policy.register(range(8, 50), "MXFP4", target="fa")
+
+quant_config = QuantConfig(
+    timestep_config=timestep_policy,
+    mxfp4_scale_alg=2,
+)
+
+model = quantize(model, "quant_model_description_mxfp4_dynamic_0.json", quant_config=quant_config)
+
+for i, timestep in enumerate(timesteps):
+    TimestepManager.set_timestep_idx(i)
+    noise_pred = model(latents, timestep, encoder_hidden_states)
+```
+
+FA 没有离线权重约束，因此可以在不同时间步选择任意算法；Linear/MM 则只能在同一 MXFP4 权重下切换激活精度。
+
+`QuantConfig` 中的 `mxfp4_scale_alg` 会透传到动态 MX 量化路径，用于对齐 CANN `aclnnDynamicQuantV2` 的 C7 推理参数；未设置时保持旧接口默认行为。相关接口说明可参考 CANN `aclnnDynamicQuantV2` 文档：<https://gitcode.com/cann/ops-nn/blob/master/quant/dynamic_quant_v2/docs/aclnnDynamicQuantV2.md>。模型侧 timestep 设置方式可参考 Wan2.2 文本生成视频推理循环：<https://modelers.cn/models/MindIE/Wan2.2/blob/main/wan/text2video.py>。
 
 #### 注意事项
 

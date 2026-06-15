@@ -20,6 +20,8 @@ __all__ = [
     'get_activation_layer',
     'RMSNorm',
     'quantize',
+    'OnlineQuantConfig',
+    'QuantConfig',
     'TimestepManager',
     'TimestepPolicyConfig',
     'sparse_attention',
@@ -44,4 +46,10 @@ from .layers import (  # noqa: E402
     fast_layernorm,
     fused_moe,
 )
-from .quantization import quantize, TimestepManager, TimestepPolicyConfig  # noqa: E402
+from .quantization import (  # noqa: E402
+    quantize,
+    OnlineQuantConfig,
+    QuantConfig,
+    TimestepManager,
+    TimestepPolicyConfig,
+)
