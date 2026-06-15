@@ -40,6 +40,14 @@ class AscendLaserPreprocess(AttentionOperateBase):
 
         if query.dim() != 4 or key.dim() != 4 or value.dim() != 4:
             raise ParametersInvalid("LA_preprocess输入必须是4D张量")
+        if query.shape[2:] != key.shape[2:]:
+            raise ParametersInvalid(
+                f"key head dimensions mismatch: query{list(query.shape[2:])} vs key{list(key.shape[2:])}"
+            )
+        if query.shape[2:] != value.shape[2:]:
+            raise ParametersInvalid(
+                f"value head dimensions mismatch: query{list(query.shape[2:])} vs value{list(value.shape[2:])}"
+            )
         batch_size, seq_len, head_num, head_dim = query.shape
 
         out_query, out_key, out_value = ops.laser_attention_preprocess(query, key, value, align_len)
