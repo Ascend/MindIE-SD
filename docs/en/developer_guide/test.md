@@ -1,21 +1,21 @@
-# Test Guide
+# Testing
 
-The MindIE SD test suite supports running with or without Ascend NPU hardware. CPU-compatible tests can be executed even when no NPU hardware is available.
+The MindIE SD test suite supports running with or without Ascend NPU hardware. CPU-compatible tests can be executed even without NPU hardware.
 
-## Test environment overview
+## Test Environment Description
 
-Tests fall into two categories:
+Tests are divided into two categories:
 
-| Type | Description | NPU required |
-|------|-------------|:---:|
-| CPU-compatible | Configuration parsing, utility functions, quantization parameter validation, compilation logic, etc. | No |
-| NPU-dependent | Custom operator accuracy, Flash Attention, tensor operations on device, etc. | Yes |
+| Type | Description | Requires NPU |
+|------|------|:---:|
+| CPU-compatible tests | Configuration parsing, utility functions, quantization parameter validation, compilation logic, etc. | No |
+| NPU-dependent tests | Custom operator accuracy, Flash Attention, model tensor operations, etc. | Yes |
 
-## Test entry points
+## Test Entry Points
 
-### Option 1: CPU-friendly unit tests (recommended for users without NPU)
+### Entry Point 1: CPU-Friendly Unit Tests (Recommended for users without NPU)
 
-`run_UT_test.sh` always runs in CPU mode, making it suitable for development environments without NPU hardware.
+`run_UT_test.sh` always runs in CPU mode, suitable for development environments without NPU hardware.
 
 ```bash
 python -m pip install -r requirements.txt
@@ -23,82 +23,90 @@ python -m pip install -r requirements-test.txt
 bash tests/run_UT_test.sh
 ```
 
-Artifacts are generated under `tests/UT/`, including:
+Default artifacts are generated in the `tests/UT/` directory, including:
 
 - `run_UT.log`
 - `final.xml`
 - `coverage.xml`
 - `htmlcov/`
 
-The repository also provides `tests/scripts/check_coverage.py` for CI coverage gating on newly added Python files.
+The `tests/scripts/check_coverage.py` script in the repository is used in CI to verify the coverage gate for newly added Python files.
 
-### Option 2: Full tests (three modes)
+### Entry Point 2: Full Tests (Supports three modes)
 
-`run_test.sh` accepts a flag to control the test scope. Three modes are available:
+`run_test.sh` controls the test scope via parameters and supports the following three modes:
 
-**1. All tests (default)**
+**1. Full tests (default)**
 
-Run both CPU-compatible and NPU-dependent tests:
+Run all CPU-compatible tests and NPU-dependent tests:
 
 ```bash
 cd tests/
 bash run_test.sh --all
 ```
 
-When no flag is given, the default is to run all tests:
+When no parameters are passed, full tests are executed by default:
 
 ```bash
 cd tests/
 bash run_test.sh
 ```
 
-**2. CPU-compatible tests only (no NPU hardware required)**
+**2. Run CPU-compatible tests only (no NPU hardware required)**
 
 ```bash
 cd tests/
 bash run_test.sh --cpu_only
 ```
 
-**3. NPU-dependent tests only (requires NPU hardware)**
+**3. Run NPU-dependent tests only (NPU hardware required)**
 
 ```bash
 cd tests/
 bash run_test.sh --npu_only
 ```
 
-## LA Operator Accuracy Test
+## LA Operator Accuracy Testing
 
-This section describes how to run LA operator accuracy verification in the MindIE SD repository.
+This section describes the method for self-testing the accuracy of LA operators in the MindIE SD repository.
 
-1. If needed, uninstall the currently installed MindIE SD package first:
+1. To switch the installed version, first uninstall the current MindIE SD:
 
    ```bash
-   pip uninstall mindiesd
+   python -m pip uninstall mindiesd
    ```
 
-2. Update `tests/plugin/la_acc_prof.py`, choose Option 1 or Option 2, and load either `test_la.csv` or `enumerated_cases.csv` to verify LA accuracy under the required shapes.
+2. Modify the `tests/plugin/la_acc_prof.py` file, select Option 1 or Option 2, and load the `test_la.csv` or `enumerated_cases.csv` file to test the accuracy of LA operators under the specified shapes.
 
-   - `./tests/plugin/test_la.csv`: common input shapes used by SD models
-   - `enumerated_cases.csv`: enumerated shape combinations
+   - `./tests/plugin/test_la.csv`: Contains input shapes for commonly used SD models.
+   - `enumerated_cases.csv`: Contains various enumerated shapes.
 
-3. Run the script:
+3. After making the modifications, run the following command:
 
    ```bash
    cd tests
    python plugin/la_acc_prof.py
    ```
 
-After the run, result files are generated in the repository root and can be used to inspect similarity between LA and FAScore outputs.
+Upon successful execution, a result file is generated in the repository directory, recording the similarity between LA and FAScore. This can be used to inspect the operator's accuracy performance under the target shapes.
 
-## Common Exceptions
+## Test Writing Conventions
 
-When using MindIE SD for inference, users are responsible for the safety of model files such as weights, configuration files, and model code. Common exceptions include:
+### Test Organization Principles
 
-- If default model configuration values are changed during initialization, interfaces may be affected; excessively large weights or configuration values may trigger out-of-memory errors such as `RuntimeError: NPU out of memory. Tried to allocate xxx GiB.`.
-- Large tensor shapes during inference may also trigger similar out-of-memory errors.
-- Invalid input or environment mismatch may raise exceptions that should be handled by upper-layer services.
+Test directories under `tests/` correspond to the `mindiesd/` module hierarchy:
 
-| Exception Type | Description |
-| -- | -- |
-| ZeroDivisionError | Division by zero. |
-| ValueError | Invalid parameter value. |
+| Source Module | Corresponding Test Directory |
+|----------|-------------|
+| `mindiesd/layers/` | `tests/layers/` |
+| `mindiesd/cache/` | `tests/cache/` |
+| `mindiesd/compilation/` | `tests/compilation/` |
+| `mindiesd/quantization/` | `tests/quantization/` |
+
+When adding new code, check whether the corresponding test directory already has test files, and append to existing files or create new ones to cover the new functionality.
+
+### Test Performance Conventions
+
+- If a single test file takes more than 500 seconds to run, split it into multiple files
+- Prefer reusing existing device/model loading to reduce repeated initialization overhead
+- CPU-friendly tests should preferably be verified using `bash tests/run_UT_test.sh`

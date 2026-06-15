@@ -1,33 +1,31 @@
-# Quick Start
+﻿# Quick Start
 
-This page uses **Wan2.1** as an example to show how to run text-to-video inference with MindIE SD. For more model-specific inference details, see [Modelers - MindIE/Wan2.1](https://modelers.cn/models/MindIE/Wan2.1).
+This section uses the **Wan2.1** model as an example to demonstrate how to use MindIE SD for text-to-video generation. For more inference details about this model, see [Modelers - MindIE](https://modelers.cn/models/MindIE).
 
-## Prerequisites
+> Before starting inference, complete the environment setup and MindIE SD installation as described in [Installation Guide](./installation.md).
 
-Before running inference, complete the environment preparation and install MindIE SD by following the [Installation Guide](installing_guide.md).
+## Model Download and Execution
 
-## Run inference
+### 1. Obtain the Inference Script
 
-### 1. Get inference scripts
-
-Clone the Wan2.1 inference script repository from Modelers and install its dependencies:
+Clone the Wan2.1 inference script repository from Modelers and install dependencies:
 
 ```bash
 git clone https://modelers.cn/MindIE/Wan2.1.git && cd Wan2.1
 pip install -r requirements.txt
 ```
 
-### 2. Get model weights
+### 2. Obtain Model Weights
 
-The repository above contains inference scripts and **does not include model weights**. Weights must be downloaded separately. For Wan2.1, the following models are available:
+The repository above contains inference scripts but **does not include model weight files**. Weights must be downloaded separately. Using Wan2.1 as an example, the following models are supported:
 
-| Model | Description | Weights |
-|-------|-------------|---------|
-| Wan2.1-T2V-14B | Text-to-video | [HuggingFace](https://huggingface.co/Wan-AI/Wan2.1-T2V-14B) |
-| Wan2.1-I2V-14B-480P | Image-to-video (480P) | [HuggingFace](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-480P) |
-| Wan2.1-I2V-14B-720P | Image-to-video (720P) | [HuggingFace](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-720P) |
+| Model | Description | Weight Download |
+| ------ | ------ | ---------- |
+| Wan2.1-T2V-14B | Text-to-Video | [HuggingFace](https://huggingface.co/Wan-AI/Wan2.1-T2V-14B) |
+| Wan2.1-I2V-14B-480P | Image-to-Video (480P) | [HuggingFace](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-480P) |
+| Wan2.1-I2V-14B-720P | Image-to-Video (720P) | [HuggingFace](https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-720P) |
 
-After downloading, the weight directory should look like this (using Wan2.1-T2V-14B as an example):
+After downloading, the weight directory structure should be as follows (using Wan2.1-T2V-14B as an example):
 
 ```text
 Wan2.1-T2V-14B/
@@ -42,65 +40,65 @@ Wan2.1-T2V-14B/
 
 > **Note**
 >
-> - Ascend-adapted models are also available on [Modelers - MindIE](https://modelers.cn/models/MindIE).
-> - For other models (FLUX.1-dev, HunyuanVideo, etc.), see the links in the [supported matrix](features/supported_matrix.md).
+> - In addition to HuggingFace, model weights can also be obtained from [modelscope](https://modelscope.cn/models).
+> - For weights of other models (FLUX.1-dev, HunyuanVideo, etc.), see the links in [Model/Framework Support Matrix](features/supported_matrix.md).
 
-### 3. Run inference
+### 3. Run Inference
 
-Set the weight path via the `model_base` parameter and run the inference script. Parameter details are documented in [parameter_config.md](../../examples/wan/parameter_config.md).
+Set the weight path in the `model_base` parameter and run the inference script. For detailed parameter explanations, see [Parameter Configuration](../../examples/wan/parameter_config.md).
 
 ```bash
-# 8-card inference for Wan2.1-T2V-14B
+# Wan2.1-T2V-14B 8-card inference
 cp MindIE-SD/examples/wan/infer_t2v.sh ./
 export model_base="/path/to/Wan2.1-T2V-14B"
 bash infer_t2v.sh
 ```
 
-## Acceleration results
+## Acceleration Results
 
-The following Wan2.1 example shows the effect of different acceleration features on an Atlas 800I A2 inference server (1*64G), including both single-card and multi-card runs.
+Below, using Wan2.1 as an example, we show the acceleration effects of different features on Atlas 800I A2 inference servers (1*64G) for single-card and multi-card configurations.
 
 Where:
 
-- Cache refers to the [AttentionCache](features/cache.md#attentioncache) feature.
-- TP refers to the [Tensor Parallel](features/parallelism.md#tensor-parallel) feature.
-- FA sparse refers to the [RainFusion](features/sparse_quantization.md#fa-sparsity) optimization under FA sparsity.
-- CFG refers to the [CFG Parallel](features/parallelism.md#cfg-parallel) feature.
-- Ulysses refers to the [Ulysses Sequence Parallel](features/parallelism.md#ulysses-sequence-parallel) feature. The generated video resolution is 832*480 and `sample_steps` is 50.
+- Cache: Uses the [AttentionCache](./features/cache.md#attentioncache) feature;
+- TP: Uses the [Tensor Parallel](./features/parallelism.md) feature;
+- FA Sparse: Uses the [RainFusion](./features/sparse.md) feature in FA Sparse;
+- CFG: Uses the [CFG Parallel](./features/parallelism.md) feature;
+- Ulysses: Uses the [Ulysses Parallel](./features/parallelism.md#ulysses-sequence-parallel) acceleration feature. The generated video resolution is H*W 832*480, with `sample_steps` of 50.
 
-### Single-card acceleration
+### Single-Card Acceleration
 
-**Cache acceleration**
+**Cache Acceleration**
 
-| Baseline | + Cache ratio 1.6 | + Cache ratio 2.0 | + Cache ratio 2.4 |
-|:---:|:---:|:---:|:---:|
+| Baseline | + Cache Speedup 1.6 | + Cache Speedup 2.0 | + Cache Speedup 2.4 |
+| :---: | :---: | :---: | :---: |
 | 860.2s | 631.7s 1.36x | 541.8s 1.59x | 516.9s ***1.66x** |
 | ![](../figures/single_card_base_fa.gif) | ![](../figures/single_card_fa_attentioncache_speedup_1_6.gif) | ![](../figures/single_card_fa_attentioncache_speedup_2_0.gif) | ![](../figures/single_card_fa_attentioncache_speedup_2_4.gif) |
 
-### Parallel strategy results
+### Parallel Strategy Results
 
-**Two-card single-strategy results**
+**Dual-Card Single Parallel Strategy**
 
-| Model | Cards | Parallel strategy | Output resolution | Operator optimization | Cache optimization | FA sparse | 50-step E2E time (s) | Speedup |
-|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Wan2.1 | 2 | VAE | 832*480 | √ | √ | √ | 548.8 | 1.02x |
-| Wan2.1 | 2 | TP | 832*480 | √ | √ | √ | 502.8 | 1.12x |
-| Wan2.1 | 2 | CFG | 832*480 | √ | √ | √ | 332.6 | 1.69x |
-| Wan2.1 | 2 | Ulysses | 832*480 | √ | √ | √ | 327.6 | ***1.71x** |
+| Model | Cards | Parallel Strategy | Video Output Resolution | Operator Optimization | Cache Optimization | FA Sparse | 50-Step E2E Time(s) | Speedup |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Wan2.1 | 2 | VAE | 832*480 | Yes | Yes | Yes | 548.8 | 1.02x |
+| Wan2.1 | 2 | TP | 832*480 | Yes | Yes | Yes | 502.8 | 1.12x |
+| Wan2.1 | 2 | CFG | 832*480 | Yes | Yes | Yes | 332.6 | 1.69x |
+| Wan2.1 | 2 | Ulysses | 832*480 | Yes | Yes | Yes | 327.6 | ***1.71x** |
 
-Note: `*` marks the best acceleration result.
+Note: `*` indicates the best acceleration result.
 
-**Multi-card combined-strategy results**
+**Multi-Card Combined Parallel Strategies**
 
-| Model | Cards | Parallel strategy | Output resolution | Operator optimization | Cache optimization | FA sparse | 50-step E2E time (s) | Speedup |
-|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Wan2.1 | 4 | TP=4, VAE | 832*480 | √ | √ | √ | 204.0 | 2.754x |
-| Wan2.1 | 4 | CFG=2, TP=2, VAE | 832*480 | √ | √ | √ | 175.8 | 3.19x |
-| Wan2.1 | 4 | Ulysses=4, VAE | 832*480 | √ | √ | √ | 151.1 | 3.71x |
-| Wan2.1 | 4 | CFG=2, Ulysses=2, VAE | 832*480 | √ | √ | √ | 147.9 | ***3.79x** |
-| Wan2.1 | 8 | TP=8, VAE | 832*480 | √ | √ | √ | 141.5 | 3.96x |
-| Wan2.1 | 8 | CFG=2, TP=4, VAE | 832*480 | √ | √ | √ | 102.9 | 5.45x |
-| Wan2.1 | 8 | Ulysses=8, VAE | 832*480 | √ | √ | √ | 78.1 | 7.18x |
-| Wan2.1 | 8 | CFG=2, Ulysses=4, VAE | 832*480 | √ | √ | √ | 76.4 | ***7.34x** |
+| Model | Cards | Parallel Strategy | Video Output Resolution | Operator Optimization | Cache Optimization | FA Sparse | 50-Step E2E Time(s) | Speedup |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Wan2.1 | 4 | TP=4, VAE | 832*480 | Yes | Yes | Yes | 204.0 | 2.754x |
+| Wan2.1 | 4 | CFG=2, TP=2, VAE | 832*480 | Yes | Yes | Yes | 175.8 | 3.19x |
+| Wan2.1 | 4 | Ulysses=4, VAE | 832*480 | Yes | Yes | Yes | 151.1 | 3.71x |
+| Wan2.1 | 4 | CFG=2, Ulysses=2, VAE | 832*480 | Yes | Yes | Yes | 147.9 | ***3.79x** |
+| Wan2.1 | 8 | TP=8, VAE | 832*480 | Yes | Yes | Yes | 141.5 | 3.96x |
+| Wan2.1 | 8 | CFG=2, TP=4, VAE | 832*480 | Yes | Yes | Yes | 102.9 | 5.45x |
+| Wan2.1 | 8 | Ulysses=8, VAE | 832*480 | Yes | Yes | Yes | 78.1 | 7.18x |
+| Wan2.1 | 8 | CFG=2, Ulysses=4, VAE | 832*480 | Yes | Yes | Yes | 76.4 | ***7.34x** |
 
-Note: `*` marks the best acceleration result.
+Note: `*` indicates the best acceleration result.

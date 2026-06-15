@@ -41,7 +41,7 @@ MindIE SD的相关接口遵从diffusers的接口定义，部分基于MindIE SD�
 
 ## 目录结构
 
-```txt
+```text
 |- benchmarks         // 提供核心kernel的性能看护和compilation的加速效果看护
 |- build              // 编译脚本
 |- csrc               // 昇腾kernel代码位置
