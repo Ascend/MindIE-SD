@@ -31,7 +31,15 @@ from .moe_dataclass import (
     MoEStaticCombineMetadata,
     MoETokenDispatchOutput,
 )
-from .moe_context import MoECommType, get_moe_comm_type, get_moe_group, is_moe_quant
+from .moe_context import (
+    MoECommType,
+    dynamic_quant,
+    get_init_routing_quant_mode,
+    get_moe_comm_type,
+    get_moe_group,
+    is_moe_int_quant,
+    is_moe_quant,
+)
 
 
 class TokenDispatcher(ABC):
@@ -76,7 +84,7 @@ class StaticDispatcher(TokenDispatcher):
             # Static MoE computes a replicated full-token result before returning rank-local shards.
             dynamic_scale = None
             if is_moe_quant():
-                flat_hidden, dynamic_scale = torch_npu.npu_dynamic_quant(flat_hidden)
+                flat_hidden, dynamic_scale = dynamic_quant(flat_hidden)
             flat_hidden = all_gather(flat_hidden, moe_group)
             flat_router = all_gather(flat_router, moe_group)
             if dynamic_scale is not None:
@@ -125,7 +133,7 @@ class StaticDispatcher(TokenDispatcher):
             expert_tokens_num_type=1,
             expert_tokens_num_flag=True,
             active_expert_range=active_expert_range,
-            quant_mode=1 if is_moe_quant() and dynamic_scale is None else -1,
+            quant_mode=get_init_routing_quant_mode(dynamic_scale),
         )
         sorted_hidden_states, expanded_row_idx, expert_tokens, dynamic_scale = output[:4]
         return MoETokenDispatchOutput(
@@ -344,8 +352,8 @@ class DynamicDispatcher(TokenDispatcher):
             num_out_tokens=num_out_tokens,
         )
         dynamic_scale = None
-        if is_moe_quant():
-            permuted_tokens, dynamic_scale = torch_npu.npu_dynamic_quant(permuted_tokens)
+        if is_moe_int_quant():
+            permuted_tokens, dynamic_scale = dynamic_quant(permuted_tokens)
         return (
             permuted_tokens,
             dynamic_scale,

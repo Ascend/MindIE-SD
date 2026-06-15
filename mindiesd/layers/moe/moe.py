@@ -113,7 +113,7 @@ def moe(
     custom_routing_function: Callable | None = None,
     reduce_results: bool = True,
 ) -> torch.Tensor:
-    """Run the small-op MoE forward pass on NPU."""
+    """Run the non-fused MoE forward pass on NPU."""
 
     quant_algo = validate_moe_inputs(
         hidden_states=hidden_states,

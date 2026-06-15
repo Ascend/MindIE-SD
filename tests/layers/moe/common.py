@@ -11,6 +11,7 @@
 # See the Mulan PSL v2 for more details.
 
 import torch
+import torch_npu
 
 from mindiesd.quantization.config import QuantConfig
 from mindiesd.quantization.mode import QuantAlgorithm
@@ -18,6 +19,20 @@ from mindiesd.quantization.mode import QuantAlgorithm
 
 def make_w8a8_dynamic_quant_config():
     return QuantConfig(quant_algo=QuantAlgorithm.W8A8_DYNAMIC)
+
+
+def make_w8a8_mxfp8_quant_config():
+    return QuantConfig(quant_algo=QuantAlgorithm.W8A8_MXFP8)
+
+
+def make_mxfp8_ones(*shape, device):
+    num_experts, k_size, n_size = shape
+    quant_weight, weight_scale = torch_npu.npu_dynamic_mx_quant(
+        torch.ones(num_experts, n_size, k_size, device=device, dtype=torch.bfloat16),
+        dst_type=torch.float8_e4m3fn,
+    )
+    weight_scale = weight_scale.reshape(num_experts, n_size, -1, 2)
+    return quant_weight.transpose(1, 2), weight_scale.transpose(1, 2)
 
 
 def make_moe_kwargs(

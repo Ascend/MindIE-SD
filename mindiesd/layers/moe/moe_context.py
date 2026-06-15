@@ -15,10 +15,12 @@ from enum import Enum
 
 import torch
 import torch.distributed as dist
+import torch_npu
 
 from ...quantization.config import QuantConfig
 from ...quantization.mode import QuantAlgorithm
 from ...utils import ParametersInvalid
+from ...utils.get_platform import NPUDevice, get_npu_device
 from .moe_dataclass import (
     MoEMlpComputeInput,
     MoEPrepareInput,
@@ -28,7 +30,9 @@ from .moe_dataclass import (
     MoEWeights,
 )
 
-MOE_SUPPORTED_QUANT_ALGOS = (QuantAlgorithm.NO_QUANT, QuantAlgorithm.W8A8_DYNAMIC)
+MOE_INT_QUANT_ALGOS = (QuantAlgorithm.W8A8_DYNAMIC,)
+MOE_MXFP_QUANT_ALGOS = (QuantAlgorithm.W8A8_MXFP8,)
+MOE_SUPPORTED_QUANT_ALGOS = (QuantAlgorithm.NO_QUANT, *MOE_INT_QUANT_ALGOS, *MOE_MXFP_QUANT_ALGOS)
 
 
 def validate_moe_inputs(
@@ -75,6 +79,12 @@ def validate_moe_inputs(
     quant_algo = QuantAlgorithm.NO_QUANT if quant_config is None else quant_config.quant_algo or QuantAlgorithm.NO_QUANT
     if quant_algo not in MOE_SUPPORTED_QUANT_ALGOS:
         raise ParametersInvalid(f"Unsupported MoE quantization algorithm: {quant_algo}.")
+    if hidden_states.device.type == "npu":
+        npu_device = get_npu_device()
+        if quant_algo in MOE_INT_QUANT_ALGOS and npu_device not in (NPUDevice.A2, NPUDevice.A3):
+            raise ParametersInvalid("MoE integer quantization is only supported on A2 and A3.")
+        if quant_algo in MOE_MXFP_QUANT_ALGOS and npu_device != NPUDevice.A5:
+            raise ParametersInvalid("MoE MXFP quantization is only supported on A5.")
     if quant_algo == QuantAlgorithm.NO_QUANT and (w13_weight_scale is not None or w2_weight_scale is not None):
         raise ParametersInvalid("w13_weight_scale and w2_weight_scale must be None.")
     if quant_algo != QuantAlgorithm.NO_QUANT and (w13_weight_scale is None or w2_weight_scale is None):
@@ -246,9 +256,39 @@ def get_moe_quant_algo() -> QuantAlgorithm:
     return _MOE_QUANT_ALGO
 
 
+def dynamic_quant(hidden_states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Apply dynamic quantization according to the current MoE quantization algorithm."""
+    if _MOE_QUANT_ALGO == QuantAlgorithm.W8A8_DYNAMIC:
+        return torch_npu.npu_dynamic_quant(hidden_states)
+    if _MOE_QUANT_ALGO == QuantAlgorithm.W8A8_MXFP8:
+        return torch_npu.npu_dynamic_mx_quant(hidden_states, dst_type=torch.float8_e4m3fn)
+    raise ParametersInvalid(f"Unsupported MoE quantization algorithm: {_MOE_QUANT_ALGO}.")
+
+
+def get_init_routing_quant_mode(dynamic_scale: torch.Tensor | None) -> int:
+    """Return npu_moe_init_routing_v2 quant mode: -1 no quant, 1 dynamic INT8, 3 MXFP8."""
+    if not is_moe_quant() or dynamic_scale is not None:
+        return -1
+    if _MOE_QUANT_ALGO == QuantAlgorithm.W8A8_DYNAMIC:
+        return 1
+    if _MOE_QUANT_ALGO == QuantAlgorithm.W8A8_MXFP8:
+        return 3
+    raise ParametersInvalid(f"Unsupported MoE quantization algorithm: {_MOE_QUANT_ALGO}.")
+
+
 def is_moe_quant() -> bool:
     """Return whether the current MoE path uses quantization."""
     return _MOE_QUANT_ALGO != QuantAlgorithm.NO_QUANT
+
+
+def is_moe_int_quant() -> bool:
+    """Return whether the current MoE path uses integer quantization."""
+    return _MOE_QUANT_ALGO in MOE_INT_QUANT_ALGOS
+
+
+def is_moe_mxfp_quant() -> bool:
+    """Return whether the current MoE path uses MXFP quantization."""
+    return _MOE_QUANT_ALGO in MOE_MXFP_QUANT_ALGOS
 
 
 def set_moe_context(tp_group=None, ep_group=None, quant_algo: QuantAlgorithm = QuantAlgorithm.NO_QUANT) -> None:

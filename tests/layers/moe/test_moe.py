@@ -25,9 +25,9 @@ from mindiesd.layers.moe.moe_context import set_moe_comm_context
 from mindiesd.layers.moe.moe_dataclass import MoEPrepareOutput, MoETokenDispatchOutput
 from mindiesd.layers.moe.token_dispatcher import DynamicDispatcher, StaticDispatcher
 from mindiesd.utils import ParametersInvalid
-from mindiesd.utils.get_platform import NPUDevice
+from mindiesd.utils.get_platform import NPUDevice, get_npu_device
 
-from .common import make_moe_kwargs, make_w8a8_dynamic_quant_config
+from .common import make_moe_kwargs, make_mxfp8_ones, make_w8a8_dynamic_quant_config, make_w8a8_mxfp8_quant_config
 
 
 def mock_dispatch_result(num_tokens=3, hidden_size=4):
@@ -287,6 +287,10 @@ class TestMoeFunction(unittest.TestCase):
     os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
     "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.",
 )
+@unittest.skipIf(
+    get_npu_device() not in (NPUDevice.A2, NPUDevice.A3),
+    "Skip INT8 MoE tests when device is not A2 or A3.",
+)
 class TestMoeW8A8Dynamic(unittest.TestCase):
     def setUp(self):
         set_moe_comm_context()
@@ -323,6 +327,57 @@ class TestMoeW8A8Dynamic(unittest.TestCase):
             w13_weight=w13_weight,
             w2_weight=w2_weight,
             quant_config=make_w8a8_dynamic_quant_config(),
+            w13_weight_scale=w13_weight_scale,
+            w2_weight_scale=w2_weight_scale,
+            dispatcher_type="static",
+            tokens_full=True,
+            reduce_results=False,
+        )
+
+        self.assertEqual(tuple(output.shape), (num_tokens, hidden_size))
+        self.assertEqual(output.dtype, dtype)
+
+
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
+    "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.",
+)
+@unittest.skipIf(get_npu_device() != NPUDevice.A5, "Skip MXFP8 MoE tests when device is not A5.")
+class TestMoeW8A8Mxfp8(unittest.TestCase):
+    def setUp(self):
+        set_moe_comm_context()
+
+    def test_w8a8_mxfp8_moe_produces_correct_output_shape_and_dtype(self):
+        device = torch.device("npu")
+        num_tokens = 4
+        hidden_size = 128
+        intermediate_size = 64
+        num_experts = 2
+        dtype = torch.bfloat16
+
+        hidden_states = (torch.randn(num_tokens, hidden_size, device=device, dtype=dtype) / 10).contiguous()
+        router_logits = torch.randn(num_tokens, num_experts, device=device, dtype=dtype) / 10
+        w13_weight, w13_weight_scale = make_mxfp8_ones(
+            num_experts,
+            hidden_size,
+            2 * intermediate_size,
+            device=device,
+        )
+        w2_weight, w2_weight_scale = make_mxfp8_ones(
+            num_experts,
+            intermediate_size,
+            hidden_size,
+            device=device,
+        )
+
+        output = moe(
+            hidden_states=hidden_states,
+            router_logits=router_logits,
+            num_experts=num_experts,
+            top_k=1,
+            w13_weight=w13_weight,
+            w2_weight=w2_weight,
+            quant_config=make_w8a8_mxfp8_quant_config(),
             w13_weight_scale=w13_weight_scale,
             w2_weight_scale=w2_weight_scale,
             dispatcher_type="static",

@@ -26,6 +26,14 @@ def _ensure_nz_weight(weight: torch.Tensor) -> torch.Tensor:
     return torch_npu.npu_format_cast(weight, 29)
 
 
+def _normalize_mxfp_scale_layout(scale: torch.Tensor | None) -> torch.Tensor | None:
+    if scale is None or scale.dim() != 2:
+        return scale
+    if scale.shape[-1] % 2 != 0:
+        raise ValueError(f"Invalid MXFP scale shape: {tuple(scale.shape)}")
+    return scale.reshape(scale.shape[0], scale.shape[1] // 2, 2)
+
+
 def unquant_apply_mlp(mlp_input: MoEMlpComputeInput) -> torch.Tensor:
     hidden_states = mlp_input.hidden_states
     weights = mlp_input.weights
@@ -97,10 +105,64 @@ def w8a8_dynamic_apply_mlp(mlp_input: MoEMlpComputeInput) -> torch.Tensor:
     )[0]
 
 
+def w8a8_mxfp8_apply_mlp(mlp_input: MoEMlpComputeInput) -> torch.Tensor:
+    """W8A8 MXFP8 grouped expert MLP."""
+    hidden_states = mlp_input.hidden_states
+    weights = mlp_input.weights
+    w13_weight = weights.w13_weight
+    w2_weight = weights.w2_weight
+    w13_weight_scale = weights.w13_weight_scale
+    w2_weight_scale = weights.w2_weight_scale
+    group_list = mlp_input.group_list
+    group_list_type = mlp_input.group_list_type
+    per_token_scale = mlp_input.dynamic_scale
+    mlp_output_dtype = mlp_input.mlp_output_dtype
+
+    if per_token_scale is None:
+        quant_hidden, per_token_scale = torch_npu.npu_dynamic_mx_quant(hidden_states, dst_type=torch.float8_e4m3fn)
+    else:
+        quant_hidden = hidden_states
+        per_token_scale = _normalize_mxfp_scale_layout(per_token_scale)
+
+    swiglu_out, swiglu_out_scale = torch_npu.npu_grouped_matmul_swiglu_quant_v2(
+        x=quant_hidden,
+        weight=[w13_weight],
+        weight_scale=[w13_weight_scale],
+        x_scale=per_token_scale,
+        group_list=group_list if group_list_type == 0 else group_list.cumsum(dim=0),
+        dequant_mode=2,
+        quant_mode=2,
+        dequant_dtype=torch.float32,
+        quant_dtype=torch.float8_e4m3fn,
+        x_dtype=None,
+        weight_dtype=None,
+        weight_scale_dtype=torch_npu.float8_e8m0fnu,
+        x_scale_dtype=torch_npu.float8_e8m0fnu,
+    )
+
+    return torch_npu.npu_grouped_matmul(
+        x=[swiglu_out],
+        weight=[w2_weight],
+        scale=[w2_weight_scale],
+        per_token_scale=[swiglu_out_scale],
+        split_item=2,
+        group_list_type=group_list_type,
+        group_type=0,
+        group_list=group_list,
+        output_dtype=mlp_output_dtype,
+        scale_dtype=torch_npu.float8_e8m0fnu,
+        per_token_scale_dtype=torch_npu.float8_e8m0fnu,
+        x_dtype=None,
+        weight_dtype=None,
+    )[0]
+
+
 def unified_apply_mlp(mlp_input: MoEMlpComputeInput) -> torch.Tensor:
     quant_algo = get_moe_quant_algo()
     if quant_algo == QuantAlgorithm.NO_QUANT:
         return unquant_apply_mlp(mlp_input)
     if quant_algo == QuantAlgorithm.W8A8_DYNAMIC:
         return w8a8_dynamic_apply_mlp(mlp_input)
+    if quant_algo == QuantAlgorithm.W8A8_MXFP8:
+        return w8a8_mxfp8_apply_mlp(mlp_input)
     raise ValueError(f"Unsupported MoE quantization algorithm: {quant_algo}")

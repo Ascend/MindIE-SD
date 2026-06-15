@@ -35,6 +35,8 @@ from mindiesd.layers.moe.moe_context import (
     get_moe_comm_type,
     get_moe_group,
     get_moe_quant_algo,
+    is_moe_int_quant,
+    is_moe_mxfp_quant,
     is_moe_quant,
     set_moe_comm_context,
     set_moe_context,
@@ -44,7 +46,7 @@ from mindiesd.quantization.config import QuantConfig
 from mindiesd.quantization.mode import QuantAlgorithm
 from mindiesd.utils import ParametersInvalid
 
-from .common import make_moe_kwargs, make_w8a8_dynamic_quant_config
+from .common import make_moe_kwargs, make_w8a8_dynamic_quant_config, make_w8a8_mxfp8_quant_config
 
 
 @unittest.skipIf(
@@ -61,19 +63,30 @@ class TestMoEContext(unittest.TestCase):
     def test_validate_moe_inputs_resolves_empty_quant_config(self):
         self.assertEqual(validate_moe_inputs(**make_moe_kwargs(quant_config=QuantConfig())), QuantAlgorithm.NO_QUANT)
 
-    def test_validate_moe_inputs_accepts_w8a8_dynamic_quant_scales(self):
-        self.assertEqual(
-            validate_moe_inputs(
-                **make_moe_kwargs(
-                    quant_config=make_w8a8_dynamic_quant_config(),
-                    w13_weight=torch.randint(-8, 8, (2, 4, 16), dtype=torch.int8),
-                    w2_weight=torch.randint(-8, 8, (2, 8, 4), dtype=torch.int8),
-                    w13_weight_scale=torch.randn(2, 16),
-                    w2_weight_scale=torch.randn(2, 4),
-                )
+    def test_validate_moe_inputs_accepts_supported_quant_scales(self):
+        cases = (
+            dict(
+                quant_algo=QuantAlgorithm.W8A8_DYNAMIC,
+                quant_config=make_w8a8_dynamic_quant_config(),
+                w13_weight=torch.randint(-8, 8, (2, 4, 16), dtype=torch.int8),
+                w2_weight=torch.randint(-8, 8, (2, 8, 4), dtype=torch.int8),
+                w13_weight_scale=torch.randn(2, 16),
+                w2_weight_scale=torch.randn(2, 4),
             ),
-            QuantAlgorithm.W8A8_DYNAMIC,
+            dict(
+                quant_algo=QuantAlgorithm.W8A8_MXFP8,
+                quant_config=make_w8a8_mxfp8_quant_config(),
+                w13_weight=torch.empty(2, 4, 16, dtype=torch.float8_e4m3fn),
+                w2_weight=torch.empty(2, 8, 4, dtype=torch.float8_e4m3fn),
+                w13_weight_scale=torch.empty(2, 16, dtype=torch.uint8),
+                w2_weight_scale=torch.empty(2, 4, dtype=torch.uint8),
+            ),
         )
+        for case in cases:
+            with self.subTest(quant_algo=case["quant_algo"]):
+                kwargs = dict(case)
+                quant_algo = kwargs.pop("quant_algo")
+                self.assertEqual(validate_moe_inputs(**make_moe_kwargs(**kwargs)), quant_algo)
 
     def test_validate_moe_inputs_rejects_invalid_parameters(self):
         invalid_cases = (
@@ -103,23 +116,39 @@ class TestMoEContext(unittest.TestCase):
                     validate_moe_inputs(**kwargs)
 
     def test_validate_moe_inputs_rejects_missing_quant_scales(self):
-        w8a8_dynamic_kwargs = make_moe_kwargs(
-            quant_config=make_w8a8_dynamic_quant_config(),
-            w13_weight=torch.randint(-8, 8, (2, 4, 16), dtype=torch.int8),
-            w2_weight=torch.randint(-8, 8, (2, 8, 4), dtype=torch.int8),
-            w13_weight_scale=torch.randn(2, 16),
-            w2_weight_scale=torch.randn(2, 4),
+        quant_cases = (
+            dict(
+                name="w8a8_dynamic",
+                kwargs=make_moe_kwargs(
+                    quant_config=make_w8a8_dynamic_quant_config(),
+                    w13_weight=torch.randint(-8, 8, (2, 4, 16), dtype=torch.int8),
+                    w2_weight=torch.randint(-8, 8, (2, 8, 4), dtype=torch.int8),
+                    w13_weight_scale=torch.randn(2, 16),
+                    w2_weight_scale=torch.randn(2, 4),
+                ),
+            ),
+            dict(
+                name="w8a8_mxfp8",
+                kwargs=make_moe_kwargs(
+                    quant_config=make_w8a8_mxfp8_quant_config(),
+                    w13_weight=torch.empty(2, 4, 16, dtype=torch.float8_e4m3fn),
+                    w2_weight=torch.empty(2, 8, 4, dtype=torch.float8_e4m3fn),
+                    w13_weight_scale=torch.empty(2, 16, dtype=torch.uint8),
+                    w2_weight_scale=torch.empty(2, 4, dtype=torch.uint8),
+                ),
+            ),
         )
         cases = (
             dict(name="missing_w13_scale", kwargs=dict(w13_weight_scale=None)),
             dict(name="missing_w2_scale", kwargs=dict(w2_weight_scale=None)),
         )
-        for case in cases:
-            with self.subTest(case=case["name"]):
-                kwargs = dict(w8a8_dynamic_kwargs)
-                kwargs.update(case["kwargs"])
-                with self.assertRaises(ParametersInvalid):
-                    validate_moe_inputs(**kwargs)
+        for quant_case in quant_cases:
+            for case in cases:
+                with self.subTest(quant=quant_case["name"], case=case["name"]):
+                    kwargs = dict(quant_case["kwargs"])
+                    kwargs.update(case["kwargs"])
+                    with self.assertRaises(ParametersInvalid):
+                        validate_moe_inputs(**kwargs)
 
     def test_validate_moe_inputs_rejects_invalid_shapes(self):
         invalid_cases = (
@@ -189,11 +218,21 @@ class TestMoEContext(unittest.TestCase):
     def test_is_moe_quant_resolves_quantization(self):
         set_moe_context()
         self.assertFalse(is_moe_quant())
+        self.assertFalse(is_moe_int_quant())
+        self.assertFalse(is_moe_mxfp_quant())
         self.assertEqual(get_moe_quant_algo(), QuantAlgorithm.NO_QUANT)
 
         set_moe_context(quant_algo=QuantAlgorithm.W8A8_DYNAMIC)
         self.assertTrue(is_moe_quant())
+        self.assertTrue(is_moe_int_quant())
+        self.assertFalse(is_moe_mxfp_quant())
         self.assertEqual(get_moe_quant_algo(), QuantAlgorithm.W8A8_DYNAMIC)
+
+        set_moe_context(quant_algo=QuantAlgorithm.W8A8_MXFP8)
+        self.assertTrue(is_moe_quant())
+        self.assertFalse(is_moe_int_quant())
+        self.assertTrue(is_moe_mxfp_quant())
+        self.assertEqual(get_moe_quant_algo(), QuantAlgorithm.W8A8_MXFP8)
 
     def test_build_input_wrappers(self):
         hidden_states = torch.randn(3, 4)

@@ -49,7 +49,7 @@ def fused_moe(
     """Run MoE through the public fused-MoE entry.
 
     The current version exposes the fused-op switch for forward compatibility,
-    while all calls fall back to the small-op MoE network.
+    while all calls fall back to the non-fused MoE implementation.
 
     Args:
         hidden_states (torch.Tensor):
@@ -114,7 +114,7 @@ def fused_moe(
             is used with ``tokens_full=True``.
         use_fused_op (bool, optional):
             Whether to use the real fused MoE op. The current version does not
-            support this path and falls back to the small-op MoE network.
+            support this path and falls back to the non-fused MoE implementation.
 
     Returns:
         torch.Tensor: Output activations with the same shape as ``hidden_states``.
