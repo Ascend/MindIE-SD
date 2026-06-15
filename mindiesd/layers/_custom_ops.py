@@ -237,8 +237,11 @@ def sparse_block_estimate_fake(
         b, nq, s, d = query.shape
     elif input_layout == "BSND":
         b, s, nq, d = query.shape
+    elif input_layout == "BSH":
+        b, s = query.shape[0], query.shape[1]
+        nq = num_heads
     else:
-        raise ParametersInvalid(f"The input_layout only support 'BNSD' and 'BSND' now, but got {input_layout}")
+        raise ParametersInvalid(f"The input_layout only supports 'BNSD', 'BSND', 'BSH', but got {input_layout}")
     seqlen_sparse = int((s + sparse_size - 1) / sparse_size)
     seqlen_sparse_align32 = (seqlen_sparse + 31) / 32 * 32
     sparse_mask_shape = (b, nq, seqlen_sparse, seqlen_sparse_align32)

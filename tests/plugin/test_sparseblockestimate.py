@@ -273,14 +273,77 @@ class TestSparseBlockEstimate(unittest.TestCase):
                 self.assertLess(omitted_blocks_ratio, 0.01, "omitted_blocks_ratio should < 0.01.")
 
     def test_invalid_layout(self):
+        """非法 layout 应当抛出 RuntimeError (TORCH_CHECK)"""
         query, key = self.bsa_estimate_preprocess_input()
         with self.assertRaises(RuntimeError):
-            smask, sct = torch.ops.mindiesd.sparse_block_estimate(
+            torch.ops.mindiesd.sparse_block_estimate(
                 query=query.to(self.device),
                 key=key.to(self.device),
                 actual_seq_lengths=None,
                 actual_seq_lengths_kv=None,
                 input_layout="TND",
+                stride=self.stride,
+                sparse_size=self.sparse_size,
+                num_heads=self.head_num,
+                num_key_value_heads=self.head_num,
+                scale_value=self.scale_value,
+                threshold=self.threshold,
+                causal=self.causal,
+                keep_sink=self.keep_sink,
+                keep_recent=self.keep_recent,
+                row_sparse=self.row_sparse,
+            )
+
+    def test_bsh_layout_output_shape(self):
+        """验证 BSH layout 输出 shape 正确"""
+        query_bsh = torch.randn(
+            (self.batch, self.qseqlen, self.head_num * self.head_dim),
+            dtype=torch.float16,
+        )
+        key_bsh = torch.randn(
+            (self.batch, self.qseqlen, self.head_num * self.head_dim),
+            dtype=torch.float16,
+        )
+        smask, sct = torch.ops.mindiesd.sparse_block_estimate(
+            query=query_bsh.to(self.device),
+            key=key_bsh.to(self.device),
+            actual_seq_lengths=None,
+            actual_seq_lengths_kv=None,
+            input_layout="BSH",
+            stride=self.stride,
+            sparse_size=self.sparse_size,
+            num_heads=self.head_num,
+            num_key_value_heads=self.head_num,
+            scale_value=self.scale_value,
+            threshold=self.threshold,
+            causal=self.causal,
+            keep_sink=self.keep_sink,
+            keep_recent=self.keep_recent,
+            row_sparse=self.row_sparse,
+        )
+
+        s1 = (self.qseqlen + self.sparse_size - 1) // self.sparse_size
+        s2 = (s1 + 31) // 32 * 32
+        expected_smask_shape = (self.batch, self.head_num, s1, s2)
+        expected_sct_shape = (self.batch, self.head_num, s1)
+
+        self.assertEqual(
+            smask.shape,
+            expected_smask_shape,
+            f"BSH layout: smask shape {smask.shape} != expected {expected_smask_shape}",
+        )
+        self.assertEqual(
+            sct.shape, expected_sct_shape, f"BSH layout: sct shape {sct.shape} != expected {expected_sct_shape}"
+        )
+
+    def test_invalid_layout_empty_string(self):
+        """空字符串 layout 应当抛出 RuntimeError"""
+        query, key = self.bsa_estimate_preprocess_input()
+        with self.assertRaises(RuntimeError):
+            torch.ops.mindiesd.sparse_block_estimate(
+                query=query.to(self.device),
+                key=key.to(self.device),
+                input_layout="",
                 stride=self.stride,
                 sparse_size=self.sparse_size,
                 num_heads=self.head_num,
