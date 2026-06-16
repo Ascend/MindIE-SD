@@ -21,7 +21,6 @@ from .sparse_flash_attn_rf_v2 import (
     get_blockwise_mask,
     do_tensor_inv_rearrange,
 )
-from ..quant.block_quant import fa_block_quant_preprocess
 
 
 def _fp8_quant_qkv(q, k, v, q_rot, k_rot, block_size_q=128, block_size_kv=256, layout="BSND"):
@@ -33,6 +32,8 @@ def _fp8_quant_qkv(q, k, v, q_rot, k_rot, block_size_q=128, block_size_kv=256, l
     Note: fa_block_quant_preprocess always outputs BNSD regardless of input layout.
     The returned tensors are in BNSD layout.
     """
+    from ..quant.block_quant import fa_block_quant_preprocess
+
     # Rotation on Q and K (value is NOT rotated)
     q = torch.matmul(q, q_rot)
     k = torch.matmul(k, k_rot)
