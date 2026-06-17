@@ -12,6 +12,7 @@ MindIE SD旨在构建昇腾亲和的多模态加速系列套件，配合业内�
 - 量化稀疏能力：针对昇腾的数据类型和算力分布，提供亲和的算法组合，并通过quantization模块导入使用。详情请参见[稀疏](./features/sparse.md)和[量化](./features/quantization.md)。
 - 以存代算：提供DiT module、DiT block、attn等多种粒度的cache算法，以支持不同的视图场景加速。详情请参见[以存代算](./features/cache.md)、[CPU卸载](./features/cpu_offload.md)和[显存共享](./features/share_memory.md)。
 - 多卡并行：提供CFG、USP等并行能力以及MoE场景的动态专家负载均衡（EPLB），融入加速算子的API中，实现接口替换后的自动使能。详情请参见[多卡并行](./features/parallelism.md)和[动态专家负载均衡](./features/DyEPLB.md)。
+- FA_Power_Cap 技术：面向长序列视频生成场景，通过切分 FA 并重排 FA 与通信执行顺序，降低整网平均功耗并提升端到端性能。详情请参见[FA_Power_Cap 技术](./features/fa_power_cap.md)。
 - 自动亲和加速：基于torch.compile的inductor机制，自定义融合pass，实现昇腾亲和算子替换。
 
 >[!NOTE]说明

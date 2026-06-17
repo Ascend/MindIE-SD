@@ -12,6 +12,7 @@ By design, modules are independently decoupled and can be used individually or i
 - Quantization and sparsity capabilities: Provides Ascend-tailored algorithm combinations for Ascend data types and compute distribution, imported through the quantization module. For details, see [Sparsity](./features/sparse.md) and [Quantization](./features/quantization.md).
 - Compute-to-memory tradeoff: Provides cache algorithms at DiT module, DiT block, attention, and other granularities to support acceleration in different view scenarios. For details, see [Compute-to-Memory Tradeoff](./features/cache.md), [CPU Offload](./features/cpu_offload.md), and [VRAM Sharing](./features/share_memory.md).
 - Multi-card parallelism: Provides parallelism capabilities such as CFG and USP, as well as dynamic expert load balancing (EPLB) for MoE scenarios, integrated into the acceleration operator APIs for automatic enablement after interface replacement. For details, see [Multi-Card Parallelism](./features/parallelism.md) and [Dynamic Expert Load Balancing](./features/DyEPLB.md).
+- FA_Power_Cap technology: Splits FA execution and reorders FA with communication for long-sequence video generation, reducing average power consumption and improving end-to-end performance. For details, see [FA_Power_Cap Technology](./features/fa_power_cap.md).
 - Automatic affinity acceleration: Based on the torch.compile inductor mechanism, custom fusion passes are implemented to achieve Ascend-native operator substitution.
 
 >[!NOTE] Note

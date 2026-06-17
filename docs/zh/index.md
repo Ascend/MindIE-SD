@@ -21,6 +21,7 @@ features/core_layers
 features/fused_moe
 features/compilation
 features/parallelism
+features/fa_power_cap
 features/cache
 features/cpu_offload
 features/share_memory

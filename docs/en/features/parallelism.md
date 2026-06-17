@@ -234,6 +234,12 @@ Suitable for scenarios with many attention heads and ample AlltoAll bandwidth. C
 
 ---
 
+## FA_Power_Cap Technology
+
+`FA_Power_Cap` technology can use `--comm_type 0/1/2` to switch between baseline, InsertComm, and BlockAttn paths. For the step-by-step manual integration guide, see [FA_Power_Cap Technology](./fa_power_cap.md).
+
+---
+
 ## CFG Parallel
 
 ### Principle

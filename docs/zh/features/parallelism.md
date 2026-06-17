@@ -234,6 +234,12 @@ for step in range(1, world_size):
 
 ---
 
+## FA_Power_Cap 技术
+
+`FA_Power_Cap` 技术可以通过 `--comm_type 0/1/2` 在 baseline、插入通信和块级注意力三种路径之间切换。详细手动接入步骤请参见 [FA_Power_Cap 技术](./fa_power_cap.md)。
+
+---
+
 ## CFG Parallel
 
 ### 原理
