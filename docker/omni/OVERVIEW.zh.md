@@ -4,9 +4,9 @@
 
 | 项目 | 值 |
 |------|-----|
-| **镜像** | `quay.io/ascend/vllm-omni-mindiesd` |
-| **Tags** | `v0.20.0-cann8.5.1-A2-ubuntu22.04-py3.11-aarch64` |
-| | `v0.20.0-cann8.5.1-A3-ubuntu22.04-py3.11-aarch64` |
+| **镜像** | `mindiesd` |
+| **Tags** | `v3.0.0-A2-ubuntu22.04-py3.11-aarch64` |
+| | `v3.0.0-A3-ubuntu22.04-py3.11-aarch64` |
 | **基础镜像** | A2：`quay.io/ascend/vllm-omni:v0.20.0` |
 | | A3：`quay.io/ascend/vllm-omni:v0.20.0-a3` |
 | **架构** | `linux/arm64`（aarch64） |
@@ -44,8 +44,8 @@
 
 | 系列 | 示例 Tag | 基础镜像 |
 |------|----------|----------|
-| A2 | `v0.20.0-cann8.5.1-A2-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0` |
-| A3 | `v0.20.0-cann8.5.1-A3-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0-a3` |
+| A2 | `v3.0.0-A2-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0` |
+| A3 | `v3.0.0-A3-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0-a3` |
 
 ### Dockerfile 归档路径
 
@@ -81,7 +81,7 @@ docker pull quay.io/ascend/vllm-omni:v0.20.0-a3
 A2：
 
 ```bash
-docker run -it --rm --name=vllm-omni-mindiesd \
+docker run -it --rm --name=mindiesd \
     --privileged \
     --shm-size=1g \
     --device /dev/davinci0 \
@@ -97,14 +97,14 @@ docker run -it --rm --name=vllm-omni-mindiesd \
     -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
     -v /etc/ascend_install.info:/etc/ascend_install.info \
     -v /root/.cache:/root/.cache \
-    quay.io/ascend/vllm-omni-mindiesd:v0.20.0-cann8.5.1-A2-ubuntu22.04-py3.11-aarch64 \
+    mindiesd:v3.0.0-A2-ubuntu22.04-py3.11-aarch64 \
     bash
 ```
 
 A3：
 
 ```bash
-docker run -it --rm --name=vllm-omni-mindiesd \
+docker run -it --rm --name=mindiesd \
     --privileged \
     --shm-size=1g \
     --device /dev/davinci0 \
@@ -120,7 +120,7 @@ docker run -it --rm --name=vllm-omni-mindiesd \
     -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
     -v /etc/ascend_install.info:/etc/ascend_install.info \
     -v /root/.cache:/root/.cache \
-    quay.io/ascend/vllm-omni-mindiesd:v0.20.0-cann8.5.1-A3-ubuntu22.04-py3.11-aarch64 \
+    mindiesd:v3.0.0-A3-ubuntu22.04-py3.11-aarch64 \
     bash
 ```
 
@@ -136,7 +136,7 @@ A2：
 git clone https://github.com/Ascend/MindIE-SD.git
 cd MindIE-SD/docker/omni
 
-docker build -t quay.io/ascend/vllm-omni-mindiesd:v0.20.0-cann8.5.1-A2-ubuntu22.04-py3.11-aarch64 \
+docker build -t mindiesd:v3.0.0-A2-ubuntu22.04-py3.11-aarch64 \
     -f Dockerfile.a2.ubuntu .
 ```
 
@@ -146,7 +146,7 @@ A3：
 git clone https://github.com/Ascend/MindIE-SD.git
 cd MindIE-SD/docker/omni
 
-docker build -t quay.io/ascend/vllm-omni-mindiesd:v0.20.0-cann8.5.1-A3-ubuntu22.04-py3.11-aarch64 \
+docker build -t mindiesd:v3.0.0-A3-ubuntu22.04-py3.11-aarch64 \
     -f Dockerfile.a3.ubuntu .
 ```
 
@@ -155,7 +155,7 @@ docker build -t quay.io/ascend/vllm-omni-mindiesd:v0.20.0-cann8.5.1-A3-ubuntu22.
 如需添加自定义依赖或应用代码，可基于本镜像创建新的 Dockerfile：
 
 ```dockerfile
-FROM quay.io/ascend/vllm-omni-mindiesd:v0.20.0-cann8.5.1-A2-ubuntu22.04-py3.11-aarch64
+FROM mindiesd:v3.0.0-A2-ubuntu22.04-py3.11-aarch64
 
 # 安装自定义依赖包
 RUN pip install --no-cache-dir your-package

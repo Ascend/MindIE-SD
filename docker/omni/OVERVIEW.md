@@ -4,9 +4,9 @@
 
 | Item | Value |
 |------|-------|
-| **Image** | `quay.io/ascend/vllm-omni-mindiesd` |
-| **Tags** | `v0.20.0-cann8.5.1-A2-ubuntu22.04-py3.11-aarch64` |
-| | `v0.20.0-cann8.5.1-A3-ubuntu22.04-py3.11-aarch64` |
+| **Image** | `mindiesd` |
+| **Tags** | `v3.0.0-A2-ubuntu22.04-py3.11-aarch64` |
+| | `v3.0.0-A3-ubuntu22.04-py3.11-aarch64` |
 | **Base Images** | A2: `quay.io/ascend/vllm-omni:v0.20.0` |
 | | A3: `quay.io/ascend/vllm-omni:v0.20.0-a3` |
 | **Architecture** | `linux/arm64` (aarch64) |
@@ -44,8 +44,8 @@ Both variants add the following Ascend tuning and debugging tools:
 
 | Series | Example Tag | Base Image |
 |--------|-------------|------------|
-| A2 | `v0.20.0-cann8.5.1-A2-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0` |
-| A3 | `v0.20.0-cann8.5.1-A3-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0-a3` |
+| A2 | `v3.0.0-A2-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0` |
+| A3 | `v3.0.0-A3-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0-a3` |
 
 ### Dockerfile Path
 
@@ -81,7 +81,7 @@ docker pull quay.io/ascend/vllm-omni:v0.20.0-a3
 A2:
 
 ```bash
-docker run -it --rm --name=vllm-omni-mindiesd \
+docker run -it --rm --name=mindiesd \
     --privileged \
     --shm-size=1g \
     --device /dev/davinci0 \
@@ -97,14 +97,14 @@ docker run -it --rm --name=vllm-omni-mindiesd \
     -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
     -v /etc/ascend_install.info:/etc/ascend_install.info \
     -v /root/.cache:/root/.cache \
-    quay.io/ascend/vllm-omni-mindiesd:v0.20.0-cann8.5.1-A2-ubuntu22.04-py3.11-aarch64 \
+    mindiesd:v3.0.0-A2-ubuntu22.04-py3.11-aarch64 \
     bash
 ```
 
 A3:
 
 ```bash
-docker run -it --rm --name=vllm-omni-mindiesd \
+docker run -it --rm --name=mindiesd \
     --privileged \
     --shm-size=1g \
     --device /dev/davinci0 \
@@ -120,7 +120,7 @@ docker run -it --rm --name=vllm-omni-mindiesd \
     -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
     -v /etc/ascend_install.info:/etc/ascend_install.info \
     -v /root/.cache:/root/.cache \
-    quay.io/ascend/vllm-omni-mindiesd:v0.20.0-cann8.5.1-A3-ubuntu22.04-py3.11-aarch64 \
+    mindiesd:v3.0.0-A3-ubuntu22.04-py3.11-aarch64 \
     bash
 ```
 
@@ -136,7 +136,7 @@ A2:
 git clone https://github.com/Ascend/MindIE-SD.git
 cd MindIE-SD/docker/omni
 
-docker build -t quay.io/ascend/vllm-omni-mindiesd:v0.20.0-cann8.5.1-A2-ubuntu22.04-py3.11-aarch64 \
+docker build -t mindiesd:v3.0.0-A2-ubuntu22.04-py3.11-aarch64 \
     -f Dockerfile.a2.ubuntu .
 ```
 
@@ -146,7 +146,7 @@ A3:
 git clone https://github.com/Ascend/MindIE-SD.git
 cd MindIE-SD/docker/omni
 
-docker build -t quay.io/ascend/vllm-omni-mindiesd:v0.20.0-cann8.5.1-A3-ubuntu22.04-py3.11-aarch64 \
+docker build -t mindiesd:v3.0.0-A3-ubuntu22.04-py3.11-aarch64 \
     -f Dockerfile.a3.ubuntu .
 ```
 
@@ -155,7 +155,7 @@ docker build -t quay.io/ascend/vllm-omni-mindiesd:v0.20.0-cann8.5.1-A3-ubuntu22.
 To add your own dependencies or application code, create a new Dockerfile based on this image:
 
 ```dockerfile
-FROM quay.io/ascend/vllm-omni-mindiesd:v0.20.0-cann8.5.1-A2-ubuntu22.04-py3.11-aarch64
+FROM mindiesd:v3.0.0-A2-ubuntu22.04-py3.11-aarch64
 
 # Add your custom packages
 RUN pip install --no-cache-dir your-package
