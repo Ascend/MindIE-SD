@@ -74,6 +74,7 @@ disable = [
   "wrong-import-order",
   "wrong-import-position",
   "import-error",
+  "duplicate-code",
 ]
 
 [tool.bandit]

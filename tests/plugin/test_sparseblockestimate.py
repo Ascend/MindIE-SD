@@ -13,19 +13,17 @@
 # pylint: disable=duplicate-code
 
 import os
-import sys
 import unittest
 import numpy as np
 import torch
 
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
 
 from mindiesd.utils.get_platform import is_a5_device  # noqa: E402
 
 if os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU":
-    torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
+    from mindiesd.layers.register_ops import _load_mindie_ops_library
+
+    _load_mindie_ops_library()
 
 
 def softmax_flash(src, inmax=None, insum=None, update=False):

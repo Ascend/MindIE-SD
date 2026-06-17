@@ -12,15 +12,15 @@
 
 import unittest
 import os
-import sys
 
-sys.path.append('../')
 
 from mindiesd.cache_agent import CacheAgent, CacheConfig
 from mindiesd.utils.exception import ConfigError, ParametersInvalid
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU."
+)
 class TestCacheConfig(unittest.TestCase):
     def test_valid_config(self):
         config = CacheConfig(
@@ -31,78 +31,53 @@ class TestCacheConfig(unittest.TestCase):
             step_end=8,
             step_interval=3,
             block_start=2,
-            block_end=1000)
+            block_end=1000,
+        )
         agent = CacheAgent(config)
         self.assertIsNotNone(agent)
 
     def test_invalid_method(self):
-        config = CacheConfig(
-            method="cache",
-            blocks_count=10,
-            steps_count=10,
-            step_start=3,
-            step_end=8,
-            step_interval=3)
+        config = CacheConfig(method="cache", blocks_count=10, steps_count=10, step_start=3, step_end=8, step_interval=3)
         with self.assertRaises(ConfigError) as context:
             CacheAgent(config)
         self.assertIn("not supported", str(context.exception))
 
     def test_invalid_steps_count(self):
         config = CacheConfig(
-            method="attention_cache",
-            blocks_count=10,
-            steps_count=0,
-            step_start=3,
-            step_end=8,
-            step_interval=3)
+            method="attention_cache", blocks_count=10, steps_count=0, step_start=3, step_end=8, step_interval=3
+        )
         with self.assertRaises(ConfigError) as context:
             CacheAgent(config)
         self.assertIn("The 'steps_count' in config must > 0", str(context.exception))
 
     def test_invalid_blocks_count(self):
         config = CacheConfig(
-            method="attention_cache",
-            blocks_count=0,
-            steps_count=10,
-            step_start=3,
-            step_end=8,
-            step_interval=3)
+            method="attention_cache", blocks_count=0, steps_count=10, step_start=3, step_end=8, step_interval=3
+        )
         with self.assertRaises(ConfigError) as context:
             CacheAgent(config)
         self.assertIn("The 'blocks_count' in config must > 0", str(context.exception))
 
     def test_invalid_step_start(self):
         config = CacheConfig(
-            method="attention_cache",
-            blocks_count=10,
-            steps_count=10,
-            step_start=-1,
-            step_end=8,
-            step_interval=3)
+            method="attention_cache", blocks_count=10, steps_count=10, step_start=-1, step_end=8, step_interval=3
+        )
         with self.assertRaises(ConfigError) as context:
             CacheAgent(config)
         self.assertIn("The 'step_start' in config must >= 0", str(context.exception))
 
     def test_invalid_step_interval(self):
         config = CacheConfig(
-            method="attention_cache",
-            blocks_count=10,
-            steps_count=10,
-            step_start=2,
-            step_end=8,
-            step_interval=0)
+            method="attention_cache", blocks_count=10, steps_count=10, step_start=2, step_end=8, step_interval=0
+        )
         with self.assertRaises(ConfigError) as context:
             CacheAgent(config)
         self.assertIn("The 'step_interval' in config must > 0", str(context.exception))
 
     def test_invalid_step_end(self):
         config = CacheConfig(
-            method="attention_cache",
-            blocks_count=10,
-            steps_count=10,
-            step_start=2,
-            step_end=1,
-            step_interval=3)
+            method="attention_cache", blocks_count=10, steps_count=10, step_start=2, step_end=1, step_interval=3
+        )
         with self.assertRaises(ConfigError) as context:
             CacheAgent(config)
         self.assertIn("The 'step_end' must >= 'step_start'", str(context.exception))
@@ -116,7 +91,8 @@ class TestCacheConfig(unittest.TestCase):
             step_end=8,
             step_interval=3,
             block_start=-1,
-            block_end=1000)
+            block_end=1000,
+        )
         with self.assertRaises(ConfigError) as context:
             CacheAgent(config)
         self.assertIn("The 'block_start' in config must >= 0", str(context.exception))
@@ -130,7 +106,8 @@ class TestCacheConfig(unittest.TestCase):
             step_end=8,
             step_interval=3,
             block_start=10,
-            block_end=8)
+            block_end=8,
+        )
         with self.assertRaises(ConfigError) as context:
             CacheAgent(config)
         self.assertIn("The 'block_end' must >= 'block_start'", str(context.exception))
@@ -144,7 +121,8 @@ class TestCacheConfig(unittest.TestCase):
             step_end=8,
             step_interval=3,
             block_start=2,
-            block_end=1000)
+            block_end=1000,
+        )
         agent = CacheAgent(config)
         invalid_func = ""
         with self.assertRaises(ParametersInvalid) as context:
@@ -162,7 +140,7 @@ class TestCacheConfig(unittest.TestCase):
             step_interval=2,
             block_start=2,
             block_end=8,
-            )
+        )
         agent = CacheAgent(config)
 
         def func(x):
@@ -182,7 +160,7 @@ class TestCacheConfig(unittest.TestCase):
             step_interval=2,
             block_start=2,
             block_end=8,
-            )
+        )
         agent = CacheAgent(config)
 
         def func(x):
@@ -202,7 +180,7 @@ class TestCacheConfig(unittest.TestCase):
             step_end=5,
             block_start=2,
             block_end=8,
-            )
+        )
         agent = CacheAgent(config)
 
         def func(x):
@@ -222,7 +200,7 @@ class TestCacheConfig(unittest.TestCase):
             step_end=5,
             block_start=10,
             block_end=100,
-            )
+        )
         agent = CacheAgent(config)
 
         def func(x):
@@ -242,7 +220,7 @@ class TestCacheConfig(unittest.TestCase):
             step_end=5,
             block_start=5,
             block_end=5,
-            )
+        )
         agent = CacheAgent(config)
 
         def func(x):

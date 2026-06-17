@@ -14,13 +14,13 @@ import sys
 from io import StringIO
 import unittest
 import logging
-from unittest.mock import patch
 
-sys.path.append('../')
 from mindiesd.utils.logs.logging import logger, MAX_LOG_STRING_LEN
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU."
+)
 class TestLog(unittest.TestCase):
     def setUp(self):
         """修改logger中的stream为StringIO,进行日志捕获"""
@@ -37,9 +37,19 @@ class TestLog(unittest.TestCase):
 
     def test_log_inject(self):
         inject_chars = [
-            '\f', '\r', '\b', '\t', '\v', '\n',
-            '\u000A', '\u000D', '\u000C', '\u000B',
-            '\u0008', '\u007F', '\u0009'
+            '\f',
+            '\r',
+            '\b',
+            '\t',
+            '\v',
+            '\n',
+            '\u000a',
+            '\u000d',
+            '\u000c',
+            '\u000b',
+            '\u0008',
+            '\u007f',
+            '\u0009',
         ]
         for inject in inject_chars:
             logger.info("test %s inject", inject)

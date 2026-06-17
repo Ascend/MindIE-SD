@@ -21,16 +21,13 @@ import numpy as np
 import torch
 import torch_npu
 
-# Add project root to sys.path for mindiesd import.
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
-
 from mindiesd.utils.get_platform import is_a5_device  # noqa: E402
 
 # 加载自定义库
 if os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU":
-    torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
+    from mindiesd.layers.register_ops import _load_mindie_ops_library
+
+    _load_mindie_ops_library()
 
 
 # CPU reference implementation
@@ -223,15 +220,10 @@ class TestNpuBlockSparseAttentionNPU(unittest.TestCase):
 
         # Block-quantize to FP8 (BNSD layout, function handles squeeze/unsqueeze internally)
         q_block, kv_block = 128, 256
-        q_fp8, q_scale = fa_block_quant_preprocess(
-            q_bf16, block_size=q_block, dst_type=torch_npu.float8_e4m3fn, layout="BNSD"
-        )
-        k_fp8, k_scale = fa_block_quant_preprocess(
-            k_bf16, block_size=kv_block, dst_type=torch_npu.float8_e4m3fn, layout="BNSD"
-        )
-        v_fp8, v_scale = fa_block_quant_preprocess(
-            v_bf16, block_size=kv_block, dst_type=torch_npu.float8_e4m3fn, layout="BNSD"
-        )
+        fp8_dtype = torch_npu.float8_e4m3fn  # pylint: disable=no-member
+        q_fp8, q_scale = fa_block_quant_preprocess(q_bf16, block_size=q_block, dst_type=fp8_dtype, layout="BNSD")
+        k_fp8, k_scale = fa_block_quant_preprocess(k_bf16, block_size=kv_block, dst_type=fp8_dtype, layout="BNSD")
+        v_fp8, v_scale = fa_block_quant_preprocess(v_bf16, block_size=kv_block, dst_type=fp8_dtype, layout="BNSD")
 
         # FP8 uses [q_block, kv_block] = [128, 256]; mask must match this granularity
         q_blocks = math.ceil(self.seq_len / q_block)

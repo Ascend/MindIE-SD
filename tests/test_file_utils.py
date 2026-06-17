@@ -16,7 +16,6 @@ from io import StringIO
 import logging
 import stat
 import os
-sys.path.append('../')
 from mindiesd.utils import file_utils
 from mindiesd.utils.logs.logging import logger
 
@@ -51,9 +50,10 @@ def create_dir(dir_path, size=file_utils.MAX_FILENUM_PER_DIR + 1):
             f.write("\n")
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU."
+)
 class TestFileUtils(unittest.TestCase):
-
     def setUp(self):
         if not os.path.exists(TEST_PATH):
             os.makedirs(TEST_PATH)
@@ -100,11 +100,7 @@ class TestFileUtils(unittest.TestCase):
 
     def test_standardize_path(self):
         error_nums = 0
-        test_path = [
-            self.path_test_none,
-            self.path_test_path_length,
-            self.path_test_link
-        ]
+        test_path = [self.path_test_none, self.path_test_path_length, self.path_test_link]
         for path in test_path:
             try:
                 file_utils.standardize_path(path)
@@ -138,11 +134,7 @@ class TestFileUtils(unittest.TestCase):
 
     def test_check_dir_safety(self):
         error_nums = 0
-        test_path = [
-            self.path_test_not_exist,
-            self.path_test_file_size,
-            self.path_test_filenum_per_dir
-        ]
+        test_path = [self.path_test_not_exist, self.path_test_file_size, self.path_test_filenum_per_dir]
         for path in test_path:
             try:
                 file_utils.check_dir_safety(path)
@@ -159,7 +151,8 @@ class TestFileUtils(unittest.TestCase):
             flag = False
         self.assertTrue(flag)
 
-    """对于权限/属主等不进行强校验，出现错误进行告警，采用日志捕获的方式进行测试"""
+    # 对于权限/属主等不进行强校验，出现错误进行告警，采用日志捕获的方式进行测试
+
     def test_check_max_permission(self):
         self.enable_log_capture()
         # when file permission is 0o777, larger than MAX_PERMISSION
@@ -204,6 +197,7 @@ class TestFileUtils(unittest.TestCase):
         self.string_io.truncate(0)
         self.string_io.seek(0)
         self.disable_log_capture()
+
 
 if __name__ == '__main__':
     unittest.main()

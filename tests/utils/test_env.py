@@ -11,17 +11,16 @@
 # See the Mulan PSL v2 for more details.
 
 import os
-import sys
 import unittest
-import logging
-sys.path.append('../')
 
 from mindiesd.utils.env import EnvVar, parser_env_to_dict, VALID_LOG_LEVELS
 
 MINDIE_LOG_LEVEL = "MINDIE_LOG_LEVEL"
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU."
+)
 class TestEnvs(unittest.TestCase):
     def test_parser_env_to_dict_case1(self):
         """测试正常配置" sd:info; debug"，解析sd的日志等级功能"""
@@ -89,7 +88,7 @@ class TestEnvs(unittest.TestCase):
         long_string = "invalid env \n" * 50
         os.environ[MINDIE_LOG_LEVEL] = long_string
         with self.assertRaises(ValueError):
-            env = EnvVar(os.getenv(MINDIE_LOG_LEVEL, ""))
+            env = EnvVar(os.getenv(MINDIE_LOG_LEVEL, ""))  # noqa: F841
 
 
 if __name__ == '__main__':

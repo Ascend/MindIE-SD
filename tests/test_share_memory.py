@@ -19,12 +19,7 @@ from torch import nn
 from unittest.mock import MagicMock, call
 import logging
 
-sys.path.append('../')
-try:
-    from device import DEVICE_ID
-except ImportError:
-    DEVICE_ID = 0
-
+from device import DEVICE_ID
 import mindiesd.share_memory as msm
 
 from mindiesd.share_memory import (

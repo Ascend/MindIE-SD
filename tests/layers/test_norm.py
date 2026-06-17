@@ -9,15 +9,15 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
+# pylint: disable=no-name-in-module
 import os
-import sys
 import unittest
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.utils.norm import PatchGroupNorm3d
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestAttentionLayer(unittest.TestCase):
     def test_patch_group_norm3d(self):
         """

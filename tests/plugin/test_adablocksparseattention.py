@@ -13,21 +13,19 @@
 # pylint: disable=duplicate-code
 
 import os
-import sys
 import unittest
 import torch
 import numpy as np
 from math import sqrt
 
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
 
 from mindiesd.utils.get_platform import is_a5_device  # noqa: E402
 
 # 加载自定义库
 if os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU":
-    torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
+    from mindiesd.layers.register_ops import _load_mindie_ops_library
+
+    _load_mindie_ops_library()
 
 
 def ref_compare(golden: torch.Tensor, actual: torch.Tensor, err):

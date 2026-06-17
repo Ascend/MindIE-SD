@@ -13,15 +13,18 @@
 import os
 import unittest
 import torch
-import torch.nn as nn
-import torch_npu
+from torch import nn
 
 # 加载自定义库
 if os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU":
-    torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
+    from mindiesd.layers.register_ops import _load_mindie_ops_library
+
+    _load_mindie_ops_library()
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestAdaLayerNorm(unittest.TestCase):
     def setUp(self):
         # 设置NPU设备
@@ -38,7 +41,9 @@ class TestAdaLayerNorm(unittest.TestCase):
         self.layernorm = nn.LayerNorm(normalized_shape=128, eps=self.eps, elementwise_affine=True).npu()
 
         # 创建随机张量
-        self.x = torch.randn([self.batch_size, self.seqence_length, self.hidden_size], device=self.device, dtype=self.dtype)
+        self.x = torch.randn(
+            [self.batch_size, self.seqence_length, self.hidden_size], device=self.device, dtype=self.dtype
+        )
         self.scale = torch.randn([self.batch_size, self.hidden_size], device=self.device, dtype=self.dtype)
         self.shift = torch.randn([self.batch_size, self.hidden_size], device=self.device, dtype=self.dtype)
 

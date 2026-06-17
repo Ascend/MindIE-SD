@@ -12,14 +12,12 @@
 
 # pylint: disable=duplicate-code
 
+# pylint: disable=no-name-in-module
 import unittest
 import os
-import sys
 import torch
 import torch_npu
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from device import DEVICE_ID
 from mindiesd.layers.flash_attn.sparse_flash_attn import sparse_attention
 from mindiesd.utils.get_platform import is_a5_device
@@ -99,7 +97,7 @@ class TestSparseAttention(unittest.TestCase):
             latent_shape_k=(self.t, self.h, self.w),
             sparsity=0.0,
         )
-        fascore = torch_npu.npu_fusion_attention(
+        fascore = torch_npu.npu_fusion_attention(  # pylint: disable=no-member
             self.q,
             self.k,
             self.v,
@@ -131,7 +129,7 @@ class TestSparseAttention(unittest.TestCase):
             latent_shape_k=(self.t, self.h, self.w),
             sparsity=0.0,
         )
-        fascore = torch_npu.npu_fusion_attention(
+        fascore = torch_npu.npu_fusion_attention(  # pylint: disable=no-member
             q,
             k,
             v,
@@ -158,7 +156,7 @@ class TestSparseAttention(unittest.TestCase):
             cdf_threshold=1.0,
             sparsity=0.0,
         )
-        fascore = torch_npu.npu_fusion_attention(
+        fascore = torch_npu.npu_fusion_attention(  # pylint: disable=no-member
             self.q,
             self.k,
             self.v,

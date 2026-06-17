@@ -10,14 +10,11 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 import os
-import sys
 import unittest
 from typing import Dict, List
 
 from mindiesd.quantization.config import QuantConfig, LayerQuantConfig, OnlineQuantConfig, TimestepPolicyConfig
 from mindiesd.quantization.mode import QuantAlgorithm, QuantMode
-
-sys.path.append('../')
 
 
 @unittest.skipIf(

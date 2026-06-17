@@ -18,17 +18,15 @@ import unittest
 import torch
 import torch_npu
 
-# Add project root to sys.path for mindiesd import.
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
-
 from mindiesd.layers.flash_attn.ascend_laser_preprocess import la_preprocess
 from mindiesd.utils.exception import ParametersInvalid
 from mindiesd.utils.get_platform import is_a5_device
 
+# 加载自定义库
 if os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU":
-    torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
+    from mindiesd.layers.register_ops import _load_mindie_ops_library
+
+    _load_mindie_ops_library()
 
 
 @unittest.skipIf(

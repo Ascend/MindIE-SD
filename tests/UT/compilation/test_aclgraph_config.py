@@ -12,17 +12,13 @@
 
 import importlib
 import os
-import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
 import torch
 
-sys.path.append('../')
-
 
 class TestAclGraphConfig(unittest.TestCase):
-
     # ------------------------------------------------------------------
     # Dynamic imports — follow the mature pattern: no module-level
     # ``from mindiesd.xxx import ...`` so that CI runs from any CWD.
@@ -66,16 +62,13 @@ class TestAclGraphConfig(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_aclgraph_only_default_false(self):
-        self.assertFalse(self.CC.aclgraph_only,
-                         "aclgraph_only should default to False")
+        self.assertFalse(self.CC.aclgraph_only, "aclgraph_only should default to False")
 
     def test_aclgraph_with_compile_default_false(self):
-        self.assertFalse(self.CC.aclgraph_with_compile,
-                         "aclgraph_with_compile should default to False")
+        self.assertFalse(self.CC.aclgraph_with_compile, "aclgraph_with_compile should default to False")
 
     def test_enable_aclgraph_field_removed(self):
-        self.assertFalse(hasattr(self.CC, "enable_aclgraph"),
-                         "enable_aclgraph field should have been removed")
+        self.assertFalse(hasattr(self.CC, "enable_aclgraph"), "enable_aclgraph field should have been removed")
 
     def test_flags_independent(self):
         self.CC.aclgraph_only = True
@@ -93,8 +86,7 @@ class TestAclGraphConfig(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_safe_output_mode_default_true(self):
-        self.assertTrue(self.CC.safe_output_mode,
-                        "safe_output_mode should default to True")
+        self.assertTrue(self.CC.safe_output_mode, "safe_output_mode should default to True")
 
     def test_safe_output_mode_toggle(self):
         self.CC.safe_output_mode = False
@@ -156,11 +148,9 @@ class TestAclGraphConfig(unittest.TestCase):
     #   - 修复方式：CI 环境安装 libbz2-dev 并重新编译 Python
     #   - 临时绕过：设置 PYTHONPATH 指向含 _bz2 的 Python 安装
 
-    def _assert_routing(self, aclgraph_only, aclgraph_with_compile,
-                        npu_available, expect_compile, expect_aclgraph):
+    def _assert_routing(self, aclgraph_only, aclgraph_with_compile, npu_available, expect_compile, expect_aclgraph):
         if self.Backend is None:
-            raise unittest.SkipTest(
-                "MindieSDBackend unavailable (requires torch._dynamo → networkx → bz2)")
+            raise unittest.SkipTest("MindieSDBackend unavailable (requires torch._dynamo → networkx → bz2)")
         self.CC.aclgraph_only = aclgraph_only
         self.CC.aclgraph_with_compile = aclgraph_with_compile
 
@@ -169,12 +159,14 @@ class TestAclGraphConfig(unittest.TestCase):
         mock_aclgraph_fn = MagicMock()
         mock_create = MagicMock(return_value=mock_aclgraph_fn)
 
-        with patch.object(backend, "compile", mock_compile), \
-             patch("mindiesd.compilation.mindie_sd_backend.create_aclgraph_backend", mock_create), \
-             patch("mindiesd.compilation.mindie_sd_backend.npu_graph_available", npu_available):
+        with (
+            patch.object(backend, "compile", mock_compile),
+            patch("mindiesd.compilation.mindie_sd_backend.create_aclgraph_backend", mock_create),
+            patch("mindiesd.compilation.mindie_sd_backend.npu_graph_available", npu_available),
+        ):
             graph = MagicMock()
             inputs = [torch.randn(2, 2)]
-            backend.__call__(graph, inputs)
+            backend(graph, inputs)
 
             if expect_compile:
                 mock_compile.assert_called()
@@ -207,8 +199,7 @@ class TestAclGraphConfig(unittest.TestCase):
     def test_routing_teardown_restores_config(self):
         self.CC.aclgraph_only = True
         self.CC.aclgraph_with_compile = True
-        self.assertEqual((self._orig_aclgraph_only, self._orig_aclgraph_with_compile),
-                         (False, False))
+        self.assertEqual((self._orig_aclgraph_only, self._orig_aclgraph_with_compile), (False, False))
 
 
 if __name__ == "__main__":

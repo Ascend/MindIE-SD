@@ -16,12 +16,9 @@ without a real NPU. The actual operator behaviour is exercised by other tests on
 real hardware.
 """
 
-import sys
 import unittest
 from unittest.mock import patch
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import torch
 
@@ -38,7 +35,7 @@ class TestResolveSparseTypeForA5(unittest.TestCase):
         self.assertEqual(_resolve_sparse_type_for_a5(None, 0), (None, 0))
 
     @patch("mindiesd.layers.flash_attn.sparse_flash_attn.is_a5_device", return_value=True)
-    @patch("mindiesd.layers.flash_attn.sparse_flash_attn.logger.info")
+    @patch("mindiesd.layers.flash_attn.sparse_flash_attn.logger.debug")
     def test_a5_rf_v2_routed_to_rf_v3_with_inner_precise_override(self, mock_info, _mock):
         sparse_type, inner_precise = _resolve_sparse_type_for_a5("rf_v2", 0)
         self.assertEqual(sparse_type, "rf_v3")
@@ -46,7 +43,7 @@ class TestResolveSparseTypeForA5(unittest.TestCase):
         mock_info.assert_called_once()
 
     @patch("mindiesd.layers.flash_attn.sparse_flash_attn.is_a5_device", return_value=True)
-    @patch("mindiesd.layers.flash_attn.sparse_flash_attn.logger.info")
+    @patch("mindiesd.layers.flash_attn.sparse_flash_attn.logger.debug")
     def test_a5_rf_v2_keeps_inner_precise_when_already_4(self, mock_info, _mock):
         sparse_type, inner_precise = _resolve_sparse_type_for_a5("rf_v2", 4)
         self.assertEqual(sparse_type, "rf_v3")

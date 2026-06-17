@@ -9,24 +9,24 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
+# pylint: disable=no-name-in-module
 import os
-import sys
 import unittest
+from unittest.mock import Mock
 import torch
 import torch_npu
-import torch.nn as nn
+from torch import nn
 
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 from device import DEVICE_ID
 from utils.utils.precision_compare import data_compare
 from mindiesd import layernorm_scale_shift
 from mindiesd.utils import ParametersInvalid
 from mindiesd.utils.get_platform import NPUDevice, get_npu_device
-from unittest.mock import Mock
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestAdaLayerNorm(unittest.TestCase):
     def setUp(self):
         self.norm_eps = 1e-5
@@ -42,7 +42,6 @@ class TestAdaLayerNorm(unittest.TestCase):
         with self.assertRaises(ParametersInvalid):
             layernorm_scale_shift(layernorm, x, scale, shift, fused)
 
-
     def test_x_type(self):
         device = "npu"
         layernorm = nn.LayerNorm(128, self.norm_eps, elementwise_affine=False).to(device)
@@ -53,7 +52,6 @@ class TestAdaLayerNorm(unittest.TestCase):
 
         with self.assertRaises(ParametersInvalid):
             layernorm_scale_shift(layernorm, x, scale, shift, fused)
-
 
     def test_scale_type(self):
         device = "npu"
@@ -66,7 +64,6 @@ class TestAdaLayerNorm(unittest.TestCase):
         with self.assertRaises(ParametersInvalid):
             layernorm_scale_shift(layernorm, x, scale, shift, fused)
 
-
     def test_shift_type(self):
         device = "npu"
         layernorm = nn.LayerNorm(128, self.norm_eps, elementwise_affine=False).to(device)
@@ -78,7 +75,6 @@ class TestAdaLayerNorm(unittest.TestCase):
         with self.assertRaises(ParametersInvalid):
             layernorm_scale_shift(layernorm, x, scale, shift, fused)
 
-
     def test_fused_type(self):
         device = "npu"
         layernorm = nn.LayerNorm(128, self.norm_eps, elementwise_affine=False).to(device)
@@ -89,7 +85,6 @@ class TestAdaLayerNorm(unittest.TestCase):
 
         with self.assertRaises(ParametersInvalid):
             layernorm_scale_shift(layernorm, x, scale, shift, fused)
-
 
     def test_x_dim(self):
         device = "npu"
@@ -168,7 +163,6 @@ class TestAdaLayerNorm(unittest.TestCase):
         with self.assertRaises(ParametersInvalid):
             layernorm_scale_shift(layernorm, x, scale, shift, fused)
 
-
     @torch.no_grad()
     def test_layernorm_scale_shift_2d_non_affine(self):
         device = "npu"
@@ -188,7 +182,6 @@ class TestAdaLayerNorm(unittest.TestCase):
 
         result, _, max_err = data_compare(out_fused.cpu(), out_non_fused.cpu())
         self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
-
 
     @torch.no_grad()
     def test_layernorm_scale_shift_2d_use_affine(self):
@@ -210,7 +203,6 @@ class TestAdaLayerNorm(unittest.TestCase):
         result, _, max_err = data_compare(out_fused.cpu(), out_non_fused.cpu())
         self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
 
-
     @torch.no_grad()
     def test_layernorm_scale_shift_3d_non_affine(self):
         device = "npu"
@@ -230,7 +222,6 @@ class TestAdaLayerNorm(unittest.TestCase):
 
         result, _, max_err = data_compare(out_fused.cpu(), out_non_fused.cpu())
         self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
-
 
     @torch.no_grad()
     def test_layernorm_scale_shift_3d_use_affine(self):
@@ -252,7 +243,6 @@ class TestAdaLayerNorm(unittest.TestCase):
         result, _, max_err = data_compare(out_fused.cpu(), out_non_fused.cpu())
         self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
 
-
     @torch.no_grad()
     def test_layernorm_scale_shift_bsh_non_affine(self):
         device = "npu"
@@ -272,7 +262,6 @@ class TestAdaLayerNorm(unittest.TestCase):
 
         result, _, max_err = data_compare(out_fused.cpu(), out_non_fused.cpu())
         self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
-
 
     @torch.no_grad()
     def test_layernorm_scale_shift_bsh_use_affine(self):
@@ -294,7 +283,6 @@ class TestAdaLayerNorm(unittest.TestCase):
         result, _, max_err = data_compare(out_fused.cpu(), out_non_fused.cpu())
         self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
 
-
     @torch.no_grad()
     def test_layernorm_scale_shift_bsh_mixed_modulation(self):
         device = "npu"
@@ -314,7 +302,6 @@ class TestAdaLayerNorm(unittest.TestCase):
 
         result, _, max_err = data_compare(out_fused.cpu(), out_non_fused.cpu())
         self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
-
 
     @torch.no_grad()
     def test_layernorm_scale_shift_3d_use_affine_and_a5(self):
@@ -344,7 +331,7 @@ class TestAdaLayerNorm(unittest.TestCase):
         torch.ops.mindiesd.adaln_v2 = mock_ops_v2
         torch.ops.mindiesd.adaln = mock_ops_v1
         try:
-            out = layernorm_scale_shift(layernorm, x, scale, shift, fused=True)
+            out = layernorm_scale_shift(layernorm, x, scale, shift, fused=True)  # noqa: F841
             if get_npu_device() == NPUDevice.A5:
                 ops_mock_v2.assert_called_once()
             else:

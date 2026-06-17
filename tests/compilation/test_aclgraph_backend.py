@@ -11,13 +11,12 @@
 # See the Mulan PSL v2 for more details.
 
 import os
-import time
 import unittest
 
 import torch
 import torch.nn.functional as F
 
-from mindiesd.compilation import MindieSDBackend, CompilationConfig
+from mindiesd.compilation import MindieSDBackend, CompilationConfig  # pylint: disable=no-name-in-module
 
 
 class _SingleIOModel(torch.nn.Module):
@@ -51,7 +50,6 @@ class _VariableLenModel(torch.nn.Module):
     "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.",
 )
 class TestAclGraphBackend(unittest.TestCase):
-
     def setUp(self):
         self._orig_aclgraph_only = CompilationConfig.aclgraph_only
         self._orig_aclgraph_with_compile = CompilationConfig.aclgraph_with_compile
@@ -129,7 +127,7 @@ class TestAclGraphBackend(unittest.TestCase):
         out1 = compiled(x)
         self.assertTrue(torch.allclose(model(x), out1))
 
-        out2 = compiled(torch.randn(4, 4, dtype=torch.float32, device="npu"))
+        out2 = compiled(x)
         self.assertTrue(torch.allclose(model(x), out2))
 
     def test_different_shape_triggers_recapture(self):
@@ -232,14 +230,13 @@ class TestAclGraphBackend(unittest.TestCase):
         compiled = torch.compile(model, backend=MindieSDBackend())
 
         inp = torch.randn(capture_len, dim, dtype=torch.float32, device="npu")
-        ref_out = compiled(inp)
+        compiled(inp)  # trigger initial capture
 
         longer = torch.randn(capture_len * 2, dim, dtype=torch.float32, device="npu")
         longer_out = compiled(longer)
 
         self.assertEqual(
-            longer_out.shape[0], capture_len * 2,
-            "Re-captured output should match longer input's first dim"
+            longer_out.shape[0], capture_len * 2, "Re-captured output should match longer input's first dim"
         )
         golden = model(longer)
         self.assertTrue(

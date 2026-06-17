@@ -19,20 +19,19 @@ import unittest
 import torch
 import torch_npu
 
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
-
 from mindiesd.utils.get_platform import is_a5_device  # noqa: E402
 
+# 加载自定义库
 if os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU":
-    torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
+    from mindiesd.layers.register_ops import _load_mindie_ops_library
+
+    _load_mindie_ops_library()
 
 
 def _make_rotation_matrices(head_dim, device, dtype=torch.float32):
     """Create orthogonal rotation matrices (same as WanSelfAttention init)."""
     rand_mat = torch.randn(head_dim, head_dim, dtype=dtype, device=device)
-    rot, _ = torch.linalg.qr(rand_mat)
+    rot, _ = torch.linalg.qr(rand_mat)  # pylint: disable=not-callable
     return rot, rot
 
 
@@ -346,6 +345,7 @@ class TestRfV3Attention(unittest.TestCase):
         q_bnsd = q.permute(0, 2, 1, 3)
         k_bnsd = k.permute(0, 2, 1, 3)
         v_bnsd = v.permute(0, 2, 1, 3)
+        # pylint: disable=no-member
         out_dense = torch_npu.npu_fusion_attention(
             q_bnsd,
             k_bnsd,
