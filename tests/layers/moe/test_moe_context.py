@@ -103,7 +103,9 @@ class TestMoEContext(unittest.TestCase):
             dict(name="routed_scaling_factor_int", kwargs=dict(routed_scaling_factor=1)),
             dict(name="routed_scaling_factor", kwargs=dict(routed_scaling_factor="1.0")),
             dict(name="quant_config_type", kwargs=dict(quant_config="int8")),
-            dict(name="unsupported_quant_config", kwargs=dict(quant_config=QuantConfig(QuantAlgorithm.W4A16))),
+            dict(
+                name="unsupported_quant_config", kwargs=dict(quant_config=QuantConfig(quant_algo=QuantAlgorithm.W4A16))
+            ),
             dict(name="none_quant_with_scale", kwargs=dict(w13_weight_scale=torch.randn(2, 16))),
             dict(name="dispatcher_type", kwargs=dict(dispatcher_type="auto")),
             dict(name="custom_routing_function", kwargs=dict(custom_routing_function=object())),

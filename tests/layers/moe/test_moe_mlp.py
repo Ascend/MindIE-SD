@@ -165,7 +165,8 @@ class TestMoEMlpHelpers(unittest.TestCase):
         )
 
         with (
-            patch("torch_npu.npu_dynamic_mx_quant") as dynamic_mx_quant,
+            patch.object(torch_npu, "float8_e8m0fnu", torch.uint8, create=True),
+            patch("torch_npu.npu_dynamic_mx_quant", create=True) as dynamic_mx_quant,
             patch(
                 "torch_npu.npu_grouped_matmul_swiglu_quant_v2",
                 return_value=(swiglu_out, swiglu_out_scale),

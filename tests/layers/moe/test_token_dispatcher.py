@@ -213,7 +213,7 @@ class TestTokenDispatcher(unittest.TestCase):
                     "torch_npu.npu_moe_token_permute",
                     return_value=(permuted_hidden, torch.arange(4)),
                 ):
-                    with patch("torch_npu.npu_dynamic_mx_quant") as dynamic_mx_quant:
+                    with patch("torch_npu.npu_dynamic_mx_quant", create=True) as dynamic_mx_quant:
                         with patch(
                             "mindiesd.layers.moe.token_dispatcher.all_to_all_single",
                             side_effect=lambda input_tensor, output_splits, input_splits, group: input_tensor,
