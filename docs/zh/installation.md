@@ -54,7 +54,7 @@ pip install mindiesd
 1. 克隆仓库&进入项目：
 
    ```bash
-   git clone https://github.com/MindIE-SD/MindIE-SD.git && cd MindIE-SD
+   git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
    ```
 
 2. [可选] 安装依赖：

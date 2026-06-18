@@ -63,8 +63,3 @@ MindIE SD 架构和关键特性详见[架构介绍](docs/zh/architecture.md)。
     year = {2025}
     }
 ```
-
-## 💖 联系我们
-
-![](./docs/figures/contact_us.jpg)
-![](./docs/figures/contact_us_mindiesd.jpg)

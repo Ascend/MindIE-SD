@@ -63,8 +63,3 @@ The following projects have integrated MindIE SD as a multimodal inference backe
     year = {2025}
     }
 ```
-
-## Contact Us
-
-![](./docs/figures/contact_us.jpg)
-![](./docs/figures/contact_us_mindiesd.jpg)

@@ -1,6 +1,6 @@
 # 快速开始
 
-本章节以 **Wan2.1** 模型为例，展示如何使用 MindIE SD 进行文本生成视频，关于该模型的更多推理内容请参见 [Modelers - MindIE](https://modelers.cn/models/MindIE)。
+本章节以 **Wan2.1** 模型为例，展示如何使用 MindIE SD 进行文本生成视频，关于该模型的更多推理内容请参见 [Modelers - MindIE](https://modelers.cn/models/MindIE/Wan2.1)。
 
 > 开始推理前，请先按 [安装指导](./installation.md) 完成环境准备和 MindIE SD 安装。
 
