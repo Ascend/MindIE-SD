@@ -16,8 +16,6 @@ import unittest
 import logging
 import importlib
 
-sys.path.append('../')
-
 
 class TestLog(unittest.TestCase):
     def setUp(self):
@@ -41,9 +39,19 @@ class TestLog(unittest.TestCase):
         lib = importlib.import_module('mindiesd.utils.logs.logging')
         logger = getattr(lib, 'logger')
         inject_chars = [
-            '\f', '\r', '\b', '\t', '\v', '\n',
-            '\u000A', '\u000D', '\u000C', '\u000B',
-            '\u0008', '\u007F', '\u0009'
+            '\f',
+            '\r',
+            '\b',
+            '\t',
+            '\v',
+            '\n',
+            '\u000a',
+            '\u000d',
+            '\u000c',
+            '\u000b',
+            '\u0008',
+            '\u007f',
+            '\u0009',
         ]
         for inject in inject_chars:
             logger.info("test %s inject", inject)

@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# pylint: disable=duplicate-code
 # coding=utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
 # MindIE is licensed under Mulan PSL v2.
@@ -10,8 +11,6 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-# pylint: disable=duplicate-code
-
 import os
 import sys
 import math
@@ -20,18 +19,25 @@ import unittest
 import torch
 import torch_npu
 
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
-
 from mindiesd.utils.get_platform import is_a5_device  # noqa: E402
 
+# 加载自定义库
 if os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU":
-    torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
+    from mindiesd.layers.register_ops import _load_mindie_ops_library
+
+    _load_mindie_ops_library()
+
+
+def _make_rotation_matrices(head_dim, device, dtype=torch.float32):
+    """Create orthogonal rotation matrices (same as WanSelfAttention init)."""
+    rand_mat = torch.randn(head_dim, head_dim, dtype=dtype, device=device)
+    rot, _ = torch.linalg.qr(rand_mat)  # pylint: disable=not-callable
+    return rot, rot
 
 
 @unittest.skipIf(
-    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
+    "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.",
 )
 @unittest.skipIf(not is_a5_device(), "Block Sparse Attention requires A5 (950) NPU.")
 class TestRfV3Attention(unittest.TestCase):
@@ -122,15 +128,19 @@ class TestRfV3Attention(unittest.TestCase):
         )
         first_frame_len = self.h * self.w
         firstframe_block_num = math.ceil(first_frame_len / self.pool_size)
-        self.assertTrue(mask[:, :, :firstframe_block_num, :].eq(1).all().item(), "first-frame row blocks are not all 1")
         self.assertTrue(
-            mask[:, :, :, :firstframe_block_num].eq(1).all().item(), "first-frame column blocks are not all 1"
+            mask[:, :, :firstframe_block_num, :].eq(1).all().item(),
+            "first-frame row blocks are not all 1",
+        )
+        self.assertTrue(
+            mask[:, :, :, :firstframe_block_num].eq(1).all().item(),
+            "first-frame column blocks are not all 1",
         )
 
-    # bsa_sparse_attention_v3 output shape/dtype tests
+    # bsa_sparse_attention_v3 BF16 output shape/dtype tests
 
     def test_bsa_sparse_attention_v3_output_shape(self):
-        """bsa_sparse_attention_v3 output shape and dtype match input."""
+        """bsa_sparse_attention_v3 BF16 output shape and dtype match input."""
         from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
 
         q, k, v = self._make_qkv_bsnd()
@@ -139,7 +149,7 @@ class TestRfV3Attention(unittest.TestCase):
             k,
             v,
             latent_shape_q=self.latent_shape,
-            pool_size=self.pool_size,
+            block_size=self.pool_size,
             sparsity=0.5,
             input_layout="BSND",
             head_num=self.head_num,
@@ -147,6 +157,30 @@ class TestRfV3Attention(unittest.TestCase):
         )
         self.assertEqual(out.shape, q.shape, f"output shape {out.shape} != input {q.shape}")
         self.assertEqual(out.dtype, self.dtype)
+
+    # bsa_sparse_attention_v3 FP8 output shape/dtype tests
+
+    def test_bsa_sparse_attention_v3_fp8_output_shape(self):
+        """bsa_sparse_attention_v3 FP8 path: BF16 output with q_rot/k_rot provided."""
+        from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
+
+        q, k, v = self._make_qkv_bsnd()
+        q_rot, k_rot = _make_rotation_matrices(self.head_dim, self.device)
+        out, mask = bsa_sparse_attention_v3(
+            q,
+            k,
+            v,
+            latent_shape_q=self.latent_shape,
+            block_size=self.pool_size,
+            sparsity=0.5,
+            input_layout="BSND",
+            head_num=self.head_num,
+            inner_precise=self.inner_precise,
+            q_rot=q_rot,
+            k_rot=k_rot,
+        )
+        self.assertEqual(out.shape, q.shape, f"FP8 output shape {out.shape} != input {q.shape}")
+        self.assertEqual(out.dtype, torch.bfloat16)
 
     # unaligned S tests
 
@@ -164,13 +198,129 @@ class TestRfV3Attention(unittest.TestCase):
             k,
             v,
             latent_shape_q=latent_shape,
-            pool_size=self.pool_size,
+            block_size=self.pool_size,
             sparsity=0.5,
             input_layout="BSND",
             head_num=self.head_num,
             inner_precise=self.inner_precise,
         )
         self.assertEqual(out.shape, q.shape, f"unaligned: output shape {out.shape} != input {q.shape}")
+
+    def test_bsa_sparse_attention_v3_fp8_unaligned_seq_len(self):
+        """bsa_sparse_attention_v3 FP8 path: unaligned S still produces correct shape."""
+        from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
+
+        t, h, w = 3, 20, 20
+        latent_shape = (t, h, w)
+        q, k, v = self._make_qkv_bsnd(t=t, h=h, w=w)
+        q_rot, k_rot = _make_rotation_matrices(self.head_dim, self.device)
+
+        out, _ = bsa_sparse_attention_v3(
+            q,
+            k,
+            v,
+            latent_shape_q=latent_shape,
+            block_size=self.pool_size,
+            sparsity=0.5,
+            input_layout="BSND",
+            head_num=self.head_num,
+            inner_precise=self.inner_precise,
+            q_rot=q_rot,
+            k_rot=k_rot,
+        )
+        self.assertEqual(out.shape, q.shape, f"FP8 unaligned: output shape {out.shape} != input {q.shape}")
+        self.assertEqual(out.dtype, torch.bfloat16)
+
+    # cached mask reuse tests
+
+    def test_bsa_sparse_attention_v3_cached_mask_fp8(self):
+        """FP8 path with cached_mask: reuse mask from BF16 step, output shape unchanged."""
+        from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
+
+        q, k, v = self._make_qkv_bsnd()
+        q_rot, k_rot = _make_rotation_matrices(self.head_dim, self.device)
+
+        # First call: generate mask
+        out1, new_mask = bsa_sparse_attention_v3(
+            q,
+            k,
+            v,
+            latent_shape_q=self.latent_shape,
+            block_size=self.pool_size,
+            sparsity=0.5,
+            input_layout="BSND",
+            head_num=self.head_num,
+            inner_precise=self.inner_precise,
+        )
+        # Second call: reuse mask with FP8
+        out2, _ = bsa_sparse_attention_v3(
+            q,
+            k,
+            v,
+            latent_shape_q=self.latent_shape,
+            block_size=self.pool_size,
+            sparsity=0.5,
+            input_layout="BSND",
+            head_num=self.head_num,
+            inner_precise=self.inner_precise,
+            cached_mask=new_mask,
+            q_rot=q_rot,
+            k_rot=k_rot,
+        )
+        self.assertEqual(out2.shape, q.shape)
+        self.assertEqual(out2.dtype, torch.bfloat16)
+
+    # FP8 cached mask with explicit block_size_kv (regression for double-merge bug)
+
+    def test_bsa_sparse_attention_v3_fp8_cached_mask_block_size_kv_256(self):
+        """FP8 both steps with block_size_kv=256: mask at [128,256] is reused correctly."""
+        from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
+
+        q, k, v = self._make_qkv_bsnd()
+        q_rot, k_rot = _make_rotation_matrices(self.head_dim, self.device)
+
+        # Step 1: FP8, generate mask at [128, 256] granularity.
+        out1, new_mask = bsa_sparse_attention_v3(
+            q,
+            k,
+            v,
+            latent_shape_q=self.latent_shape,
+            block_size=self.pool_size,
+            block_size_kv=256,
+            sparsity=0.5,
+            input_layout="BSND",
+            head_num=self.head_num,
+            inner_precise=self.inner_precise,
+            q_rot=q_rot,
+            k_rot=k_rot,
+        )
+        self.assertEqual(out1.shape, q.shape)
+        self.assertEqual(out1.dtype, torch.bfloat16)
+
+        # Verify mask shape: q_blocks=ceil(S/128), kv_blocks=ceil(S/256).
+        q_blocks = math.ceil(self.seq_len / self.pool_size)
+        kv_blocks = math.ceil(self.seq_len / 256)
+        self.assertEqual(new_mask.shape[2], q_blocks)
+        self.assertEqual(new_mask.shape[3], kv_blocks)
+
+        # Step 2: FP8, reuse cached mask — must NOT double-merge KV blocks.
+        out2, _ = bsa_sparse_attention_v3(
+            q,
+            k,
+            v,
+            latent_shape_q=self.latent_shape,
+            block_size=self.pool_size,
+            block_size_kv=256,
+            sparsity=0.5,
+            input_layout="BSND",
+            head_num=self.head_num,
+            inner_precise=self.inner_precise,
+            cached_mask=new_mask,
+            q_rot=q_rot,
+            k_rot=k_rot,
+        )
+        self.assertEqual(out2.shape, q.shape)
+        self.assertEqual(out2.dtype, torch.bfloat16)
 
     # accuracy tests: sparsity=0 vs dense
 
@@ -195,6 +345,7 @@ class TestRfV3Attention(unittest.TestCase):
         q_bnsd = q.permute(0, 2, 1, 3)
         k_bnsd = k.permute(0, 2, 1, 3)
         v_bnsd = v.permute(0, 2, 1, 3)
+        # pylint: disable=no-member
         out_dense = torch_npu.npu_fusion_attention(
             q_bnsd,
             k_bnsd,
@@ -212,7 +363,7 @@ class TestRfV3Attention(unittest.TestCase):
             k.clone(),
             v.clone(),
             latent_shape_q=latent_shape,
-            pool_size=self.pool_size,
+            block_size=self.pool_size,
             sparsity=0.0,
             input_layout="BSND",
             head_num=self.head_num,

@@ -97,13 +97,18 @@ def mock_npu_dual_level_quant_matmul(*args, **kwargs):
     os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
 )
 class TestQuantLinearFloat16(unittest.TestCase):
+    def _patch_torch_npu_attr(self, name, value):
+        patcher = patch.object(torch_npu, name, value, create=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def setUp(self):
         self.stream = torch_npu.npu.current_stream()
         dtype_mocks = {'float8_e4m3fn': torch.float16, 'float8_e8m0fnu': torch.float16}
         dtype_mocks['float4_e2m1fn_x2'] = torch.int8
         for dtype_name, dtype_val in dtype_mocks.items():
             if not hasattr(torch_npu, dtype_name):
-                setattr(torch_npu, dtype_name, dtype_val)
+                self._patch_torch_npu_attr(dtype_name, dtype_val)
 
         def mock_dynamic_mx_quant(x, dst_type=None):
             scale = torch.ones(1, dtype=torch.float16).to(x.device)
@@ -115,17 +120,17 @@ class TestQuantLinearFloat16(unittest.TestCase):
         def mock_npu_format_cast(tensor, *args, **kwargs):
             return tensor
 
-        torch_npu.npu_dtype_cast = mock_npu_dtype_cast
-        torch_npu.npu_format_cast = mock_npu_format_cast
+        self._patch_torch_npu_attr('npu_dtype_cast', mock_npu_dtype_cast)
+        self._patch_torch_npu_attr('npu_format_cast', mock_npu_format_cast)
 
         if not hasattr(torch_npu, 'npu_dynamic_mx_quant'):
-            torch_npu.npu_dynamic_mx_quant = mock_dynamic_mx_quant
+            self._patch_torch_npu_attr('npu_dynamic_mx_quant', mock_dynamic_mx_quant)
 
         if not hasattr(torch_npu, 'npu_dynamic_dual_level_mx_quant'):
-            torch_npu.npu_dynamic_dual_level_mx_quant = mock_npu_dynamic_dual_level_mx_quant
+            self._patch_torch_npu_attr('npu_dynamic_dual_level_mx_quant', mock_npu_dynamic_dual_level_mx_quant)
 
         if not hasattr(torch_npu, 'npu_dual_level_quant_matmul'):
-            torch_npu.npu_dual_level_quant_matmul = mock_npu_dual_level_quant_matmul
+            self._patch_torch_npu_attr('npu_dual_level_quant_matmul', mock_npu_dual_level_quant_matmul)
 
     def test_flatten_linear(self):
         in_features = 128
@@ -343,8 +348,9 @@ class TestQuantLinearFloat16(unittest.TestCase):
         self.assertEqual(output.shape, (2, 32, out_features))
         self.assertIsInstance(output, torch.Tensor)
 
+    @patch('torch_npu.npu_dynamic_mx_quant', side_effect=mock_npu_dynamic_mx_quant)
     @patch('torch_npu.npu_quant_matmul', side_effect=mock_npu_quant_matmul)
-    def test_quant_matmul_w8a8mxfp8_dynamic_basic(self, _):
+    def test_quant_matmul_w8a8mxfp8_dynamic_basic(self, _, mock_dynamic_mx_quant):
         in_features = 128
         out_features = 64
         weights = {
@@ -365,9 +371,11 @@ class TestQuantLinearFloat16(unittest.TestCase):
         self.assertEqual(output.dtype, torch.float16)
         self.assertIsInstance(output, torch.Tensor)
         self.assertEqual(linear.weight_scale.shape, (out_features, 1, 2))
+        self.assertEqual(mock_dynamic_mx_quant.call_count, 1)
 
+    @patch('torch_npu.npu_dynamic_mx_quant', side_effect=mock_npu_dynamic_mx_quant)
     @patch('torch_npu.npu_quant_matmul', side_effect=mock_npu_quant_matmul)
-    def test_quant_matmul_w8a8mxfp8_dynamic_with_mul_scale(self, _):
+    def test_quant_matmul_w8a8mxfp8_dynamic_with_mul_scale(self, _, mock_dynamic_mx_quant):
         in_features = 128
         out_features = 64
         weights = {
@@ -394,6 +402,7 @@ class TestQuantLinearFloat16(unittest.TestCase):
 
         self.assertEqual(output.shape, (4, 16, out_features))
         self.assertEqual(linear.mul_scale.shape, (in_features,))
+        self.assertEqual(mock_dynamic_mx_quant.call_count, 1)
 
     @patch('torch_npu.npu_dynamic_quant', side_effect=mock_npu_dynamic_quant)
     @patch('torch_npu.npu_quant_matmul', side_effect=mock_npu_quant_matmul)
@@ -474,8 +483,8 @@ class TestQuantLinearFloat16(unittest.TestCase):
         self.stream.synchronize()
 
         self.assertEqual(output.shape, (2, out_features))
-        self.assertEqual(mock_dynamic_mx_quant.call_count, 1)
-        self.assertEqual(mock_dynamic_quant.call_count, 1)
+        self.assertEqual(mock_dynamic_mx_quant.call_count, 2)
+        mock_dynamic_quant.assert_not_called()
         self.assertNotIn("x1_dtype", mock_quant_matmul.call_args.kwargs)
         self.assertEqual(mock_quant_matmul.call_args.kwargs["x2_dtype"], torch_npu.float4_e2m1fn_x2)
 
@@ -494,11 +503,12 @@ class TestQuantLinearFloat16(unittest.TestCase):
         self.assertEqual(mock_dual_quant.call_count, 2)
         self.assertEqual(mock_dual_matmul.call_args.kwargs["output_dtype"], torch.float16)
 
+    @patch('torch_npu.npu_dynamic_mx_quant', side_effect=mock_npu_dynamic_mx_quant)
     @patch('torch_npu.npu_dynamic_quant', side_effect=mock_npu_dynamic_quant)
     @patch('torch_npu.npu_dynamic_dual_level_mx_quant', side_effect=mock_npu_dynamic_dual_level_mx_quant)
     @patch('torch_npu.npu_quant_matmul', side_effect=mock_npu_quant_matmul)
     def test_w4a4_mxfp4_dual_online_quant_linear_fallback_timestep(
-        self, mock_quant_matmul, mock_dual_quant, mock_dynamic_quant
+        self, mock_quant_matmul, mock_dual_quant, mock_dynamic_quant, mock_dynamic_mx_quant
     ):
         in_features = 128
         out_features = 64
@@ -516,7 +526,8 @@ class TestQuantLinearFloat16(unittest.TestCase):
 
         self.assertEqual(output.shape, (2, out_features))
         self.assertEqual(mock_dual_quant.call_count, 1)
-        self.assertEqual(mock_dynamic_quant.call_count, 1)
+        mock_dynamic_quant.assert_not_called()
+        self.assertEqual(mock_dynamic_mx_quant.call_count, 1)
         self.assertEqual(mock_quant_matmul.call_args.kwargs["x2_dtype"], torch_npu.float4_e2m1fn_x2)
 
 

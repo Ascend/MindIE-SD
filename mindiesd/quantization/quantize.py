@@ -9,18 +9,17 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-
 import json
 import os
 from fnmatch import fnmatch
-from typing import Dict, Optional
 from collections import OrderedDict
 from functools import wraps
+from typing import Optional
 import torch
 from torch import nn
 import safetensors
 from .mode import QuantAlgorithm
-from .config import QuantConfig, LayerQuantConfig, TimestepPolicyConfig, OnlineQuantConfig
+from .config import OnlineQuantConfig, QuantConfig, TimestepPolicyConfig
 from .mode import W4A4_LIST, W8A8_LIST
 from .utils import replace_rank_suffix, get_quant_weight, extract_constructor_args, MAX_WEIGHT_SIZE
 from .layer import (
@@ -30,6 +29,7 @@ from .layer import (
     W8A8TimeStepQuantLinear,
     WeightQuantLinear,
     FP8RotateQuantFA,
+    MXFP4QuantFA,
     W8A8MXFP8QuantLinear,
     W4A4MXFP4QuantLinear,
     W8A8OnlineQuantLinear,
@@ -60,18 +60,10 @@ def weight_quantize(name, layer, cfg, quant_weights, **kwargs):
 
 
 def w8a16_quantize(name, layer, cfg, quant_weights, **kwargs):
-    quant_map = OrderedDict([(nn.Linear, WeightQuantLinear)])
-
-    # 如果模型指定了类的匹配规则，优先匹配模型指定的
-    user_dict = kwargs.get('map', None)
-    if user_dict:
-        for key, value in user_dict.items():
-            quant_map[key] = value
-        for key in user_dict.keys():
-            quant_map.move_to_end(key, last=False)
+    quant_candidates = OrderedDict([(nn.Linear, WeightQuantLinear)])
 
     # 寻找匹配的规则
-    quant_cls = next((quant_map[cls] for cls in quant_map if isinstance(layer, cls)), None)
+    quant_cls = next((quant_candidates[cls] for cls in quant_candidates if isinstance(layer, cls)), None)
 
     if quant_cls is None:
         return layer, False
@@ -104,30 +96,22 @@ def w8a16_quantize(name, layer, cfg, quant_weights, **kwargs):
 
 def smooth_quantize_w8a8(name, layer, cfg, quant_weights, **kwargs):
     if cfg.quant_algo == QuantAlgorithm.W8A8_TIMESTEP:
-        quant_map = OrderedDict([(nn.Linear, W8A8TimeStepQuantLinear)])
+        quant_candidates = OrderedDict([(nn.Linear, W8A8TimeStepQuantLinear)])
     elif cfg.quant_algo == QuantAlgorithm.W8A8_MXFP8:
-        quant_map = OrderedDict([(nn.Linear, W8A8MXFP8QuantLinear)])
+        quant_candidates = OrderedDict([(nn.Linear, W8A8MXFP8QuantLinear)])
     elif cfg.quant_algo == QuantAlgorithm.W4A4_DYNAMIC:
-        quant_map = OrderedDict([(nn.Linear, W4A4QuantLinear)])
+        quant_candidates = OrderedDict([(nn.Linear, W4A4QuantLinear)])
     elif cfg.quant_algo == QuantAlgorithm.W4A4_MXFP4_DUALSCALE:
-        quant_map = OrderedDict([(nn.Linear, W4A4MXFP4DualQuantLinear)])
+        quant_candidates = OrderedDict([(nn.Linear, W4A4MXFP4DualQuantLinear)])
     elif cfg.quant_algo == QuantAlgorithm.W4A4_MXFP4_DYNAMIC:
-        quant_map = OrderedDict([(nn.Linear, W4A4MXFP4QuantLinear)])
+        quant_candidates = OrderedDict([(nn.Linear, W4A4MXFP4QuantLinear)])
     elif cfg.quant_algo == QuantAlgorithm.W4A4_MXFP4_SVD:
         raise ParametersInvalid("SVD Quant algorithm not supported!")
     else:
-        quant_map = OrderedDict([(nn.Linear, W8A8QuantLinear)])
-
-    # 如果模型指定了类的匹配规则，优先匹配模型指定的
-    user_dict = kwargs.get('map', None)
-    if user_dict:
-        for key, value in user_dict.items():
-            quant_map[key] = value
-        for key in user_dict.keys():
-            quant_map.move_to_end(key, last=False)
+        quant_candidates = OrderedDict([(nn.Linear, W8A8QuantLinear)])
 
     # 寻找匹配的规则
-    quant_cls = next((quant_map[cls] for cls in quant_map if isinstance(layer, cls)), None)
+    quant_cls = next((quant_candidates[cls] for cls in quant_candidates if isinstance(layer, cls)), None)
 
     if quant_cls is None:
         return layer, False
@@ -171,9 +155,49 @@ def smooth_quantize(name, layer, cfg, quant_weights, **kwargs):
     return layer, False
 
 
-def add_fa_quant(layer, cfg, prefix, quant_weights):
-    if cfg.quant_algo in [QuantAlgorithm.FP8_DYNAMIC]:
+def add_fa_quant(layer, cfg, prefix, quant_weights, **kwargs):
+    if cfg.quant_algo in [QuantAlgorithm.MXFP4_DYNAMIC]:
+        layer.fa_quant = MXFP4QuantFA(prefix, quant_weights, **kwargs)
+    elif cfg.quant_algo in [QuantAlgorithm.FP8_DYNAMIC]:
         layer.fa_quant = FP8RotateQuantFA(prefix, quant_weights)
+
+
+def normalize_quant_config(kwargs):
+    quant_config = kwargs.get('quant_config', None)
+    if quant_config is None:
+        quant_config = QuantConfig.from_kwargs(kwargs)
+    elif not isinstance(quant_config, QuantConfig):
+        raise ParametersInvalid(f"quant_config must be QuantConfig, but currently got {type(quant_config)}.")
+    else:
+        timestep_config = kwargs.get('timestep_config', None)
+        timestep_policy = kwargs.get('timestep_policy', None)
+        if timestep_config is not None and timestep_policy is not None and timestep_config is not timestep_policy:
+            raise ParametersInvalid("timestep_config and timestep_policy cannot both be set to different objects.")
+        if quant_config.timestep_config is None:
+            quant_config.timestep_config = timestep_config if timestep_config is not None else timestep_policy
+        if quant_config.use_nz is None:
+            quant_config.use_nz = kwargs.get('use_nz', None)
+    kwargs['quant_config'] = quant_config
+    kwargs['timestep_config'] = quant_config.timestep_config
+    kwargs['dtype'] = quant_config.dtype
+    if quant_config.use_nz is not None:
+        kwargs['use_nz'] = quant_config.use_nz
+    return kwargs
+
+
+def resolve_quant_des_path(quant_des_path, quant_config, check_path=True):
+    if quant_des_path is not None:
+        if not isinstance(quant_des_path, str) or not quant_des_path.strip():
+            raise ConfigError("Invalid string path for quant_des_path.")
+        quant_config.quant_des_path = quant_des_path
+    quant_des_path = quant_config.quant_des_path
+    if not isinstance(quant_des_path, str) or not quant_des_path.strip():
+        raise ConfigError("Invalid string path for quant_des_path.")
+    quant_des_path = file_utils.standardize_path(quant_des_path)
+    quant_config.quant_des_path = quant_des_path
+    if check_path:
+        file_utils.check_file_safety(quant_des_path, permission_mode=file_utils.MODELDATA_FILE_PERMISSION)
+    return quant_des_path
 
 
 def get_layer_quant_mode(name, layer, cfg):
@@ -233,14 +257,13 @@ def get_cfg_and_weights(quant_des_path):
     if quant_algo is None:
         raise ParametersInvalid("quant_algo must be the type of QuantAlgorithm.")
 
-    quant_config = {"quant_algo": quant_algo}
-    quant_config.update({'exclude_layers': tuple(exclude_layers)})
-    quant_config.update({'quantized_layers': quantized_layers})
-    quant_config.update({quant_algo_str: QuantAlgorithm(quant_algo)})
-    if isinstance(quant_config, dict):
-        cfg = LayerQuantConfig.parse_from_dict(quant_config)
-    else:
-        cfg = quant_config
+    quant_config = {
+        "quant_des_path": quant_des_path,
+        "quant_algo": QuantAlgorithm(quant_algo),
+        "exclude_layers": tuple(exclude_layers),
+        "quantized_layers": quantized_layers,
+    }
+    cfg = QuantConfig.parse_from_dict(quant_config)
 
     quant_weight_dir = os.path.dirname(quant_des_path)
     if rank != -1:
@@ -260,58 +283,50 @@ def get_cfg_and_weights(quant_des_path):
 
 def validate_quantize_params(func):
     @wraps(func)
-    def wrapper(
-        model: nn.Module,
-        quant_des_path: Optional[str] = None,
-        online_config: Optional[OnlineQuantConfig] = None,
-        **kwargs,
-    ):
+    def wrapper(model: nn.Module, quant_des_path=None, online_config: Optional[OnlineQuantConfig] = None, **kwargs):
+        # 检查 model 类型
         if not isinstance(model, nn.Module):
             raise ParametersInvalid(f"The model must be the type of nn.Module, but currently got {type(model)}.")
 
-        if quant_des_path is not None and online_config is not None:
-            raise ParametersInvalid(
-                "quant_des_path and online_config are mutually exclusive. Please provide only one of them."
-            )
-
-        if quant_des_path is None and online_config is None:
-            raise ParametersInvalid("Either quant_des_path or online_config must be provided.")
-
-        dtype = kwargs.get('dtype', torch.bfloat16)
-        if not isinstance(dtype, torch.dtype) or dtype not in (torch.float16, torch.bfloat16):
-            raise ParametersInvalid(f"Dtype must be torch.float16 or torch.bfloat16, but currently got {type(dtype)}.")
-
-        if quant_des_path is not None:
-            if not isinstance(quant_des_path, str) or not quant_des_path.strip():
-                raise ConfigError("Invalid string path for quant_des_path.")
-            quant_des_path = file_utils.standardize_path(quant_des_path)
-            file_utils.check_file_safety(quant_des_path, permission_mode=file_utils.MODELDATA_FILE_PERMISSION)
-
-            timestep_config = kwargs.get('timestep_config')
-            if timestep_config is not None and not isinstance(timestep_config, TimestepPolicyConfig):
-                raise ParametersInvalid(
-                    "Timestep_config must be the type of TimestepPolicyConfig,"
-                    "but currently got {type(timestep_config)}."
-                )
-
-            module_map = kwargs.get('map', None)
-            if module_map is not None:
-                if (
-                    not isinstance(module_map, Dict)
-                    or not all(isinstance(v, nn.Module) for v in module_map.values())
-                    or not all(isinstance(k, nn.Module) for k in module_map.keys())
-                ):
-                    raise ParametersInvalid(
-                        "The data type of map must be dictionary, and its KVType must be nn.Module."
-                    )
-
         if online_config is not None:
+            if quant_des_path is not None or kwargs.get('quant_config') is not None:
+                raise ParametersInvalid("online_config is mutually exclusive with quant_des_path and quant_config.")
             if not isinstance(online_config, OnlineQuantConfig):
                 raise ParametersInvalid(
                     f"online_config must be the type of OnlineQuantConfig, but currently got {type(online_config)}."
                 )
+            dtype = kwargs.get('dtype', torch.bfloat16)
+            if not isinstance(dtype, torch.dtype) or dtype not in (torch.float16, torch.bfloat16):
+                raise ParametersInvalid(
+                    f"Dtype must be torch.float16 or torch.bfloat16, but currently got {type(dtype)}."
+                )
+            return func(model, quant_des_path, online_config, **kwargs)
 
-        return func(model, quant_des_path, online_config, **kwargs)
+        quant_config = kwargs.get('quant_config')
+        if quant_config is not None and not isinstance(quant_config, QuantConfig):
+            raise ParametersInvalid(f"quant_config must be QuantConfig, but currently got {type(quant_config)}.")
+
+        timestep_config = kwargs.get('timestep_config')
+        if timestep_config is not None and not isinstance(timestep_config, TimestepPolicyConfig):
+            raise ParametersInvalid(
+                f"Timestep_config must be the type of TimestepPolicyConfig,but currently got {type(timestep_config)}."
+            )
+
+        timestep_policy = kwargs.get('timestep_policy')
+        if timestep_policy is not None and not isinstance(timestep_policy, TimestepPolicyConfig):
+            raise ParametersInvalid(
+                f"Timestep_policy must be the type of TimestepPolicyConfig,but currently got {type(timestep_policy)}."
+            )
+
+        config_dtype = quant_config.dtype if quant_config is not None else None
+        dtype = kwargs.get('dtype', config_dtype if config_dtype is not None else torch.bfloat16)
+        if not isinstance(dtype, torch.dtype) or dtype not in (torch.float16, torch.bfloat16):
+            raise ParametersInvalid(f"Dtype must be torch.float16 or torch.bfloat16, but currently got {type(dtype)}.")
+
+        kwargs = normalize_quant_config(kwargs)
+        quant_des_path = resolve_quant_des_path(quant_des_path, kwargs['quant_config'], check_path=True)
+
+        return func(model, quant_des_path, None, **kwargs)
 
     return wrapper
 
@@ -319,28 +334,29 @@ def validate_quantize_params(func):
 @validate_quantize_params
 def quantize(model, quant_des_path=None, online_config=None, **kwargs):
     r"""
-    The method is used to quantize model. Supports two mutually exclusive modes:
-
-    1. Offline quantization: provide quant_des_path (path to msModelSlim exported quantization descriptor).
-    2. Online quantization: provide online_config (OnlineQuantConfig specifying quantization type and fallback layers).
+    The method is used to quant model.
 
     Args:
         model: Floating point models that need to be quantized.
-        quant_des_path: The absolute path of the quantized weight descriptor exported by modelslim.
-                        Mutually exclusive with online_config.
-        online_config: OnlineQuantConfig specifying the quantization type and fallback layers.
-                       Mutually exclusive with quant_des_path.
+        quant_des_path: The absolute path of the quantized weight descripter exported by modelslim.
         **kwargs:
-            timestep_config: When using timestep quantization, TimestepPolicyConfig needs to be passed in.
-            dtype: Dtype specifies the type of the inverse quantization (default: torch.bfloat16).
-            map: Custom layer matching dictionary (offline mode only).
+            quant_config: QuantConfig carries JSON path, JSON overrides, timestep, dtype and MXFP4 runtime settings.
+            timestep_config: Compatibility input. Prefer quant_config.timestep_config.
+            timestep_policy: Compatibility alias of timestep_config.
+            dtype: Dtype specifies the type of the inverse quantization.
     Returns:
-        Quantized Model.
+        Quantntifild Model.
     """
     if online_config is not None:
         return _online_quantize_impl(model, online_config, **kwargs)
 
+    kwargs = normalize_quant_config(kwargs)
+    user_quant_config = kwargs['quant_config']
+    quant_des_path = resolve_quant_des_path(quant_des_path, user_quant_config, check_path=False)
     cfg, quant_weights = get_cfg_and_weights(quant_des_path)
+    cfg = cfg.merged_with_user(user_quant_config)
+    cfg.quant_des_path = quant_des_path
+    kwargs.update(cfg.to_kwargs())
 
     if not isinstance(cfg, QuantConfig):
         logger.debug("cfg is not QuantConfig, Without enabling quantization.")
@@ -382,7 +398,7 @@ def quantize(model, quant_des_path=None, online_config=None, **kwargs):
                 logger.debug("Weight Quant layer name:%s, Quant class name:%s.", name, quant_layer.__class__.__name__)
                 modified_layers.append((name, quant_layer))
         elif layer_quant_mode.contains_fa_quantization():
-            add_fa_quant(layer, layer_quant_cfg, name, quant_weights)
+            add_fa_quant(layer, layer_quant_cfg, name, quant_weights, **kwargs)
             if rank == 0:
                 logger.debug(
                     "FA Quant layer name:%s, Quant class name:%s, Quant algo:%s.",

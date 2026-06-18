@@ -18,22 +18,17 @@
 #include <string>
 #include <tuple>
 
-// Block sparse attention via aclnnBlockSparseAttention.
-// Takes block_sparse_mask (int8) instead of sparse_count_table.
-// Supports TND and BNSD layouts. Returns (attention_out, softmax_lse).
-std::tuple<at::Tensor, at::Tensor> block_sparse_attention_impl_npu(
-    const at::Tensor                 &query,
-    const at::Tensor                 &key,
-    const at::Tensor                 &value,
-    const c10::optional<at::Tensor>  &block_sparse_mask,
-    at::IntArrayRef                   block_shape,
-    std::string                       q_input_layout,
-    std::string                       kv_input_layout,
-    int64_t                           num_key_value_heads,
-    double                            scale_value,
-    int64_t                           inner_precise,
-    c10::OptionalIntArrayRef          actual_seq_lengths,
-    c10::OptionalIntArrayRef          actual_seq_lengths_kv,
-    int64_t                           softmax_lse_flag);
+// Block sparse attention via aclnnBlockSparseAttentionV2 (BF16/FP16/FP8).
+// When dequant scales are not provided (BF16/FP16), nullptr is passed to the kernel.
+// When dequant scales are provided (FP8), FLOAT32 scale tensors are used.
+// Takes block_sparse_mask (int8). Supports TND and BNSD layouts.
+// Returns (attention_out, softmax_lse).
+std::tuple<at::Tensor, at::Tensor> block_sparse_attention_impl_npu(const at::Tensor &query, const at::Tensor &key,
+    const at::Tensor &value, const c10::optional<at::Tensor> &block_sparse_mask, at::IntArrayRef block_shape,
+    std::string q_input_layout, std::string kv_input_layout, int64_t num_key_value_heads, double scale_value,
+    int64_t inner_precise, c10::OptionalIntArrayRef actual_seq_lengths, c10::OptionalIntArrayRef actual_seq_lengths_kv,
+    int64_t softmax_lse_flag, const c10::optional<at::Tensor> &q_dequant_scale = c10::nullopt,
+    const c10::optional<at::Tensor> &k_dequant_scale = c10::nullopt,
+    const c10::optional<at::Tensor> &v_dequant_scale = c10::nullopt);
 
 #endif // BLOCK_SPARSE_ATTENTION_MINDIE_SD_IMPL_H

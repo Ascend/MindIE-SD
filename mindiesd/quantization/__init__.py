@@ -12,4 +12,12 @@
 
 from .quantize import quantize
 from .utils import TimestepManager
-from .config import TimestepPolicyConfig
+from .config import OnlineQuantConfig, QuantConfig, TimestepPolicyConfig
+
+__all__ = [
+    "quantize",
+    "TimestepManager",
+    "OnlineQuantConfig",
+    "QuantConfig",
+    "TimestepPolicyConfig",
+]

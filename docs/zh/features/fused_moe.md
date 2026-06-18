@@ -57,7 +57,7 @@ fused_moe(
 | `w2_weight` | `torch.Tensor` | 是 | - | down 投影权重，形状为 `[local_experts, intermediate_size, hidden_size]`，必须与 `w13_weight` 具有相同的 `local_experts`。 |
 | `w13_bias` | `torch.Tensor` / `None` | 否 | `None` | gate/up 投影 bias，形状为 `[local_experts, 2 * intermediate_size]`，需与 `w13_weight` 的 expert 和输出维度一致。 |
 | `w2_bias` | `torch.Tensor` / `None` | 否 | `None` | down 投影 bias，形状为 `[local_experts, hidden_size]`，需与 `w2_weight` 的 expert 和输出维度一致。 |
-| `quant_config` | `QuantConfig` / `None` | 否 | `None` | MindIE-SD 量化配置，用于选择 MoE 前向流程是否启用量化计算。 |
+| `quant_config` | `QuantConfig` / `None` | 否 | `None` | MindIE-SD 量化配置，用于选择 MoE 前向流程的量化算法。 |
 | `w13_weight_scale` | `torch.Tensor` / `None` | 否 | `None` | `w13_weight` 的 quantization scale。 |
 | `w2_weight_scale` | `torch.Tensor` / `None` | 否 | `None` | `w2_weight` 的 quantization scale。 |
 | `tp_group` | `dist.ProcessGroup` / `None` | 否 | `None` | TP 通信组。未启用 EP 且 TP group size 大于 1 时生效。 |
@@ -122,7 +122,8 @@ fused_moe(
 
 未传入 `quant_config`，或 `quant_config.quant_algo` 为 `None` / `NO_QUANT` 时，按非量化方式执行 MoE 前向流程。当前支持以下量化配置：
 
-- `QuantConfig(quant_algo=QuantAlgorithm.W8A8_DYNAMIC)`：W8A8 dynamic quantization，权重使用 INT8。
+- `QuantConfig(quant_algo=QuantAlgorithm.W8A8_DYNAMIC)`：W8A8 dynamic quantization，支持 A2/A3。
+- `QuantConfig(quant_algo=QuantAlgorithm.W8A8_MXFP8)`：W8A8 MXFP8 quantization，支持 A5。
 
 ### 路由选择
 
@@ -216,9 +217,11 @@ out = fused_moe(
 )
 ```
 
-#### INT8 dynamic quant MoE
+#### W8A8 dynamic quant MoE（A2/A3）
 
-INT8 路径要求 `w13_weight` 和 `w2_weight` 为 `torch.int8`，并传入对应的 quantization scale。MindIE-SD 会在 MLP 计算前检查权重格式；若权重不是 NPU NZ 格式，会自动转换为 NZ 后再调用 INT8 grouped MLP 算子。
+W8A8 dynamic quant 路径要求 `w13_weight` 和 `w2_weight` 为 `torch.int8`，并传入对应的
+quantization scale。MindIE-SD 会在 MLP 计算前检查权重格式；若权重不是 NPU NZ 格式，会自动转换为
+NZ 后再调用 INT8 grouped MLP 算子。
 
 ```python
 import torch
@@ -261,6 +264,72 @@ out = fused_moe(
     w13_weight=w13_weight,
     w2_weight=w2_weight,
     quant_config=QuantConfig(quant_algo=QuantAlgorithm.W8A8_DYNAMIC),
+    w13_weight_scale=w13_weight_scale,
+    w2_weight_scale=w2_weight_scale,
+    dispatcher_type="static",
+    tokens_full=True,
+    reduce_results=False,
+)
+```
+
+#### MXFP8 dynamic quant MoE（A5）
+
+MXFP8 路径使用 `QuantAlgorithm.W8A8_MXFP8` 量化配置，`w13_weight` 和 `w2_weight` 使用
+`torch.float8_e4m3fn`，并传入对应的 quantization scale。
+
+```python
+import torch
+import torch_npu
+from mindiesd import fused_moe
+from mindiesd.quantization.config import QuantConfig
+from mindiesd.quantization.mode import QuantAlgorithm
+
+num_tokens = 8
+hidden_size = 4096
+intermediate_size = 14336
+num_experts = 8
+top_k = 2
+dtype = torch.bfloat16
+device = "npu"
+
+
+def prepare_mxfp8_moe_weight(weight):
+    num_experts, _, n_size = weight.shape
+    quant_weight, weight_scale = torch_npu.npu_dynamic_mx_quant(
+        weight.transpose(1, 2),
+        dst_type=torch.float8_e4m3fn,
+    )
+    weight_scale = weight_scale.reshape(num_experts, n_size, -1, 2)
+    return quant_weight.transpose(1, 2), weight_scale.transpose(1, 2)
+
+
+hidden_states = torch.randn(num_tokens, hidden_size, device=device, dtype=dtype)
+router_logits = torch.randn(num_tokens, num_experts, device=device, dtype=dtype)
+w13_weight_fp = torch.randn(
+    num_experts,
+    hidden_size,
+    2 * intermediate_size,
+    device=device,
+    dtype=dtype,
+)
+w2_weight_fp = torch.randn(
+    num_experts,
+    intermediate_size,
+    hidden_size,
+    device=device,
+    dtype=dtype,
+)
+w13_weight, w13_weight_scale = prepare_mxfp8_moe_weight(w13_weight_fp)
+w2_weight, w2_weight_scale = prepare_mxfp8_moe_weight(w2_weight_fp)
+
+out = fused_moe(
+    hidden_states=hidden_states,
+    router_logits=router_logits,
+    num_experts=num_experts,
+    top_k=top_k,
+    w13_weight=w13_weight,
+    w2_weight=w2_weight,
+    quant_config=QuantConfig(quant_algo=QuantAlgorithm.W8A8_MXFP8),
     w13_weight_scale=w13_weight_scale,
     w2_weight_scale=w2_weight_scale,
     dispatcher_type="static",
@@ -428,8 +497,8 @@ out = fused_moe(
 ### 注意事项
 
 - 当前接口仅支持前向推理，不支持反向梯度计算。
-- 当前支持非量化 MoE 和 INT8 dynamic quant MoE 路径。
-- `w13_weight` 和 `w2_weight` 需要使用 grouped matmul 所需的权重布局。
+- 当前支持非量化 MoE、W8A8 dynamic quant MoE 和 W8A8 MXFP8 quant MoE 路径。
+- 非量化权重需要使用 grouped matmul 所需布局；量化权重和 scale 需要与 `quant_config` 匹配。
 - `router_logits` 的最后一维必须等于 `num_experts`。
 - `dynamic` dispatcher 需要在 EP 通信场景下使用。
 - 使用分布式通信时，调用方需要提前完成通信组初始化，并保证各 rank 上的输入 layout 一致。

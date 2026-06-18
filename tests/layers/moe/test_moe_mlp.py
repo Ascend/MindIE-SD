@@ -21,8 +21,15 @@ import torch_npu
 from mindiesd.layers.moe.moe_dataclass import MoEMlpComputeInput, MoEWeights
 from mindiesd.layers.moe.moe_mlp import (
     unquant_apply_mlp,
+    unified_apply_mlp,
     w8a8_dynamic_apply_mlp,
+    w8a8_mxfp8_apply_mlp,
 )
+from mindiesd.layers.moe.moe_context import set_moe_context
+from mindiesd.quantization.mode import QuantAlgorithm
+from mindiesd.utils.get_platform import NPUDevice, get_npu_device
+
+from .common import make_mxfp8_ones
 
 
 def torch_mlp_reference(hidden_states, w13_weight, w2_weight, group_list, w13_bias=None, w2_bias=None):
@@ -48,6 +55,12 @@ def torch_mlp_reference(hidden_states, w13_weight, w2_weight, group_list, w13_bi
     "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
 )
 class TestMoEMlpHelpers(unittest.TestCase):
+    def setUp(self):
+        set_moe_context()
+
+    def tearDown(self):
+        set_moe_context()
+
     def test_unquant_apply_mlp_selects_bias_dtype_by_input_dtype(self):
         cases = (
             dict(input_dtype=torch.bfloat16, bias_dtype=torch.float32),
@@ -131,6 +144,75 @@ class TestMoEMlpHelpers(unittest.TestCase):
         grouped_matmul.assert_called_once()
         self.assertEqual(grouped_matmul.call_args.kwargs["output_dtype"], torch.float32)
 
+    def test_w8a8_mxfp8_apply_mlp_uses_dispatch_quant_output(self):
+        quant_hidden = torch.empty(3, 4, dtype=torch.float8_e4m3fn)
+        per_token_scale = torch.empty(3, 2, dtype=torch.uint8)
+        swiglu_out = torch.empty(3, 8, dtype=torch.float8_e4m3fn)
+        swiglu_out_scale = torch.empty(3, 1, 2, dtype=torch.uint8)
+        expected = torch.randn(3, 4)
+        mlp_input = MoEMlpComputeInput(
+            hidden_states=quant_hidden,
+            group_list=torch.tensor([2, 3]),
+            group_list_type=1,
+            weights=MoEWeights(
+                w13_weight=torch.empty(2, 4, 16, dtype=torch.float8_e4m3fn),
+                w2_weight=torch.empty(2, 8, 4, dtype=torch.float8_e4m3fn),
+                w13_weight_scale=torch.empty(2, 16, dtype=torch.uint8),
+                w2_weight_scale=torch.empty(2, 4, dtype=torch.uint8),
+            ),
+            mlp_output_dtype=torch.bfloat16,
+            dynamic_scale=per_token_scale,
+        )
+
+        with (
+            patch.object(torch_npu, "float8_e8m0fnu", torch.uint8, create=True),
+            patch("torch_npu.npu_dynamic_mx_quant", create=True) as dynamic_mx_quant,
+            patch(
+                "torch_npu.npu_grouped_matmul_swiglu_quant_v2",
+                return_value=(swiglu_out, swiglu_out_scale),
+            ) as swiglu_quant,
+            patch("torch_npu.npu_grouped_matmul", return_value=[expected]) as grouped_matmul,
+        ):
+            actual = w8a8_mxfp8_apply_mlp(mlp_input)
+
+        self.assertIs(actual, expected)
+        dynamic_mx_quant.assert_not_called()
+        swiglu_quant.assert_called_once()
+        self.assertIs(swiglu_quant.call_args.kwargs["x"], quant_hidden)
+        self.assertEqual(swiglu_quant.call_args.kwargs["x_scale"].shape, torch.Size([3, 1, 2]))
+        self.assertEqual(swiglu_quant.call_args.kwargs["quant_mode"], 2)
+        self.assertEqual(swiglu_quant.call_args.kwargs["quant_dtype"], torch.float8_e4m3fn)
+        self.assertIsNone(swiglu_quant.call_args.kwargs["x_dtype"])
+        self.assertIsNone(swiglu_quant.call_args.kwargs["weight_dtype"])
+        grouped_matmul.assert_called_once()
+        self.assertEqual(grouped_matmul.call_args.kwargs["output_dtype"], torch.bfloat16)
+        self.assertIsNone(grouped_matmul.call_args.kwargs["x_dtype"])
+        self.assertIsNone(grouped_matmul.call_args.kwargs["weight_dtype"])
+        self.assertIs(grouped_matmul.call_args.kwargs["per_token_scale"][0], swiglu_out_scale)
+
+    def test_unified_apply_mlp_dispatches_w8a8_mxfp8(self):
+        mlp_input = MoEMlpComputeInput(
+            hidden_states=torch.empty(3, 4, dtype=torch.float8_e4m3fn),
+            group_list=torch.tensor([2, 3]),
+            group_list_type=1,
+            weights=MoEWeights(
+                w13_weight=torch.empty(2, 4, 16, dtype=torch.float8_e4m3fn),
+                w2_weight=torch.empty(2, 8, 4, dtype=torch.float8_e4m3fn),
+                w13_weight_scale=torch.empty(2, 16, dtype=torch.uint8),
+                w2_weight_scale=torch.empty(2, 4, dtype=torch.uint8),
+            ),
+            mlp_output_dtype=torch.bfloat16,
+            dynamic_scale=torch.empty(3, 2, dtype=torch.uint8),
+        )
+        expected = torch.randn(3, 4)
+
+        set_moe_context(quant_algo=QuantAlgorithm.W8A8_MXFP8)
+        with patch("mindiesd.layers.moe.moe_mlp.w8a8_mxfp8_apply_mlp", return_value=expected) as apply_mlp:
+            actual = unified_apply_mlp(mlp_input)
+
+        self.assertIs(actual, expected)
+        apply_mlp.assert_called_once_with(mlp_input)
+
 
 @unittest.skipIf(
     os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
@@ -152,6 +234,10 @@ class TestMoEMlp(unittest.TestCase):
             dynamic_scale=torch.randn(3, 1, device=device),
         )
 
+    @unittest.skipIf(
+        get_npu_device() not in (NPUDevice.A2, NPUDevice.A3),
+        "Skip INT8 MoE tests when device is not A2 or A3.",
+    )
     def test_w8a8_dynamic_apply_mlp_casts_non_nz_weights_to_nz(self):
         device = torch.device("npu")
         mlp_input = self._make_w8a8_dynamic_mlp_input(device)
@@ -175,6 +261,10 @@ class TestMoEMlp(unittest.TestCase):
         self.assertIs(format_cast.call_args_list[1].args[0], mlp_input.weights.w2_weight)
         self.assertEqual(format_cast.call_args_list[1].args[1], 29)
 
+    @unittest.skipIf(
+        get_npu_device() not in (NPUDevice.A2, NPUDevice.A3),
+        "Skip INT8 MoE tests when device is not A2 or A3.",
+    )
     def test_w8a8_dynamic_apply_mlp_keeps_existing_nz_weights(self):
         device = torch.device("npu")
         mlp_input = self._make_w8a8_dynamic_mlp_input(device)
@@ -192,7 +282,11 @@ class TestMoEMlp(unittest.TestCase):
 
         format_cast.assert_not_called()
 
-    def test_w8a8_dynamic_apply_mlp_matches_internal_dynamic_quant_path(self):
+    @unittest.skipIf(
+        get_npu_device() not in (NPUDevice.A2, NPUDevice.A3),
+        "Skip INT8 MoE tests when device is not A2 or A3.",
+    )
+    def test_w8a8_dynamic_mlp_matches_prequantized_input(self):
         torch.manual_seed(2026)
         device = torch.device("npu")
         hidden_size = 32
@@ -285,6 +379,51 @@ class TestMoEMlp(unittest.TestCase):
                 )
 
                 torch.testing.assert_close(actual.cpu().float(), expected.float(), atol=5e-2, rtol=5e-2)
+
+
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
+    "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.",
+)
+@unittest.skipIf(get_npu_device() != NPUDevice.A5, "Skip MXFP8 MoE tests when device is not A5.")
+class TestMoEMlpA5(unittest.TestCase):
+    def test_w8a8_mxfp8_mlp_matches_prequantized_input(self):
+        device = torch.device("npu")
+        hidden_size = 128
+        intermediate_size = 64
+        hidden_states = (torch.randn(4, hidden_size, device=device, dtype=torch.bfloat16) / 10).contiguous()
+        quant_hidden, per_token_scale = torch_npu.npu_dynamic_mx_quant(hidden_states, dst_type=torch.float8_e4m3fn)
+        w13_weight, w13_weight_scale = make_mxfp8_ones(2, hidden_size, 2 * intermediate_size, device=device)
+        w2_weight, w2_weight_scale = make_mxfp8_ones(2, intermediate_size, hidden_size, device=device)
+        weights = MoEWeights(
+            w13_weight=w13_weight,
+            w2_weight=w2_weight,
+            w13_weight_scale=w13_weight_scale,
+            w2_weight_scale=w2_weight_scale,
+        )
+        group_list = torch.tensor([2, 2], dtype=torch.int64, device=device)
+
+        expected = w8a8_mxfp8_apply_mlp(
+            MoEMlpComputeInput(
+                hidden_states=hidden_states,
+                group_list=group_list,
+                group_list_type=1,
+                weights=weights,
+                mlp_output_dtype=hidden_states.dtype,
+            )
+        )
+        actual = w8a8_mxfp8_apply_mlp(
+            MoEMlpComputeInput(
+                hidden_states=quant_hidden,
+                group_list=group_list,
+                group_list_type=1,
+                weights=weights,
+                mlp_output_dtype=hidden_states.dtype,
+                dynamic_scale=per_token_scale,
+            )
+        )
+
+        torch.testing.assert_close(actual.cpu().float(), expected.cpu().float(), atol=1e-3, rtol=1e-3)
 
 
 if __name__ == "__main__":

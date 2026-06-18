@@ -10,12 +10,8 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-import os
-import sys
 import unittest
 import importlib
-
-sys.path.append('../')
 
 
 class TestException(unittest.TestCase):

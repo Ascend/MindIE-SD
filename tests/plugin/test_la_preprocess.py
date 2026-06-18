@@ -16,15 +16,17 @@ import os
 import sys
 import unittest
 import torch
+import torch_npu
 
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
+from mindiesd.layers.flash_attn.ascend_laser_preprocess import la_preprocess
+from mindiesd.utils.exception import ParametersInvalid
+from mindiesd.utils.get_platform import is_a5_device
 
-from mindiesd.utils.get_platform import is_a5_device  # noqa: E402
-
+# 加载自定义库
 if os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU":
-    torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
+    from mindiesd.layers.register_ops import _load_mindie_ops_library
+
+    _load_mindie_ops_library()
 
 
 @unittest.skipIf(
@@ -165,9 +167,9 @@ class TestLaPreprocessMindieSd(unittest.TestCase):
             self.query, self.key, self.value, self.align_len
         )
 
-        self.assertEqual(out_query.device.type, 'npu')
-        self.assertEqual(out_key.device.type, 'npu')
-        self.assertEqual(out_value.device.type, 'npu')
+        self.assertEqual(out_query.device.type, "npu")
+        self.assertEqual(out_key.device.type, "npu")
+        self.assertEqual(out_value.device.type, "npu")
 
     def test_with_different_batch_sizes(self):
         batch_sizes = [1, 2, 4]
@@ -247,6 +249,60 @@ class TestLaPreprocessMindieSd(unittest.TestCase):
                 self.assertEqual(out_key.shape, expected_kv_shape)
                 self.assertEqual(out_value.shape, expected_kv_shape)
 
+    def test_cpp_op_mismatched_key_head_num_raises(self):
+        """C++ op 入口：key 的 head_num 与 query 不一致时应抛出 RuntimeError。"""
+        key_bad = torch.randn(
+            (self.batch, self.kvseqlen, self.head_num + 2, self.head_dim), device=self.device, dtype=self.dtype
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            torch.ops.mindiesd.la_preprocess(self.query, key_bad, self.value, self.align_len)
+        self.assertIn("head_num", str(ctx.exception))
+
+    def test_cpp_op_mismatched_value_head_dim_raises(self):
+        """C++ op 入口：value 的 head_dim 与 query 不一致时应抛出 RuntimeError。"""
+        value_bad = torch.randn(
+            (self.batch, self.kvseqlen, self.head_num, self.head_dim + 64), device=self.device, dtype=self.dtype
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            torch.ops.mindiesd.la_preprocess(self.query, self.key, value_bad, self.align_len)
+        self.assertIn("head_dim", str(ctx.exception))
+
+    def test_python_entry_key_head_num_mismatch(self):
+        """Python 入口：key 的 head_num 不一致时应抛出 ParametersInvalid。"""
+        key_bad = torch.randn(
+            (self.batch, self.kvseqlen, self.head_num + 2, self.head_dim), device=self.device, dtype=self.dtype
+        )
+        with self.assertRaises(ParametersInvalid) as ctx:
+            la_preprocess(self.query, key_bad, self.value, self.align_len)
+        self.assertIn("key head dimensions mismatch", str(ctx.exception).lower())
+
+    def test_python_entry_key_head_dim_mismatch(self):
+        """Python 入口：key 的 head_dim 不一致时应抛出 ParametersInvalid。"""
+        key_bad = torch.randn(
+            (self.batch, self.kvseqlen, self.head_num, self.head_dim + 64), device=self.device, dtype=self.dtype
+        )
+        with self.assertRaises(ParametersInvalid) as ctx:
+            la_preprocess(self.query, key_bad, self.value, self.align_len)
+        self.assertIn("key head dimensions mismatch", str(ctx.exception).lower())
+
+    def test_python_entry_value_head_num_mismatch(self):
+        """Python 入口：value 的 head_num 不一致时应抛出 ParametersInvalid。"""
+        value_bad = torch.randn(
+            (self.batch, self.kvseqlen, self.head_num + 2, self.head_dim), device=self.device, dtype=self.dtype
+        )
+        with self.assertRaises(ParametersInvalid) as ctx:
+            la_preprocess(self.query, self.key, value_bad, self.align_len)
+        self.assertIn("value head dimensions mismatch", str(ctx.exception).lower())
+
+    def test_python_entry_value_head_dim_mismatch(self):
+        """Python 入口：value 的 head_dim 不一致时应抛出 ParametersInvalid。"""
+        value_bad = torch.randn(
+            (self.batch, self.kvseqlen, self.head_num, self.head_dim + 64), device=self.device, dtype=self.dtype
+        )
+        with self.assertRaises(ParametersInvalid) as ctx:
+            la_preprocess(self.query, self.key, value_bad, self.align_len)
+        self.assertIn("value head dimensions mismatch", str(ctx.exception).lower())
+
 
 if __name__ == "__main__":
-    unittest.main(argv=[''], exit=False)
+    unittest.main(argv=[""], exit=False)

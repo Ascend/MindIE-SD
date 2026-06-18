@@ -12,21 +12,20 @@
 
 # pylint: disable=duplicate-code
 
+# pylint: disable=no-name-in-module
 import unittest
 import torch
 import torch_npu
 import os
-import sys
 import math
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from utils.utils.precision_compare import data_compare
 from mindiesd.utils.get_platform import is_a5_device
 
 if os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU":
-    torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
+    from mindiesd.layers.register_ops import _load_mindie_ops_library
+
+    _load_mindie_ops_library()
 
 
 @unittest.skipIf(
@@ -98,7 +97,7 @@ class TestRainFusionAttention(unittest.TestCase):
             inner_precise=0,
             block_size=0,
         )
-        fascore = torch_npu.npu_fusion_attention(
+        fascore = torch_npu.npu_fusion_attention(  # pylint: disable=no-member
             self.q,
             self.k,
             self.v,
@@ -134,7 +133,7 @@ class TestRainFusionAttention(unittest.TestCase):
             inner_precise=0,
             block_size=0,
         )
-        fascore = torch_npu.npu_fusion_attention(
+        fascore = torch_npu.npu_fusion_attention(  # pylint: disable=no-member
             q,
             k,
             v,

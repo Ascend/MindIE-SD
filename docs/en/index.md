@@ -1,46 +1,51 @@
 ﻿# MindIE SD
 
-MindIE SD is an Ascend-focused inference acceleration toolkit for Stable Diffusion and related multimodal generation workloads. It provides Ascend-oriented fused operators, compilation paths, caching strategies, quantization features, and multi-card execution capabilities for production-oriented inference workflows.
+MindIE SD is an Ascend-focused multimodal acceleration suite that works with diffusers and other model suites to provide Ascend-optimized key operators and fused operators, compilation acceleration, compute-via-storage, quantization/sparse algorithms, and multi-card parallelism capabilities, enabling fast migration of multimodal generation models to Ascend for acceleration, suitable for production-grade inference workflows.
 
 ```{toctree}
 :maxdepth: 2
 :caption: Getting Started
 
+installation
 quick_start
-installing_guide
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Acceleration Features
+
 architecture
-environment_variable_configuration
-```
-
-```{toctree}
-:maxdepth: 2
-:caption: Feature Guides
-
-features/cache
+features/sparse
+features/quantization
+features/core_layers
+features/fused_moe
 features/compilation
-features/DyEPLB
-features/graphics_memory_optimization
-features/others
 features/parallelism
-features/sparse_quantization
-features/supported_matrix
+features/fa_power_cap
+features/cache
+features/cpu_offload
+features/share_memory
+features/DyEPLB
 ```
 
 ```{toctree}
 :maxdepth: 2
-:caption: Developer Docs
+:caption: Developer Guide
 
 developer_guide/build_guide
 developer_guide/test
-developer_guide/tooling
+developer_guide/dev_setup
+developer_guide/repo_structure
+developer_guide/contribution_guide
+developer_guide/pattern_dev_guide
+developer_guide/benchmark_and_profiling
 ```
 
 ```{toctree}
-:maxdepth: 2
+:maxdepth: 1
 :caption: Appendix
 
-appendix/environment_variable
-appendix/file_directory_permissions_description
+features/supported_matrix
 ```
 
 ```{toctree}

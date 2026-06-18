@@ -9,7 +9,6 @@
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PSL v2 for more details.
  */
-
 /*!
  * \file vf_mxfp4_attenout_dn.h
  * \brief
@@ -18,6 +17,7 @@
 #ifndef ATTENOUT_DN_MXFP4_H_
 #define ATTENOUT_DN_MXFP4_H_
 #include "kernel_tensor.h"
+#include "vf_common_def.h"
 namespace Mxfp4Api {
 using AscendC::LocalTensor;
 using namespace AscendC;

@@ -9,22 +9,21 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
+# pylint: disable=no-name-in-module
 import os
-import sys
 import unittest
 import torch
 
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 from mindiesd.layers.rope import rotary_position_embedding
 from mindiesd.utils import ParametersInvalid
 from utils.utils.embedding import RotaryPositionEmbedding
 from utils.utils.precision_compare import data_compare
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestRope(unittest.TestCase):
-
     def test_x_type(self):
         device = "npu"
         x = [2, 64, 8, 16]
@@ -177,10 +176,12 @@ class TestRope(unittest.TestCase):
                     cos, sin = cos.to(hidden_states.device), sin.to(hidden_states.device)
                     cos, sin = rope.reshape_for_broadcast(hidden_states, cos, sin, head_first=True)
 
-                    rope_rotated_half = rotary_position_embedding(hidden_states, cos, sin,
-                        rotated_mode="rotated_half", head_first=True, fused=False)
-                    rope_rotated_half_fused = rotary_position_embedding(hidden_states, cos, sin,
-                        rotated_mode="rotated_half", head_first=True, fused=True)
+                    rope_rotated_half = rotary_position_embedding(
+                        hidden_states, cos, sin, rotated_mode="rotated_half", head_first=True, fused=False
+                    )
+                    rope_rotated_half_fused = rotary_position_embedding(
+                        hidden_states, cos, sin, rotated_mode="rotated_half", head_first=True, fused=True
+                    )
                     self.assertEqual(rope_rotated_half.shape, rope_rotated_half_fused.shape)
 
                     result, _, max_err = data_compare(rope_rotated_half.cpu(), rope_rotated_half_fused.cpu())
@@ -206,10 +207,12 @@ class TestRope(unittest.TestCase):
                     cos, sin = cos.to(hidden_states.device), sin.to(hidden_states.device)
                     cos, sin = rope.reshape_for_broadcast(hidden_states, cos, sin, head_first=False)
 
-                    rope_rotated_half = rotary_position_embedding(hidden_states, cos, sin,
-                        rotated_mode="rotated_interleaved", head_first=False, fused=False)
-                    rope_rotated_half_fused = rotary_position_embedding(hidden_states, cos, sin,
-                        rotated_mode="rotated_interleaved", head_first=False, fused=True)
+                    rope_rotated_half = rotary_position_embedding(
+                        hidden_states, cos, sin, rotated_mode="rotated_interleaved", head_first=False, fused=False
+                    )
+                    rope_rotated_half_fused = rotary_position_embedding(
+                        hidden_states, cos, sin, rotated_mode="rotated_interleaved", head_first=False, fused=True
+                    )
                     self.assertEqual(rope_rotated_half.shape, rope_rotated_half_fused.shape)
 
                     result, _, max_err = data_compare(rope_rotated_half.cpu(), rope_rotated_half_fused.cpu())
@@ -234,10 +237,12 @@ class TestRope(unittest.TestCase):
                     cos, sin = rotary_pos_emb
                     cos, sin = cos.to(hidden_states.device), sin.to(hidden_states.device)
 
-                    rope_rotated_half = rotary_position_embedding(hidden_states, cos, sin,
-                        rotated_mode="rotated_half", head_first=True, fused=False)
-                    rope_rotated_half_fused = rotary_position_embedding(hidden_states, cos, sin,
-                        rotated_mode="rotated_half", head_first=True, fused=True)
+                    rope_rotated_half = rotary_position_embedding(
+                        hidden_states, cos, sin, rotated_mode="rotated_half", head_first=True, fused=False
+                    )
+                    rope_rotated_half_fused = rotary_position_embedding(
+                        hidden_states, cos, sin, rotated_mode="rotated_half", head_first=True, fused=True
+                    )
                     self.assertEqual(rope_rotated_half.shape, rope_rotated_half_fused.shape)
 
                     result, _, max_err = data_compare(rope_rotated_half.cpu(), rope_rotated_half_fused.cpu())
@@ -262,10 +267,12 @@ class TestRope(unittest.TestCase):
                     cos, sin = rotary_pos_emb
                     cos, sin = cos.to(hidden_states.device), sin.to(hidden_states.device)
 
-                    rope_rotated_half = rotary_position_embedding(hidden_states, cos, sin,
-                        rotated_mode="rotated_interleaved", head_first=False, fused=False)
-                    rope_rotated_half_fused = rotary_position_embedding(hidden_states, cos, sin,
-                        rotated_mode="rotated_interleaved", head_first=False, fused=True)
+                    rope_rotated_half = rotary_position_embedding(
+                        hidden_states, cos, sin, rotated_mode="rotated_interleaved", head_first=False, fused=False
+                    )
+                    rope_rotated_half_fused = rotary_position_embedding(
+                        hidden_states, cos, sin, rotated_mode="rotated_interleaved", head_first=False, fused=True
+                    )
                     self.assertEqual(rope_rotated_half.shape, rope_rotated_half_fused.shape)
 
                     result, _, max_err = data_compare(rope_rotated_half.cpu(), rope_rotated_half_fused.cpu())

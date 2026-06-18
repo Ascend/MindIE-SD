@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# pylint: disable=duplicate-code
 # coding=utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
 # MindIE is licensed under Mulan PSL v2.
@@ -98,7 +99,9 @@ def attention_preprocess_fake(
     def create_padded_tensor(tensor, padded_seq_len):
         if tensor.dim() == 4:
             return torch.empty(
-                [batch_size, padded_seq_len, head_num, head_dim], device=tensor.device, dtype=tensor.dtype
+                [batch_size, padded_seq_len, head_num, head_dim],
+                device=tensor.device,
+                dtype=tensor.dtype,
             )
         else:
             return torch.empty([padded_seq_len, head_num, head_dim], device=tensor.device, dtype=tensor.dtype)
@@ -121,8 +124,8 @@ def rain_fusion_attention(
     actual_seq_qlen: Optional[List[int]] = None,
     actual_seq_kvlen: Optional[List[int]] = None,
     block_table: Optional[torch.Tensor] = None,
-    q_input_layout: str = 'TND',
-    kv_input_layout: str = 'TND',
+    q_input_layout: str = "TND",
+    kv_input_layout: str = "TND",
     head_num: int = 1,
     mask_type: int = 0,
     scale: float = 1.0,
@@ -162,8 +165,8 @@ def rain_fusion_attention_fake(
     actual_seq_qlen: Optional[List[int]] = None,
     actual_seq_kvlen: Optional[List[int]] = None,
     block_table: Optional[torch.Tensor] = None,
-    q_input_layout: str = 'TND',
-    kv_input_layout: str = 'TND',
+    q_input_layout: str = "TND",
+    kv_input_layout: str = "TND",
     head_num: int = 1,
     mask_type: int = 0,
     scale: float = 1.0,
@@ -180,7 +183,7 @@ def sparse_block_estimate(
     key: torch.Tensor,
     actual_seq_lengths: Optional[List[int]] = None,
     actual_seq_lengths_kv: Optional[List[int]] = None,
-    input_layout: str = 'BNSD',
+    input_layout: str = "BNSD",
     stride: int = 8,
     sparse_size: int = 128,
     num_heads: int = 1,
@@ -217,7 +220,7 @@ def sparse_block_estimate_fake(
     key: torch.Tensor,
     actual_seq_lengths: Optional[List[int]] = None,
     actual_seq_lengths_kv: Optional[List[int]] = None,
-    input_layout: str = 'BNSD',
+    input_layout: str = "BNSD",
     stride: int = 8,
     sparse_size: int = 128,
     num_heads: int = 1,
@@ -234,8 +237,11 @@ def sparse_block_estimate_fake(
         b, nq, s, d = query.shape
     elif input_layout == "BSND":
         b, s, nq, d = query.shape
+    elif input_layout == "BSH":
+        b, s = query.shape[0], query.shape[1]
+        nq = num_heads
     else:
-        raise ParametersInvalid(f"The input_layout only support 'BNSD' and 'BSND' now, but got {input_layout}")
+        raise ParametersInvalid(f"The input_layout only supports 'BNSD', 'BSND', 'BSH', but got {input_layout}")
     seqlen_sparse = int((s + sparse_size - 1) / sparse_size)
     seqlen_sparse_align32 = (seqlen_sparse + 31) / 32 * 32
     sparse_mask_shape = (b, nq, seqlen_sparse, seqlen_sparse_align32)
@@ -252,7 +258,7 @@ def ada_block_sparse_attention(
     value: torch.Tensor,
     sparse_mask: torch.Tensor,
     sparse_count_table: torch.Tensor,
-    input_layout: str = 'BNSD',
+    input_layout: str = "BNSD",
     sparse_size: int = 128,
     num_heads: int = 1,
     num_key_value_heads: int = 1,
@@ -291,7 +297,7 @@ def ada_block_sparse_attention_fake(
     value: torch.Tensor,
     sparse_mask: torch.Tensor,
     sparse_count_table: torch.Tensor,
-    input_layout: str = 'BNSD',
+    input_layout: str = "BNSD",
     sparse_size: int = 128,
     num_heads: int = 1,
     num_key_value_heads: int = 1,
@@ -313,14 +319,17 @@ def block_sparse_attention(
     value: torch.Tensor,
     block_sparse_mask: Optional[torch.Tensor] = None,
     block_shape: List[int] = None,
-    q_input_layout: str = 'BNSD',
-    kv_input_layout: str = 'BNSD',
+    q_input_layout: str = "BNSD",
+    kv_input_layout: str = "BNSD",
     num_key_value_heads: int = 1,
     scale_value: float = 1.0,
-    inner_precise: int = 0,
+    inner_precise: int = 4,
     actual_seq_lengths: Optional[List[int]] = None,
     actual_seq_lengths_kv: Optional[List[int]] = None,
     softmax_lse_flag: int = 0,
+    q_dequant_scale: Optional[torch.Tensor] = None,
+    k_dequant_scale: Optional[torch.Tensor] = None,
+    v_dequant_scale: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     if block_shape is None:
         block_shape = [128, 128]
@@ -338,9 +347,13 @@ def block_sparse_attention(
         softmax_lse_flag=softmax_lse_flag,
     )
     if actual_seq_lengths is not None:
-        kwargs['actual_seq_lengths'] = actual_seq_lengths
+        kwargs["actual_seq_lengths"] = actual_seq_lengths
     if actual_seq_lengths_kv is not None:
-        kwargs['actual_seq_lengths_kv'] = actual_seq_lengths_kv
+        kwargs["actual_seq_lengths_kv"] = actual_seq_lengths_kv
+    if q_dequant_scale is not None:
+        kwargs["q_dequant_scale"] = q_dequant_scale
+        kwargs["k_dequant_scale"] = k_dequant_scale
+        kwargs["v_dequant_scale"] = v_dequant_scale
     return getattr(torch.ops.mindiesd, "block_sparse_attention")(**kwargs)
 
 
@@ -351,16 +364,21 @@ def block_sparse_attention_fake(
     value: torch.Tensor,
     block_sparse_mask: Optional[torch.Tensor] = None,
     block_shape: List[int] = None,
-    q_input_layout: str = 'BNSD',
-    kv_input_layout: str = 'BNSD',
+    q_input_layout: str = "BNSD",
+    kv_input_layout: str = "BNSD",
     num_key_value_heads: int = 1,
     scale_value: float = 1.0,
-    inner_precise: int = 0,
+    inner_precise: int = 4,
     actual_seq_lengths: Optional[List[int]] = None,
     actual_seq_lengths_kv: Optional[List[int]] = None,
     softmax_lse_flag: int = 0,
+    q_dequant_scale: Optional[torch.Tensor] = None,
+    k_dequant_scale: Optional[torch.Tensor] = None,
+    v_dequant_scale: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    attention_out = torch.empty_like(query)
+    # FP8 path: output is BF16; BF16/FP16 path: output matches input dtype.
+    out_dtype = torch.bfloat16 if q_dequant_scale is not None else query.dtype
+    attention_out = torch.empty(query.shape, device=query.device, dtype=out_dtype)
     # softmax_lse shape: TND -> [T, N, 1], BNSD -> [B, N, S, 1]
     if q_input_layout == "TND":
         lse_shape = [query.shape[0], query.shape[1], 1]
@@ -404,7 +422,12 @@ def layernorm(
     impl_mode: int = 0,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     return getattr(torch.ops.mindiesd, "layernorm")(
-        input=x, normalized_shape=normalized_shape, weight=weight, bias=bias, eps=eps, impl_mode=impl_mode
+        input=x,
+        normalized_shape=normalized_shape,
+        weight=weight,
+        bias=bias,
+        eps=eps,
+        impl_mode=impl_mode,
     )
 
 

@@ -1,8 +1,8 @@
 # ============================================================================
-# Dockerfile for vLLM-Omni with MindIE-SD (Ubuntu)
+# Dockerfile for MindIE-SD (Ubuntu)
 # ============================================================================
 # Description:
-#   Build a combined image of vLLM-Omni and MindIE-SD on top of the
+#   Build a image of MindIE-SD on top of the
 #   vLLM-Omni base image, enabling multi-modal LLM and Stable Diffusion
 #   inference in a single container.
 #
@@ -17,11 +17,11 @@
 #   quay.io/ascend/vllm-omni:v0.20.0 (CANN-based, Ubuntu, aarch64)
 #
 # Build:
-#   docker build -t quay.io/ascend/vllm-omni-mindiesd:v0.20.0-cann8.5.1-A2-ubuntu22.04-py3.11-aarch64 \
+#   docker build -t mindiesd:v3.0.0-A2-ubuntu22.04-py3.11-aarch64 \
 #       -f Dockerfile.a2.ubuntu .
 #
 # Run:
-#   docker run -it --rm --name=vllm-omni-mindiesd \
+#   docker run -it --rm --name=mindiesd \
 #       --privileged \
 #       --shm-size=1g \
 #       --device /dev/davinci0 \
@@ -37,7 +37,7 @@
 #       -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
 #       -v /etc/ascend_install.info:/etc/ascend_install.info \
 #       -v /root/.cache:/root/.cache \
-#       quay.io/ascend/vllm-omni-mindiesd:v0.20.0-cann8.5.1-A2-ubuntu22.04-py3.11-aarch64 \
+#       mindiesd:v3.0.0-A2-ubuntu22.04-py3.11-aarch64 \
 #       bash
 # ============================================================================
 
@@ -47,24 +47,21 @@ FROM quay.io/ascend/vllm-omni:v0.20.0
 # Metadata labels (OCI image spec)
 # --------------------------------------------------------------------------
 LABEL maintainer="Ascend Container Team"
-LABEL description="vLLM-Omni with MindIE-SD for multi-modal LLM and Stable Diffusion inference on Ascend NPU"
-LABEL org.opencontainers.image.title="vllm-omni-mindiesd"
-LABEL org.opencontainers.image.version="v0.20.0"
-LABEL org.opencontainers.image.description="vLLM-Omni + MindIE-SD combined image with Ascend tuning/debugging tools"
+LABEL description="MindIE-SD for Stable Diffusion inference on Ascend NPU"
+LABEL org.opencontainers.image.title="mindiesd"
+LABEL org.opencontainers.image.version="v3.0.0"
+LABEL org.opencontainers.image.description="MindIE-SD image with Ascend tuning/debugging tools"
 
 # --------------------------------------------------------------------------
 # Environment variables for banner
 # --------------------------------------------------------------------------
-ENV ASCEND_SOFTWARE_NAME="vLLM-Omni + MindIE-SD"
-ENV ASCEND_SOFTWARE_VERSION="v0.20.0"
+ENV ASCEND_SOFTWARE_NAME="MindIE-SD"
+ENV ASCEND_SOFTWARE_VERSION="v3.0.0"
 
 # --------------------------------------------------------------------------
 # 1. Install MindIE-SD (Stable Diffusion inference engine)
 # --------------------------------------------------------------------------
-RUN pip install --no-cache-dir \
-    --trusted-host ascend.devcloud.huaweicloud.com \
-    -i https://ascend.devcloud.huaweicloud.com/pypi/simple/ \
-    mindiesd==3.0.0
+RUN pip install mindiesd==3.0.0 -i https://pypi.org/simple --no-cache-dir
 
 # --------------------------------------------------------------------------
 # 2. Install msprobe (precision debugging tool)

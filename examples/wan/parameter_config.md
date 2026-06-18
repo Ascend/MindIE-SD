@@ -165,3 +165,26 @@
 </tr>
 </tbody>
 </table>
+
+## FA_Power_Cap 技术参数
+
+`FA_Power_Cap` 技术通过 `generate.py` 的命令行参数控制，适用于开启 Ulysses 序列并行的 Wan 推理场景。默认不启用，保持基线行为。详细手动改代码教程请参见 [FA_Power_Cap 技术手动接入指南](../../docs/zh/features/fa_power_cap.md)。
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--comm_type` | `0` | 单例通信优化枚举。`0` 表示不启用；`1` 表示启用通信插入分块，按注意力头切分 `Q`/`K`/`V` 后按块执行 Ulysses `AlltoAll -> attention`；`2` 表示启用 block attention 分块，按注意力头切分后再将本地 query 序列固定切成 2 个 attention block。 |
+
+使用约束：
+
+- `--comm_type` 取值只能为 `0`、`1` 或 `2`，三种模式互斥。
+- 该优化仅在 `ulysses_size > 1` 时有意义，且注意力头数需要能够被 Ulysses 并行度整除。
+
+示例：
+
+```bash
+# 启用通信插入分块
+torchrun --nproc_per_node=8 generate.py --task t2v-14B --ulysses_size 8 --comm_type 1
+
+# 启用 block attention 分块
+torchrun --nproc_per_node=8 generate.py --task t2v-14B --ulysses_size 8 --comm_type 2
+```

@@ -10,13 +10,11 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+# pylint: disable=no-name-in-module
 import unittest
 from unittest.mock import patch
 import os
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import torch
 from device import DEVICE_ID
 from mindiesd.layers.flash_attn.common import AttentionParam

@@ -17,6 +17,7 @@ import zmq
 import torch
 from .utils.exception import ParametersInvalid
 from .utils.logs.logging import logger
+from .utils.safe_pickle import safe_dumps, safe_loads
 
 
 class ShareMemoryManager:
@@ -68,7 +69,9 @@ class ShareMemoryManager:
                     raise TimeoutError("Master timeout waiting for child processes ready") from e
 
             logger.debug("Master broadcasting handle on tcp://%s:%s", self.master_addr, self.pub_port)
-            self.pub_socket.send_pyobj(handle)
+            # Serialize explicitly and send raw bytes; the receiver uses
+            # safe_loads (SafeUnpickler) instead of the unsafe recv_pyobj().
+            self.pub_socket.send(safe_dumps(handle))
             logger.debug("Master broadcasted handle: %s", handle)
             return handle
         else:
@@ -79,7 +82,9 @@ class ShareMemoryManager:
             self.req_socket.recv()
 
             try:
-                recv_handle = self.sub_socket.recv_pyobj()
+                # Deserialization goes through SafeUnpickler's allowlist, so a
+                # malicious payload on the PUB socket cannot trigger RCE here.
+                recv_handle = safe_loads(self.sub_socket.recv())
             except zmq.Again as e:
                 raise TimeoutError(f"Device {self.device_id} timeout waiting for share handle") from e
             logger.debug("Device %s received handle: %s", self.device_id, recv_handle)

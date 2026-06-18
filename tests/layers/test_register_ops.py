@@ -11,20 +11,17 @@
 # See the Mulan PSL v2 for more details.
 import unittest
 import torch
-from unittest.mock import patch, MagicMock, Mock, ANY
+from unittest.mock import patch, MagicMock, ANY
 from packaging.version import Version
 
 from mindiesd.layers import register_ops
 import os
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent.parent))
-from mindiesd.compilation import MindieSDBackend
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestRegisterOps(unittest.TestCase):
-
     def setUp(self):
         self.torch_version = Version(torch.__version__.split("+")[0])
         self.test_op_base = "test_op_mindie_sd_"
@@ -55,6 +52,7 @@ class TestRegisterOps(unittest.TestCase):
     def test_register_mindie_fake_op_nonexistent_op(self):
         test_op_name = f"{self.test_op_base}nonexistent_decorator"
         with self.assertRaises(RuntimeError):
+
             @register_ops.register_mindie_fake_op(test_op_name)
             def test_fake_func(x):
                 return torch.empty_like(x)
@@ -66,6 +64,7 @@ class TestRegisterOps(unittest.TestCase):
             mock_library.return_value = mock_lib_instance
 
             import importlib
+
             importlib.reload(register_ops)
 
             mock_library.assert_called_once_with("mindiesd", "IMPL")

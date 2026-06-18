@@ -194,7 +194,7 @@ def sparse_attention(
             latent_shape_q=latent_shape_q,
             latent_shape_k=latent_shape_k,
             txt_len=txt_len,
-            pool_size=block_size,
+            block_size=block_size,
             sparsity=sparsity,
             input_layout=input_layout,
             head_num=head_num,

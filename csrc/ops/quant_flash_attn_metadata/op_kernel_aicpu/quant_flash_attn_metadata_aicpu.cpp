@@ -129,8 +129,6 @@ std::vector<int64_t> QuantFlashAttnMetadataCpuKernel::GetTensorDataAsInt64(Tenso
 
 bool QuantFlashAttnMetadataCpuKernel::ParamsInit() {
     // Device info
-    aicCoreNum_ = 1;
-    aivCoreNum_ = 2;
     deviceInfo.aicCoreMaxNum = aicCoreNum_;
     deviceInfo.aivCoreMaxNum = aivCoreNum_;
     deviceInfo.aicCoreMinNum = aicCoreNum_;
@@ -216,6 +214,7 @@ bool QuantFlashAttnMetadataCpuKernel::ParamsInit() {
     param.mBaseSize = mBaseSize_;
     param.s2BaseSize = s2BaseSize_;
     param.l2Byte = 0U; // sectionNum = 1
+    param.fdOn = false;
     return true;
 }
 

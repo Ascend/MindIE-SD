@@ -7,15 +7,13 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
+# pylint: disable=no-name-in-module
 import os
 import unittest
 import time
-import sys
 import torch
 import torch_npu
 
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from mindiesd import attention_forward_varlen
 from mindiesd.utils.exception import ParametersInvalid
@@ -24,7 +22,9 @@ from utils.utils.precision_compare import data_compare
 MAX_TOKEN = 2147483647
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestAttentionForwardVarlen(unittest.TestCase):
     def setUp(self):
         if not torch_npu.npu.is_available():
@@ -56,7 +56,7 @@ class TestAttentionForwardVarlen(unittest.TestCase):
         batch_size = len(cu_seqlens_q) - 1
         head_dim = q.size(-1)
         head_num = q.size(-2)
-        scale = head_dim ** -0.5
+        scale = head_dim**-0.5
 
         atten_mask = None
         if causal:
@@ -72,15 +72,17 @@ class TestAttentionForwardVarlen(unittest.TestCase):
 
             sparse_mode = 3 if causal else 0
 
-            out_i = torch_npu.npu_fusion_attention(
-                q_i, k_i, v_i,
+            out_i = torch_npu.npu_fusion_attention(  # pylint: disable=no-member
+                q_i,
+                k_i,
+                v_i,
                 atten_mask=atten_mask,
                 input_layout="BSND",
                 scale=scale,
                 pre_tockens=MAX_TOKEN,
                 next_tockens=MAX_TOKEN,
                 sparse_mode=sparse_mode,
-                head_num=head_num
+                head_num=head_num,
             )[0].view(-1, head_num, head_dim)
 
             out_bsnd.append(out_i)
@@ -111,7 +113,9 @@ class TestAttentionForwardVarlen(unittest.TestCase):
         print(f"➡️  Running accuracy test (causal={causal}): {test_name}")
 
         out = attention_forward_varlen(
-            q=q, k=k, v=v,
+            q=q,
+            k=k,
+            v=v,
             cu_seqlens_q=cu_seqlens_q,
             cu_seqlens_k=cu_seqlens_k,
             causal=causal,
@@ -127,12 +131,14 @@ class TestAttentionForwardVarlen(unittest.TestCase):
         print(f"➡️  Running performance test: {test_name}")
 
         head_num = q.size(1)
-        softmax_scale = self.head_dim ** -0.5
+        softmax_scale = self.head_dim**-0.5
 
         # 自研实现耗时
         def sd_func():
             return attention_forward_varlen(
-                q=q, k=k, v=v,
+                q=q,
+                k=k,
+                v=v,
                 cu_seqlens_q=cu_seqlens_q,
                 cu_seqlens_k=cu_seqlens_k,
                 causal=False,
@@ -143,8 +149,10 @@ class TestAttentionForwardVarlen(unittest.TestCase):
 
         # npu_fusion_attention 耗时
         def op_func():
-            return torch_npu.npu_fusion_attention(
-                q, k, v,
+            return torch_npu.npu_fusion_attention(  # pylint: disable=no-member
+                q,
+                k,
+                v,
                 head_num=head_num,
                 scale=softmax_scale,
                 keep_prob=1.0,
@@ -190,15 +198,34 @@ class TestAttentionForwardVarlen(unittest.TestCase):
 
     def test_case2(self):
         """测试 Case 2: q/k/v: [48484,3,128], cu_seqlens 长度为16"""
-        cu_seqlens = [0, 3348, 6696, 10044, 12648, 15996, 19344, 22692, 25296,
-                      28644, 31992, 35340, 37944, 40734, 43524, 46314, 48484]
+        cu_seqlens = [
+            0,
+            3348,
+            6696,
+            10044,
+            12648,
+            15996,
+            19344,
+            22692,
+            25296,
+            28644,
+            31992,
+            35340,
+            37944,
+            40734,
+            43524,
+            46314,
+            48484,
+        ]
         self._run_test_case(cu_seqlens, cu_seqlens, "Case2_LargeBatch")
 
     def test_valid_input_no_unsupported_params(self):
         """测试所有参数合法时，不抛出异常"""
         try:
             attention_forward_varlen(
-                q=self.q, k=self.k, v=self.v,
+                q=self.q,
+                k=self.k,
+                v=self.v,
                 cu_seqlens_q=self.cu_seqlens_q,
                 cu_seqlens_k=self.cu_seqlens_k,
                 dropout_p=0.0,
@@ -212,7 +239,9 @@ class TestAttentionForwardVarlen(unittest.TestCase):
         q_2d = torch.randn(10, 64)
         with self.assertRaises(ParametersInvalid) as cm:
             attention_forward_varlen(
-                q=q_2d, k=self.k, v=self.v,
+                q=q_2d,
+                k=self.k,
+                v=self.v,
                 cu_seqlens_q=self.cu_seqlens_q,
                 cu_seqlens_k=self.cu_seqlens_k,
                 dropout_p=0.0,
@@ -224,7 +253,9 @@ class TestAttentionForwardVarlen(unittest.TestCase):
         k_2d = torch.randn(80, 64)
         with self.assertRaises(ParametersInvalid) as cm:
             attention_forward_varlen(
-                q=self.q, k=k_2d, v=self.v,
+                q=self.q,
+                k=k_2d,
+                v=self.v,
                 cu_seqlens_q=self.cu_seqlens_q,
                 cu_seqlens_k=self.cu_seqlens_k,
                 dropout_p=0.0,
@@ -236,7 +267,9 @@ class TestAttentionForwardVarlen(unittest.TestCase):
         v_2d = torch.randn(80, 64)
         with self.assertRaises(ParametersInvalid) as cm:
             attention_forward_varlen(
-                q=self.q, k=self.k, v=v_2d,
+                q=self.q,
+                k=self.k,
+                v=v_2d,
                 cu_seqlens_q=self.cu_seqlens_q,
                 cu_seqlens_k=self.cu_seqlens_k,
                 dropout_p=0.0,
@@ -247,7 +280,9 @@ class TestAttentionForwardVarlen(unittest.TestCase):
         """测试 dropout_p 不为 0 时报错"""
         with self.assertRaises(ParametersInvalid) as cm:
             attention_forward_varlen(
-                q=self.q, k=self.k, v=self.v,
+                q=self.q,
+                k=self.k,
+                v=self.v,
                 cu_seqlens_q=self.cu_seqlens_q,
                 cu_seqlens_k=self.cu_seqlens_k,
                 dropout_p=0.1,
@@ -258,10 +293,12 @@ class TestAttentionForwardVarlen(unittest.TestCase):
         """测试 max_seqlen_q 不为 None 时报错"""
         with self.assertRaises(ParametersInvalid) as cm:
             attention_forward_varlen(
-                q=self.q, k=self.k, v=self.v,
+                q=self.q,
+                k=self.k,
+                v=self.v,
                 cu_seqlens_q=self.cu_seqlens_q,
                 cu_seqlens_k=self.cu_seqlens_k,
-                max_seqlen_q=128
+                max_seqlen_q=128,
             )
         self.assertIn("max_seqlen_q=128", str(cm.exception))
 
@@ -269,10 +306,12 @@ class TestAttentionForwardVarlen(unittest.TestCase):
         """测试 max_seqlen_k 不为 None 时报错"""
         with self.assertRaises(ParametersInvalid) as cm:
             attention_forward_varlen(
-                q=self.q, k=self.k, v=self.v,
+                q=self.q,
+                k=self.k,
+                v=self.v,
                 cu_seqlens_q=self.cu_seqlens_q,
                 cu_seqlens_k=self.cu_seqlens_k,
-                max_seqlen_k=128
+                max_seqlen_k=128,
             )
         self.assertIn("max_seqlen_k=128", str(cm.exception))
 
@@ -280,10 +319,12 @@ class TestAttentionForwardVarlen(unittest.TestCase):
         """测试 window_size 不为 None 时报错"""
         with self.assertRaises(ParametersInvalid) as cm:
             attention_forward_varlen(
-                q=self.q, k=self.k, v=self.v,
+                q=self.q,
+                k=self.k,
+                v=self.v,
                 cu_seqlens_q=self.cu_seqlens_q,
                 cu_seqlens_k=self.cu_seqlens_k,
-                window_size=64
+                window_size=64,
             )
         self.assertIn("window_size=64", str(cm.exception))
 
@@ -291,10 +332,12 @@ class TestAttentionForwardVarlen(unittest.TestCase):
         """测试 softcap 不为 None 时报错"""
         with self.assertRaises(ParametersInvalid) as cm:
             attention_forward_varlen(
-                q=self.q, k=self.k, v=self.v,
+                q=self.q,
+                k=self.k,
+                v=self.v,
                 cu_seqlens_q=self.cu_seqlens_q,
                 cu_seqlens_k=self.cu_seqlens_k,
-                softcap=30.0
+                softcap=30.0,
             )
         self.assertIn("softcap=30.0", str(cm.exception))
 
@@ -303,10 +346,12 @@ class TestAttentionForwardVarlen(unittest.TestCase):
         alibi = torch.randn(4)
         with self.assertRaises(ParametersInvalid) as cm:
             attention_forward_varlen(
-                q=self.q, k=self.k, v=self.v,
+                q=self.q,
+                k=self.k,
+                v=self.v,
                 cu_seqlens_q=self.cu_seqlens_q,
                 cu_seqlens_k=self.cu_seqlens_k,
-                alibi_slopes=alibi
+                alibi_slopes=alibi,
             )
         self.assertIn("alibi_slopes=", str(cm.exception))
 
@@ -314,10 +359,12 @@ class TestAttentionForwardVarlen(unittest.TestCase):
         """测试 deterministic 不为 None 时报错"""
         with self.assertRaises(ParametersInvalid) as cm:
             attention_forward_varlen(
-                q=self.q, k=self.k, v=self.v,
+                q=self.q,
+                k=self.k,
+                v=self.v,
                 cu_seqlens_q=self.cu_seqlens_q,
                 cu_seqlens_k=self.cu_seqlens_k,
-                deterministic=True
+                deterministic=True,
             )
         self.assertIn("deterministic=True", str(cm.exception))
 
@@ -325,10 +372,12 @@ class TestAttentionForwardVarlen(unittest.TestCase):
         """测试 return_attn_probs 不为 None 时报错"""
         with self.assertRaises(ParametersInvalid) as cm:
             attention_forward_varlen(
-                q=self.q, k=self.k, v=self.v,
+                q=self.q,
+                k=self.k,
+                v=self.v,
                 cu_seqlens_q=self.cu_seqlens_q,
                 cu_seqlens_k=self.cu_seqlens_k,
-                return_attn_probs=True
+                return_attn_probs=True,
             )
         self.assertIn("return_attn_probs=True", str(cm.exception))
 
@@ -337,10 +386,12 @@ class TestAttentionForwardVarlen(unittest.TestCase):
         block_table = torch.tensor([0, 1, 2], dtype=torch.int32)
         with self.assertRaises(ParametersInvalid) as cm:
             attention_forward_varlen(
-                q=self.q, k=self.k, v=self.v,
+                q=self.q,
+                k=self.k,
+                v=self.v,
                 cu_seqlens_q=self.cu_seqlens_q,
                 cu_seqlens_k=self.cu_seqlens_k,
-                block_table=block_table
+                block_table=block_table,
             )
         self.assertIn("block_table=", str(cm.exception))
 

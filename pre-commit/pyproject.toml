@@ -9,6 +9,9 @@ extend-select = [
   "SIM115",
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*" = ["F401", "I", "E402"]
+
 [tool.pylint]
 reports = false
 score = false
@@ -71,6 +74,7 @@ disable = [
   "wrong-import-order",
   "wrong-import-position",
   "import-error",
+  "duplicate-code",
 ]
 
 [tool.bandit]

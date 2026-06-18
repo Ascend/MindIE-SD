@@ -11,23 +11,53 @@
 # See the Mulan PSL v2 for more details.
 import unittest
 import os
-import sys
 
-sys.path.append('../')
 
 from mindiesd.cache_agent import CacheAgent, CacheConfig
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU."
+)
 class TestAttentionCache(unittest.TestCase):
     def test_cache_func(self):
-        result = [0, 1, 2, 3, 4,
-                  5, 6, 7, 8, 9,
-                  5, 6, 7, 8, 9,
-                  5, 6, 7, 8, 9,
-                  20, 21, 22, 23, 24,
-                  20, 21, 22, 23, 24,
-                  30, 31, 32, 33, 34]
+        result = [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            5,
+            6,
+            7,
+            8,
+            9,
+            5,
+            6,
+            7,
+            8,
+            9,
+            20,
+            21,
+            22,
+            23,
+            24,
+            20,
+            21,
+            22,
+            23,
+            24,
+            30,
+            31,
+            32,
+            33,
+            34,
+        ]
         steps_count = 7
         blocks_count = 5
 
@@ -37,7 +67,8 @@ class TestAttentionCache(unittest.TestCase):
             steps_count=steps_count,
             step_start=1,
             step_end=5,
-            step_interval=3)
+            step_interval=3,
+        )
         agent = CacheAgent(config)
 
         def test_cache_func(i):
@@ -53,13 +84,42 @@ class TestAttentionCache(unittest.TestCase):
 
     def test_cache_func_two_result(self):
         result = [
-            (0, 0), (0, 1), (0, 2), (0, 3), (0, 4),
-            (1, 0), (1, 1), (1, 2), (1, 3), (1, 4),
-            (1, 0), (1, 1), (1, 2), (1, 3), (1, 4),
-            (1, 0), (1, 1), (1, 2), (1, 3), (1, 4),
-            (4, 0), (4, 1), (4, 2), (4, 3), (4, 4),
-            (4, 0), (4, 1), (4, 2), (4, 3), (4, 4),
-            (6, 0), (6, 1), (6, 2), (6, 3), (6, 4)]
+            (0, 0),
+            (0, 1),
+            (0, 2),
+            (0, 3),
+            (0, 4),
+            (1, 0),
+            (1, 1),
+            (1, 2),
+            (1, 3),
+            (1, 4),
+            (1, 0),
+            (1, 1),
+            (1, 2),
+            (1, 3),
+            (1, 4),
+            (1, 0),
+            (1, 1),
+            (1, 2),
+            (1, 3),
+            (1, 4),
+            (4, 0),
+            (4, 1),
+            (4, 2),
+            (4, 3),
+            (4, 4),
+            (4, 0),
+            (4, 1),
+            (4, 2),
+            (4, 3),
+            (4, 4),
+            (6, 0),
+            (6, 1),
+            (6, 2),
+            (6, 3),
+            (6, 4),
+        ]
         steps_count = 7
         blocks_count = 5
 
@@ -69,7 +129,8 @@ class TestAttentionCache(unittest.TestCase):
             steps_count=steps_count,
             step_start=1,
             step_end=5,
-            step_interval=3)
+            step_interval=3,
+        )
         agent = CacheAgent(config)
 
         def test_cache_func(i, j):

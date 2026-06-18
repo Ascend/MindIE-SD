@@ -10,27 +10,33 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+# pylint: disable=no-name-in-module
 import os
-import sys
 import functools
 import unittest
 import math
 from typing import Optional
 import numpy as np
 import torch
-import torch.nn as nn
+from torch import nn
+import torch.nn.functional as F
 from timm.models.layers import to_2tuple
 from einops import repeat, rearrange
-import torch.nn.functional as F
 import torch_npu
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 from device import DEVICE_ID
+
 torch_npu.npu.set_device(DEVICE_ID)
-from mindiesd.utils import ModelInitError, ParametersInvalid
-from utils.utils.embedding import RotaryEmbedding, TimestepEmbedder, SizeEmbedder, \
-    CombinedTimestepTextProjEmbeddings, PositionEmbedding2D, PatchEmbed, RotaryPositionEmbedding
-from utils.utils.precision_compare import data_compare
+from mindiesd.utils import ModelInitError, ParametersInvalid  # noqa: E402
+from utils.utils.embedding import (  # noqa: E402
+    RotaryEmbedding,
+    TimestepEmbedder,
+    SizeEmbedder,
+    CombinedTimestepTextProjEmbeddings,
+    PositionEmbedding2D,
+    PatchEmbed,
+    RotaryPositionEmbedding,
+)
+from utils.utils.precision_compare import data_compare  # noqa: E402
 
 
 ACTIVATION_FUNCTIONS = {
@@ -45,17 +51,13 @@ ACTIVATION_FUNCTIONS = {
 def hunyuandit_timestep_embedding(t, dim, max_period=10000, repeat_only=False):
     if not repeat_only:
         half = dim // 2
-        freqs = torch.exp(
-            -math.log(max_period)
-            * torch.arange(start=0, end=half, dtype=torch.float32)
-            / half
-        ).to(device=t.device)   # size: [dim/2], 一个指数衰减的曲线
+        freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half).to(
+            device=t.device
+        )  # size: [dim/2], 一个指数衰减的曲线
         args = t[:, None].float() * freqs[None]
         embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
         if dim % 2:
-            embedding = torch.cat(
-                [embedding, torch.zeros_like(embedding[:, :1])], dim=-1
-            )
+            embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
     else:
         embedding = repeat(t, "b -> b d", d=dim)
     return embedding
@@ -79,9 +81,7 @@ def get_timestep_embedding(
     assert len(timesteps.shape) == 1, "Timesteps should be a 1d-array"
 
     half_dim = embedding_dim // 2
-    exponent = -math.log(max_period) * torch.arange(
-        start=0, end=half_dim, dtype=torch.float32, device=timesteps.device
-    )
+    exponent = -math.log(max_period) * torch.arange(start=0, end=half_dim, dtype=torch.float32, device=timesteps.device)
     exponent = exponent / half_dim
 
     emb = torch.exp(exponent)
@@ -103,9 +103,7 @@ def get_timestep_embedding(
     return emb
 
 
-def get_2d_sincos_pos_embed(
-    embed_dim, grid_size, extra_tokens=0, interpolation_scale=1.0, base_size=16
-):
+def get_2d_sincos_pos_embed(embed_dim, grid_size, extra_tokens=0, interpolation_scale=1.0, base_size=16):
     """
     grid_size: int of the grid height and width return: pos_embed: [grid_size*grid_size, embed_dim] or
     [1+grid_size*grid_size, embed_dim] (w/ or w/o cls_token)
@@ -218,7 +216,7 @@ class OpensoraSizeEmbedder(OpenSoraTimestepEmbedder):
     def dtype(self):
         return next(self.parameters()).dtype
 
-    def forward(self, s, bs):
+    def forward(self, s, bs):  # pylint: disable=arguments-renamed
         if s.ndim == 1:
             s = s[:, None]
         assert s.ndim == 2
@@ -299,9 +297,6 @@ class Timesteps(nn.Module):
 
 
 class FP32SiLU(nn.Module):
-    def __init__(self):
-        super().__init__()
-
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         return F.silu(inputs.float(), inplace=False).to(inputs.dtype)
 
@@ -359,7 +354,7 @@ class OpenSoraPositionEmbedding2D(nn.Module):
 
     def forward(self, x: torch.Tensor, h: int, w: int, scale: Optional[float] = 1.0):
         s_hw = h * w
-        base_size = round(s_hw ** 0.5)
+        base_size = round(s_hw**0.5)
         grid_size = (h, w)
         return self._get_cached_emb(x, grid_size, base_size, scale)
 
@@ -392,14 +387,14 @@ class OpenSoraPositionEmbedding2D(nn.Module):
 
 class HunyuanDitPatchEmbed(nn.Module):
     def __init__(
-            self,
-            img_size=224,
-            patch_size=16,
-            in_chans=3,
-            embed_dim=768,
-            norm_layer=None,
-            flatten=True,
-            bias=True,
+        self,
+        img_size=224,
+        patch_size=16,
+        in_chans=3,
+        embed_dim=768,
+        norm_layer=None,
+        flatten=True,
+        bias=True,
     ):
         super().__init__()
         if isinstance(img_size, int):
@@ -480,7 +475,7 @@ class SD3PatchEmbed(nn.Module):
             pos_embed = get_2d_sincos_pos_embed(
                 embed_dim, grid_size, base_size=self.base_size, interpolation_scale=self.interpolation_scale
             )
-            persistent = True if pos_embed_max_size else False
+            persistent = bool(pos_embed_max_size)
             self.register_buffer("pos_embed", torch.from_numpy(pos_embed).float().unsqueeze(0), persistent=persistent)
         else:
             raise ValueError(f"Unsupported pos_embed_type: {pos_embed_type}")
@@ -497,18 +492,14 @@ class SD3PatchEmbed(nn.Module):
         height = height // self.patch_size
         width = width // self.patch_size
         if height > self.pos_embed_max_size:
-            raise ValueError(
-                f"Height:({height}) cannot be > `pos_embed_max_size`: {self.pos_embed_max_size}."
-            )
+            raise ValueError(f"Height:({height}) cannot be > `pos_embed_max_size`: {self.pos_embed_max_size}.")
         if width > self.pos_embed_max_size:
-            raise ValueError(
-                f"Width:({width}) cannot be > `pos_embed_max_size`: {self.pos_embed_max_size}."
-            )
+            raise ValueError(f"Width:({width}) cannot be > `pos_embed_max_size`: {self.pos_embed_max_size}.")
 
         top = (self.pos_embed_max_size - height) // 2
         left = (self.pos_embed_max_size - width) // 2
         spatial_pos_embed = self.pos_embed.reshape(1, self.pos_embed_max_size, self.pos_embed_max_size, -1)
-        spatial_pos_embed = spatial_pos_embed[:, top: top + height, left: left + width, :]
+        spatial_pos_embed = spatial_pos_embed[:, top : top + height, left : left + width, :]
         spatial_pos_embed = spatial_pos_embed.reshape(1, -1, spatial_pos_embed.shape[-1])
         return spatial_pos_embed
 
@@ -544,19 +535,19 @@ class SD3PatchEmbed(nn.Module):
 
 
 class HunyuanDiTRoPE(nn.Module):
-
     def __init__(self, embed_dim: int, use_real: bool = True):
         super().__init__()
 
         if embed_dim % 4 != 0 or embed_dim <= 2:
-            raise ParametersInvalid(f"The value of input embed_dim must be divisible by 4 and > 2, "
-                                    f"but got {embed_dim}.")
+            raise ParametersInvalid(
+                f"The value of input embed_dim must be divisible by 4 and > 2, but got {embed_dim}."
+            )
         self.embed_dim = embed_dim
         self.use_real = use_real
 
     def get_fill_resize_and_crop(self, grid_size, base_size):
         h, w = grid_size
-        r = h / w           # target resolution
+        r = h / w  # target resolution
         # resize
         if r > 1:
             resize_height = base_size
@@ -572,7 +563,7 @@ class HunyuanDiTRoPE(nn.Module):
         grid_h = np.linspace(start[0], stop[0], grid_size[0], endpoint=False, dtype=np.float32)
         grid_w = np.linspace(start[1], stop[1], grid_size[1], endpoint=False, dtype=np.float32)
         grid = np.meshgrid(grid_w, grid_h)  # here w goes first
-        grid = np.stack(grid, axis=0)   # [2, W, H]
+        grid = np.stack(grid, axis=0)  # [2, W, H]
         return grid
 
     def get_1d_rotary_pos_embed(self, pos, theta: float = 10000.0):
@@ -595,17 +586,17 @@ class HunyuanDiTRoPE(nn.Module):
         emb_w = self.get_1d_rotary_pos_embed(grid[1].reshape(-1))  # (H*W, D/4)
 
         if self.use_real:
-            cos = torch.cat([emb_h[0], emb_w[0]], dim=1)    # (H*W, D/2)
-            sin = torch.cat([emb_h[1], emb_w[1]], dim=1)    # (H*W, D/2)
+            cos = torch.cat([emb_h[0], emb_w[0]], dim=1)  # (H*W, D/2)
+            sin = torch.cat([emb_h[1], emb_w[1]], dim=1)  # (H*W, D/2)
             return cos, sin
         else:
-            emb = torch.cat([emb_h, emb_w], dim=1)    # (H*W, D/2)
+            emb = torch.cat([emb_h, emb_w], dim=1)  # (H*W, D/2)
             return emb
 
     def get_2d_rotary_pos_embed(self, grid_height, grid_width, base_size):
         grid_size = (grid_height, grid_width)
         start, stop = self.get_fill_resize_and_crop(grid_size, base_size)
-        grid = self.get_meshgrid(start, stop, grid_size)   # [2, H, w]
+        grid = self.get_meshgrid(start, stop, grid_size)  # [2, H, w]
         grid = grid.reshape([2, 1, *grid.shape[1:]])
         pos_embed = self.get_2d_rotary_pos_embed_from_grid(grid)
         return pos_embed
@@ -613,10 +604,10 @@ class HunyuanDiTRoPE(nn.Module):
     def reshape_for_broadcast(self, freqs_cis, x):
         ndim = x.ndim
         if isinstance(freqs_cis, tuple):
-            shape = [d if i == ndim - 2 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
+            shape = [d if i in (ndim - 2, ndim - 1) else 1 for i, d in enumerate(x.shape)]
             return freqs_cis[0].view(*shape), freqs_cis[1].view(*shape)
         else:
-            shape = [d if i == ndim - 2 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
+            shape = [d if i in (ndim - 2, ndim - 1) else 1 for i, d in enumerate(x.shape)]
             return freqs_cis.view(*shape)
 
     def rotate_half(self, x):
@@ -625,17 +616,19 @@ class HunyuanDiTRoPE(nn.Module):
 
     def forward(self, xq, freqs_cis):
         if isinstance(freqs_cis, tuple):
-            cos, sin = self.reshape_for_broadcast(freqs_cis, xq)    # [S, D]
+            cos, sin = self.reshape_for_broadcast(freqs_cis, xq)  # [S, D]
             cos, sin = cos.to(xq.device), sin.to(xq.device)
             xq_out = (xq.float() * cos + self.rotate_half(xq.float()) * sin).type_as(xq)
         else:
             xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))  # [B, S, H, D//2]
-            freqs_cis = self.reshape_for_broadcast(freqs_cis, xq_).to(xq.device)   # [S, D//2] --> [1, S, 1, D//2]
+            freqs_cis = self.reshape_for_broadcast(freqs_cis, xq_).to(xq.device)  # [S, D//2] --> [1, S, 1, D//2]
             xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3).type_as(xq)
         return xq_out
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestEmbedding(unittest.TestCase):
     def test_rotary_embedding(self):
         """
@@ -827,17 +820,19 @@ class TestEmbedding(unittest.TestCase):
                     hidden_states = torch.randn(shape, dtype=dtype).to(device)
                     rope_test = HunyuanDiTRoPE(embed_dim=dim)
                     rotary_pos_emb_test = rope_test.get_2d_rotary_pos_embed(grid_height, grid_width, base_size)
-                    rotary_pos_emb_test = (rotary_pos_emb_test[0].to(dtype).to(device),
-                                           rotary_pos_emb_test[1].to(dtype).to(device))
+                    rotary_pos_emb_test = (
+                        rotary_pos_emb_test[0].to(dtype).to(device),
+                        rotary_pos_emb_test[1].to(dtype).to(device),
+                    )
 
                     rope = RotaryPositionEmbedding(embed_dim=dim)
                     rotary_pos_emb = rope.get_2d_rotary_pos_embed(grid_height, grid_width, base_size)
-                    rotary_pos_emb = (rotary_pos_emb[0].to(dtype).to(device),
-                                      rotary_pos_emb[1].to(dtype).to(device))
+                    rotary_pos_emb = (rotary_pos_emb[0].to(dtype).to(device), rotary_pos_emb[1].to(dtype).to(device))
 
                     embedding_test = rope_test(hidden_states, rotary_pos_emb_test)
-                    embedding = rope(hidden_states, rotary_pos_emb, rotated_mode="rotated_interleaved",
-                                     head_first=True, fused=True)
+                    embedding = rope(
+                        hidden_states, rotary_pos_emb, rotated_mode="rotated_interleaved", head_first=True, fused=True
+                    )
                     self.assertEqual(embedding.shape, embedding_test.shape)
 
                     embedding_test = embedding_test.reshape(1, -1).to(torch.float32)

@@ -15,34 +15,43 @@ import sys
 import os
 import zmq
 import torch
-import torch.nn as nn
-import torch_npu
-from unittest.mock import Mock, patch, MagicMock, call, ANY
+from torch import nn
+from unittest.mock import MagicMock, call
 import logging
 
-sys.path.append('../')
-try:
-    from device import DEVICE_ID
-except ImportError:
-    DEVICE_ID = 0
-
+from device import DEVICE_ID
 import mindiesd.share_memory as msm
+
+from mindiesd.share_memory import (
+    ShareMemoryManager,
+    init_share_memory,
+    get_share_memory_manager,
+    share_memory,
+    _check_device_and_dtype,
+    manager as global_manager,
+)
+
+# broadcast_handle now exchanges raw bytes via safe_dumps/safe_loads instead of
+# ZMQ's send_pyobj/recv_pyobj, so the socket mocks must return serialized bytes.
+from mindiesd.utils.safe_pickle import safe_dumps
+
 mock_zmq_ctx = MagicMock(spec=zmq.Context)
 msm.ZMQ_CONTEXT = mock_zmq_ctx
 
-from mindiesd.share_memory import (
-    ShareMemoryManager, init_share_memory, get_share_memory_manager, share_memory,
-    _check_device_and_dtype, ZMQ_CONTEXT, manager as global_manager
-)
-
+_PREVIOUS_LOGGING_DISABLE_LEVEL = logging.root.manager.disable
 logging.disable(logging.CRITICAL)
 os.environ["ZMQ_DISABLE_IPV6"] = "1"
 os.environ["ASCEND_SIMULATOR"] = "1"
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
-class TestShareMemoryManager(unittest.TestCase):
+def tearDownModule():
+    logging.disable(_PREVIOUS_LOGGING_DISABLE_LEVEL)
 
+
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
+class TestShareMemoryManager(unittest.TestCase):
     def setUp(self):
         global global_manager
         self.original_manager = global_manager
@@ -50,11 +59,13 @@ class TestShareMemoryManager(unittest.TestCase):
 
         self.mock_socket = MagicMock()
         self.mock_socket.setsockopt.return_value = None
-        self.mock_socket.send_pyobj.return_value = None
-        self.mock_socket.recv_pyobj.return_value = 123456
+        # recv() now returns SafeUnpickler-serialized bytes (the NPU share handle).
+        self.mock_socket.recv.return_value = safe_dumps(123456)
         mock_zmq_ctx.socket.return_value = self.mock_socket
 
         self.mock_socket.reset_mock()
+        # reset_mock clears return_value too, so re-arm it after reset.
+        self.mock_socket.recv.return_value = safe_dumps(123456)
 
         self.device_id = 0
         self.world_size = 3
@@ -78,10 +89,7 @@ class TestShareMemoryManager(unittest.TestCase):
 
     def test_manager_init_rank1(self):
         manager = ShareMemoryManager(
-            instance_world_size=self.world_size,
-            instance_id=1,
-            master_addr="192.168.1.100",
-            base_port=6666
+            instance_world_size=self.world_size, instance_id=1, master_addr="192.168.1.100", base_port=6666
         )
         self.assertEqual(manager.instance_id, 1)
         self.assertFalse(manager.is_master)
@@ -90,29 +98,26 @@ class TestShareMemoryManager(unittest.TestCase):
 
     def test_broadcast_handle_master(self):
         manager = ShareMemoryManager(instance_world_size=2, instance_id=0)
-        pub_port = self.default_base_port + self.device_id + 100
 
         ret_handle = manager.broadcast_handle(99999)
 
         self.assertEqual(ret_handle, 99999)
-
+        # Master must serialize the handle through safe_dumps before sending.
+        self.mock_socket.send.assert_called_with(safe_dumps(99999))
 
     def test_broadcast_handle_slave(self):
         manager = ShareMemoryManager(instance_world_size=2, instance_id=1)
-        pub_port = self.default_base_port + self.device_id + 100
 
         ret_handle = manager.broadcast_handle(None)
 
         self.assertEqual(ret_handle, 123456)
-        self.mock_socket.setsockopt.assert_has_calls([
-            call(zmq.SUBSCRIBE, b""),
-            call(zmq.RCVTIMEO, 5000)
-        ])
+        self.mock_socket.setsockopt.assert_has_calls([call(zmq.SUBSCRIBE, b""), call(zmq.RCVTIMEO, 5000)])
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestGetShareMemoryManager(unittest.TestCase):
-
     def setUp(self):
         global global_manager
         self.original_manager = global_manager
@@ -124,12 +129,7 @@ class TestGetShareMemoryManager(unittest.TestCase):
         global_manager = self.original_manager
 
     def test_singleton_pattern(self):
-        manager1 = init_share_memory(
-            instance_world_size=4,
-            instance_id=0,
-            master_addr="192.168.1.100",
-            base_port=6666
-        )
+        manager1 = init_share_memory(instance_world_size=4, instance_id=0, master_addr="192.168.1.100", base_port=6666)
         self.assertIsInstance(manager1, ShareMemoryManager)
 
         manager2 = get_share_memory_manager()
@@ -141,19 +141,15 @@ class TestGetShareMemoryManager(unittest.TestCase):
         self.assertIn("ShareMemoryManager has not been initialized", str(ctx.exception))
 
     def test_dynamic_config_addr_port(self):
-        manager = init_share_memory(
-            instance_world_size=2,
-            instance_id=0,
-            master_addr="10.0.0.5",
-            base_port=7777
-        )
+        manager = init_share_memory(instance_world_size=2, instance_id=0, master_addr="10.0.0.5", base_port=7777)
         self.assertEqual(manager.master_addr, "10.0.0.5")
         self.assertEqual(manager.base_port, 7777)
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestMemoryShareTo(unittest.TestCase):
-
     def setUp(self):
         global global_manager
         self.original_manager = global_manager
@@ -162,8 +158,8 @@ class TestMemoryShareTo(unittest.TestCase):
 
         mock_socket = MagicMock()
         mock_socket.setsockopt.return_value = None
-        mock_socket.send_pyobj.return_value = None
-        mock_socket.recv_pyobj.return_value = 123456
+        # recv() now returns SafeUnpickler-serialized bytes (the NPU share handle).
+        mock_socket.recv.return_value = safe_dumps(123456)
         mock_zmq_ctx.socket.return_value = mock_socket
         global_manager = ShareMemoryManager(
             instance_world_size=2,
@@ -188,11 +184,12 @@ class TestMemoryShareTo(unittest.TestCase):
         self.assertEqual(next(result_module.parameters()).device, torch.device("cpu"))
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestCheckDeviceDtype(unittest.TestCase):
-
     def test_check_device_dtype_npu_match(self):
-        module = nn.Linear(10,10).to(f'npu:{DEVICE_ID}')
+        module = nn.Linear(10, 10).to(f'npu:{DEVICE_ID}')
         target_device = torch.device(f'npu:{DEVICE_ID}')
 
         should_fallback, result, _, _ = _check_device_and_dtype(module, target_device, torch.float16)
@@ -200,14 +197,16 @@ class TestCheckDeviceDtype(unittest.TestCase):
         self.assertIs(result, module)
 
     def test_check_invalid_dtype(self):
-        module = nn.Linear(5,5).cpu()
+        module = nn.Linear(5, 5).cpu()
         target_device = torch.device(f'npu:{DEVICE_ID}')
 
         with self.assertRaises(msm.ParametersInvalid):
             _check_device_and_dtype(module, target_device, torch.int32)
 
 
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestAllInOnePipeline(unittest.TestCase):
     def test_full_pipeline(self):
         manager = init_share_memory(
@@ -224,4 +223,4 @@ class TestAllInOnePipeline(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main(verbosity=2, failfast=True)
+    unittest.main(verbosity=2)

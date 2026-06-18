@@ -19,17 +19,15 @@ import unittest
 
 import numpy as np
 import torch
-
-# Add project root to sys.path for mindiesd import.
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
+import torch_npu
 
 from mindiesd.utils.get_platform import is_a5_device  # noqa: E402
 
 # 加载自定义库
 if os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU":
-    torch.ops.load_library("../mindiesd/plugin/libPTAExtensionOPS.so")
+    from mindiesd.layers.register_ops import _load_mindie_ops_library
+
+    _load_mindie_ops_library()
 
 
 # CPU reference implementation
@@ -104,7 +102,8 @@ def make_block_sparse_mask(batch, head_num, seq_len, sparse_size, sparsity=0.5, 
 
 
 @unittest.skipIf(
-    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
+    "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.",
 )
 @unittest.skipIf(not is_a5_device(), "Block Sparse Attention requires A5 (950) NPU.")
 class TestNpuBlockSparseAttentionNPU(unittest.TestCase):
@@ -128,19 +127,33 @@ class TestNpuBlockSparseAttentionNPU(unittest.TestCase):
         return torch.ones(self.batch, self.head_num, q_blocks, kv_blocks, dtype=torch.int8)
 
     def _call_op(
-        self, q, k, v, mask, layout="BNSD", actual_seq_lengths=None, actual_seq_lengths_kv=None, softmax_lse_flag=0
+        self,
+        q,
+        k,
+        v,
+        mask,
+        layout="BNSD",
+        actual_seq_lengths=None,
+        actual_seq_lengths_kv=None,
+        softmax_lse_flag=0,
+        block_shape=None,
+        q_dequant_scale=None,
+        k_dequant_scale=None,
+        v_dequant_scale=None,
     ):
         # Default actual_seq_lengths if not provided.
         if actual_seq_lengths is None:
             actual_seq_lengths = [self.seq_len] * self.batch
         if actual_seq_lengths_kv is None:
             actual_seq_lengths_kv = [self.seq_len] * self.batch
-        return torch.ops.mindiesd.block_sparse_attention(
+        if block_shape is None:
+            block_shape = [self.sparse_size, self.sparse_size]
+        kwargs = dict(
             query=q.to(self.device),
             key=k.to(self.device),
             value=v.to(self.device),
             block_sparse_mask=mask.to(self.device),
-            block_shape=[self.sparse_size, self.sparse_size],
+            block_shape=block_shape,
             q_input_layout=layout,
             kv_input_layout=layout,
             num_key_value_heads=self.head_num,
@@ -150,8 +163,15 @@ class TestNpuBlockSparseAttentionNPU(unittest.TestCase):
             actual_seq_lengths=actual_seq_lengths,
             actual_seq_lengths_kv=actual_seq_lengths_kv,
         )
+        if q_dequant_scale is not None:
+            kwargs.update(
+                q_dequant_scale=q_dequant_scale.to(self.device),
+                k_dequant_scale=k_dequant_scale.to(self.device),
+                v_dequant_scale=v_dequant_scale.to(self.device),
+            )
+        return torch.ops.mindiesd.block_sparse_attention(**kwargs)
 
-    # smoke test 1: BNSD full mask
+    # smoke test 1: BNSD full mask (BF16)
 
     def test_smoke_bnsd(self):
         """BNSD smoke test: output shape matches query."""
@@ -164,7 +184,7 @@ class TestNpuBlockSparseAttentionNPU(unittest.TestCase):
         self.assertEqual(tuple(attn_out.shape), (B, N, S, D))
         self.assertEqual(attn_out.dtype, torch.float16)
 
-    # smoke test 2: TND full mask
+    # smoke test 2: TND full mask (BF16)
 
     def test_smoke_tnd(self):
         """TND smoke test: output shape is [T, N, D]."""
@@ -186,6 +206,55 @@ class TestNpuBlockSparseAttentionNPU(unittest.TestCase):
         )
         self.assertEqual(tuple(attn_out.shape), (T, N, D))
         self.assertEqual(attn_out.dtype, torch.float16)
+
+    # smoke test 3: BNSD FP8 with dequant scales
+
+    def test_smoke_bnsd_fp8(self):
+        """FP8 BNSD smoke test: FP8 QKV + dequant scales → BF16 output."""
+        B, N, S, D = self.batch, self.head_num, self.seq_len, self.head_dim
+        from mindiesd.layers.quant.block_quant import fa_block_quant_preprocess
+
+        q_bf16 = torch.randn(B, N, S, D, dtype=torch.bfloat16).npu()
+        k_bf16 = torch.randn(B, N, S, D, dtype=torch.bfloat16).npu()
+        v_bf16 = torch.randn(B, N, S, D, dtype=torch.bfloat16).npu()
+
+        # Block-quantize to FP8 (BNSD layout, function handles squeeze/unsqueeze internally)
+        q_block, kv_block = 128, 256
+        fp8_dtype = torch_npu.float8_e4m3fn  # pylint: disable=no-member
+        q_fp8, q_scale = fa_block_quant_preprocess(q_bf16, block_size=q_block, dst_type=fp8_dtype, layout="BNSD")
+        k_fp8, k_scale = fa_block_quant_preprocess(k_bf16, block_size=kv_block, dst_type=fp8_dtype, layout="BNSD")
+        v_fp8, v_scale = fa_block_quant_preprocess(v_bf16, block_size=kv_block, dst_type=fp8_dtype, layout="BNSD")
+
+        # FP8 uses [q_block, kv_block] = [128, 256]; mask must match this granularity
+        q_blocks = math.ceil(self.seq_len / q_block)
+        kv_blocks = math.ceil(self.seq_len / kv_block)
+        mask = torch.ones(self.batch, self.head_num, q_blocks, kv_blocks, dtype=torch.int8)
+        attn_out, lse = self._call_op(
+            q_fp8,
+            k_fp8,
+            v_fp8,
+            mask,
+            layout="BNSD",
+            block_shape=[q_block, kv_block],
+            q_dequant_scale=q_scale,
+            k_dequant_scale=k_scale,
+            v_dequant_scale=v_scale,
+        )
+        self.assertEqual(tuple(attn_out.shape), (B, N, S, D))
+        self.assertEqual(attn_out.dtype, torch.bfloat16)
+
+    # BF16 backward compatibility: passing no scales should work
+
+    def test_bnsd_bf16_no_scales(self):
+        """BF16 BNSD without dequant scales: backward compatible with V1 behavior."""
+        B, N, S, D = self.batch, self.head_num, self.seq_len, self.head_dim
+        q = torch.randn(B, N, S, D, dtype=torch.bfloat16)
+        k = torch.randn(B, N, S, D, dtype=torch.bfloat16)
+        v = torch.randn(B, N, S, D, dtype=torch.bfloat16)
+        mask = self._full_mask()
+        attn_out, lse = self._call_op(q, k, v, mask, layout="BNSD")
+        self.assertEqual(tuple(attn_out.shape), (B, N, S, D))
+        self.assertEqual(attn_out.dtype, torch.bfloat16)
 
 
 if __name__ == "__main__":

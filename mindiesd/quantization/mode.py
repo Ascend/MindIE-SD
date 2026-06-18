@@ -43,6 +43,7 @@ class QuantAlgorithm(StrEnum):
     INT8 = "INT8"
     MIXED_PERCISION = "MIXED_PERCISION"
     FP8_DYNAMIC = "FP8_DYNAMIC"
+    MXFP4_DYNAMIC = "MXFP4_DYNAMIC"
     NO_QUANT = "NO_QUANT"
     W4A4_MXFP4_SVD = "W4A4_MXFP4_SVD"
     W4A4_MXFP4_DUALSCALE = "W4A4_MXFP4_DUALSCALE"
@@ -167,7 +168,7 @@ class QuantMode:
 
     @staticmethod
     def from_quant_algo(quant_algo: Optional[QuantAlgorithm] = None):
-        quant_mode_map = {
+        quant_modes = {
             QuantAlgorithm.W8A16: QuantMode.use_weight_only(use_int4_weights=False),
             QuantAlgorithm.W4A16: QuantMode.use_weight_only(use_int4_weights=True),
             QuantAlgorithm.W4A16_AWQ: QuantMode.use_weight_only(use_int4_weights=True, per_group=True),
@@ -184,12 +185,13 @@ class QuantMode:
             QuantAlgorithm.W8A8_PER_CHANNEL_PER_TOKEN: QuantMode.use_smooth_quant(per_token=True, per_channel=True),
             QuantAlgorithm.W8A8_PER_TENSOR_PER_TOKEN: QuantMode.use_smooth_quant(per_token=True, per_channel=False),
             QuantAlgorithm.FP8_DYNAMIC: QuantMode.from_descriptor(QuantModeDescriptor(use_fa_quant=True)),
+            QuantAlgorithm.MXFP4_DYNAMIC: QuantMode.from_descriptor(QuantModeDescriptor(use_fa_quant=True)),
             QuantAlgorithm.W8A8_MXFP8: QuantMode.use_smooth_quant(per_token=False, per_channel=False),
             QuantAlgorithm.W4A4_MXFP4_SVD: QuantMode.use_smooth_quant(per_token=False, per_channel=False),
             QuantAlgorithm.W4A4_MXFP4_DUALSCALE: QuantMode.use_smooth_quant(per_token=False, per_channel=False),
             QuantAlgorithm.W4A4_MXFP4_DYNAMIC: QuantMode.use_smooth_quant(per_token=True, per_channel=True),
         }
-        return quant_mode_map.get(quant_algo, QuantMode(0))
+        return quant_modes.get(quant_algo, QuantMode(0))
 
     def check_weight_int8_only(self):
         return self._all(QuantFlag.INT8_WEIGHTS, QuantFlag.WEIGHTS_AND_ACTIVATION)

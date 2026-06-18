@@ -7,7 +7,7 @@
 # ============================================================================
 
 cat <<EOF
-${ASCEND_SOFTWARE_NAME:-vLLM-Omni + MindIE-SD} ${ASCEND_SOFTWARE_VERSION:-v0.20.0}
+Version: ${ASCEND_SOFTWARE_VERSION:-v3.0.0}
 Container image Copyright (c) 2026, Huawei Technologies Co., Ltd. All rights reserved.
 
 This container image and its contents are governed by the Huawei Container License Agreement ("License"). By pulling and using the container, you accept the terms and conditions of this License.

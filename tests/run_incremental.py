@@ -13,21 +13,19 @@
 import unittest
 import os
 import re
-import sys
 import argparse
-from typing import List, Set, Optional
+from typing import List
 from importlib import import_module
 from incremental_test_finder import IncrementalTestFinder
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(script_dir)
-sys.path.append(script_dir)
-sys.path.append(parent_dir)
 custom_op_path1 = os.path.join(parent_dir, "mindiesd/ops/vendors/aie_ascendc")
 custom_op_path2 = os.path.join(parent_dir, "mindiesd/ops/vendors/customize")
 old_custom_op_path = os.environ.get("ASCEND_CUSTOM_OPP_PATH", "")
 new_custom_op_path = f"{custom_op_path1}:{custom_op_path2}:{old_custom_op_path}"
 os.environ["ASCEND_CUSTOM_OPP_PATH"] = new_custom_op_path
+
 
 def load_tests_from_list(test_files: List[str], base_path: str):
     """
@@ -70,24 +68,17 @@ def load_tests_from_list(test_files: List[str], base_path: str):
     return test_suite
 
 
-def run_incremental_tests(base_branch: str = "main",
-                         include_staged: bool = True,
-                         include_unstaged: bool = True,
-                         dry_run: bool = False):
-
+def run_incremental_tests(
+    base_branch: str = "main", include_staged: bool = True, include_unstaged: bool = True, dry_run: bool = False
+):
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
     # 创建增量测试查找器
-    finder = IncrementalTestFinder(
-        repo_root=os.path.dirname(current_dir),
-        base_branch=base_branch
-    )
+    finder = IncrementalTestFinder(repo_root=os.path.dirname(current_dir), base_branch=base_branch)
 
     # 获取增量测试列表
     tests, deletion_info, changes = finder.get_incremental_tests(
-        since_ref=base_branch,
-        include_staged=include_staged,
-        include_unstaged=include_unstaged
+        since_ref=base_branch, include_staged=include_staged, include_unstaged=include_unstaged
     )
 
     # 打印测试计划
@@ -108,21 +99,15 @@ def run_incremental_tests(base_branch: str = "main",
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="MindIE SD 增量UT测试",
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        description="MindIE SD 增量UT测试", formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
-    parser.add_argument("--base-branch", "-b", default="master",
-                       help="增量测试的基分支 (默认: master)")
-    parser.add_argument("--no-staged", action="store_true",
-                       help="增量测试时不包含暂存区变更")
-    parser.add_argument("--no-unstaged", action="store_true",
-                       help="增量测试时不包含未暂存变更")
+    parser.add_argument("--base-branch", "-b", default="master", help="增量测试的基分支 (默认: master)")
+    parser.add_argument("--no-staged", action="store_true", help="增量测试时不包含暂存区变更")
+    parser.add_argument("--no-unstaged", action="store_true", help="增量测试时不包含未暂存变更")
 
-    parser.add_argument("--verbose", "-v", action="store_true",
-                       help="详细输出模式")
-    parser.add_argument("--dry-run", "-n", action="store_true",
-                       help="仅显示测试计划，不执行测试")
+    parser.add_argument("--verbose", "-v", action="store_true", help="详细输出模式")
+    parser.add_argument("--dry-run", "-n", action="store_true", help="仅显示测试计划，不执行测试")
     args = parser.parse_args()
     return args
 
@@ -135,7 +120,7 @@ def main():
         base_branch=args.base_branch,
         include_staged=not args.no_staged,
         include_unstaged=not args.no_unstaged,
-        dry_run=args.dry_run
+        dry_run=args.dry_run,
     )
     if suite is None:
         return

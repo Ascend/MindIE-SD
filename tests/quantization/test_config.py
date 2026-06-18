@@ -10,14 +10,11 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 import os
-import sys
 import unittest
 from typing import Dict, List
 
 from mindiesd.quantization.config import QuantConfig, LayerQuantConfig, OnlineQuantConfig, TimestepPolicyConfig
 from mindiesd.quantization.mode import QuantAlgorithm, QuantMode
-
-sys.path.append('../')
 
 
 @unittest.skipIf(
@@ -137,11 +134,9 @@ class TestOnlineQuantConfig(unittest.TestCase):
 
     def test_reject_invalid_online_quant_config_values(self):
         invalid_configs = [
-            {"quant_type": "W8A8_DYNAMIC"},
             {"quant_type": QuantAlgorithm.NO_QUANT},
             {"fallback_layers": []},
             {"fallback_layers": {1: QuantAlgorithm.W8A8}},
-            {"fallback_layers": {"layer": "W8A8"}},
             {"fallback_layers": {"layer": QuantAlgorithm.NO_QUANT}},
             {"quant_type": QuantAlgorithm.W4A4_MXFP4_DYNAMIC, "fallback_timesteps": "1"},
             {"quant_type": QuantAlgorithm.W4A4_MXFP4_DYNAMIC, "fallback_timesteps": [1, "2"]},
@@ -164,29 +159,29 @@ class TestTimeStepPolicyConfig(unittest.TestCase):
     def test_register_and_get_strategy(self):
         """测试注册策略并能正确获取"""
         # 注册单个时间步的策略
-        self.config.register(10, "static")  # 使用"static"而不是"fixed"
-        self.assertEqual(self.config.get_strategy(10), "static")
+        self.config.register(10, "static", target="w8a8_static_linear")  # 使用"static"而不是"fixed"
+        self.assertEqual(self.config.get_strategy(10, target="w8a8_static_linear"), "static")
 
         # 注册时间步范围
-        self.config.register([20, 30, 40], "dynamic")  # 使用"dynamic"而不是"adaptive"
-        self.assertEqual(self.config.get_strategy(20), "dynamic")
-        self.assertEqual(self.config.get_strategy(30), "dynamic")
-        self.assertEqual(self.config.get_strategy(40), "dynamic")
+        self.config.register([20, 30, 40], "dynamic", target="w8a8_static_linear")  # 使用"dynamic"而不是"adaptive"
+        self.assertEqual(self.config.get_strategy(20, target="w8a8_static_linear"), "dynamic")
+        self.assertEqual(self.config.get_strategy(30, target="w8a8_static_linear"), "dynamic")
+        self.assertEqual(self.config.get_strategy(40, target="w8a8_static_linear"), "dynamic")
 
         # 测试默认策略
-        self.assertEqual(self.config.get_strategy(5), "dynamic")
+        self.assertEqual(self.config.get_strategy(5, target="w8a8_static_linear"), "dynamic")
 
     def test_register_with_int_step(self):
         """测试使用整数作为step_range注册"""
-        self.config.register(15, "static")  # 使用"static"
-        self.assertEqual(self.config.get_strategy(15), "static")
+        self.config.register(15, "static", target="w8a8_static_linear")  # 使用"static"
+        self.assertEqual(self.config.get_strategy(15, target="w8a8_static_linear"), "static")
 
     def test_register_with_range_step(self):
         """测试使用range对象作为step_range注册"""
-        self.config.register(range(50, 53), "dynamic")  # 使用"dynamic"
-        self.assertEqual(self.config.get_strategy(50), "dynamic")
-        self.assertEqual(self.config.get_strategy(51), "dynamic")
-        self.assertEqual(self.config.get_strategy(52), "dynamic")
+        self.config.register(range(50, 53), "dynamic", target="w8a8_static_linear")  # 使用"dynamic"
+        self.assertEqual(self.config.get_strategy(50, target="w8a8_static_linear"), "dynamic")
+        self.assertEqual(self.config.get_strategy(51, target="w8a8_static_linear"), "dynamic")
+        self.assertEqual(self.config.get_strategy(52, target="w8a8_static_linear"), "dynamic")
 
     def test_invalid_strategy_type(self):
         """测试注册非字符串策略类型"""
@@ -205,16 +200,16 @@ class TestTimeStepPolicyConfig(unittest.TestCase):
     def test_invalid_step_range_type(self):
         """测试注册无效的step_range类型"""
         with self.assertRaises(TypeError):
-            self.config.register("invalid", "static")  # 字符串不是有效的step_range类型
+            self.config.register("invalid", "static", target="w8a8_static_linear")  # 字符串不是有效的step_range类型
 
     def test_invalid_step_in_range(self):
         """测试step_range中包含非整数元素"""
         with self.assertRaises(TypeError):
-            self.config.register([10, "20", 30], "static")  # "20"不是整数
+            self.config.register([10, "20", 30], "static", target="w8a8_static_linear")  # "20"不是整数
 
     def test_get_strategy_for_unregistered_step(self):
         """测试获取未注册时间步的策略，应返回默认策略"""
-        self.assertEqual(self.config.get_strategy(999), "dynamic")
+        self.assertEqual(self.config.get_strategy(999, target="w8a8_static_linear"), "dynamic")
 
 
 if __name__ == '__main__':

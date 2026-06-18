@@ -11,12 +11,8 @@
 # See the Mulan PSL v2 for more details.
 
 import os
-import sys
 import unittest
-import logging
 import importlib
-
-sys.path.append('../')
 
 
 MINDIE_LOG_LEVEL = "MINDIE_LOG_LEVEL"
@@ -109,7 +105,7 @@ class TestEnvs(unittest.TestCase):
         long_string = "invalid env \n" * 50
         os.environ[MINDIE_LOG_LEVEL] = long_string
         with self.assertRaises(ValueError):
-            env = env_var(os.getenv(MINDIE_LOG_LEVEL, ""))
+            env = env_var(os.getenv(MINDIE_LOG_LEVEL, ""))  # noqa: F841
 
 
 if __name__ == '__main__':

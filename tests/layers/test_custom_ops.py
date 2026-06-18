@@ -17,10 +17,7 @@ from mindiesd.layers._custom_ops import (
     laser_attention_preprocess,
 )
 import os
-import sys
-from pathlib import Path
 
-sys.path.append(str(Path(__file__).parent.parent.parent))
 from mindiesd.compilation import MindieSDBackend  # pylint: disable=no-name-in-module
 from mindiesd.utils.get_platform import is_a5_device
 
