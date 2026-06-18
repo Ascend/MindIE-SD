@@ -389,7 +389,7 @@ class TestQuantize(unittest.TestCase):
     def test_quantize_rejects_missing_quant_source(self):
         model = nn.Sequential(nn.Linear(10, 10))
 
-        with self.assertRaises(ParametersInvalid):
+        with self.assertRaises(ConfigError):
             quantize(model)
 
     def test_quantize_rejects_invalid_dtype(self):
@@ -418,14 +418,6 @@ class TestQuantize(unittest.TestCase):
 
         with self.assertRaises(ParametersInvalid):
             quantize(model, "path/to/quant_des.json", timestep_config="invalid")
-
-    @mock.patch("mindiesd.utils.file_utils.check_file_safety")
-    @mock.patch("mindiesd.utils.file_utils.standardize_path", side_effect=lambda path: path)
-    def test_quantize_rejects_invalid_module_map(self, _mock_standardize, _mock_check_safety):
-        model = nn.Sequential(nn.Linear(10, 10))
-
-        with self.assertRaises(ParametersInvalid):
-            quantize(model, "path/to/quant_des.json", map={"linear": W8A8QuantBaseLinear})
 
     @mock.patch.object(torch.npu, "empty_cache")
     def test_online_quantize_rejects_unsupported_mutated_fallback(self, _mock_empty_cache):

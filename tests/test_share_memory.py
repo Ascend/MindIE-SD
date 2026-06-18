@@ -38,9 +38,14 @@ from mindiesd.utils.safe_pickle import safe_dumps
 mock_zmq_ctx = MagicMock(spec=zmq.Context)
 msm.ZMQ_CONTEXT = mock_zmq_ctx
 
+_PREVIOUS_LOGGING_DISABLE_LEVEL = logging.root.manager.disable
 logging.disable(logging.CRITICAL)
 os.environ["ZMQ_DISABLE_IPV6"] = "1"
 os.environ["ASCEND_SIMULATOR"] = "1"
+
+
+def tearDownModule():
+    logging.disable(_PREVIOUS_LOGGING_DISABLE_LEVEL)
 
 
 @unittest.skipIf(
