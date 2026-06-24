@@ -68,7 +68,19 @@ def start_manager_server(addr, auth_key):
     auth_bytes = auth_key.encode('utf-8')
     multiprocessing.current_process().authkey = auth_bytes
     manager = ScheduleManager(address=addr, authkey=auth_bytes)
-    server = manager.get_server()
+    try:
+        server = manager.get_server()
+    except OSError as error:
+        logger.error(
+            "[MindIE-SD/eplb] EPLB scheduler failed to bind address. "
+            "issue=manager server startup failed, scheduler_addr=%s:%s, actual_error=%s. "
+            "possible_cause=the scheduler port is already in use or the configured address is unavailable. "
+            "Troubleshooting: check the listening process, release the port, or configure another scheduler address.",
+            addr[0],
+            addr[1],
+            error,
+        )
+        raise
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
 
@@ -146,6 +158,15 @@ def _emit_layer_update(context, layer_idx, transfer):
     )
     update, device_indices_list, local_expert_indices_list, local_expert_list, expert_trans_tensor = result
     if not update:
+        logger.error(
+            "[MindIE-SD/eplb] EPLB layout was not updated. "
+            "issue=greedy algorithm produced no layout update, layer_idx=%s, update_count=%s. "
+            "possible_cause=rank reports are incomplete, the target MoE layer is not covered, "
+            "or the reported load does not trigger an update. "
+            "Troubleshooting: check world_size rank reports, block_num, load data, and EPLB thresholds.",
+            layer_idx,
+            context.update_count,
+        )
         return
 
     transfer.update_emit_task(

@@ -11,6 +11,8 @@
 # See the Mulan PSL v2 for more details.
 
 import threading
+from multiprocessing.connection import AuthenticationError
+
 import torch_npu
 
 from mindiesd.utils.logs.logging import logger
@@ -23,6 +25,16 @@ TASK_DISPATCHER = {
     TaskType.PROFILE: handle_profile_task,
     TaskType.UPDATE_LAYOUT: handle_update_layout_task,
 }
+
+
+def _log_unknown_instruction(instruction):
+    logger.error(
+        "[MindIE-SD/eplb] Unknown instruction ignored. "
+        "issue=instruction is not a TaskPayload, instruction=%s. "
+        "possible_cause=an unsupported object was inserted into the EPLB instruction queue. "
+        "Troubleshooting: ensure the queue only contains PROFILE or UPDATE_LAYOUT TaskPayload objects.",
+        instruction,
+    )
 
 
 def parse_module(module):
@@ -51,13 +63,39 @@ def expert_info_transfer_pool(module, instruction_queue, upload_queue, device):
             handler_function = TASK_DISPATCHER.get(instruction.task_type, handle_unknown_task)
             handler_function(instruction, upload_queue, expert_load_collector_list, dispatcher_list, transfer_stream)
         else:
-            logger.debug("[MindIE-SD/eplb] Unknown instruction ignored. instruction=%s.", instruction)
+            _log_unknown_instruction(instruction)
 
 
 def connect_to_schedule_manager(rank_in_group, ip, port, auth_key):
     addr = (ip, port)
     manager = get_manager_client(addr, auth_key)
-    manager.connect()
+    try:
+        manager.connect()
+    except AuthenticationError as error:
+        logger.error(
+            "[MindIE-SD/eplb] EPLB worker authentication failed. "
+            "issue=scheduler rejected worker credentials, rank_in_group=%s, manager_addr=%s:%s, actual_error=%s. "
+            "possible_cause=the scheduler and worker use different EPLB authentication keys. "
+            "Troubleshooting: configure the same EPLB_AUTH_KEY or auth_key for the scheduler and every worker.",
+            rank_in_group,
+            ip,
+            port,
+            error,
+        )
+        raise
+    except OSError as error:
+        logger.error(
+            "[MindIE-SD/eplb] EPLB worker failed to connect to scheduler. "
+            "issue=scheduler connection unavailable, rank_in_group=%s, manager_addr=%s:%s, actual_error=%s. "
+            "possible_cause=the scheduler is not running, the configured address is incorrect, "
+            "or the network path is unavailable. "
+            "Troubleshooting: check the scheduler process, listening address, worker configuration, and network.",
+            rank_in_group,
+            ip,
+            port,
+            error,
+        )
+        raise
     logger.debug(
         "[MindIE-SD/eplb] Connected to schedule manager. rank_in_group=%s, manager_addr=%s:%s.",
         rank_in_group,
