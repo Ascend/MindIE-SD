@@ -494,6 +494,76 @@ class FP8RotateQuantFA(nn.Module):
         return x
 
 
+class MXFP8RotateQuantFA(nn.Module):
+    def __init__(self, prefix=None, weights=None):
+        super().__init__()
+
+        q_rot = get_quant_weight(weights, f'{prefix}.q_rot')
+        self.register_buffer("q_rot", q_rot, persistent=False)
+        k_rot = get_quant_weight(weights, f'{prefix}.k_rot')
+        self.register_buffer("k_rot", k_rot, persistent=False)
+
+    def forward(self, query, key, value, **kwargs):
+        query = torch.matmul(query, self.q_rot)
+        key = torch.matmul(key, self.k_rot)
+
+        layout = kwargs.get("layout", "BNSD")
+        if layout == "BNSD":
+            b, n, s, d = query.shape
+            query = query.permute(0, 2, 1, 3).reshape(b * s, n, d)
+            key = key.permute(0, 2, 1, 3).reshape(b * s, n, d)
+            value = value.permute(0, 2, 1, 3).reshape(b * s, n, d)
+        elif layout == "BSND":
+            b, s, n, d = query.shape
+            query = query.reshape(b * s, n, d)
+            key = key.reshape(b * s, n, d)
+            value = value.reshape(b * s, n, d)
+        else:
+            raise ValueError(f"Unsupported layout: {layout}, expected 'BNSD' or 'BSND'.")
+
+        actual_seq_qlen = torch.arange(s, s * (b + 1), s, dtype=torch.int64, device=query.device)
+        actual_seq_kvlen = torch.arange(s, s * (b + 1), s, dtype=torch.int64, device=key.device)
+
+        q, q_scale = torch_npu.npu_dynamic_mx_quant(query, dst_type=torch.float8_e4m3fn, axis=-1)
+        k, k_scale = torch_npu.npu_dynamic_mx_quant(key, dst_type=torch.float8_e4m3fn, axis=-1)
+        v, v_scale = torch_npu.npu_dynamic_mx_quant(value, dst_type=torch.float8_e4m3fn, axis=0)
+
+        x = torch_npu.npu_fused_infer_attention_score_v2(
+            q,
+            k,
+            v,
+            input_layout="TND",
+            num_query_heads=n,
+            num_key_value_heads=n,
+            softmax_scale=1.0 / math.sqrt(d),
+            dequant_scale_query=q_scale,
+            dequant_scale_key=k_scale,
+            dequant_scale_value=v_scale,
+            actual_seq_qlen=actual_seq_qlen,
+            actual_seq_kvlen=actual_seq_kvlen,
+            sparse_mode=0,  # could be 0/3, atten_mask is needed if set 3
+            query_quant_mode=6,
+            key_quant_mode=6,
+            value_quant_mode=8,
+            query_dtype=torch.float8_e4m3fn,
+            key_dtype=torch.float8_e4m3fn,
+            value_dtype=torch.float8_e4m3fn,
+            dequant_scale_query_dtype=torch_npu.float8_e8m0fnu,
+            dequant_scale_key_dtype=torch_npu.float8_e8m0fnu,
+            dequant_scale_value_dtype=torch_npu.float8_e8m0fnu,
+            out_dtype=query.dtype,
+        )[0]
+
+        if layout == "BNSD":
+            # [B*S, N, D] -> [B, S, N, D] -> [B, N, S, D]
+            x = x.reshape(b, s, n, d).permute(0, 2, 1, 3)
+        elif layout == "BSND":
+            # [B*S, N, D] -> [B, S, N, D]
+            x = x.reshape(b, s, n, d)
+
+        return x
+
+
 class MXFP4QuantFA(nn.Module):
     def __init__(self, prefix=None, weights=None, **kwargs):
         super().__init__()

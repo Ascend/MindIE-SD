@@ -22,6 +22,7 @@ from mindiesd.quantization.layer import (
     W8A8QuantBaseLinear,
     WeightQuantLinear,
     FP8RotateQuantFA,
+    MXFP8RotateQuantFA,
     W8A8MXFP8QuantLinear,
     W4A4QuantLinear,
     W4A4MXFP4QuantLinear,
@@ -517,6 +518,17 @@ class TestAddFAQuant(unittest.TestCase):
         cfg = QuantConfig(quant_algo=QuantAlgorithm.NO_QUANT)
         add_fa_quant(layer, cfg, "test_layer", self.weights)
         self.assertFalse(hasattr(layer, 'fa_quant'))
+
+    def test_add_fa_quant_with_mxfp8_layer(self):
+        # 创建一个具有必要属性的模拟层
+        class MockLayer(nn.Module):
+            pass
+
+        layer = MockLayer()
+        cfg = QuantConfig(quant_algo=QuantAlgorithm.MXFP8_DYNAMIC)
+        add_fa_quant(layer, cfg, "test_layer", create_mock_handler(self.weights))
+        self.assertTrue(hasattr(layer, 'fa_quant'))
+        self.assertIsInstance(layer.fa_quant, MXFP8RotateQuantFA)
 
 
 @unittest.skipIf(

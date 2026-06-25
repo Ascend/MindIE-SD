@@ -29,6 +29,7 @@ from .layer import (
     W8A8TimeStepQuantLinear,
     WeightQuantLinear,
     FP8RotateQuantFA,
+    MXFP8RotateQuantFA,
     MXFP4QuantFA,
     W8A8MXFP8QuantLinear,
     W4A4MXFP4QuantLinear,
@@ -160,6 +161,8 @@ def add_fa_quant(layer, cfg, prefix, quant_weights, **kwargs):
         layer.fa_quant = MXFP4QuantFA(prefix, quant_weights, **kwargs)
     elif cfg.quant_algo in [QuantAlgorithm.FP8_DYNAMIC]:
         layer.fa_quant = FP8RotateQuantFA(prefix, quant_weights)
+    elif cfg.quant_algo in [QuantAlgorithm.MXFP8_DYNAMIC]:
+        layer.fa_quant = MXFP8RotateQuantFA(prefix, quant_weights)
 
 
 def normalize_quant_config(kwargs):
