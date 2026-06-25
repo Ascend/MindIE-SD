@@ -700,6 +700,8 @@ class W8A8MXFP8QuantLinear(W8A8QuantBaseLinear):
 
     def _init_dynamic_quant_param(self, prefix=None, weights=None, **kwargs):
         weight_scale = get_quant_weight(weights, f'{prefix}.weight_scale')
+        if weight_scale.shape[1] % 2 != 0:
+            weight_scale = F.pad(weight_scale, pad=(0, 1))
         weight_scale = weight_scale.reshape(weight_scale.shape[0], -1, 2)
         self.register_buffer("weight_scale", weight_scale, persistent=False)
 
