@@ -16,7 +16,7 @@ MindIE SD是一个 Python 包，它基于PyTorch构建，可以轻松集成到 P
 
 #### CANN 安装
 
-MindIE SD 依赖 CANN Toolkit开发套件包和 CANN ops 算子包，请参考 [CANN 软件安装指南](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/900/softwareinst/instg/instg_0000.html?OS=openEuler&InstallType=netyum) 完成安装。根据安装方式、操作系统等选择安装场景，选择完成后单击“开始阅读”，按“安装CANN”章节进行安装。
+MindIE SD 依赖 CANN Toolkit开发套件包和 CANN ops 算子包，请参考 [CANN 软件安装指南](https://gitcode.com/cann/ops-cv/blob/master/docs/zh/install/quick_install.md) 完成安装。根据安装方式、操作系统等选择安装场景，选择完成后单击“开始阅读”，按“安装CANN”章节进行安装。
 
 安装完成后，执行以下命令设置环境变量（以默认安装路径为例）：
 
