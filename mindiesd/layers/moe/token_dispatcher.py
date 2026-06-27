@@ -154,7 +154,7 @@ class StaticDispatcher(TokenDispatcher):
         output = torch_npu.npu_moe_token_unpermute(
             permuted_tokens=hidden_states,
             sorted_indices=torch.abs(metadata.expanded_row_idx),
-            probs=metadata.topk_weights,
+            probs=metadata.topk_weights.to(hidden_states.dtype),
         )
         return output.view(metadata.restore_shape)
 
@@ -326,7 +326,7 @@ class DynamicDispatcher(TokenDispatcher):
         output = torch_npu.npu_moe_token_unpermute(
             permuted_tokens=local_tokens,
             sorted_indices=metadata.local_unpermute_indices.to(torch.int32),
-            probs=metadata.topk_weights,
+            probs=metadata.topk_weights.to(local_tokens.dtype),
             restore_shape=metadata.hidden_shape,
         )
         return output.view(metadata.hidden_shape)
