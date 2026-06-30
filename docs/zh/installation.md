@@ -14,6 +14,8 @@ MindIE SD是一个 Python 包，它基于PyTorch构建，可以轻松集成到 P
 * triton: 3.5.0
 * triton-ascend: 3.2.1
 
+> **说明**：`triton-ascend 3.2.1` 不在 PyPI 发布，请从 [GitCode 发布页](https://gitcode.com/Ascend/triton-ascend/releases) 下载与 Python 版本/架构匹配的 wheel 安装；该 wheel 会锁定 `triton==3.5.0`。未安装 3.2.1 时 SparseLinearAttention（FA 稀疏）特性会被禁用。
+
 #### CANN 安装
 
 MindIE SD 依赖 CANN Toolkit开发套件包和 CANN ops 算子包，请参考 [CANN 软件安装指南](https://gitcode.com/cann/ops-cv/blob/master/docs/zh/install/quick_install.md) 完成安装。根据安装方式、操作系统等选择安装场景，选择完成后单击“开始阅读”，按“安装CANN”章节进行安装。
@@ -70,6 +72,15 @@ pip install mindiesd
    cd dist
    pip install mindiesd-*.whl
    ```
+
+> **依赖分层说明**
+>
+> 仓库将依赖按用途拆分，按需安装即可：
+>
+> - `requirements.txt`：核心运行依赖（最小安装，仅 torch/torch_npu 钉版本，其余宽松）。
+> - `examples/dummy_run/requirements.txt`：`dummy_run` 模型推理示例依赖（diffusers/transformers 等）。
+> - `examples/service/requirements.txt`：服务化示例依赖（ray、fastapi、uvicorn、pydantic、Pillow）。
+> - 测试、Lint、文档构建依赖分别见 `requirements-test.txt`、`requirements-lint.txt`、`docs/requirements-docs.txt`（详见开发者指南）。
 
 ### 每日构建安装
 

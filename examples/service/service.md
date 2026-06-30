@@ -5,14 +5,13 @@
 服务化是指启动一个基于Http的服务（例如文本生成视频服务），用户通过URL请求后端，完成模型的端到端推理。
 
 以Wan2.2模型为例，该模型可以根据文字或者图片生成视频，生成的视频可以直接返回给用户，也可以保存到指定的磁盘位置。例如可以通过以下命令启动一个Http服务，模型路径为`./Wan2.2-I2V-A14B/`，dit使能fsdp，t5使能fsdp用以降低显存占用，ulysses并行数为8，使用vae并行策略。
-`server.py`是启动服务化的脚本，需要先启动服务，并安装服务化所需依赖。
+`server.py`是启动服务化的脚本。启动前请先安装服务化依赖（见 `examples/service/requirements.txt`，包含 ray、fastapi、uvicorn、pydantic、Pillow），再启动服务。
 
 参考模型链接[Wan2.2](https://modelers.cn/models/MindIE/Wan2.2)确保服务化可以访问到wan
 
 ```shell
-pip install fastapi
-pip install ray
-pip install uvicorn
+# 先安装服务化依赖（ray/fastapi/uvicorn/pydantic/Pillow）
+pip install -r examples/service/requirements.txt
 
 model_base="/Wan2.2-I2V-A14B"
 
