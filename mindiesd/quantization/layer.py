@@ -20,7 +20,7 @@ from torch import nn
 
 from ..layers.flash_attn.common import AttentionParam, lru_cache_by_attn_param
 from .config import QuantConfig, TimestepPolicyConfig
-from .utils import get_quant_weight, TimestepManager
+from .utils import get_mxfp4_quant_kwargs, get_quant_weight, TimestepManager
 
 
 MXFP4_Q_QUANT_MODE = 3
@@ -59,15 +59,8 @@ def _has_quant_weight(weights, key):
 def _dynamic_mx_quant(input_tensor, dst_type, quant_config=None, **kwargs):
     quant_kwargs = {'dst_type': dst_type}
     if dst_type == torch_npu.float4_e2m1fn_x2:
-        quant_kwargs['scale_alg'] = MXFP4_SCALE_ALG_C7
-        quant_kwargs['dst_type_max'] = MXFP4_DST_TYPE_MAX_C7
-    if quant_config is not None and dst_type == torch_npu.float4_e2m1fn_x2:
-        if quant_config.mxfp4_scale_alg is not None:
-            quant_kwargs['scale_alg'] = quant_config.mxfp4_scale_alg
-        quant_kwargs['dst_type_max'] = getattr(quant_config, 'mxfp4_dst_type_max', MXFP4_DST_TYPE_MAX_C7)
+        quant_kwargs.update(get_mxfp4_quant_kwargs(quant_config))
     quant_kwargs.update(kwargs)
-    if dst_type == torch_npu.float4_e2m1fn_x2 and 'dst_type_max' not in quant_kwargs:
-        quant_kwargs['dst_type_max'] = MXFP4_DST_TYPE_MAX_C7
 
     try:
         result = torch_npu.npu_dynamic_mx_quant(input_tensor, **quant_kwargs)
@@ -1010,17 +1003,20 @@ class W8A8MXFP8OnlineQuantLinear(_OnlineQuantLinearBase):
 
 
 class W4A4MXFP4OnlineQuantLinear(_OnlineQuantLinearBase):
-    def __init__(self, original_linear, dtype=torch.bfloat16, fallback_timesteps=None):
+    def __init__(self, original_linear, dtype=torch.bfloat16, quant_config=None):
         super().__init__(original_linear, dtype)
-        self.fallback_timesteps = set(fallback_timesteps) if fallback_timesteps else set()
+        self.quant_config = quant_config or QuantConfig()
+        self.timestep_config = self.quant_config.timestep_config or TimestepPolicyConfig()
         weight = original_linear.weight.data.npu().to(dtype)
-        weight_fp4, weight_scale_raw = _dynamic_mx_quant(weight, dst_type=torch_npu.float4_e2m1fn_x2)
+        weight_fp4, weight_scale_raw = _dynamic_mx_quant(
+            weight, dst_type=torch_npu.float4_e2m1fn_x2, quant_config=self.quant_config
+        )
         weight_scale = weight_scale_raw.reshape(weight_scale_raw.shape[0], -1, 2)
         self.register_buffer("weight", weight_fp4, persistent=False)
         self.register_buffer("weight_scale", weight_scale, persistent=False)
 
     def _w4a4_matmul(self, x):
-        x1, input_scale = _dynamic_mx_quant(x, dst_type=torch_npu.float4_e2m1fn_x2)
+        x1, input_scale = _dynamic_mx_quant(x, dst_type=torch_npu.float4_e2m1fn_x2, quant_config=self.quant_config)
         if self.bias is not None and self.bias.dtype != torch.float32:
             self.bias = self.bias.to(torch.float32)
         x2 = self.weight.transpose(0, 1)
@@ -1041,8 +1037,11 @@ class W4A4MXFP4OnlineQuantLinear(_OnlineQuantLinearBase):
 
     def _w4a8_matmul(self, x):
         x1, input_scale = _dynamic_mx_quant(x, dst_type=torch_npu.float8_e4m3fn)
-        if self.bias is not None and self.bias.dtype != torch.float32:
-            self.bias = self.bias.to(torch.float32)
+        bias = self.bias
+        if bias is not None:
+            bias = bias.to(torch.bfloat16)
+            if len(bias.shape) == 1:
+                bias = bias.unsqueeze(0)
         x2 = self.weight.transpose(0, 1)
         output = torch_npu.npu_quant_matmul(
             x1,
@@ -1052,7 +1051,7 @@ class W4A4MXFP4OnlineQuantLinear(_OnlineQuantLinearBase):
             x2_dtype=torch_npu.float4_e2m1fn_x2,
             pertoken_scale=input_scale,
             pertoken_scale_dtype=torch_npu.float8_e8m0fnu,
-            bias=self.bias,
+            bias=bias,
             output_dtype=self.dtype,
             group_sizes=MXFP4_GROUP_SIZES_W4A8,
         )
@@ -1062,15 +1061,17 @@ class W4A4MXFP4OnlineQuantLinear(_OnlineQuantLinearBase):
         if x.dtype != self.dtype:
             x = x.to(self.dtype)
         t_idx = TimestepManager.get_timestep_idx()
-        if t_idx is not None and t_idx in self.fallback_timesteps:
+        strategy = self.timestep_config.get_strategy(t_idx, target="w4a4_linear")
+        if strategy == "W4A8":
             return self._w4a8_matmul(x)
         return self._w4a4_matmul(x)
 
 
 class W4A4MXFP4DualOnlineQuantLinear(_OnlineQuantLinearBase):
-    def __init__(self, original_linear, dtype=torch.bfloat16, fallback_timesteps=None):
+    def __init__(self, original_linear, dtype=torch.bfloat16, quant_config=None):
         super().__init__(original_linear, dtype)
-        self.fallback_timesteps = set(fallback_timesteps) if fallback_timesteps else set()
+        self.quant_config = quant_config or QuantConfig()
+        self.timestep_config = self.quant_config.timestep_config or TimestepPolicyConfig()
         weight = original_linear.weight.data.npu().to(dtype)
         weight_fp4, w_l0_scale, w_l1_scale = torch_npu.npu_dynamic_dual_level_mx_quant(weight, smooth_scale=None)
         w = torch_npu.npu_format_cast(weight_fp4.view(torch.int8), 29, customize_dtype=torch.int8)
@@ -1100,8 +1101,11 @@ class W4A4MXFP4DualOnlineQuantLinear(_OnlineQuantLinearBase):
 
     def _w4a8_matmul(self, x):
         x1, input_scale = _dynamic_mx_quant(x, dst_type=torch_npu.float8_e4m3fn)
-        if self.bias is not None and self.bias.dtype != torch.float32:
-            self.bias = self.bias.to(torch.float32)
+        bias = self.bias
+        if bias is not None:
+            bias = bias.to(torch.bfloat16)
+            if len(bias.shape) == 1:
+                bias = bias.unsqueeze(0)
         x2 = self.weight.transpose(0, 1)
         output = torch_npu.npu_quant_matmul(
             x1,
@@ -1111,7 +1115,7 @@ class W4A4MXFP4DualOnlineQuantLinear(_OnlineQuantLinearBase):
             x2_dtype=torch_npu.float4_e2m1fn_x2,
             pertoken_scale=input_scale,
             pertoken_scale_dtype=torch_npu.float8_e8m0fnu,
-            bias=self.bias,
+            bias=bias,
             output_dtype=self.dtype,
             group_sizes=MXFP4_GROUP_SIZES_W4A8,
         )
@@ -1121,6 +1125,7 @@ class W4A4MXFP4DualOnlineQuantLinear(_OnlineQuantLinearBase):
         if x.dtype != self.dtype:
             x = x.to(self.dtype)
         t_idx = TimestepManager.get_timestep_idx()
-        if t_idx is not None and t_idx in self.fallback_timesteps:
+        strategy = self.timestep_config.get_strategy(t_idx, target="w4a4_linear")
+        if strategy == "W4A8":
             return self._w4a8_matmul(x)
         return self._w4a4_matmul(x)

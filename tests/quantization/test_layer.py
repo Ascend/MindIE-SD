@@ -29,6 +29,7 @@ from mindiesd.quantization.layer import (
     W4A4MXFP4OnlineQuantLinear,
     W4A4MXFP4DualOnlineQuantLinear,
 )
+from mindiesd.quantization.config import QuantConfig, TimestepPolicyConfig
 from mindiesd.quantization.mode import QuantAlgorithm
 from mindiesd.quantization.utils import TimestepManager
 from mindiesd.utils.get_platform import is_a5_device
@@ -473,10 +474,12 @@ class TestQuantLinearFloat16(unittest.TestCase):
     ):
         in_features = 128
         out_features = 64
+        timestep_config = TimestepPolicyConfig()
+        timestep_config.register([5], "W4A8", target="w4a4_linear")
         linear = W4A4MXFP4OnlineQuantLinear(
             nn.Linear(in_features, out_features),
             dtype=torch.float16,
-            fallback_timesteps=[5],
+            quant_config=QuantConfig(timestep_config=timestep_config),
         ).npu()
 
         TimestepManager.set_timestep_idx_max(10)
@@ -490,6 +493,9 @@ class TestQuantLinearFloat16(unittest.TestCase):
         mock_dynamic_quant.assert_not_called()
         self.assertNotIn("x1_dtype", mock_quant_matmul.call_args.kwargs)
         self.assertEqual(mock_quant_matmul.call_args.kwargs["x2_dtype"], torch_npu.float4_e2m1fn_x2)
+        bias = mock_quant_matmul.call_args.kwargs["bias"]
+        self.assertEqual(bias.shape, (1, out_features))
+        self.assertEqual(bias.dtype, torch.bfloat16)
 
     @patch('torch_npu.npu_dynamic_dual_level_mx_quant', side_effect=mock_npu_dynamic_dual_level_mx_quant)
     @patch('torch_npu.npu_dual_level_quant_matmul', side_effect=mock_npu_dual_level_quant_matmul)
@@ -515,10 +521,12 @@ class TestQuantLinearFloat16(unittest.TestCase):
     ):
         in_features = 128
         out_features = 64
+        timestep_config = TimestepPolicyConfig()
+        timestep_config.register([6], "W4A8", target="w4a4_linear")
         linear = W4A4MXFP4DualOnlineQuantLinear(
             nn.Linear(in_features, out_features),
             dtype=torch.float16,
-            fallback_timesteps=[6],
+            quant_config=QuantConfig(timestep_config=timestep_config),
         ).npu()
 
         TimestepManager.set_timestep_idx_max(10)
@@ -532,6 +540,9 @@ class TestQuantLinearFloat16(unittest.TestCase):
         mock_dynamic_quant.assert_not_called()
         self.assertEqual(mock_dynamic_mx_quant.call_count, 1)
         self.assertEqual(mock_quant_matmul.call_args.kwargs["x2_dtype"], torch_npu.float4_e2m1fn_x2)
+        bias = mock_quant_matmul.call_args.kwargs["bias"]
+        self.assertEqual(bias.shape, (1, out_features))
+        self.assertEqual(bias.dtype, torch.bfloat16)
 
 
 @unittest.skipIf(

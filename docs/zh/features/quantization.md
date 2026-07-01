@@ -129,6 +129,33 @@ for i, timestep in enumerate(timesteps):
 
 模型侧需要在每个 denoise step 前设置 `TimestepManager.set_timestep_idx(i)`。这和 Wan2.2 `wan/text2video.py` 中按 step 遍历 `timesteps` 的使用方式一致，但本仓的策略语义不同：这里的 Linear 是 `W4A4` 与 `W4A8` 切换，不是原有动静态量化切换。Linear/MM 回退只切换激活值量化精度，权重仍保持 MXFP4。
 
+### 在线量化
+
+在线量化面向易用性，适合快速启用动态 MM/FA 量化；离线量化面向精细化调优，适合使用 msmodelslim 做校准、逐层策略和权重导出控制。
+
+```python
+from mindiesd import OnlineQuantConfig, TimestepManager, TimestepPolicyConfig, quantize
+from mindiesd.quantization.mode import QuantAlgorithm
+
+timestep_config = TimestepPolicyConfig()
+timestep_config.register(range(0, 4), "W4A8", target="w4a4_linear")
+timestep_config.register([0, 1], "FLOAT", target="fa")
+timestep_config.register([2, 3, 4], "FP8", target="fa")
+
+online_config = OnlineQuantConfig(
+    quant_type=QuantAlgorithm.W4A4_MXFP4_DYNAMIC,
+    fallback_layers={"transformer_blocks.{0,1}.*": QuantAlgorithm.W16A16},
+    fa_layers=("transformer_blocks.*.attn", "*Attention"),
+    fa_quant_type=QuantAlgorithm.MXFP4_DYNAMIC,
+    timestep_config=timestep_config,
+    mxfp4_scale_alg=2,
+    mxfp4_dst_type_max=7.25,
+)
+model = quantize(model, online_config=online_config)
+```
+
+`fallback_layers` 和 `fa_layers` 都支持离线工具同款的精确、通配和 brace 匹配；`fa_layers` 可匹配模块名或类名。示例中 MM 的 W4A8 时间步回退使用 `range`，FA 的时间步回退使用 list；未命中的 FA 时间步保持默认 MXFP4 策略。在线 FA 会自动生成 `q_rot/k_rot`，无需配置 rot 文件；如果命中模块无法推导 `head_dim`，会直接报错。MXFP4 C7 与离线保持同名配置，通过 `mxfp4_scale_alg=2`、`mxfp4_dst_type_max=7.25` 启用。
+
 #### 量化权重文件命名
 
 量化权重和描述符文件由 msmodelslim 工具导出，命名规则如下：
