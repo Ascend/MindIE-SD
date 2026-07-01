@@ -32,8 +32,20 @@ def _log_unknown_instruction(instruction):
         "[MindIE-SD/eplb] Unknown instruction ignored. "
         "issue=instruction is not a TaskPayload, instruction=%s. "
         "possible_cause=an unsupported object was inserted into the EPLB instruction queue. "
-        "Troubleshooting: ensure the queue only contains PROFILE or UPDATE_LAYOUT TaskPayload objects.",
+        "Troubleshooting: inspect the producer that writes instruction_queue and remove non-TaskPayload "
+        "objects; ensure the queue only contains PROFILE or UPDATE_LAYOUT TaskPayload objects.",
         instruction,
+    )
+
+
+def _log_unknown_task_type(instruction):
+    logger.error(
+        "[MindIE-SD/eplb] Unknown task type. "
+        "issue=unsupported EPLB task type, task_type=%s. "
+        "possible_cause=an invalid TaskPayload was inserted into the EPLB instruction queue. "
+        "Troubleshooting: inspect the TaskPayload producer and ensure task_type only uses PROFILE or "
+        "UPDATE_LAYOUT; if a new task type was introduced, add it to TASK_DISPATCHER before enqueueing it.",
+        instruction.task_type,
     )
 
 
@@ -61,6 +73,8 @@ def expert_info_transfer_pool(module, instruction_queue, upload_queue, device):
             break
         if isinstance(instruction, TaskPayload):
             handler_function = TASK_DISPATCHER.get(instruction.task_type, handle_unknown_task)
+            if handler_function is handle_unknown_task:
+                _log_unknown_task_type(instruction)
             handler_function(instruction, upload_queue, expert_load_collector_list, dispatcher_list, transfer_stream)
         else:
             _log_unknown_instruction(instruction)
@@ -76,7 +90,8 @@ def connect_to_schedule_manager(rank_in_group, ip, port, auth_key):
             "[MindIE-SD/eplb] EPLB worker authentication failed. "
             "issue=scheduler rejected worker credentials, rank_in_group=%s, manager_addr=%s:%s, actual_error=%s. "
             "possible_cause=the scheduler and worker use different EPLB authentication keys. "
-            "Troubleshooting: configure the same EPLB_AUTH_KEY or auth_key for the scheduler and every worker.",
+            "Troubleshooting: compare scheduler --auth_key, worker auth_key, and EPLB_AUTH_KEY in both "
+            "environments; use the same key on every rank, then restart scheduler and workers.",
             rank_in_group,
             ip,
             port,
@@ -89,7 +104,11 @@ def connect_to_schedule_manager(rank_in_group, ip, port, auth_key):
             "issue=scheduler connection unavailable, rank_in_group=%s, manager_addr=%s:%s, actual_error=%s. "
             "possible_cause=the scheduler is not running, the configured address is incorrect, "
             "or the network path is unavailable. "
-            "Troubleshooting: check the scheduler process, listening address, worker configuration, and network.",
+            "Troubleshooting: if actual_error is Connection refused, check whether the scheduler process is running "
+            "and whether manager_addr is listening with ps and ss -ltnp; if the scheduler is listening, compare "
+            "manager_addr with scheduler --host/--port and worker ip/port; if the address matches but connection "
+            "still fails, run nc -vz or telnet from the worker environment to check routing, firewall, or container "
+            "network namespace.",
             rank_in_group,
             ip,
             port,

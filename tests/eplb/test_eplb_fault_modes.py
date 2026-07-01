@@ -12,6 +12,7 @@
 
 import csv
 import queue
+import re
 import socket
 import sys
 import types
@@ -77,6 +78,7 @@ ProfileTaskTransfer = sys.modules["mindiesd.eplb.task_transfer"].ProfileTaskTran
 handle_unknown_task = task_handler_module.handle_unknown_task
 connect_to_schedule_manager = task_manager_module.connect_to_schedule_manager
 log_unknown_instruction = task_manager_module._log_unknown_instruction
+log_unknown_task_type = task_manager_module._log_unknown_task_type
 A2ARedundantExpertService = greedy_module.A2ARedundantExpertService
 ExpertExchangeService = greedy_module.ExpertExchangeService
 LoadData = greedy_module.LoadData
@@ -108,10 +110,24 @@ def _scheduler_args(**overrides):
 
 
 class TestEplbFaultModeReproduction(unittest.TestCase):
+    @staticmethod
+    def _fault_log_template_patterns(fault_log_template):
+        for template in fault_log_template.split("；"):
+            template = template.strip()
+            template = re.sub(r"^(ERROR|WARNING)\s+", "", template)
+            pattern = re.escape(template)
+            pattern = re.sub(r"\\\{[^{}]+\\\}", r".+?", pattern)
+            yield pattern
+
     def assert_fault_log_matches_library(self, captured, *fault_mode_ids):
         output = "\n".join(captured.output)
         for fault_mode_id in fault_mode_ids:
-            self.assertIn(FAULT_MODES[fault_mode_id]["故障关键日志"], output)
+            fault_log_template = FAULT_MODES[fault_mode_id]["故障关键日志"]
+            patterns = list(self._fault_log_template_patterns(fault_log_template))
+            self.assertTrue(
+                any(re.search(pattern, output, re.DOTALL) for pattern in patterns),
+                msg=f"{fault_mode_id} log template does not match captured output: {fault_log_template}",
+            )
 
     def setUp(self):
         eplb_scheduler.upload_queues.clear()
@@ -263,6 +279,11 @@ class TestEplbFaultModeReproduction(unittest.TestCase):
 
     def test_fm011_unknown_task_instruction_raises_parameters_invalid(self):
         instruction = SimpleNamespace(task_type="UNKNOWN")
+
+        with self.assertLogs("mindie-sd", level="ERROR") as captured:
+            log_unknown_task_type(instruction)
+
+        self.assertIn("Unknown task type", "\n".join(captured.output))
 
         with self.assertLogs("mindie-sd", level="ERROR") as captured:
             with self.assertRaisesRegex(ParametersInvalid, "Unknown task type"):
