@@ -1,9 +1,9 @@
-# File and Directory Permission Requirements
+# File and Directory Permissions
 
-MindIE SD APIs validate the security permissions of input files and directories. Common file and directory types and their permission requirements are listed below.
+MindIE SD APIs perform permission security verification on the input files or folders. The following table describes common file and folder types and permission requirements.
 
-| File or directory | Permission requirement |
-| -- | -- |
-| Configuration files | The three permission groups must not exceed `640`, and they must be consistent with the group and permission expectations of the executing user. |
-| Model weight files | The three permission groups must not exceed `640`, and they must be consistent with the group and permission expectations of the executing user. |
-| Model weight directories | The three permission groups must not exceed `750`, and they must be consistent with the group and permission expectations of the executing user. |
+|File|Permission Requirement|
+|--|--|
+|Config|The permissions of the three groups cannot exceed `640` and must be the same as the required groups and permission of the execution user.|
+|Model weight file|The permissions of the three groups cannot exceed `640` and must be the same as the required groups and permission of the execution user.|
+|Model weight folder|The three groups of permissions cannot exceed `750` and must be the same as the required groups and permissions of the execution user.|

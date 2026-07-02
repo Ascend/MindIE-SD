@@ -1,61 +1,75 @@
-# Governance
+# Community Governance
 
-MindIE SD follows a maintainer-led governance model for code review, protected-branch merging, and release readiness.
+<!-- md-trans-meta sourceCommit=unknown translatedAt=2026-06-05T08:13:43.293Z pushedAt=2026-06-09T06:23:43.200Z -->
 
-## Roles
+MindIE SD adopts a maintainer-led governance model for unified management of code review, protected branch merging, and version release.
+
+## Role Definitions
 
 ### Branch keepers
 
 Branch keepers are responsible for:
 
-- release readiness checks
-- protected-branch merge policy
-- final merge authorization on protected branches
+- Checking release readiness
+
+- Enforcing merge strategy for protected branches
+
+- Authorizing final merge on protected branches
 
 ### Approvers
 
 Approvers are responsible for:
 
-- reviewing changes that are ready to merge
-- validating technical quality, test evidence, and documentation impact
-- confirming that user-visible changes are reflected in docs and release notes when needed
+- Reviewing changes that are ready to merge
+
+- Validating technical quality, test evidence, and documentation impact
+
+- Ensuring user-facing changes are reflected in docs and release notes
 
 ### Reviewers
 
 Reviewers are responsible for:
 
-- technical feedback
-- reproduction assistance
-- code, test, and documentation review
+- Providing technical feedback
 
-## Decision process
+- Assisting with issue reproduction
 
-### Routine pull requests
+- Reviewing code, tests, and documentation
 
-For normal pull requests:
+## Decision-Making Process
 
-1. A clear issue, problem statement, or approved RFC should exist.
-2. The contributor prepares code, tests, and documentation updates.
-3. A reviewer provides technical review.
-4. An approver confirms readiness.
-5. A branch keeper or authorized maintainer merges to the protected branch.
+### Daily Pull Requests (PRs)
 
-### Release and governance decisions
+Regular PRs are processed according to the following procedure:
 
-For release and governance decisions:
+1. A clear problem description, Issue, or approved RFC must exist first.
 
-1. Branch keepers coordinate release readiness and branch policy.
-2. Approvers confirm code, documentation, and changelog state.
-3. Release execution happens only on approved Ascend/NPU runners.
+2. The contributor submits code, tests, and documentation updates.
 
-## Source of truth
+3. Reviewers provide technical review comments.
 
-Role membership is maintained in the repository:
+4. Approvers confirm that the changes are ready for merging.
 
-- [`OWNERS`](../../../OWNERS) is the role source used by the repository workflow.
+5. The Branch keeper or an authorized maintainer merges the change into the protected branch.
 
-## Community standards
+### Release and Governance Decisions
 
-- Follow [`CODE_OF_CONDUCT.md`](../../../CODE_OF_CONDUCT.md).
-- Keep tests, changelog entries, and documentation aligned with user-visible changes.
-- Use an RFC before landing major interface, behavior, or release-policy changes.
+Release and governance matters are handled according to the following process:
+
+1. Branch keepers coordinate release preparation and branch strategies.
+
+2. Approvers verify code, documentation, and changelog status.
+
+3. Releases are executed only on approved Ascend/NPU runners.
+
+## Information Sources
+
+The role list and the role sources used in repository workflows are based on [`OWNERS`](../../../OWNERS).
+
+## Community Norms
+
+- Comply with [`CODE_OF_CONDUCT.md`](../../../CODE_OF_CONDUCT.md).
+
+- User-visible changes must be synchronized with updates to tests, documentation, and changelogs.
+
+- Major interface changes, behavior changes, and release strategy changes should first be submitted as an RFC.

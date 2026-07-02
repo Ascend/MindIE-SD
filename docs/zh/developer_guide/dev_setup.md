@@ -1,4 +1,4 @@
-# 开发工具与文档
+# 开发环境设置
 
 本文档说明 MindIE SD 本地开发中常用的文档生成、开发镜像构建与提交前检查命令。
 
@@ -22,7 +22,7 @@ SPHINX_LANGUAGE=en sphinx-build -b html -c docs docs/en docs/_build/en/html
 python -m http.server 8080 --directory docs/_build
 ```
 
-http://localhost:8080 → 自动跳转中文版
+<http://localhost:8080> → 自动跳转中文版
 
 ## 开发镜像构建
 

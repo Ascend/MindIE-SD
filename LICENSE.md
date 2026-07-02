@@ -66,9 +66,9 @@ See the Mulan PSL v2 for more details.
 
 注意： 模板中的\[Year of First Publication\]、\[Year of Latest Update\]需要更改为贡献者首次创建年份和最近更新年份
 
-# Mulan Permissive Software License，Version 2<a name="section18273540143715"></a>
+# Mulan Permissive Software License, Version 2<a name="section18273540143715"></a>
 
-**Mulan Permissive Software License，Version 2 \(Mulan PSL v2\)**
+**Mulan Permissive Software License, Version 2 \(Mulan PSL v2\)**
 
 January 2020  [http://license.coscl.org.cn/MulanPSL2](http://license.coscl.org.cn/MulanPSL2)
 
@@ -84,7 +84,7 @@ Your reproduction, use, modification and distribution of the Software shall be s
 
 **Legal Entity**  means the entity making a Contribution and all its Affiliates.
 
-**Affiliates**  means entities that control, are controlled by, or are under common control with the acting entity under this License, ‘control’ means direct or indirect ownership of at least fifty percent \(50%\) of the voting power, capital or other securities of controlled or commonly controlled entity.
+**Affiliates**  means entities that control, are controlled by, or are under common control with the acting entity under this License, 'control' means direct or indirect ownership of at least fifty percent \(50%\) of the voting power, capital or other securities of controlled or commonly controlled entity.
 
 **1. Grant of Copyright License**
 
@@ -104,7 +104,7 @@ You may distribute the Software in any medium with or without modification, whet
 
 **5. Disclaimer of Warranty and Limitation of Liability**
 
-THE SOFTWARE AND CONTRIBUTION IN IT ARE PROVIDED WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED. IN NO EVENT SHALL ANY CONTRIBUTOR OR COPYRIGHT HOLDER BE LIABLE TO YOU FOR ANY DAMAGES, INCLUDING, BUT NOT LIMITED TO ANY DIRECT, OR INDIRECT, SPECIAL OR CONSEQUENTIAL DAMAGES ARISING FROM YOUR USE OR INABILITY TO USE THE SOFTWARE OR THE CONTRIBUTION IN IT, NO MATTER HOW IT’S CAUSED OR BASED ON WHICH LEGAL THEORY, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+THE SOFTWARE AND CONTRIBUTION IN IT ARE PROVIDED WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED. IN NO EVENT SHALL ANY CONTRIBUTOR OR COPYRIGHT HOLDER BE LIABLE TO YOU FOR ANY DAMAGES, INCLUDING, BUT NOT LIMITED TO ANY DIRECT, OR INDIRECT, SPECIAL OR CONSEQUENTIAL DAMAGES ARISING FROM YOUR USE OR INABILITY TO USE THE SOFTWARE OR THE CONTRIBUTION IN IT, NO MATTER HOW IT'S CAUSED OR BASED ON WHICH LEGAL THEORY, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
 
 **6. Language**
 
@@ -114,7 +114,7 @@ THIS LICENSE IS WRITTEN IN BOTH CHINESE AND ENGLISH, AND THE CHINESE VERSION AND
 
 <br>
 
-**How to Apply the Mulan Permissive Software License，Version 2 \(Mulan PSL v2\) to Your Software**
+**How to Apply the Mulan Permissive Software License, Version 2 \(Mulan PSL v2\) to Your Software**
 
 To apply the Mulan PSL v2 to your work, for easy identification by recipients, you are suggested to complete following three steps:
 

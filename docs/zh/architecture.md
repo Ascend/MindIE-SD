@@ -38,3 +38,24 @@ MindIE SD的相关接口遵从diffusers的接口定义，部分基于MindIE SD�
 - quantization模块：支持量化能力的自动使能。
 - cache模块：提供以存代算的加速能力的实现。
 - parallelism模块：提供多卡并行的分布式加速能力，需要与layer模块和pytorch协同实现。
+
+## 目录结构
+
+```text
+|- benchmarks         // 提供核心kernel的性能看护和compilation的加速效果看护
+|- build              // 编译脚本
+|- csrc               // 昇腾kernel代码位置
+|- docs               // 项目文档
+|- examples
+  |- cache            // cache特性样例：使能cache进行模型加速
+  |- service          // 服务化样例：将命令行模式改造成服务化方式
+  |- wan              // 模型推理样例：模型推理命令以及参数配置
+|- mindiesd
+  |- cache_agent      // 高阶特性：提供cache能力
+  |- compilation      // 提供编译能力，基于fx graph实现自动改图（可依旧保持单算子下发）。
+  |- eplb             // 高阶特性：提供专家并行负载均衡能力
+  |- layers           // 提供基础的pytorch的layer接口
+  |- quantization     // 高阶特性：提供量化能力
+  |- utils            // 核心工具模块，提供共享的基础设施服务和通用功能
+|- tests              // 测试用例
+```

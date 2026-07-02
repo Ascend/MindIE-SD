@@ -81,7 +81,8 @@ apply(function: callable, *args, **kwargs) -> Any
 
   通过搜索脚本，根据加速比计算需要跳过的最少block数，然后从起止block开始遍历，在所有可能的组合中，找到MSE损失最小的配置作为最优解。其核心优化点在于：当缓存命中时，直接复用stepN中特定block区间的计算结果到stepM，从而将整个DiTBlock序列的正向传播计算变成一次简单的张量读取操作。
 
-    ![](../../figures/dit_cache_image_2.png)
+  ![](../../figures/dit_cache_image_2.png)
+
   1. 根据加速比计算最小需要cache的block数。
   2. 在每个step中，由于block0需要计算，所以从block1开始遍历，通过计算找到最小的三组block start和block end。
   3. 遍历上一步骤中得到的所有可能的组合，计算模型cache前和cache后的MSE，找到MSE损失最小的配置作为最优解。
@@ -170,7 +171,7 @@ apply(function: callable, *args, **kwargs) -> Any
 
   通过搜索脚本，根据加速比计算需要跳过的最小Attention次数，然后遍历起止step，在所有可能的组合中，找到MSE损失最小的配置作为最优解。其核心优化点在于：利用以空间换时间的原理，直接复用stepN的block的Attention层的计算缓存结果到stepM，显著减少Attention层的计算量。
 
-    ![](../../figures/attention_cache_image_2.png)
+  ![](../../figures/attention_cache_image_2.png)
   1. 根据加速比ratio，计算最小需要跳过的attention次数。
   2. 根据开始step和min_skip_attention计算出min_interval与step_end，并遍历所有可能的结果，计算模型cache前和cache后的MSE，找到MSE损失最小的配置作为最优解。
   3. 将上述步骤中得到的参数配置在模型中，并在执行推理时开启cache完成加速。

@@ -6,11 +6,20 @@ MindIE SD是一个 Python 包，它基于PyTorch构建，可以轻松集成到 P
 
 ### 安装依赖
 
-* OS: Linux
-* Python: >=3.10
-* Pytorch：2.6, 2.7, 2.8, 2.9
-* torch-npu: 2.6, 2.7, 2.8, 2.9
-* CANN: 8.5.1
+| 版本 | 依赖 |
+| ---- | ---- |
+| dev  | <ul><li>OS: Linux</li><li>Python: >=3.10</li><li>Pytorch：2.6, 2.7, 2.8, 2.9, 2.10</li><li>torch-npu: 2.6, 2.7, 2.8, 2.9, 2.10</li><li>CANN: 9.0.0</li><li>triton: 3.5.0</li><li>triton-ascend: 3.2.1</li></ul>|
+| master | <ul><li>OS: Linux</li><li>Python: >=3.10</li><li>Pytorch：2.6, 2.7, 2.8, 2.9</li><li>torch-npu: 2.6, 2.7, 2.8, 2.9</li><li>CANN: 8.5.1</li></ul>|
+
+#### CANN 安装
+
+MindIE SD 依赖 CANN Toolkit开发套件包和 CANN ops 算子包，请参考 [CANN 软件安装指南](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/850/softwareinst/instg/instg_0000.html?OS=openEuler&InstallType=netyum) 完成安装。根据安装方式、操作系统等选择安装场景，选择完成后单击“开始阅读”，按“安装CANN”章节进行安装。
+
+安装完成后，执行以下命令设置环境变量（以默认安装路径为例）：
+
+```bash
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
+```
 
 #### 注意事项
 
@@ -30,7 +39,7 @@ MindIE SD是一个 Python 包，它基于PyTorch构建，可以轻松集成到 P
 现在最简单的方式是通过pip源安装，我们的软件包名字叫mindiesd，与仓库名有些不一样。
 
 ```bash
-pip install --trusted-host ascend.devcloud.huaweicloud.com -i https://ascend.devcloud.huaweicloud.com/pypi/simple/ mindiesd
+pip install mindiesd
 ```
 
 ### 源码安装
@@ -42,7 +51,7 @@ pip install --trusted-host ascend.devcloud.huaweicloud.com -i https://ascend.dev
 1. 克隆仓库&进入项目：
 
    ```bash
-   git clone https://github.com/MindIE-SD/MindIE-SD.git && cd MindIE-SD
+   git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
    ```
 
 2. [可选] 安装依赖：

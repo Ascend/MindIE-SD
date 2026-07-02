@@ -1,150 +1,147 @@
-# Dynamic EPLB Acceleration
+# Dynamic Expert Load Balancing
 
-## DyEPLB
+<!-- md-trans-meta sourceCommit=unknown translatedAt=2026-06-05T08:14:58.282Z pushedAt=2026-06-08T06:48:52.634Z -->
 
-- **Background**
+## General Principles
 
-  As visual generation models evolve toward DiT architectures, introducing MoE mechanisms to extend the scaling law has become a common industry direction. However, the large parameter scale of DiT-MoE models forces the use of expert parallelism (EP). Unlike LLM workloads, visual data has strong spatial locality, which can easily overload specific experts and cause severe load imbalance. In addition, expert activation distributions vary dynamically across denoising timesteps, which means traditional static load-balancing strategies fail under combined spatial and temporal heterogeneity. DyEPLB addresses this DiT-MoE scenario with dynamic expert load balancing to improve cluster utilization and inference performance.
+As vision generation models evolve toward the DiT architecture, integrating MoE to further scale has become an industry consensus. However, the massive parameter size of DiT-MoE necessitates expert parallelism (EP). Unlike LLMs, visual data exhibits strong spatial locality, which often leads to overload on specific experts and severe computational imbalances. Moreover, the denoising process of diffusion models introduces significant temporal dynamics in expert activation patterns. This means traditional static load balancing strategies are completely inadequate for such spatiotemporal heterogeneity.
 
-  ![](../../figures/dyeplb_image_1.png)
+![](../../figures/dyeplb_image_1.png)
 
-- **Principle**
+## Technical Features
 
-  Expert weights are adjusted dynamically across ranks according to load information so that expert load is balanced and model inference is accelerated.
+This solution dynamically adjusts expert weights on Ranks based on load information to balance expert load and accelerate model inference. The solution has the following features:
 
-- **Notes**
+- **Non-intrusive design**: Global synchronization points and weight update locations can be chosen based on the model implementation.
 
-  - DyEPLB is designed to be minimally intrusive, so global synchronization checks and weight-update locations can be selected according to the model implementation and the FPA algorithm scenario.
-  - In all-gather full-EP mode, the global synchronization check can be performed earlier to adapt custom operators such as `torch_npu.npu_moe_init_routing_v2`, which helps preserve token continuity when weights are replaced.
-  - It is recommended to place the weight-update module between two Matmul operations to maximize the gain from the FPA algorithm. Because the workflow includes host-to-device data transfer, there may be bandwidth contention if DyEPLB is used together with offload. Adjust the scheduling of the two mechanisms to avoid blocking each other. Weight updates also introduce extra expert-weight memory consumption during the update process, which can raise peak memory usage. The FPA algorithm provides an EX mode to reduce expert-layout changes and mitigate this issue.
+- **Asynchronous pipelining**: Algorithm computation and expert weight concatenation are handled by separate threads and processes, minimizing the impact on the main inference flow.
 
-- **Integration flow**
+- **Three EP modes**:  standard all-to-all (A2A), all-gather (AG), and controllable mode (EX), selectable via the `mode` parameter.
 
-  > [!NOTE]
-  > To minimize the impact on the main inference path, the algorithm logic and expert-weight stitching are handled in additional threads and processes.
+- **Mutual exclusionreminder with CPU Offload**: Involves H2D data transfer. When used concurrently with [CPU Offload](cpu_offload.md), bandwidth contention may occur, requiring manual adjustment of execution timing.
 
-  For the input and output details of the involved interfaces, see [Class initialization and interface reference](#class-initialization-and-interface-reference).
+## Interface and Usage
 
-  1. Start the EPLB scheduler process:
+### Recommended Solutions
 
-     ```console
-     root@node134:/home# python -m mindiesd.eplb.eplb_scheduler --world_size 2 --host localhost -- port 50001 --mode A2A
-     ```
+- **A2A**: EP with balanced communication, recommended for general scenarios.
 
-     Common launch parameters include:
+- **AG**: EP that requires an additional matmul of the transformation matrix and expert scores, suitable for scenarios requiring global synchronization.
 
-     - `world_size`: number of EP ranks
-     - `expert_num`: total number of global experts
-     - `block_num`: number of MoE layers
-     - `max_move`: maximum number of moved experts in EX mode
-     - `redundant`: number of redundant experts
-     - `mode`: `A2A` for all-to-all EP, `AG` for all-gather EP, `EX` for controlled mode
-     - `auth_key`: reads the `EPLB_AUTH_KEY` environment variable by default; falls back to `secret_key`
+- **EX**: Controllable mode that limits the scale of expert layout changes via `max_move`, suitable for reducing peak memory when offload exists.
 
-  2. Import the load collector and dispatcher:
+### Adaptation Process
 
-     ```python
-     from mindiesd.eplb.dispatcher import DynamicDispatcher
-     from mindiesd.eplb.collector import ExpertLoadCollector
-     ```
+> **NOTE**
+> To minimize the impact on the main inference process, the algorithm and expert weight concatenation are handled using additional threads and processes.
 
-  3. Before inference, start the worker thread that handles data through a task queue. After model initialization, initialize the DyEPLB load collector and dispatcher at the MoE-layer granularity:
+1. Start the EPLB algorithm process. The startup parameters are as follows:
 
-     ```python
-     # model initialization
-     model.init()
+   | Parameter | Default Value | Description |
+   |------|--------|------|
+   | `world_size` | Required | Number of EPs |
+   | `expert_num` | Required | Number of global experts |
+   | `block_num` | Required | Number of MoE layers |
+   | `max_move` | — | Maximum number of experts to move in EX mode |
+   | `redundant` | — | Number of redundant experts |
+   | `mode` | Required | A2A / AG / EX |
+   | `auth_key` | `secret_key` | Reads the environment variable `EPLB_AUTH_KEY` by default |
 
-     # load collector
-     model.moe_module.block.expert_load_collector = ExpertLoadCollector(expert_num, lb_interval)
-     # dispatcher, holding the complete expert weights on the host side
-     model.moe_module.block.dispatcher = DynamicDispatcher(expert_num, weight1, weight2, rank_in_group, ep_size)
-     # start worker thread
-     if eplb_enabled:
-        from mindiesd.eplb.task_manager import construct_expert_info_transfer_pool
-        # multiprocessing communication, auth_key must match the EPLB scheduler process
-        construct_expert_info_transfer_pool(module=model, rank_in_group=rank_in_group, device=device, ip=host, port=port, auth_key=auth_key)
+   ```shell
+   python -m mindiesd.eplb.eplb_scheduler \
+       --world_size 2 \
+       --host localhost \
+       --port 50001 \
+       --mode A2A
+   ```
 
-     # inference flow
-     model.forward()
-     ```
+2. Import the load collector and dispatcher, initialize them, and then start the worker thread.
 
-  4. In all-gather full-EP mode, add an extra matmul between the transform matrix and the expert scores to avoid manually reordering tokens, indices, and related variables later:
+   ```python
+   from mindiesd.eplb.dispatcher import DynamicDispatcher
+   from mindiesd.eplb.collector import ExpertLoadCollector
+   from mindiesd.eplb.task_manager import construct_expert_info_transfer_pool
 
-     ```python
-     if EP_AG and self.dispatcher.update_flag:
-         # transformation matrix generated from expert ordering, shape(global_expert_num * global_expert_num)
-         expert_trans_tensor = self.dispatcher.get_expert_trans_tensor()
-         trans_scores = torch.matmul(scores, expert_trans_tensor)
-     ```
+   model.init()
 
-  5. Recommended enablement order inside MoE: `init_routing > collect_load > global_sync_check > weight_replace > GMM`.
+   model.moe_module.block.expert_load_collector = ExpertLoadCollector(expert_num, lb_interval)
+   model.moe_module.block.dispatcher = DynamicDispatcher(expert_num, weight1, weight2, rank_in_group, ep_size)
 
-     ```python
-     expanded_tokens, expanded_row_idx, expanded_indices = torch_npu.npu_moe_init_routing(tokens, row_idx, indices, tokens.shape[0])
+   if eplb_enabled:
+       construct_expert_info_transfer_pool(
+           module=model, rank_in_group=rank_in_group, device=device,
+           ip=host, port=port, auth_key=auth_key
+       )
 
-     # collect expert load
-     self.expert_load_collector.collect_expert_load(expanded_indices)
-     # global synchronization check
-     self.dispatcher.check_consistency()
-     # validate synchronization status
-     if self.dispatcher.update_flag:
-        weight1, weight2, local_expert_num, device_indices_map, local_expert_indices_map, local_expert_list = self.dispatcher.update_module_weight_and_map()
-        self.weight1 = weight1
-        self.weight2 = weight2
-        self.local_expert_num = local_expert_num
+   model.forward()
+   ```
 
-     tokens = torch_npu.npu_grouped_matmul_finalize_routing()
-     ```
+3. In AG mode, an additional transformation matrix multiplication is required.
 
-## Class initialization and interface reference
+   ```python
+   if EP_AG and self.dispatcher.update_flag:
+       expert_trans_tensor = self.dispatcher.get_expert_trans_tensor()
+       trans_scores = torch.matmul(scores, expert_trans_tensor)
+   ```
 
-- `ExpertLoadCollector`
-  Parameters:
-  - `expert_num`: total number of global experts
-  - `lb_interval`: EPLB interval in steps; the default value `1` means every step participates in EPLB
+4. Insert load collection and weight replacement after `npu_moe_init_routing` and before `npu_grouped_matmul_finalize_routing` in the MoE forward pass.
 
-  Return value: none
+   ```python
+   expanded_tokens, expanded_row_idx, expanded_indices = torch_npu.npu_moe_init_routing(
+       tokens, row_idx, indices, tokens.shape[0])
 
-- `DynamicDispatcher`
-  Parameters:
-  - `expert_num`: total number of global experts
-  - `weight1`: UP weights
-  - `weight2`: DOWN weights
-  - `rank_in_group`: rank index within the EP communication group
-  - `ep_size`: EP size
+   self.expert_load_collector.collect_expert_load(expanded_indices)
+   self.dispatcher.check_consistency()
 
-  Return value: none
+   if self.dispatcher.update_flag:
+       weight1, weight2, local_expert_num, device_indices_map, \
+           local_expert_indices_map, local_expert_list = \
+           self.dispatcher.update_module_weight_and_map()
+       self.weight1 = weight1
+       self.weight2 = weight2
+       self.local_expert_num = local_expert_num
 
-- `construct_expert_info_transfer_pool`
-  Parameters:
-  - `module`: initialized model
-  - `rank_in_group`: rank index within the EP communication group
-  - `device`: device index bound to the rank
-  - `ip`: must match the configured server IP
-  - `port`: must match the configured server port
-  - `auth_key`: multiprocessing secret; reads `EPLB_AUTH_KEY` by default and falls back to `secret_key`
+   tokens = torch_npu.npu_grouped_matmul_finalize_routing()
+    ```
 
-  Return value: none
+### Class Description
 
-- `get_expert_trans_tensor`
-  Used in all-gather EP scenarios to obtain the transform matrix.
+#### ExpertLoadCollector
 
-- `collect_expert_load`
-  Parameters:
-  - `expanded_indices`: token-cumsum values for each expert; the output of `npu_moe_init_routing` can be passed directly
+```python
+from mindiesd.eplb.collector import ExpertLoadCollector
+```
 
-  Return value: none
+| Parameter | Type | Mandatory | Default Value | Description |
+|------|------|------|--------|------|
+| `expert_num` | `int` | Yes | - | Number of global experts |
+| `lb_interval` | `int` | No | `1` | EPLB interval steps |
 
-- `check_consistency`
-  Performs an extra all-gather communication internally to verify synchronization status across ranks.
+#### DynamicDispatcher
 
-- `update_module_weight_and_map`
-  Parameters: none
+```python
+from mindiesd.eplb.dispatcher import DynamicDispatcher
+```
 
-  Return values:
-  - `weight1`: UP weights
-  - `weight2`: DOWN weights
-  - `local_expert_num`: number of local experts, including redundant experts
-  - `device_indices_map`: for example `[0, 1, 1, 0]`, meaning which rank each expert index belongs to
-  - `local_expert_indices_map`: for example on rank 0 `[0, -1, -1, 1]` and on rank 1 `[-1, 0, 1, -1]`, meaning the local position of each expert index in the local expert-weight tensor
-  - `local_expert_list`: for example rank 0 `[0, 3]` and rank 1 `[1, 2]`, meaning the local expert layout
+| Attribute Name | Type | Mandatory | Default Value | Description |
+|------|------|------|--------|------|
+| `expert_num` | `int` | Yes | - | Number of global experts |
+| `weight1` | `Tensor` | Yes | - | UP weight |
+| `weight2` | `Tensor` | Yes | - | DOWN weight |
+| `rank_in_group` | `int` | Yes | - | Rank within the EP communication group |
+| `ep_size` | `int` | Yes | - | EP size |
+
+#### construct_expert_info_transfer_pool
+
+```python
+from mindiesd.eplb.task_manager import construct_expert_info_transfer_pool
+```
+
+| Attribute Name | Type | Mandatory | Default Value | Description |
+|------|------|------|--------|------|
+| `module` | `Module` | Yes | - | Initialized model |
+| `rank_in_group` | `int` | Yes | - | Rank within the EP communication group |
+| `device` | `int` | Yes | - | Device ID corresponding to the rank |
+| `ip` | `str` | Yes | - | Must match the server IP |
+| `port` | `int` | Yes | - | Must match the server port |
+| `auth_key` | `str` | No | `secret_key` | Reads the environment variable `EPLB_AUTH_KEY` by default |
