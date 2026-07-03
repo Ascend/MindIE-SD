@@ -10,7 +10,9 @@
 # MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+import csv
 import queue
+import re
 import socket
 import sys
 import types
@@ -29,6 +31,10 @@ except Exception:
     sys.modules["torch_npu"] = mock.MagicMock()
 
 ROOT = Path(__file__).resolve().parents[2]
+FAULT_MODE_FILE = ROOT / "docs" / "zh" / "appendix" / "eplb_fault_mode_library.csv"
+
+with FAULT_MODE_FILE.open(newline="", encoding="utf-8") as fault_mode_file:
+    FAULT_MODES = {row["模式编号"]: row for row in csv.DictReader(fault_mode_file)}
 
 
 def _ensure_package(package_name, package_path):
@@ -71,6 +77,8 @@ SchedulerContext = eplb_scheduler.SchedulerContext
 ProfileTaskTransfer = sys.modules["mindiesd.eplb.task_transfer"].ProfileTaskTransfer
 handle_unknown_task = task_handler_module.handle_unknown_task
 connect_to_schedule_manager = task_manager_module.connect_to_schedule_manager
+log_unknown_instruction = task_manager_module._log_unknown_instruction
+log_unknown_task_type = task_manager_module._log_unknown_task_type
 A2ARedundantExpertService = greedy_module.A2ARedundantExpertService
 ExpertExchangeService = greedy_module.ExpertExchangeService
 LoadData = greedy_module.LoadData
@@ -102,6 +110,25 @@ def _scheduler_args(**overrides):
 
 
 class TestEplbFaultModeReproduction(unittest.TestCase):
+    @staticmethod
+    def _fault_log_template_patterns(fault_log_template):
+        for template in fault_log_template.split("；"):
+            template = template.strip()
+            template = re.sub(r"^(ERROR|WARNING)\s+", "", template)
+            pattern = re.escape(template)
+            pattern = re.sub(r"\\\{[^{}]+\\\}", r".+?", pattern)
+            yield pattern
+
+    def assert_fault_log_matches_library(self, captured, *fault_mode_ids):
+        output = "\n".join(captured.output)
+        for fault_mode_id in fault_mode_ids:
+            fault_log_template = FAULT_MODES[fault_mode_id]["故障关键日志"]
+            patterns = list(self._fault_log_template_patterns(fault_log_template))
+            self.assertTrue(
+                any(re.search(pattern, output, re.DOTALL) for pattern in patterns),
+                msg=f"{fault_mode_id} log template does not match captured output: {fault_log_template}",
+            )
+
     def setUp(self):
         eplb_scheduler.upload_queues.clear()
         eplb_scheduler.instruction_queues.clear()
@@ -113,8 +140,11 @@ class TestEplbFaultModeReproduction(unittest.TestCase):
     def test_fm001_fm003_scheduler_not_running_causes_worker_connection_failure(self):
         port = _get_free_port()
 
-        with self.assertRaises((ConnectionRefusedError, OSError)):
-            connect_to_schedule_manager(0, "127.0.0.1", port, "secret_key")
+        with self.assertLogs("mindie-sd", level="ERROR") as captured:
+            with self.assertRaises((ConnectionRefusedError, OSError)):
+                connect_to_schedule_manager(0, "127.0.0.1", port, "secret_key")
+
+        self.assert_fault_log_matches_library(captured, "EPLB-FM001", "EPLB-FM003")
 
     def test_fm002_scheduler_port_unavailable(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -122,15 +152,23 @@ class TestEplbFaultModeReproduction(unittest.TestCase):
             sock.listen(1)
             port = sock.getsockname()[1]
 
-            with self.assertRaises(OSError):
-                eplb_scheduler._init_scheduler_context(_scheduler_args(port=port))
+            with self.assertLogs("mindie-sd", level="ERROR") as captured:
+                with self.assertRaises(OSError):
+                    eplb_scheduler._init_scheduler_context(_scheduler_args(port=port))
+
+        output = "\n".join(captured.output)
+        self.assert_fault_log_matches_library(captured, "EPLB-FM002")
+        self.assertIn("Address already in use", output)
 
     def test_fm004_auth_key_mismatch_rejects_worker(self):
         args = _scheduler_args()
         eplb_scheduler._init_scheduler_context(args)
 
-        with self.assertRaises((AuthenticationError, OSError)):
-            connect_to_schedule_manager(0, args.host, args.port, "wrong_key")
+        with self.assertLogs("mindie-sd", level="ERROR") as captured:
+            with self.assertRaises((AuthenticationError, OSError)):
+                connect_to_schedule_manager(0, args.host, args.port, "wrong_key")
+
+        self.assert_fault_log_matches_library(captured, "EPLB-FM004")
 
     def test_fm005_profile_task_enqueue_failed_when_instruction_queue_full(self):
         instruction_queue = queue.Queue(maxsize=1)
@@ -232,16 +270,32 @@ class TestEplbFaultModeReproduction(unittest.TestCase):
             "mindiesd.eplb.eplb_scheduler.eplb_greedy",
             return_value=(False, [], [], [], None),
         ):
-            eplb_scheduler._emit_layer_update(context, 0, transfer)
+            with self.assertLogs("mindie-sd", level="ERROR") as captured:
+                eplb_scheduler._emit_layer_update(context, 0, transfer)
 
         transfer.update_emit_task.assert_not_called()
         self.assertEqual(context.update_count, 0)
+        self.assert_fault_log_matches_library(captured, "EPLB-FM010")
 
     def test_fm011_unknown_task_instruction_raises_parameters_invalid(self):
         instruction = SimpleNamespace(task_type="UNKNOWN")
 
-        with self.assertRaisesRegex(ParametersInvalid, "Unknown task type"):
-            handle_unknown_task(instruction, None, None, None, None)
+        with self.assertLogs("mindie-sd", level="ERROR") as captured:
+            log_unknown_task_type(instruction)
+
+        self.assertIn("Unknown task type", "\n".join(captured.output))
+
+        with self.assertLogs("mindie-sd", level="ERROR") as captured:
+            with self.assertRaisesRegex(ParametersInvalid, "Unknown task type"):
+                handle_unknown_task(instruction, None, None, None, None)
+
+        self.assertIn("Unknown task type", "\n".join(captured.output))
+
+    def test_fm011_non_task_payload_instruction_is_logged_as_error(self):
+        with self.assertLogs("mindie-sd", level="ERROR") as captured:
+            log_unknown_instruction("invalid instruction")
+
+        self.assert_fault_log_matches_library(captured, "EPLB-FM011")
 
 
 if __name__ == "__main__":

@@ -290,9 +290,9 @@ SUPPORTED_ONLINE_FALLBACK_TYPES = (
     QuantAlgorithm.W16A16,
 )
 
-_W4A4_QUANT_TYPES = (
-    QuantAlgorithm.W4A4_MXFP4_DYNAMIC,
-    QuantAlgorithm.W4A4_MXFP4_DUALSCALE,
+SUPPORTED_ONLINE_FA_TYPES = (
+    QuantAlgorithm.FP8_DYNAMIC,
+    QuantAlgorithm.MXFP4_DYNAMIC,
 )
 
 
@@ -300,9 +300,17 @@ _W4A4_QUANT_TYPES = (
 class OnlineQuantConfig:
     quant_type: QuantAlgorithm = QuantAlgorithm.W8A8_DYNAMIC
     fallback_layers: Optional[Dict[str, QuantAlgorithm]] = None
-    fallback_timesteps: Optional[List[int]] = None
+    fa_layers: Optional[Tuple[str, ...]] = None
+    fa_quant_type: Optional[QuantAlgorithm] = None
+    timestep_config: Optional[TimestepPolicyConfig] = None
+    mxfp4_scale_alg: Optional[int] = None
+    mxfp4_dst_type_max: float = 7.25
+    fallback_timesteps: dataclasses.InitVar[Optional[List[int]]] = None
 
-    def __post_init__(self):
+    def __post_init__(self, fallback_timesteps):
+        if fallback_timesteps is not None:
+            raise ModelInitError("fallback_timesteps is no longer supported. Use timestep_config instead.")
+
         self.quant_type = QuantConfig._normalize_quant_algo(self.quant_type)
         if not isinstance(self.quant_type, QuantAlgorithm):
             raise ModelInitError(
@@ -312,6 +320,30 @@ class OnlineQuantConfig:
             raise ModelInitError(
                 f'self.quant_type must be one of {SUPPORTED_ONLINE_QUANT_TYPES}, but actually got {self.quant_type}.'
             )
+
+        self.fa_layers = self._normalize_fa_layers(self.fa_layers)
+        self.fa_quant_type = QuantConfig._normalize_quant_algo(self.fa_quant_type)
+        if self.fa_quant_type is not None:
+            if not isinstance(self.fa_quant_type, QuantAlgorithm):
+                raise ModelInitError(
+                    f'self.fa_quant_type must be an instance of QuantAlgorithm, '
+                    f'but actually got {type(self.fa_quant_type)}.'
+                )
+            if self.fa_quant_type not in SUPPORTED_ONLINE_FA_TYPES:
+                raise ModelInitError(
+                    f'self.fa_quant_type must be one of {SUPPORTED_ONLINE_FA_TYPES}, '
+                    f'but actually got {self.fa_quant_type}.'
+                )
+            if not self.fa_layers:
+                raise ModelInitError("self.fa_layers must be configured when fa_quant_type is set.")
+
+        if self.timestep_config is not None and not isinstance(self.timestep_config, TimestepPolicyConfig):
+            raise ModelInitError("self.timestep_config must be an instance of TimestepPolicyConfig.")
+        if self.mxfp4_scale_alg is not None and not isinstance(self.mxfp4_scale_alg, int):
+            raise ModelInitError("mxfp4_scale_alg must be an int or None.")
+        if isinstance(self.mxfp4_dst_type_max, bool) or not isinstance(self.mxfp4_dst_type_max, (int, float)):
+            raise ModelInitError("mxfp4_dst_type_max must be a float.")
+        self.mxfp4_dst_type_max = float(self.mxfp4_dst_type_max)
 
         if self.fallback_layers is None:
             self.fallback_layers = {}
@@ -332,20 +364,19 @@ class OnlineQuantConfig:
             parsed_fallback[pattern] = algo
         self.fallback_layers = parsed_fallback
 
-        if self.fallback_timesteps is not None:
-            if self.quant_type not in _W4A4_QUANT_TYPES:
-                raise ModelInitError(
-                    f"fallback_timesteps is only supported for W4A4 quantization types "
-                    f"{_W4A4_QUANT_TYPES}, but quant_type is {self.quant_type}"
-                )
-            if not isinstance(self.fallback_timesteps, (list, set, range)):
-                raise ModelInitError(
-                    f"fallback_timesteps must be a list, set, or range, got {type(self.fallback_timesteps)}"
-                )
-            for ts in self.fallback_timesteps:
-                if not isinstance(ts, int):
-                    raise ModelInitError(f"All elements in fallback_timesteps must be int, got {type(ts)}")
-            self.fallback_timesteps = list(self.fallback_timesteps)
+    @staticmethod
+    def _normalize_fa_layers(fa_layers):
+        if fa_layers is None:
+            return ()
+        if isinstance(fa_layers, str):
+            return (fa_layers,)
+        if not isinstance(fa_layers, (list, tuple)):
+            raise ModelInitError("self.fa_layers must be a list or tuple of layer/class name patterns.")
+        normalized = tuple(fa_layers)
+        for pattern in normalized:
+            if not isinstance(pattern, str):
+                raise ModelInitError("Items in fa_layers must be strings.")
+        return normalized
 
     @classmethod
     def parse_from_dict(cls, config: dict):
@@ -360,6 +391,14 @@ class OnlineQuantConfig:
             'quant_type': self.quant_type.value if isinstance(self.quant_type, QuantAlgorithm) else self.quant_type,
             'fallback_layers': fallback,
         }
-        if self.fallback_timesteps is not None:
-            result['fallback_timesteps'] = self.fallback_timesteps
+        if self.fa_quant_type is not None:
+            result['fa_quant_type'] = (
+                self.fa_quant_type.value if isinstance(self.fa_quant_type, QuantAlgorithm) else self.fa_quant_type
+            )
+            result['fa_layers'] = list(self.fa_layers)
+        if self.timestep_config is not None:
+            result['timestep_config'] = self.timestep_config
+        if self.mxfp4_scale_alg is not None:
+            result['mxfp4_scale_alg'] = self.mxfp4_scale_alg
+            result['mxfp4_dst_type_max'] = self.mxfp4_dst_type_max
         return result

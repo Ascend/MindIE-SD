@@ -300,7 +300,7 @@ class TestMoEMlp(unittest.TestCase):
                 dtype = case["dtype"]
                 weight_scale_dtype = case["weight_scale_dtype"]
                 hidden_states = (torch.randn(4, hidden_size, device=device, dtype=dtype) / 10).contiguous()
-                quant_hidden, per_token_scale = torch_npu.npu_dynamic_quant(hidden_states)
+                quant_hidden, per_token_scale = torch_npu.npu_dynamic_quant(hidden_states, dst_type=torch.int8)
                 w13_weight = torch.randint(
                     -8,
                     8,

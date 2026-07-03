@@ -14,9 +14,11 @@ MindIE SD is a Python package built on PyTorch that can be easily integrated int
 * triton: 3.5.0
 * triton-ascend: 3.2.1
 
+> **Note**: `triton-ascend 3.2.1` is not published on PyPI. Download the wheel matching your Python version and architecture from the [GitCode release page](https://gitcode.com/Ascend/triton-ascend/releases) and install it (it pins `triton==3.5.0`). Without 3.2.1, the SparseLinearAttention (FA sparse) feature is disabled.
+
 #### CANN Installation
 
-MindIE SD depends on the CANN Toolkit development package and CANN ops operator package. See the [CANN Software Installation Guide](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/900/softwareinst/instg/instg_0000.html?OS=openEuler&InstallType=netyum) for installation instructions. Choose the installation scenario based on your installation method and operating system, then click "Start Reading" and follow the "Install CANN" section.
+MindIE SD depends on the CANN Toolkit development package and CANN ops operator package. See the [CANN Software Installation Guide](https://gitcode.com/cann/ops-cv/blob/master/docs/zh/install/quick_install.md) for installation instructions. Choose the installation scenario based on your installation method and operating system, then click "Start Reading" and follow the "Install CANN" section.
 
 After installation, run the following command to set environment variables (using the default installation path as an example):
 
@@ -70,6 +72,15 @@ Follow these steps to install MindIE SD from source:
    cd dist
    pip install mindiesd-*.whl
    ```
+
+> **Dependency Layering**
+>
+> Dependencies are split by purpose in the repository; install the ones you need:
+>
+> - `requirements.txt`: core runtime dependencies (minimal install; only torch/torch_npu pinned, others loose).
+> - `examples/dummy_run/requirements.txt`: dependencies for the `dummy_run` model inference example (diffusers/transformers/etc.).
+> - `examples/service/requirements.txt`: serving-example dependencies (ray, fastapi, uvicorn, pydantic, Pillow).
+> - Testing, linting, and docs-build dependencies are in `requirements-test.txt`, `requirements-lint.txt`, and `docs/requirements-docs.txt` respectively (see the developer guide).
 
 ### Nightly Build Installation
 

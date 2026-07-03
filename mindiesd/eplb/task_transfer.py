@@ -37,7 +37,9 @@ class ProfileTaskTransfer:
                     "[MindIE-SD/eplb] EPLB profile task enqueue failed. "
                     "issue=instruction_queue is full, moe_layer_idx=%s, lb_interval=%s, expected=queue has free slot. "
                     "possible_cause=scheduler consumes profile tasks slower than workers produce them. "
-                    "Troubleshooting: check scheduler process state, queue consumer thread, and EPLB interval configuration.",
+                    "Troubleshooting: check whether the scheduler process and worker consumer thread are alive; "
+                    "inspect instruction_queue backlog for this moe_layer_idx; increase lb_interval or queue capacity "
+                    "if tasks are produced faster than they are consumed.",
                     self.moe_layer_idx,
                     self.lb_interval,
                 )

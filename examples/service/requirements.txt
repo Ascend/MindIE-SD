@@ -1,0 +1,7 @@
+# Service example dependencies (examples/service).
+# The `wan` package is provided by its model repository and is not bundled here.
+ray
+fastapi
+uvicorn
+pydantic
+Pillow

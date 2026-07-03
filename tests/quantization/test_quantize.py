@@ -22,6 +22,7 @@ from mindiesd.quantization.layer import (
     W8A8QuantBaseLinear,
     WeightQuantLinear,
     FP8RotateQuantFA,
+    MXFP8RotateQuantFA,
     W8A8MXFP8QuantLinear,
     W4A4QuantLinear,
     W4A4MXFP4QuantLinear,
@@ -60,19 +61,19 @@ def create_mock_handler(mock_data):
 class FakeOnlineQuantLinear(nn.Module):
     init_records = []
 
-    def __init__(self, original_linear, dtype=torch.bfloat16, fallback_timesteps=None):
+    def __init__(self, original_linear, dtype=torch.bfloat16, quant_config=None):
         super().__init__()
         self.input_feature = original_linear.in_features
         self.output_feature = original_linear.out_features
         self.dtype = dtype
-        self.fallback_timesteps = fallback_timesteps
+        self.quant_config = quant_config
         self.register_buffer(
             "weight", torch.empty(original_linear.out_features, original_linear.in_features), persistent=False
         )
         FakeOnlineQuantLinear.init_records.append(
             {
                 "dtype": dtype,
-                "fallback_timesteps": fallback_timesteps,
+                "quant_config": quant_config,
                 "in_features": original_linear.in_features,
                 "out_features": original_linear.out_features,
             }
@@ -80,6 +81,14 @@ class FakeOnlineQuantLinear(nn.Module):
 
     def forward(self, x):
         return torch.empty(*x.shape[:-1], self.output_feature, dtype=self.dtype)
+
+
+class FakeAttention(nn.Module):
+    head_dim = 8
+
+
+class FakeAttentionWithoutHeadDim(nn.Module):
+    pass
 
 
 @unittest.skipIf(
@@ -347,7 +356,7 @@ class TestQuantize(unittest.TestCase):
         mock_empty_cache.assert_called_once()
 
     @mock.patch.object(torch.npu, "empty_cache")
-    def test_online_quantize_with_fallback_layers_and_timesteps(self, mock_empty_cache):
+    def test_online_quantize_with_fallback_layers_pattern(self, mock_empty_cache):
         model = nn.ModuleDict(
             {
                 "main": nn.Linear(8, 8),
@@ -357,8 +366,7 @@ class TestQuantize(unittest.TestCase):
         )
         config = OnlineQuantConfig(
             quant_type=QuantAlgorithm.W4A4_MXFP4_DYNAMIC,
-            fallback_layers={"skip": QuantAlgorithm.W16A16, "fallback": QuantAlgorithm.W8A8},
-            fallback_timesteps=[3, 7],
+            fallback_layers={"sk*": QuantAlgorithm.W16A16, "fallback": QuantAlgorithm.W8A8},
         )
         FakeOnlineQuantLinear.init_records = []
 
@@ -375,9 +383,64 @@ class TestQuantize(unittest.TestCase):
         self.assertIsInstance(model["main"], FakeOnlineQuantLinear)
         self.assertIsInstance(model["skip"], nn.Linear)
         self.assertIsInstance(model["fallback"], FakeOnlineQuantLinear)
-        self.assertEqual(FakeOnlineQuantLinear.init_records[0]["fallback_timesteps"], [3, 7])
-        self.assertIsNone(FakeOnlineQuantLinear.init_records[1]["fallback_timesteps"])
+        self.assertIsInstance(FakeOnlineQuantLinear.init_records[0]["quant_config"], QuantConfig)
+        self.assertIsNone(FakeOnlineQuantLinear.init_records[1]["quant_config"])
         mock_empty_cache.assert_called_once()
+
+    @mock.patch.object(torch.npu, "empty_cache")
+    def test_online_quantize_with_mm_and_fa(self, mock_empty_cache):
+        model = nn.ModuleDict({"attn": FakeAttention(), "linear": nn.Linear(8, 8)})
+        config = OnlineQuantConfig(
+            quant_type=QuantAlgorithm.W8A8_DYNAMIC,
+            fa_layers=("Fake{Attention,Block}",),
+            fa_quant_type=QuantAlgorithm.FP8_DYNAMIC,
+        )
+        FakeOnlineQuantLinear.init_records = []
+
+        with mock.patch.dict(
+            quantize_module._ONLINE_QUANT_LAYER_MAP,
+            {QuantAlgorithm.W8A8_DYNAMIC: FakeOnlineQuantLinear},
+        ):
+            quantized_model = _online_quantize_impl(model, config, dtype=torch.float32)
+
+        self.assertIs(quantized_model, model)
+        self.assertIsInstance(model["linear"], FakeOnlineQuantLinear)
+        self.assertTrue(hasattr(model["attn"], "fa_quant"))
+        self.assertTrue(torch.equal(model["attn"].fa_quant.q_rot, model["attn"].fa_quant.k_rot))
+        mock_empty_cache.assert_called_once()
+
+    @mock.patch.object(torch.npu, "empty_cache")
+    def test_online_quantize_fa_layers_no_match(self, mock_empty_cache):
+        model = nn.ModuleDict({"attn": FakeAttention(), "linear": nn.Linear(8, 8)})
+        config = OnlineQuantConfig(
+            quant_type=QuantAlgorithm.W8A8_DYNAMIC,
+            fa_layers=("OtherAttention",),
+            fa_quant_type=QuantAlgorithm.FP8_DYNAMIC,
+        )
+        FakeOnlineQuantLinear.init_records = []
+
+        with mock.patch.dict(
+            quantize_module._ONLINE_QUANT_LAYER_MAP,
+            {QuantAlgorithm.W8A8_DYNAMIC: FakeOnlineQuantLinear},
+        ):
+            quantized_model = _online_quantize_impl(model, config, dtype=torch.float32)
+
+        self.assertIs(quantized_model, model)
+        self.assertIsInstance(model["linear"], FakeOnlineQuantLinear)
+        self.assertFalse(hasattr(model["attn"], "fa_quant"))
+        mock_empty_cache.assert_called_once()
+
+    @mock.patch.object(torch.npu, "empty_cache")
+    def test_online_quantize_fa_rejects_missing_head_dim(self, _mock_empty_cache):
+        model = nn.ModuleDict({"attn": FakeAttentionWithoutHeadDim()})
+        config = OnlineQuantConfig(
+            quant_type=QuantAlgorithm.W8A8_DYNAMIC,
+            fa_layers=("attn",),
+            fa_quant_type=QuantAlgorithm.FP8_DYNAMIC,
+        )
+
+        with self.assertRaises(ParametersInvalid):
+            _online_quantize_impl(model, config)
 
     def test_quantize_rejects_mixed_offline_and_online_config(self):
         model = nn.Sequential(nn.Linear(10, 10))
@@ -517,6 +580,17 @@ class TestAddFAQuant(unittest.TestCase):
         cfg = QuantConfig(quant_algo=QuantAlgorithm.NO_QUANT)
         add_fa_quant(layer, cfg, "test_layer", self.weights)
         self.assertFalse(hasattr(layer, 'fa_quant'))
+
+    def test_add_fa_quant_with_mxfp8_layer(self):
+        # 创建一个具有必要属性的模拟层
+        class MockLayer(nn.Module):
+            pass
+
+        layer = MockLayer()
+        cfg = QuantConfig(quant_algo=QuantAlgorithm.MXFP8_DYNAMIC)
+        add_fa_quant(layer, cfg, "test_layer", create_mock_handler(self.weights))
+        self.assertTrue(hasattr(layer, 'fa_quant'))
+        self.assertIsInstance(layer.fa_quant, MXFP8RotateQuantFA)
 
 
 @unittest.skipIf(
