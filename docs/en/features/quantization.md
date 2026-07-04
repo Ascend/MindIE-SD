@@ -90,33 +90,6 @@ for i, t in enumerate(timesteps):
     ...
 ```
 
-### Online Quantization
-
-Online quantization is the easy-to-use path for quickly enabling dynamic MM/FA quantization. Offline quantization is the fine-grained path for msmodelslim calibration, per-layer tuning, and exported-weight control.
-
-```python
-from mindiesd import OnlineQuantConfig, TimestepManager, TimestepPolicyConfig, quantize
-from mindiesd.quantization.mode import QuantAlgorithm
-
-timestep_config = TimestepPolicyConfig()
-timestep_config.register(range(0, 4), "W4A8", target="w4a4_linear")
-timestep_config.register([0, 1], "FLOAT", target="fa")
-timestep_config.register([2, 3, 4], "FP8", target="fa")
-
-online_config = OnlineQuantConfig(
-    quant_type=QuantAlgorithm.W4A4_MXFP4_DYNAMIC,
-    fallback_layers={"transformer_blocks.{0,1}.*": QuantAlgorithm.W16A16},
-    fa_layers=("transformer_blocks.*.attn", "*Attention"),
-    fa_quant_type=QuantAlgorithm.MXFP4_DYNAMIC,
-    timestep_config=timestep_config,
-    mxfp4_scale_alg=2,
-    mxfp4_dst_type_max=7.25,
-)
-model = quantize(model, online_config=online_config)
-```
-
-Both `fallback_layers` and `fa_layers` support offline-tool-style exact, wildcard, and brace matching. `fa_layers` can match module names or class names. The example uses `range` for MM W4A8 timestep fallback and lists for FA timestep fallback; FA timesteps not listed above keep the default MXFP4 strategy. Online FA generates `q_rot/k_rot` automatically, so no rotation file is required; if `head_dim` cannot be inferred for a matched module, quantization fails fast. MXFP4 C7 uses the same option names as offline quantization: set `mxfp4_scale_alg=2` and `mxfp4_dst_type_max=7.25`.
-
 #### Quantized Weight File Naming
 
 Quantized weights and descriptor files are exported by the msmodelslim tool with the following naming convention:
@@ -146,7 +119,10 @@ Dynamically quantize rotated Q/K/V into FP8 (`float8_e4m3fn`) block by block. Q 
 
 **FP8 Attention**
 
-Invoke the Ascend `npu_fused_infer_attention_score_v2` kernel to perform attention computation in the FP8 domain, with outputs dequantized back to original precision.
+Invoke MindIE-SD's own `torch.ops.mindiesd.fused_infer_attention_score_v2`
+operator, which routes to the migrated `FusedInferAttentionScore` implementation
+in this repository, to perform attention computation in the FP8 domain with
+outputs dequantized back to original precision.
 
 ### API Reference
 
