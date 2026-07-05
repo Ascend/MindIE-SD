@@ -19,6 +19,7 @@ import torch_npu
 from torch import nn
 
 from ..layers.flash_attn.common import AttentionParam, lru_cache_by_attn_param
+from ..layers.flash_attn.fused_infer_attention_score import fused_infer_attention_score_v2
 from .config import QuantConfig, TimestepPolicyConfig
 from .utils import get_mxfp4_quant_kwargs, get_quant_weight, TimestepManager
 
@@ -462,7 +463,7 @@ class FP8RotateQuantFA(nn.Module):
         k, k_scale = fa_block_quant_preprocess(key, block_size=256, dst_type=torch_npu.float8_e4m3fn, layout=layout)
         v, v_scale = fa_block_quant_preprocess(value, block_size=256, dst_type=torch_npu.float8_e4m3fn, layout=layout)
 
-        x = torch_npu.npu_fused_infer_attention_score_v2(
+        x = fused_infer_attention_score_v2(
             q,
             k,
             v,
@@ -583,7 +584,7 @@ class MXFP4QuantFA(nn.Module):
     def _forward_float(self, query, key, value, **kwargs):
         layout = kwargs.get("layout", "BNSD")
         n, s, d = _get_fa_shape(query, layout)
-        output = torch_npu.npu_fused_infer_attention_score_v2(
+        output = fused_infer_attention_score_v2(
             query,
             key,
             value,
@@ -607,7 +608,7 @@ class MXFP4QuantFA(nn.Module):
         k, k_scale = fa_block_quant_preprocess(key, block_size=256, dst_type=torch_npu.float8_e4m3fn, layout=layout)
         v, v_scale = fa_block_quant_preprocess(value, block_size=256, dst_type=torch_npu.float8_e4m3fn, layout=layout)
 
-        output = torch_npu.npu_fused_infer_attention_score_v2(
+        output = fused_infer_attention_score_v2(
             q,
             k,
             v,

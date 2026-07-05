@@ -1,11 +1,13 @@
 /**
- * Copyright (c) 2024 Huawei Technologies Co., Ltd.
- * This file is a part of the CANN Open Software.
- * Licensed under CANN Open Software License Agreement Version 1.0 (the "License").
- * Please refer to the License for details. You may not use this file except in compliance with the License.
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
- * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
- * See LICENSE in the root of the software repository for the full text of the License.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
  */
 
 /*!
@@ -44,9 +46,9 @@ struct PseInfo {
     int64_t n2G;
     int64_t n2oIdx;
     int64_t pseBSize;
-    int64_t pseS1Size;        // for alibi
+    int64_t pseS1Size; // for alibi
     int64_t pseS2ComputeSize; // for alibi, do not need assignment
-    int64_t pseS2Size;        // for alibi
+    int64_t pseS2Size; // for alibi
     uint32_t pseShapeType;
     int64_t readS2Size; // for alibi, do not need assignment
     int64_t s1BaseSize;
@@ -75,9 +77,7 @@ struct PseInfo {
 
 template <typename INPUT_T, bool hasPse>
 __aicore__ inline void DataCopyInCommon(LocalTensor<INPUT_T> &dstTensor, GlobalTensor<INPUT_T> &srcTensor,
-                                        int64_t offset, int64_t s1Size, int64_t s2Size, int64_t actualS2Len,
-                                        int32_t dtypeSize, int32_t alignedS2Size)
-{
+    int64_t offset, int64_t s1Size, int64_t s2Size, int64_t actualS2Len, int32_t dtypeSize, int32_t alignedS2Size) {
     if constexpr (hasPse == true) {
         uint32_t shapeArray[] = {static_cast<uint32_t>(s1Size), static_cast<uint32_t>(alignedS2Size)};
         dstTensor.SetShapeInfo(ShapeInfo(2, shapeArray, DataFormat::ND));
@@ -85,7 +85,7 @@ __aicore__ inline void DataCopyInCommon(LocalTensor<INPUT_T> &dstTensor, GlobalT
         DataCopyParams dataCopyParams;
         dataCopyParams.blockCount = s1Size;
         dataCopyParams.blockLen = CeilDiv(s2Size * dtypeSize, blockBytes); // 单位32B
-        dataCopyParams.dstStride = alignedS2Size * dtypeSize / blockBytes - dataCopyParams.blockLen;             // gap
+        dataCopyParams.dstStride = alignedS2Size * dtypeSize / blockBytes - dataCopyParams.blockLen; // gap
         if (actualS2Len * dtypeSize % blockBytes == 0) {
             dataCopyParams.srcStride =
                 (actualS2Len * dtypeSize - dataCopyParams.blockLen * blockBytes) / blockBytes; // srcGap
@@ -103,28 +103,26 @@ __aicore__ inline void DataCopyInCommon(LocalTensor<INPUT_T> &dstTensor, GlobalT
 
 template <typename INPUT_T, bool hasPse>
 __aicore__ inline void DataCopyIn(LocalTensor<INPUT_T> &dstTensor, GlobalTensor<INPUT_T> &srcTensor, int64_t offset,
-                                  int64_t s1Size, int64_t s2Size, int64_t actualS2Len, int64_t alignedSize = 16)
-{
+    int64_t s1Size, int64_t s2Size, int64_t actualS2Len, int64_t alignedSize = 16) {
     if constexpr (hasPse == true) {
         int32_t dtypeSize = sizeof(INPUT_T);
         int32_t alignedS2Size = CeilDiv(s2Size, alignedSize) * alignedSize;
-        DataCopyInCommon<INPUT_T, hasPse>(dstTensor, srcTensor, offset, s1Size, s2Size,
-            actualS2Len, dtypeSize, alignedS2Size);
+        DataCopyInCommon<INPUT_T, hasPse>(
+            dstTensor, srcTensor, offset, s1Size, s2Size, actualS2Len, dtypeSize, alignedS2Size);
     }
 }
 
 template <typename INPUT_T, bool hasPse>
 __aicore__ inline void DataCopyInAlign8(LocalTensor<INPUT_T> &dstTensor, GlobalTensor<INPUT_T> &srcTensor,
-                                        int64_t offset, int64_t s1Size, int64_t s2Size, int64_t actualS2Len)
-{
+    int64_t offset, int64_t s1Size, int64_t s2Size, int64_t actualS2Len) {
     if constexpr (hasPse == true) {
         int32_t dtypeSize = sizeof(INPUT_T);
         if (dtypeSize == 0) {
             return;
         }
         int32_t alignedS2Size = CeilDiv(s2Size, 32 / dtypeSize) * (32 / dtypeSize);
-        DataCopyInCommon<INPUT_T, hasPse>(dstTensor, srcTensor, offset, s1Size, s2Size,
-            actualS2Len, dtypeSize, alignedS2Size);
+        DataCopyInCommon<INPUT_T, hasPse>(
+            dstTensor, srcTensor, offset, s1Size, s2Size, actualS2Len, dtypeSize, alignedS2Size);
     }
 }
 
@@ -136,12 +134,11 @@ dst  shape: (s1, s2)
 */
 template <typename T, bool hasPse>
 __aicore__ inline void BroadcastAdd(const LocalTensor<T> &src0Tensor, const LocalTensor<T> &src1Tensor,
-                                    int64_t src0Offset, int32_t src1Size, int32_t repeatTimes)
-{
+    int64_t src0Offset, int32_t src1Size, int32_t repeatTimes) {
     if constexpr (hasPse == true) {
         /* Total data number of single step should be smaller than 256bytes.
          * If larger, we need to do add multiple times. */
-        int32_t innerLoop = src1Size / repeatMaxSize;   // s2轴整块计算次数
+        int32_t innerLoop = src1Size / repeatMaxSize; // s2轴整块计算次数
         int32_t innerRemain = src1Size % repeatMaxSize; // s2轴尾块计算量
         BinaryRepeatParams binaryRepeatParams;
         binaryRepeatParams.src0BlkStride = 1;
@@ -168,8 +165,7 @@ __aicore__ inline void BroadcastAdd(const LocalTensor<T> &src0Tensor, const Loca
 
 template <typename T, bool hasPse>
 __aicore__ inline void PseBroadcastAdd(int32_t s1Size, int32_t s2Size, int32_t computeSize, const LocalTensor<T> &pseUb,
-                                       const LocalTensor<T> &dstTensor, uint32_t pseShapeType)
-{
+    const LocalTensor<T> &dstTensor, uint32_t pseShapeType) {
     if constexpr (hasPse == true) {
         if (pseShapeType == pseS1S2 || pseShapeType == pseSlopeBn || pseShapeType == pseSlopeN) {
             Add(dstTensor, dstTensor, pseUb, computeSize);
@@ -189,8 +185,7 @@ __aicore__ inline void PseBroadcastAdd(int32_t s1Size, int32_t s2Size, int32_t c
         }
     }
 }
-template <bool hasPse> __aicore__ inline int64_t PseComputeOffset(PseInfo &pseInfo)
-{
+template <bool hasPse> __aicore__ inline int64_t PseComputeOffset(PseInfo &pseInfo) {
     if constexpr (hasPse == true) {
         int64_t bOffset = 0;
         int64_t n2Offset = 0;
@@ -203,7 +198,8 @@ template <bool hasPse> __aicore__ inline int64_t PseComputeOffset(PseInfo &pseIn
             n2Offset = pseInfo.n2oIdx * pseInfo.gSize * pseInfo.s1Size * pseInfo.s2Size;
             gOffset = pseInfo.goIdx * pseInfo.s1Size * pseInfo.s2Size;
             s1Offset = (pseInfo.s1oIdx * pseInfo.s1BaseSize + pseInfo.vecCoreOffset +
-                       pseInfo.loopIdx * pseInfo.vec1S1BaseSize) * pseInfo.s2Size;
+                           pseInfo.loopIdx * pseInfo.vec1S1BaseSize) *
+                pseInfo.s2Size;
         } else if (pseInfo.pseShapeType == pse1S2) {
             // b, n2, g, 1, s2
             bOffset = pseInfo.s2SizeAcc * pseInfo.n2G;
@@ -219,14 +215,13 @@ template <bool hasPse> __aicore__ inline int64_t PseComputeOffset(PseInfo &pseIn
     }
 }
 
-template <LayOutTypeEnum layOutType, bool hasPse> __aicore__ inline int64_t PseAlibiComputeOffset(PseInfo &pseInfo)
-{
+template <LayOutTypeEnum layOutType, bool hasPse> __aicore__ inline int64_t PseAlibiComputeOffset(PseInfo &pseInfo) {
     if constexpr (hasPse == true) {
         int64_t bOffset = (pseInfo.boIdx % pseInfo.pseBSize) * pseInfo.n2G * pseInfo.pseS2Size * pseInfo.pseS1Size;
         int64_t n2Offset = pseInfo.n2oIdx * pseInfo.gSize * pseInfo.pseS2Size * pseInfo.pseS1Size;
         int64_t gOffset = pseInfo.goIdx * pseInfo.pseS2Size * pseInfo.pseS1Size;
-        int64_t row = pseInfo.s1oIdx * pseInfo.s1BaseSize + pseInfo.vecCoreOffset +
-                      pseInfo.loopIdx * pseInfo.vec1S1BaseSize;
+        int64_t row =
+            pseInfo.s1oIdx * pseInfo.s1BaseSize + pseInfo.vecCoreOffset + pseInfo.loopIdx * pseInfo.vec1S1BaseSize;
         int64_t column = pseInfo.s2StartIdx + pseInfo.s2LoopCount * pseInfo.s2BaseNratioSize;
         int64_t m = 0;
         int64_t k = 0;
@@ -266,12 +261,11 @@ template <LayOutTypeEnum layOutType, bool hasPse> __aicore__ inline int64_t PseA
     }
 }
 
-template <bool hasPse> __aicore__ inline bool NeedPseAlibiCompute(PseInfo &pseInfo)
-{
+template <bool hasPse> __aicore__ inline bool NeedPseAlibiCompute(PseInfo &pseInfo) {
     if constexpr (hasPse == true) {
         // Alibi编码只计算下三角
         if (pseInfo.s1oIdx * pseInfo.s1BaseSize + pseInfo.vecCoreOffset +
-            (pseInfo.loopIdx + 1) * pseInfo.vec1S1BaseSize <=
+                (pseInfo.loopIdx + 1) * pseInfo.vec1S1BaseSize <=
             pseInfo.s2StartIdx + pseInfo.s2LoopCount * pseInfo.s2BaseNratioSize) {
             return false;
         }
@@ -283,8 +277,7 @@ template <bool hasPse> __aicore__ inline bool NeedPseAlibiCompute(PseInfo &pseIn
 
 template <typename INPUT_T, typename T, LayOutTypeEnum layOutType, bool hasPse>
 __aicore__ inline void PseAlibiCopyIn(LocalTensor<T> &dstTensor, LocalTensor<INPUT_T> &tmpTensor,
-                                      GlobalTensor<INPUT_T> &srcTensor, PseInfo &pseInfo, int64_t alignedSize = 16)
-{
+    GlobalTensor<INPUT_T> &srcTensor, PseInfo &pseInfo, int64_t alignedSize = 16) {
     if constexpr (hasPse == true) {
         if (!NeedPseAlibiCompute<hasPse>(pseInfo)) {
             return;
@@ -293,16 +286,16 @@ __aicore__ inline void PseAlibiCopyIn(LocalTensor<T> &dstTensor, LocalTensor<INP
         if constexpr (IsSameType<INPUT_T, T>::value) {
             if (!pseInfo.align8) {
                 DataCopyIn<INPUT_T, hasPse>(dstTensor, srcTensor, offset, pseInfo.vec1S1RealSize, pseInfo.readS2Size,
-                                        pseInfo.pseS2Size, alignedSize);
+                    pseInfo.pseS2Size, alignedSize);
             } else {
-                DataCopyInAlign8<INPUT_T, hasPse>(dstTensor, srcTensor, offset, pseInfo.vec1S1RealSize,
-                        pseInfo.readS2Size, pseInfo.pseS2Size);
+                DataCopyInAlign8<INPUT_T, hasPse>(
+                    dstTensor, srcTensor, offset, pseInfo.vec1S1RealSize, pseInfo.readS2Size, pseInfo.pseS2Size);
             }
             return;
         }
 
-        DataCopyIn<INPUT_T, hasPse>(tmpTensor, srcTensor, offset, pseInfo.vec1S1RealSize, pseInfo.readS2Size,
-                                    pseInfo.pseS2Size, alignedSize);
+        DataCopyIn<INPUT_T, hasPse>(
+            tmpTensor, srcTensor, offset, pseInfo.vec1S1RealSize, pseInfo.readS2Size, pseInfo.pseS2Size, alignedSize);
         if (pseInfo.needCast) {
             event_t eventIdMte2ToV = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_V));
             SetFlag<HardEvent::MTE2_V>(eventIdMte2ToV);
@@ -315,8 +308,7 @@ __aicore__ inline void PseAlibiCopyIn(LocalTensor<T> &dstTensor, LocalTensor<INP
 
 template <typename T, bool hasPse>
 __aicore__ inline void PseSlopeCopyIn(LocalTensor<T> &dstTensor, LocalTensor<half> &helpTensor,
-                                      __gm__ uint8_t *pseSlope, GlobalTensor<half> &alibiGm, PseInfo &pseInfo,
-                                      int64_t alignedSize = 16) {
+    __gm__ uint8_t *pseSlope, GlobalTensor<half> &alibiGm, PseInfo &pseInfo, int64_t alignedSize = 16) {
     if constexpr (hasPse == true) {
         int64_t bOffset = 0;
         int64_t n2Offset = pseInfo.n2oIdx * pseInfo.gSize;
@@ -327,8 +319,8 @@ __aicore__ inline void PseSlopeCopyIn(LocalTensor<T> &dstTensor, LocalTensor<hal
         }
         int64_t offset = bOffset + n2Offset + gOffset;
 
-        DataCopyIn<half, hasPse>(helpTensor, alibiGm, 0, pseInfo.vec1S1RealSize,
-                                 pseInfo.s2RealSize, pseInfo.pseAlibiBaseS2, alignedSize);
+        DataCopyIn<half, hasPse>(
+            helpTensor, alibiGm, 0, pseInfo.vec1S1RealSize, pseInfo.s2RealSize, pseInfo.pseAlibiBaseS2, alignedSize);
         event_t eventIdMte2ToV = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_V));
         SetFlag<HardEvent::MTE2_V>(eventIdMte2ToV);
         WaitFlag<HardEvent::MTE2_V>(eventIdMte2ToV);
@@ -338,8 +330,8 @@ __aicore__ inline void PseSlopeCopyIn(LocalTensor<T> &dstTensor, LocalTensor<hal
             Cast(dstTensor, helpTensor, RoundMode::CAST_NONE, computeSize);
             pipe_barrier(PIPE_V);
 
-            int64_t s1Offset = pseInfo.s1oIdx * pseInfo.s1BaseSize + pseInfo.vecCoreOffset +
-                               pseInfo.loopIdx * pseInfo.vec1S1BaseSize;
+            int64_t s1Offset =
+                pseInfo.s1oIdx * pseInfo.s1BaseSize + pseInfo.vecCoreOffset + pseInfo.loopIdx * pseInfo.vec1S1BaseSize;
             int64_t s2Offset = pseInfo.s2StartIdx + pseInfo.s2LoopCount * pseInfo.s2BaseNratioSize;
 
             float posShift = float(s2Offset + pseInfo.kvStartIdx - s1Offset - pseInfo.qStartIdx);
@@ -360,8 +352,8 @@ __aicore__ inline void PseSlopeCopyIn(LocalTensor<T> &dstTensor, LocalTensor<hal
 }
 
 template <typename T, bool hasPse>
-__aicore__ inline void PseSlopeCast(LocalTensor<T> &dstTensor, LocalTensor<half> &helpTensor,
-                                    __gm__ uint8_t *pseSlope, PseInfo &pseInfo) {
+__aicore__ inline void PseSlopeCast(
+    LocalTensor<T> &dstTensor, LocalTensor<half> &helpTensor, __gm__ uint8_t *pseSlope, PseInfo &pseInfo) {
     if constexpr (hasPse == true) {
         int64_t bOffset = 0;
         int64_t n2Offset = pseInfo.n2oIdx * pseInfo.gSize;
@@ -375,8 +367,8 @@ __aicore__ inline void PseSlopeCast(LocalTensor<T> &dstTensor, LocalTensor<half>
         Cast(dstTensor, helpTensor, RoundMode::CAST_NONE, computeSize);
         pipe_barrier(PIPE_V);
 
-        int64_t s1Offset = pseInfo.s1oIdx * pseInfo.s1BaseSize + pseInfo.vecCoreOffset +
-                           pseInfo.loopIdx * pseInfo.vec1S1BaseSize;
+        int64_t s1Offset =
+            pseInfo.s1oIdx * pseInfo.s1BaseSize + pseInfo.vecCoreOffset + pseInfo.loopIdx * pseInfo.vec1S1BaseSize;
         int64_t s2Offset = pseInfo.s2StartIdx + pseInfo.s2LoopCount * pseInfo.s2BaseNratioSize;
 
         float posShift = float(s2Offset + pseInfo.kvStartIdx - s1Offset - pseInfo.qStartIdx);
@@ -397,29 +389,28 @@ __aicore__ inline void PseSlopeCast(LocalTensor<T> &dstTensor, LocalTensor<half>
 
 template <typename INPUT_T, typename T, LayOutTypeEnum layOutType, bool hasPse>
 __aicore__ inline void PseCopyIn(LocalTensor<T> &dstTensor, LocalTensor<INPUT_T> &tmpTensor,
-                                 GlobalTensor<INPUT_T> &srcTensor, PseInfo &pseInfo, int64_t alignedSize = 16)
-{
+    GlobalTensor<INPUT_T> &srcTensor, PseInfo &pseInfo, int64_t alignedSize = 16) {
     if constexpr (hasPse == true) {
         if (pseInfo.pseEncodeType == pseEncodeALibiS2Full) {
             return PseAlibiCopyIn<INPUT_T, T, layOutType, hasPse>(
                 dstTensor, tmpTensor, srcTensor, pseInfo, alignedSize);
         }
         int64_t offset = PseComputeOffset<hasPse>(pseInfo);
-        int64_t s1Size = pseInfo.pseShapeType == pse1S2 ? (pseInfo.blockCount == 0 ? 1 : pseInfo.blockCount) :
-                                                          pseInfo.vec1S1RealSize;
+        int64_t s1Size = pseInfo.pseShapeType == pse1S2 ? (pseInfo.blockCount == 0 ? 1 : pseInfo.blockCount)
+                                                        : pseInfo.vec1S1RealSize;
 
         if constexpr (IsSameType<INPUT_T, T>::value) {
             if (!pseInfo.align8) {
-                DataCopyIn<INPUT_T, hasPse>(dstTensor, srcTensor, offset, s1Size, pseInfo.s2RealSize,
-                                            pseInfo.s2Size, alignedSize);
+                DataCopyIn<INPUT_T, hasPse>(
+                    dstTensor, srcTensor, offset, s1Size, pseInfo.s2RealSize, pseInfo.s2Size, alignedSize);
             } else {
-                DataCopyInAlign8<INPUT_T, hasPse>(dstTensor, srcTensor, offset, s1Size,
-                                                  pseInfo.s2RealSize, pseInfo.s2Size);
+                DataCopyInAlign8<INPUT_T, hasPse>(
+                    dstTensor, srcTensor, offset, s1Size, pseInfo.s2RealSize, pseInfo.s2Size);
             }
             return;
         }
-        DataCopyIn<INPUT_T, hasPse>(tmpTensor, srcTensor, offset, s1Size, pseInfo.s2RealSize, pseInfo.s2Size,
-                                    alignedSize);
+        DataCopyIn<INPUT_T, hasPse>(
+            tmpTensor, srcTensor, offset, s1Size, pseInfo.s2RealSize, pseInfo.s2Size, alignedSize);
         if (pseInfo.needCast) {
             event_t eventIdMte2ToV = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_V));
             SetFlag<HardEvent::MTE2_V>(eventIdMte2ToV);
@@ -431,8 +422,7 @@ __aicore__ inline void PseCopyIn(LocalTensor<T> &dstTensor, LocalTensor<INPUT_T>
 }
 
 template <typename T, bool hasPse>
-__aicore__ inline void PseAlibiCompute(LocalTensor<T> &dstTensor, LocalTensor<T> &pseTensor, PseInfo &pseInfo)
-{
+__aicore__ inline void PseAlibiCompute(LocalTensor<T> &dstTensor, LocalTensor<T> &pseTensor, PseInfo &pseInfo) {
     if constexpr (hasPse == true) {
         if (!NeedPseAlibiCompute<hasPse>(pseInfo)) {
             return;
@@ -443,29 +433,27 @@ __aicore__ inline void PseAlibiCompute(LocalTensor<T> &dstTensor, LocalTensor<T>
 }
 
 template <typename T, bool hasPse>
-__aicore__ inline void PseCompute(LocalTensor<T> &dstTensor, LocalTensor<T> &pseTensor, PseInfo &pseInfo)
-{
+__aicore__ inline void PseCompute(LocalTensor<T> &dstTensor, LocalTensor<T> &pseTensor, PseInfo &pseInfo) {
     if constexpr (hasPse == true) {
         if (pseInfo.pseEncodeType == pseEncodeALibiS2Full) {
             return PseAlibiCompute<T, hasPse>(dstTensor, pseTensor, pseInfo);
         }
-        int64_t computeSize = (pseInfo.pseShapeType == pseS1S2 || pseInfo.pseShapeType == pseSlopeBn ||
-                               pseInfo.pseShapeType == pseSlopeN)
-                              ? pseInfo.vec1S1RealSize * pseInfo.s2AlignedSize
-                              : pseInfo.s2AlignedSize;
-        PseBroadcastAdd<T, hasPse>(pseInfo.vec1S1RealSize, pseInfo.s2AlignedSize, computeSize, pseTensor,
-                                   dstTensor, pseInfo.pseShapeType);
+        int64_t computeSize =
+            (pseInfo.pseShapeType == pseS1S2 || pseInfo.pseShapeType == pseSlopeBn || pseInfo.pseShapeType == pseSlopeN)
+            ? pseInfo.vec1S1RealSize * pseInfo.s2AlignedSize
+            : pseInfo.s2AlignedSize;
+        PseBroadcastAdd<T, hasPse>(
+            pseInfo.vec1S1RealSize, pseInfo.s2AlignedSize, computeSize, pseTensor, dstTensor, pseInfo.pseShapeType);
         return;
     }
 }
 
 template <bool hasPse>
-__aicore__ inline void PseInnerAlibiCreate(GlobalTensor<half> &dstTensor,
-                                           LocalTensor<half> &helpTensor,
-                                           PseInfo &pseInfo) {
+__aicore__ inline void PseInnerAlibiCreate(
+    GlobalTensor<half> &dstTensor, LocalTensor<half> &helpTensor, PseInfo &pseInfo) {
     if constexpr (hasPse == true) {
-        if (pseInfo.pseType != (uint32_t)PseTypeEnum::PSE_INNER_MUL_ADD_TYPE
-            && pseInfo.pseType != (uint32_t)PseTypeEnum::PSE_INNER_MUL_ADD_SQRT_TYPE) {
+        if (pseInfo.pseType != (uint32_t)PseTypeEnum::PSE_INNER_MUL_ADD_TYPE &&
+            pseInfo.pseType != (uint32_t)PseTypeEnum::PSE_INNER_MUL_ADD_SQRT_TYPE) {
             return;
         }
         event_t eventIdMte3ToV = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE3_V));

@@ -54,7 +54,8 @@ add_library(PTAExtensionOPS SHARED
     ./plugin/layernorm.cpp
     ./plugin/block_sparse_attention.cpp
     ./plugin/quant_flash_attn.cpp
-    ./plugin/quant_flash_attn_metadata.cpp)
+    ./plugin/quant_flash_attn_metadata.cpp
+    ./plugin/fused_infer_attention_score.cpp)
 
 target_compile_features(PTAExtensionOPS PRIVATE cxx_std_17)
 if(DEFINED ENV{USER_ABI_VERSION})
