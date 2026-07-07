@@ -93,6 +93,7 @@ class FusedInferAttentionScoreTilingImpl : public FiaTilingBase {
     void UpdateTilingKeyQuantMode(const FiaTilingInfo &fiaInfo);
     void UpdateTilingKeyHasRope(const FiaTilingInfo &fiaInfo);
     ge::graphStatus UpdateTilingKeyInfo(const FiaTilingInfo &fiaInfo);
+    ge::graphStatus CheckMindIESDFp8PerblockTilingKey(const FiaTilingInfo &fiaInfo) const;
     ge::graphStatus SetWorkspaceNormal(const FiaTilingInfo &fiaInfo, int64_t &curWorkspaceSize);
     ge::graphStatus SetWorkspaceAntiQuant(const FiaTilingInfo &fiaInfo, int64_t &workspaceSize_);
     ge::graphStatus SetWorkspacePTQuant(const FiaTilingInfo &fiaInfo, int64_t &curWorkspaceSize);

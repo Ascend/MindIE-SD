@@ -80,6 +80,7 @@ source_ascend_env() {
     local env_file
     for env_file in "${candidates[@]}"; do
         if [[ -f "${env_file}" ]]; then
+            export CMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH:-}"
             # shellcheck disable=SC1090
             source "${env_file}"
             echo "ascend_env=${env_file}"

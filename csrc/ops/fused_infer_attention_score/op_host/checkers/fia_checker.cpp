@@ -55,6 +55,54 @@ ge::graphStatus FIAChecker::Init(const FiaTilingInfo &fiaInfo) {
     return ge::GRAPH_SUCCESS;
 }
 
+ge::graphStatus FIAChecker::CheckMindIESDFp8PerblockScope(const FiaTilingInfo &fiaInfo) const {
+    OP_CHECK_IF(fiaInfo.quantMode != FiaQuantMode::FULL_QUANT ||
+            fiaInfo.fullQuantMode != FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT,
+        OP_LOGE(fiaInfo.opName, "MindIE-SD FIA only supports FP8 E4M3FN per-block full quantization."),
+        return ge::GRAPH_FAILED);
+
+    const bool qkvDtypeSupported = fiaInfo.inputQType == ge::DT_FLOAT8_E4M3FN &&
+        fiaInfo.inputKvType == ge::DT_FLOAT8_E4M3FN && fiaInfo.opParamInfo.value.desc != nullptr &&
+        fiaInfo.opParamInfo.value.desc->GetDataType() == ge::DT_FLOAT8_E4M3FN;
+    OP_CHECK_IF(!qkvDtypeSupported,
+        OP_LOGE(fiaInfo.opName, "MindIE-SD FIA only supports FLOAT8_E4M3FN query/key/value."), return ge::GRAPH_FAILED);
+
+    OP_CHECK_IF(fiaInfo.outputType != ge::DT_FLOAT16 && fiaInfo.outputType != ge::DT_BF16,
+        OP_LOGE(fiaInfo.opName, "MindIE-SD FIA only supports FLOAT16 or BF16 attention_out."), return ge::GRAPH_FAILED);
+
+    const bool quantModeSupported = fiaInfo.opParamInfo.queryQuantMode != nullptr &&
+        fiaInfo.opParamInfo.keyAntiquantMode != nullptr && fiaInfo.opParamInfo.valueAntiquantMode != nullptr &&
+        *fiaInfo.opParamInfo.queryQuantMode == 7 && *fiaInfo.opParamInfo.keyAntiquantMode == 7 &&
+        *fiaInfo.opParamInfo.valueAntiquantMode == 7;
+    OP_CHECK_IF(!quantModeSupported,
+        OP_LOGE(fiaInfo.opName, "MindIE-SD FIA only supports query/key/value quant mode 7/7/7."),
+        return ge::GRAPH_FAILED);
+
+    const std::string inputLayout(fiaInfo.opParamInfo.layOut == nullptr ? "" : fiaInfo.opParamInfo.layOut);
+    const bool layoutSupported =
+        inputLayout == "BNSD" || inputLayout == "BSH" || inputLayout == "BSND" || inputLayout == "NTD";
+    OP_CHECK_IF(!layoutSupported,
+        OP_LOGE(fiaInfo.opName, "MindIE-SD FIA only supports BNSD, BSH, BSND or NTD input_layout."),
+        return ge::GRAPH_FAILED);
+
+    const bool dSupported =
+        fiaInfo.qkHeadDim == fiaInfo.vHeadDim && (fiaInfo.qkHeadDim == 64U || fiaInfo.qkHeadDim == 128U);
+    OP_CHECK_IF(!dSupported, OP_LOGE(fiaInfo.opName, "MindIE-SD FIA only supports D/DV both 64 or both 128."),
+        return ge::GRAPH_FAILED);
+
+    const bool unsupportedFeature = fiaInfo.attenMaskFlag || fiaInfo.pseShiftFlag || fiaInfo.enableAlibiPse ||
+        fiaInfo.ropeMode != RopeMode::NO_ROPE || fiaInfo.kvStorageMode != KvStorageMode::BATCH_CONTINUOUS ||
+        fiaInfo.sysPrefixFlag || fiaInfo.softmaxLseFlag || fiaInfo.isOutQuantEnable || fiaInfo.qPaddingSizeFlag ||
+        fiaInfo.kvPaddingSizeFlag || fiaInfo.learnableSinkFlag || fiaInfo.sparseMode != SPARSE_MODE_NO_MASK;
+    OP_CHECK_IF(unsupportedFeature,
+        OP_LOGE(fiaInfo.opName,
+            "MindIE-SD FIA FP8 per-block scope does not support mask, PSE, rope, PA, prefix, softmax_lse, "
+            "post quant, padding, learnable sink or sparse mode."),
+        return ge::GRAPH_FAILED);
+
+    return ge::GRAPH_SUCCESS;
+}
+
 ge::graphStatus FIAChecker::CheckSinglePara(const FiaTilingInfo &fiaInfo) {
     if (ge::GRAPH_SUCCESS != commonChecker_->CheckSinglePara(fiaInfo)) {
         return ge::GRAPH_FAILED;
@@ -219,6 +267,9 @@ ge::graphStatus FIAChecker::CheckMultiParaConsistency(const FiaTilingInfo &fiaIn
 ge::graphStatus FIAChecker::Process(const FiaTilingInfo &fiaInfo) {
     if (fiaInfo.emptyTensorFlag) {
         return ge::GRAPH_SUCCESS;
+    }
+    if (ge::GRAPH_SUCCESS != CheckMindIESDFp8PerblockScope(fiaInfo)) {
+        return ge::GRAPH_FAILED;
     }
     if (ge::GRAPH_SUCCESS != CheckSinglePara(fiaInfo)) {
         return ge::GRAPH_FAILED;

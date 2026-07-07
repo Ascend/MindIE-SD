@@ -24,20 +24,30 @@ from mindiesd.layers.flash_attn.fused_infer_attention_score import (
 from mindiesd.utils.exception import ParametersInvalid
 
 
-MINIMUM_BNSD_SD_CASES = (
+MINIMUM_FP8_PERBLOCK_BNSD_CASES = (
     {
-        "name": "B1_N1_S128_D128",
+        "name": "B1_N1_S128_D128_FP16_OUT",
         "batch_size": 1,
         "seq_len": 128,
         "num_heads": 1,
         "head_dim": 128,
+        "out_dtype": torch.float16,
     },
     {
-        "name": "B2_N1_S256_D128",
-        "batch_size": 2,
+        "name": "B1_N1_S256_D128_BF16_OUT",
+        "batch_size": 1,
         "seq_len": 256,
         "num_heads": 1,
         "head_dim": 128,
+        "out_dtype": torch.bfloat16,
+    },
+    {
+        "name": "B1_N1_S128_D64_FP16_OUT",
+        "batch_size": 1,
+        "seq_len": 128,
+        "num_heads": 1,
+        "head_dim": 64,
+        "out_dtype": torch.float16,
     },
 )
 
@@ -175,11 +185,12 @@ def test_normalize_dtype_arg_maps_torch_npu_pseudo_dtypes(monkeypatch):
 )
 @pytest.mark.parametrize(
     "case",
-    MINIMUM_BNSD_SD_CASES,
-    ids=[case["name"] for case in MINIMUM_BNSD_SD_CASES],
+    MINIMUM_FP8_PERBLOCK_BNSD_CASES,
+    ids=[case["name"] for case in MINIMUM_FP8_PERBLOCK_BNSD_CASES],
 )
-def test_fused_infer_attention_score_v2_minimum_bnsd_sd_cases(case):
+def test_fused_infer_attention_score_v2_fp8_perblock_bnsd_cases(case):
     import torch_npu
+    from mindiesd.layers.quant.block_quant import fa_block_quant_preprocess
 
     if not torch_npu.npu.is_available():
         pytest.skip("NPU is not available.")
@@ -190,26 +201,36 @@ def test_fused_infer_attention_score_v2_minimum_bnsd_sd_cases(case):
     num_heads = case["num_heads"]
     head_dim = case["head_dim"]
 
-    query = torch.zeros(
-        (batch_size, seq_len, num_heads, head_dim),
+    query = torch.ones(
+        (batch_size, num_heads, seq_len, head_dim),
         dtype=torch.float16,
         device="npu:0",
     )
     key = torch.zeros_like(query)
     value = torch.zeros_like(query)
+    out_dtype = case["out_dtype"]
+    q, q_scale = fa_block_quant_preprocess(query, block_size=128, dst_type=torch_npu.float8_e4m3fn, layout="BNSD")
+    k, k_scale = fa_block_quant_preprocess(key, block_size=256, dst_type=torch_npu.float8_e4m3fn, layout="BNSD")
+    v, v_scale = fa_block_quant_preprocess(value, block_size=256, dst_type=torch_npu.float8_e4m3fn, layout="BNSD")
 
     attention_out, softmax_lse = fused_infer_attention_score_v2(
-        query.transpose(1, 2),
-        key.transpose(1, 2),
-        value.transpose(1, 2),
+        q,
+        k,
+        v,
         num_query_heads=num_heads,
         softmax_scale=1.0 / (head_dim**0.5),
         pre_tokens=2147483647,
         next_tokens=2147483647,
         input_layout="BNSD",
-        out_dtype=torch.float16,
+        query_quant_mode=7,
+        key_quant_mode=7,
+        value_quant_mode=7,
+        dequant_scale_query=q_scale,
+        dequant_scale_key=k_scale,
+        dequant_scale_value=v_scale,
+        out_dtype=out_dtype,
     )
 
     assert attention_out.shape == (batch_size, num_heads, seq_len, head_dim)
-    assert attention_out.dtype is torch.float16
+    assert attention_out.dtype == out_dtype
     assert softmax_lse.numel() == 0

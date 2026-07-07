@@ -1407,9 +1407,39 @@ ge::graphStatus FusedInferAttentionScoreTilingImpl::UpdateTilingKeyInfo(const Fi
     return ge::GRAPH_SUCCESS;
 }
 
+ge::graphStatus FusedInferAttentionScoreTilingImpl::CheckMindIESDFp8PerblockTilingKey(
+    const FiaTilingInfo &fiaInfo) const {
+    if (tilingKeyInfo_.emptyTensor) {
+        const bool emptyKeySupported = tilingKeyInfo_.inputLayout == 0 && tilingKeyInfo_.config == 0 &&
+            tilingKeyInfo_.pseMode == 0 && tilingKeyInfo_.quantMode == NoQuantMode && !tilingKeyInfo_.hasAttenMask &&
+            !tilingKeyInfo_.hasRope && tilingKeyInfo_.KvLayoutType == KvLayoutType_NO_PA && !tilingKeyInfo_.isFd &&
+            !tilingKeyInfo_.enableKvPrefix && !tilingKeyInfo_.enableS1OutSplit && !tilingKeyInfo_.isReconstructTemp;
+        OP_CHECK_IF(!emptyKeySupported, OP_LOGE(fiaInfo.opName, "Unsupported empty tensor tiling key."),
+            return ge::GRAPH_FAILED);
+        return ge::GRAPH_SUCCESS;
+    }
+
+    const bool layoutSupported = tilingKeyInfo_.inputLayout == InOutLayoutType_BNSD_BNSD ||
+        tilingKeyInfo_.inputLayout == InOutLayoutType_BSH_BSH || tilingKeyInfo_.inputLayout == InOutLayoutType_NTD_NTD;
+    const bool configSupported = tilingKeyInfo_.config == Config_S1Aligned128_S2Aligned256_DAligned64_DVAligned64 ||
+        tilingKeyInfo_.config == Config_S1Aligned128_S2Aligned256_DAligned128_DVAligned128;
+    const bool keySupported = layoutSupported && configSupported && tilingKeyInfo_.pseMode == PSE_MODE_PSE_NONE_TYPE &&
+        tilingKeyInfo_.quantMode == FULLQUANT_MODE_QKV_PERBLOCK && !tilingKeyInfo_.hasAttenMask &&
+        !tilingKeyInfo_.hasRope && tilingKeyInfo_.KvLayoutType == KvLayoutType_NO_PA && !tilingKeyInfo_.isFd &&
+        !tilingKeyInfo_.enableKvPrefix && !tilingKeyInfo_.enableS1OutSplit && !tilingKeyInfo_.isReconstructTemp;
+    OP_CHECK_IF(!keySupported,
+        OP_LOGE(fiaInfo.opName,
+            "MindIE-SD FIA only compiles FP8 per-block tiling keys with layouts BNSD/BSH/NTD, "
+            "D/DV 64 or 128, no mask/rope/PSE/PA/FD/prefix/S1 split."),
+        return ge::GRAPH_FAILED);
+    return ge::GRAPH_SUCCESS;
+}
+
 ge::graphStatus FusedInferAttentionScoreTilingImpl::GenTilingKey(
     gert::TilingContext *context, const FiaTilingInfo &fiaInfo) {
     UpdateTilingKeyInfo(fiaInfo);
+    OP_CHECK_IF(CheckMindIESDFp8PerblockTilingKey(fiaInfo) != ge::GRAPH_SUCCESS,
+        OP_LOGE(fiaInfo.opName, "Unsupported MindIE-SD FIA tiling key."), return ge::GRAPH_FAILED);
     uint64_t genTilingkey = GET_TPL_TILING_KEY(tilingKeyInfo_.inputLayout, tilingKeyInfo_.config,
         tilingKeyInfo_.pseMode, tilingKeyInfo_.quantMode, tilingKeyInfo_.hasAttenMask, tilingKeyInfo_.hasRope,
         tilingKeyInfo_.KvLayoutType, tilingKeyInfo_.isFd, tilingKeyInfo_.emptyTensor, tilingKeyInfo_.enableKvPrefix,

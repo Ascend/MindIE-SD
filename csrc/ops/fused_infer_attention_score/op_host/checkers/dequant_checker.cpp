@@ -35,9 +35,8 @@ using namespace arch35FIA;
 ge::graphStatus DequantChecker::CheckDataTypeSupportFullquant(const FiaTilingInfo &fiaInfo) {
     // {Q, KV, attenOut}
     const std::vector<std::tuple<ge::DataType, ge::DataType, ge::DataType>> fullQuantDtypeSupported = {
-        {ge::DT_INT8, ge::DT_INT8, ge::DT_BF16}, {ge::DT_FLOAT8_E4M3FN, ge::DT_FLOAT8_E4M3FN, ge::DT_FLOAT16},
-        {ge::DT_FLOAT8_E4M3FN, ge::DT_FLOAT8_E4M3FN, ge::DT_BF16}, {ge::DT_HIFLOAT8, ge::DT_HIFLOAT8, ge::DT_FLOAT16},
-        {ge::DT_HIFLOAT8, ge::DT_HIFLOAT8, ge::DT_BF16}};
+        {ge::DT_FLOAT8_E4M3FN, ge::DT_FLOAT8_E4M3FN, ge::DT_FLOAT16},
+        {ge::DT_FLOAT8_E4M3FN, ge::DT_FLOAT8_E4M3FN, ge::DT_BF16}};
 
     std::tuple<ge::DataType, ge::DataType, ge::DataType> inOutDtypeTuple = {
         fiaInfo.inputQType, fiaInfo.inputKvType, fiaInfo.outputType};
@@ -48,9 +47,7 @@ ge::graphStatus DequantChecker::CheckDataTypeSupportFullquant(const FiaTilingInf
             std::string(ToString(fiaInfo.outputType).c_str());
         OP_LOGE_FOR_INVALID_DTYPES_WITH_REASON(fiaInfo.opName, paramNames.c_str(), incorrectDtypes.c_str(),
             "The dtypes of these parameters support only the following combinations: "
-            "[(INT8, INT8, BF16), (FLOAT8_E4M3FN, FLOAT8_E4M3FN, FLOAT16), "
-            "(FLOAT8_E4M3FN, FLOAT8_E4M3FN, BF16), (HIFLOAT8, HIFLOAT8, FLOAT16), "
-            "(HIFLOAT8, HIFLOAT8, BF16)]");
+            "[(FLOAT8_E4M3FN, FLOAT8_E4M3FN, FLOAT16), (FLOAT8_E4M3FN, FLOAT8_E4M3FN, BF16)]");
         return ge::GRAPH_FAILED;
     }
 
@@ -1651,10 +1648,10 @@ ge::graphStatus DequantChecker::CheckInputDTypeFullquant(const FiaTilingInfo &fi
             OP_LOGE_FOR_INVALID_DTYPE_WITH_REASON(fiaInfo.opName, "query", ToString(fiaInfo.inputQType).c_str(),
                 "In per-tensor quant scenario, the datatype of query must be INT8"),
             return ge::GRAPH_FAILED);
-    } else if (enableQKVPerblockQuant_) { // GQA perblock fp8_e4m3/hifp8
-        OP_CHECK_IF((fiaInfo.inputQType != ge::DT_FLOAT8_E4M3FN && fiaInfo.inputQType != ge::DT_HIFLOAT8),
+    } else if (enableQKVPerblockQuant_) { // GQA perblock fp8_e4m3
+        OP_CHECK_IF((fiaInfo.inputQType != ge::DT_FLOAT8_E4M3FN),
             OP_LOGE_FOR_INVALID_DTYPE_WITH_REASON(fiaInfo.opName, "query", ToString(fiaInfo.inputQType).c_str(),
-                "In per-block quant scenario, the datatype of query must be FLOAT8_E4M3FN or HIFLOAT8"),
+                "In per-block quant scenario, the datatype of query must be FLOAT8_E4M3FN"),
             return ge::GRAPH_FAILED);
     } else if (enableQKVMxfp8FullQuant_) {
         if (!(fiaInfo.inputQType == ge::DT_FLOAT8_E4M3FN)) {
@@ -1909,18 +1906,12 @@ ge::graphStatus DequantChecker::CheckDSizeFullquant(const FiaTilingInfo &fiaInfo
             return ge::GRAPH_FAILED;
         }
     } else if (enableQKVPerblockQuant_) {
-        if (fiaInfo.qkHeadDim > NUM_128 || fiaInfo.qkHeadDim < 1) {
+        if (!((fiaInfo.qkHeadDim == NUM_64 && fiaInfo.vHeadDim == NUM_64) ||
+                (fiaInfo.qkHeadDim == NUM_128 && fiaInfo.vHeadDim == NUM_128))) {
             std::string shapeMsg = ToString(fiaInfo.opParamInfo.query.shape->GetStorageShape()) + " and " +
-                ToString(fiaInfo.opParamInfo.key.shape->GetStorageShape());
-            OP_LOGE_FOR_INVALID_SHAPES_WITH_REASON(fiaInfo.opName, "query and key", shapeMsg.c_str(),
-                "In per-block quant scenario, the axis D of query and key must be >=1 and <=128");
-            return ge::GRAPH_FAILED;
-        }
-
-        if (fiaInfo.vHeadDim > NUM_128 || fiaInfo.vHeadDim < 1) {
-            std::string shapeStr = ToStringRaw(fiaInfo.opParamInfo.value.shape->GetStorageShape());
-            OP_LOGE_FOR_INVALID_SHAPE_WITH_REASON(fiaInfo.opName, "value", shapeStr.c_str(),
-                "In per-block quant scenario, the axis D of value must be >=1 and <=128");
+                ToString(fiaInfo.opParamInfo.value.shape->GetStorageShape());
+            OP_LOGE_FOR_INVALID_SHAPES_WITH_REASON(fiaInfo.opName, "query and value", shapeMsg.c_str(),
+                "In per-block quant scenario, the axis D of query and value must both be 64 or both be 128");
             return ge::GRAPH_FAILED;
         }
     } else if (enableQKVMxfp8FullQuant_) {

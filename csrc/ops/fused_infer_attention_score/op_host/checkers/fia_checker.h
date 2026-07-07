@@ -52,6 +52,8 @@ class FIAChecker {
     ge::graphStatus CheckMultiParaConsistency(const FiaTilingInfo &fiaInfo);
 
   private:
+    ge::graphStatus CheckMindIESDFp8PerblockScope(const FiaTilingInfo &fiaInfo) const;
+
     std::unique_ptr<ActualSeqLenChecker> actualSeqLenChecker_;
     std::unique_ptr<DequantChecker> dequantChecker_;
     std::unique_ptr<LearnableSinkChecker> learnableSinkChecker_;
