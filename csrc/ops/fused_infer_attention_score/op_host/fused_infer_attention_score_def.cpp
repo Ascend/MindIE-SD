@@ -525,19 +525,6 @@ class EagleFusedInferAttentionScore : public OpDef {
         this->Attr("query_quant_mode").AttrType(OPTIONAL).Int(0);
         this->Attr("pse_type").AttrType(OPTIONAL).Int(0);
         this->Attr("out_dtype").AttrType(OPTIONAL).Int(0);
-        OpAICoreConfig aicore_config;
-        aicore_config.DynamicCompileStaticFlag(true)
-            .DynamicFormatFlag(true)
-            .DynamicRankSupportFlag(true)
-            .DynamicShapeSupportFlag(true)
-            .NeedCheckSupportFlag(false)
-            .PrecisionReduceFlag(true)
-            .ExtendCfgInfo("aclnnSupport.value", "support_aclnn")
-            .ExtendCfgInfo("opFile.value", "eagle_fused_infer_attention_score")
-            .ExtendCfgInfo("jitCompile.flag", "static_false,dynamic_false");
-        this->AICore().AddConfig("ascend910b", aicore_config); // use 910B
-        this->AICore().AddConfig("ascend910_93", aicore_config);
-        this->AICore().AddConfig("mc62", aicore_config);
 
         OpAICoreConfig aicore_config_95;
         aicore_config_95.Input("query")
