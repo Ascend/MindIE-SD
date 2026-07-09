@@ -20,7 +20,7 @@ add_ops_compile_options(
 )
 
 set(fused_infer_attention_score_depends common prompt_flash_attention incre_flash_attention PARENT_SCOPE)
-set(eagle_fused_infer_attention_score_depends prompt_flash_attention incre_flash_attention PARENT_SCOPE)
+set(eagle_fused_infer_attention_score_depends common prompt_flash_attention incre_flash_attention PARENT_SCOPE)
 
 target_sources(op_host_aclnnInner PRIVATE
         fused_infer_attention_score_def.cpp

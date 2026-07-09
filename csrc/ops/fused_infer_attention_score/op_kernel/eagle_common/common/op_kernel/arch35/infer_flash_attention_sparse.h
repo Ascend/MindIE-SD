@@ -20,7 +20,7 @@
 #if __has_include("../../../common/op_kernel/arch35/infer_flash_attention_comm.h")
 #include "../../../common/op_kernel/arch35/infer_flash_attention_comm.h"
 #else
-#include "../../common/arch35/infer_flash_attention_comm.h"
+#include "infer_flash_attention_comm.h"
 #endif
 
 TEMPLATE_INTF
