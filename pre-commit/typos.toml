@@ -19,7 +19,7 @@ locale = "en"
 extend-ignore-identifiers-re = [".*Unc.*", ".*_thw",
     ".*UE8M0.*", ".*[UE4M3|ue4m3].*", ".*eles.*", ".*fo.*", ".*ba.*",
     ".*ot.*", ".*[Tt]h[rR].*"]
-extend-ignore-words-re = ["CANN", "cann","ND","nd","alog","thw","THW","BA"]
+extend-ignore-words-re = ["CANN", "cann","ND","Nd","nd","alog","thw","THW","BA"]
 extend-ignore-re = []
 
 [default.extend-identifiers]
@@ -63,7 +63,7 @@ EOFError = "EOFError"
 
 [type.cpp]
 extend-glob = []
-extend-ignore-identifiers-re = []
+extend-ignore-identifiers-re = [".*Nd.*"]
 extend-ignore-words-re = []
 extend-ignore-re = []
 

@@ -13,6 +13,7 @@
 from .flash_attn.attention_forward import attention_forward
 from .flash_attn.attention_forward_varlen import attention_forward_varlen
 from .flash_attn.sparse_flash_attn import sparse_attention
+from ._custom_ops import frequency_regulator
 from .activation import get_activation_layer
 from .norm import RMSNorm, fast_layernorm
 from .adalayernorm import layernorm_scale_shift
@@ -26,6 +27,7 @@ __all__ = [
     "attention_forward",
     "attention_forward_varlen",
     "fast_layernorm",
+    "frequency_regulator",
     "fused_moe",
     "get_activation_layer",
     "layernorm_scale_shift",
