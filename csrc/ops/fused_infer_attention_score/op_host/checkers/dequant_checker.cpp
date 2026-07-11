@@ -1434,7 +1434,8 @@ ge::graphStatus DequantChecker::CheckDequantScaleShapePerblock(const FiaTilingIn
         }
 
         if ((valueAntiquantScaleShape.GetDim(DIM_NUM_0) != fiaInfo.n2Size) ||
-            (valueAntiquantScaleShape.GetDim(DIM_NUM_1) != fiaInfo.kTSize / fp8KVBlockSize + fiaInfo.bSize) ||
+            (valueAntiquantScaleShape.GetDim(DIM_NUM_1) != fiaInfo.kTSize / fp8KVBlockSize + fiaInfo.bSize &&
+                valueAntiquantScaleShape.GetDim(DIM_NUM_1) != fiaInfo.kTSize / 512U + fiaInfo.bSize) ||
             (valueAntiquantScaleShape.GetDim(DIM_NUM_2) != CeilDivision(fiaInfo.vHeadDim, fp8KVBlockSize))) {
             OP_LOGE_FOR_INVALID_SHAPE_WITH_REASON(fiaInfo.opName, "value_antiquant_scale",
                 ToStringRaw(valueAntiquantScaleShape).c_str(),
@@ -1481,7 +1482,8 @@ ge::graphStatus DequantChecker::CheckDequantScaleShapePerblock(const FiaTilingIn
 
         if ((valueAntiquantScaleShape.GetDim(DIM_NUM_0) != fiaInfo.bSize) ||
             (valueAntiquantScaleShape.GetDim(DIM_NUM_1) != fiaInfo.n2Size) ||
-            (valueAntiquantScaleShape.GetDim(DIM_NUM_2) != CeilDivision(fiaInfo.s2Size, int64_t(fp8KVBlockSize))) ||
+            (valueAntiquantScaleShape.GetDim(DIM_NUM_2) != CeilDivision(fiaInfo.s2Size, int64_t(fp8KVBlockSize)) &&
+                valueAntiquantScaleShape.GetDim(DIM_NUM_2) != CeilDivision(fiaInfo.s2Size, int64_t(512))) ||
             (valueAntiquantScaleShape.GetDim(DIM_NUM_3) != NUM1)) {
             OP_LOGE_FOR_INVALID_SHAPE_WITH_REASON(fiaInfo.opName, "value_antiquant_scale",
                 ToStringRaw(valueAntiquantScaleShape).c_str(),
