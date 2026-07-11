@@ -74,6 +74,20 @@ set(AICPU_COMPILE_DEFINITIONS
     -DOPS_UTILS_LOG_PACKAGE_TYPE=\"[Custom]\"
 )
 
+set(AICPU_SECURE_COMPILE_OPTIONS
+    -fPIC
+    -fstack-protector-strong
+    -O2
+    -D_FORTIFY_SOURCE=2
+    -fvisibility=hidden
+)
+
+set(AICPU_SECURE_LINK_OPTIONS
+    -Wl,-z,relro
+    -Wl,-z,now
+    -Wl,-z,noexecstack
+)
+
 set(AICPU_OBJECTS)
 foreach(src ${AICPU_SRC})
     get_filename_component(src_name ${src} NAME_WE)
@@ -83,14 +97,11 @@ foreach(src ${AICPU_SRC})
         COMMAND ${CMAKE_COMMAND} -E make_directory ${AICPU_OBJ_DIR}
         COMMAND ${AICPU_CXX}
                 -std=c++17
-                -fPIC
-                -O2
-                -D_FORTIFY_SOURCE=2
+                ${AICPU_SECURE_COMPILE_OPTIONS}
                 -D_GLIBCXX_USE_CXX11_ABI=1
                 -Dgoogle=ascend_private
                 -DDISABLE_COMPILE_V1
                 ${AICPU_COMPILE_DEFINITIONS}
-                -fvisibility=hidden
                 ${AICPU_INCLUDE_FLAGS}
                 -c ${src}
                 -o ${obj}
@@ -104,6 +115,7 @@ add_custom_command(
     OUTPUT ${AICPU_SO}
     COMMAND ${AICPU_CXX}
             -shared ${AICPU_OBJECTS}
+            ${AICPU_SECURE_LINK_OPTIONS}
             -Wl,--whole-archive
             ${LIBAICPU_CONTEXT_PATH}
             ${LIBBASE_ASCEND_PROTOBUF_PATH}
