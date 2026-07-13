@@ -5,7 +5,7 @@
 | 项目 | 内容 |
 | -------- | ------ |
 | 产品名称 | MindIE SD |
-| 产品版本 | 3.0.0 |
+| 产品版本 | 3.1.0 |
 | 版本类型 | 正式版本 |
 | 维护周期 | 三个月 |
 
@@ -13,49 +13,75 @@
 
 | 产品名称 | 版本 |
 | -------- | ------ |
-| CANN | 9.0.0 |
-| Ascend Extension for PyTorch | 7.3.0 |
-| Ascend HDK | 版本配套关系参见 [CANN版本配套说明](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/900/releasenote/releasenote_0000.html) |
+| CANN | 9.0.1 |
+| Ascend Extension for PyTorch | 26.0.0 |
+| MindCluster | 7.3.0 |
+| CCAE | iMaster CCAE V100R026C10SPC100 |
+| Ascend HDK | 版本配套关系参见 [CANN版本配套说明](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/900/releasenote/9.0.1release-notes.md) |
 
 # 版本兼容性说明
 
-MindIE SD各组件需要配套使用，请勿跨版本混用各组件。
+MindIE各组件需要配套使用，请勿跨版本混用各组件。
 
 **表 1**  软件版本兼容性说明
 
-| CANN | Ascend Extension for PyTorch |
-| ---- | ---------------------------- |
-| 9.0.0 | 7.3.0                        |
+| MindIE SD 版本 | CANN 9.1.0 | CANN 9.0.1 | CANN 9.0.0 | CANN 8.5.1 | CANN 8.5.0 |
+| ----------------- | ---------- | ---------- | ---------- |---------- |---------- |
+| 3.1.0             |Y            | Y          | Y          |            |            |
+| 3.0.0             |              |             | Y          |Y          |Y          |
+| 2.3.0             |              |             |             |            |Y          |
+
+| MindIE SD 版本 | MindCluster 26.1.0 | MindCluster 26.0.0 | MindCluster 7.3.0 |
+| ----------------- | ---------- | ---------- | ---------- |
+| 3.1.0             |Y            |Y          |Y            |
+| 3.0.0             |              |Y          |Y            |
+| 2.3.0             |              |            |Y            |
+
+| MindIE SD 版本 | Ascend Extension for PyTorch 26.1.0 | Ascend Extension for PyTorch 26.0.0 | Ascend Extension for PyTorch 7.3.0 |
+| ----------------- | ---------- | ---------- | ---------- |
+| 3.1.0             |Y            |Y          |Y            |
+| 3.0.0             |              |Y          |Y            |
+| 2.3.0             |              |            |Y            |
+
+| MindIE SD 版本 | CCAE iMaster CCAE V100R026C10SPC100 | CCAE iMaster CCAE V100R026C00SPC010 | CCAE iMaster CCAE V100R025C30SPC100 |
+| ----------------- | ---------- | ---------- | ---------- |
+| 3.1.0             |Y            |Y          |Y            |
+| 3.0.0             |              |Y          |Y            |
+| 2.3.0             |              |            |Y            |
 
 # 版本使用注意事项
 
 暂无
 
-# 3.0.0更新说明
+# 3.1.0更新说明
 
 ## 新增特性
 
 | 编号 | 详细 |
 | :--- | :----------------------------------------------------------------------------------------------------------- |
-| 1    | 量化能力增强。支持 FA dynamic FP8，新增 W4A4_DYNAMIC 量化格式，补齐 W4A4 量化算法公共逻辑，并新增 W4A4MXFP4DualQuantLinear 能力，提升多种量化场景下的适配范围与部署灵活性。 |
-| 2    | 算子与插件能力增强。新增 aclnn LayerNorm 插件和对外接口，新增 adaLayerNormV2 插件及 layer 实现，同时补充 sparse_block_estimate、block_sparse_attention、laser_attention、la_preprocess 等 aclnn 能力，增强算子覆盖度。 |
-| 3    | 运行时能力增强。新增多实例共享内存能力，支持多个实例共享权重内存，降低重复占用；新增 block 级 CPU offload 能力，支持细粒度模块在 CPU 与 NPU 之间动态搬运，缓解显存压力。 |
-| 4    | 注意力与布局适配增强。attention_forward 与 rf_v2 支持 BNSD layout 输入，支持通过环境变量指定使用 FA，降低上层模型接入改造成本。 |
-| 5    | 调度与服务能力增强。新增 Dynamic EPLB 调度能力，新增服务化样例支持，并完成 wan2.2 服务侧同步适配与精度修复，提升服务部署与推理场景可用性。 |
-| 6    | 量化算子底层实现优化。将原有基于 torch-atb 实现的量化算子统一迁移为 aclnn 原生算子，提升算子兼容性与稳定性，可完美支持 torch.compile 等编译优化特性，增强框架适配能力。 |
+| 1    | 注意力算子（Fused Infer Attention Score，FIA）完整迁移。将 FIA 算子迁移至 MindIE-SD 自管域；能力收口为 FP8 E4M3FN per-block 专用路径，通过 host checker 与 tiling key 双重校验拦截 noquant/INT8/HIFLOAT8/MXFP8 等历史路径，为低精度与稀疏注意力加速提供可演进的算子底座。 |
+| 2    | MoE 全栈推理支持。新增 `fused_moe` 融合算子接口，支持开源框架在 NPU 上执行 MoE 前向计算；接入 `torch_npu.npu_moe_gating_top_k` 与 `npu_moe_gating_top_k_softmax`，将专家选择阶段下沉到 NPU，减少 kernel launch 次数与数据搬移；扩展 MoE 量化支持 W8A8 MXFP8 与 INT8 两条推理路径。基于 vLLM-Omni 中 HunyuanImage-3.0 完成适配验证。 |
+| 3    | 稀疏注意力（SLA / BSA）能力增强。为 Sparse Linear Attention 补充 AscendC backend 的 Block Sparse Attention 算子后端；`aclnnBlockSparseAttention` 升级到 V2，兼容 FP8 量化路径，block_size 支持 q=128、kv=256/512；在仅含 V1 aclnn 符号的老版本 CANN 上自动回退到 V1。 |
+| 4    | 量化能力增强。新增在线量化（`OnlineQuantConfig`）支持，提供 FA 与 MM 算法配置及回退手段；新增 FA MXFP8 动态量化（`MXFP8_DYNAMIC`），在传入 FA 前对 Q、K 完成旋转与 MXFP8 量化；新增 MXFP4 量化 Flash Attention（`quant_flash_attn`）及部署端 mxfp4 FA 逻辑，扩展低精度注意力场景覆盖。 |
+| 5    | 多 torch 版本 Wheel 打包。新增 `MINDIESD_WHEEL_MODE=multi_torch` 打包模式，单一 wheel 可同时适配 torch 2.6/2.7/2.8/2.9/2.10，运行时根据 `torch.__version__` 自动选择对应 `libPTAExtensionOPS.so`；默认仍保持原有固定 torch 版本构建方式不变。 |
+| 6    | A5 设备适配与自动路由。新增 `is_a5_device()` 统一识别 A5 设备，`attention_forward` 等公共 API 在 A5 上自动路由到 `fused_attn_score`，并对直接调用下线算子的场景给出清晰报错与迁移指引。 |
+| 7    | 频率调节（Frequency Regulator）算子。新增频率优化算子的 MindIE-SD plugin 支持，包括 C++ wrapper、aclnn 两阶段流、BackendSelect 注册与 Python API 导出。 |
+| 8    | 部署与生态扩展。新增 vLLM-Omni + MindIE-SD 合并镜像，并将 omni 镜像重构为独立 MindIE-SD 镜像，统一镜像名、版本 Tag 与 OCI 元数据，pip 安装源切换为公共 PyPI；新增 `.agents/skills/` 开发者技能集（ascend-deploy、auto-optimization、code-standards、compilation-dev）。 |
 
 ## 修改特性
 
 | 编号 | 详细 |
 | :--- | :----------------------------------------------------------------------------------------------------------- |
-| 1    | 自定义 plugin 算子命名移除 _mindie_sd 后缀，namespace 统一切换为 mindiesd，命名规范进一步统一。 |
-| 2    | FA 量化场景下，FIA 算子输出格式调整为与输入 query 格式保持一致，降低格式不一致带来的兼容性问题。 |
-| 3    | 针对 npu_quant_matmul 算子新增约束完成适配，减少新旧约束切换带来的接入风险。 |
-| 4    | aclnn 编译工程完成体系化适配，构建链路、目录管理和错误处理能力得到增强，提升算子工程构建效率与稳定性。 |
+| 1    | 算子编译范围调整。移除原 CANN 版本检测与算子过滤逻辑，统一一次编译全部算子、全部平台（ascend910/ascend910b/ascend910_93/ascend950），修复 CANN≥9.0 环境下 laser_attention、ada_block_sparse_attention 等通用算子未生成 910B/910 平台 kernel 的问题；支持通过 `ASCEND_OP_NAME` / `ASCEND_COMPUTE_UNIT` 环境变量覆盖。 |
+| 2    | MoE Dispatcher 默认策略调整。由“A2 默认 static、A3/A5 默认 dynamic”调整为依据 `top_k` 与 `ep_size` 关系精细选择，大 EP 场景优先 dynamic，降低跨机 all-to-all 通信劣化影响。 |
+| 3    | 日志系统重构。统一 MindIE SD Python 模块日志出口，默认与 verbose 模式均包含组件标识；精简默认 INFO 场景日志（正常流程降级为 DEBUG），并增强 WARNING/ERROR 日志的问题描述、可能根因与修复建议。 |
+| 4    | 安全编译选项。按安全编译指南为算子工程新增安全编译与链接选项，提升产物安全性。 |
 
 ## 删除特性
 
-无
+| 编号 | 详细 |
+| :--- | :----------------------------------------------------------------------------------------------------------- |
+| 1    | 删除 `csrc/ops/ascendc/` 目录及其全部算子源文件，统一收敛至 per-op 目录管理；同步更新测试用例中指向被删目录的源文件映射。 |
 
 ## 接口变更说明
 
@@ -68,28 +94,41 @@ MindIE SD各组件需要配套使用，请勿跨版本混用各组件。
 
 | 类名/API原型 | 变更类别 | 变更说明 |
 | :----------- | :------- | :------- |
-| • def mindiesd.layernorm_scale_shift<br>• def mindiesd.fast_layernorm<br>• def mindiesd.sparse_attention | 新增 | 新增接口 |
-| • class mindiesd.Linear<br>• class mindiesd.QuantFA | 删除 | 删除接口 |
+| def mindiesd.frequency_regulator | 新增 | 频率调节算子接口 |
+| def mindiesd.fused_moe | 新增 | 融合 MoE 算子接口，支持开源框架在 NPU 上执行 MoE 前向计算 |
+| class mindiesd.OnlineQuantConfig | 新增 | 在线量化配置类 |
+| class mindiesd.TimestepManager | 新增 | 时间步管理类 |
+| class mindiesd.TimestepPolicyConfig | 新增 | 时间步策略配置类 |
+| class mindiesd.QuantConfig | 新增 | 量化配置类（恢复导出，3.0.0 未在 mindiesd.__init__ 导出） |
+| def mindiesd.sparse_attention | 修改 | 升级至 aclnnBlockSparseAttentionV2，兼容 FP8 量化；在仅含 V1 aclnn 符号的老版本 CANN 上自动回退 V1 |
 
 ## 已解决的问题
 
 | 序号 | 类别 | 问题描述 |
-| :--- | :----------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------- |
-| 1 | 安装与兼容性 | 安装编译后的 MindIE-SD 运行测试时出现 libopapi.so 缺失问题，影响安装后测试与基础功能验证。 |
-| 2 | 安装与兼容性 | 对较新版本 torch 的兼容性不足，影响与新版本推理镜像协同使用。 |
-| 3 | 安装与兼容性 | 构建包缺少 plugin，影响安装包完整性和插件能力加载。 |
-| 4 | 算子与编译场景 | Flux.1-dev 在新环境开启 compile 后调用 aclnnAdaLayerNorm 失败，导致编译加速路径不可用。 |
-| 5 | 算子与编译场景 | test_rainfusionattention.py 中接口使用错误，导致相关测试执行失败。 |
-| 6 | 缓存与测试质量 | DiT Cache Agent 中 block_end 校验与左闭右开规则不一致，影响缓存场景使用。 |
-| 7 | 缓存与测试质量 | 测试精度对比方式单一，仅使用余弦相似度，精度评估维度不够完整。 |
+| :--- | :--- | :--- |
+| 1 | 安全 | ZMQ 共享内存句柄广播使用 pickle 直接反序列化 socket 字节流，存在任意代码执行（RCE）风险。 |
+| 2 | 安全 | LayerNorm 算子 size_t 计算下溢导致越界迭代与潜在内存破坏。 |
+| 3 | 算子与编译 | CANN≥9.0 环境下 laser_attention、ada_block_sparse_attention 等通用算子未生成 910B/910 平台 kernel，导致对应平台算子缺失。 |
+| 4 | 算子与编译 | CMake≥4.1.0 时 TIK 算子构建链接失败。 |
+| 5 | 算子与编译 | 同时编译 ABSA 与 FIA 算子时因 tiling 注册键冲突导致进程崩溃退出（core dump）。 |
+| 6 | 算子与编译 | 算子编译时缺少头文件或包含路径错误，导致构建失败。 |
+| 7 | 稳定性与精度 | `enable_offload` 多次调用重复注册 forward hook，且 forward 事件录制顺序错误。 |
+| 8 | 稳定性与精度 | 未安装 triton 时 `import mindiesd` 触发 `std::bad_alloc`。 |
+| 9 | 稳定性与精度 | `sparse_block_estimate` 假算子 input_layout 校验缺陷导致未初始化变量与越界。 |
+| 10 | 稳定性与精度 | MoE W8A8 动态量化精度异常。 |
+| 11 | 稳定性与精度 | ACLGraph capture 时静态输入 data_ptr 存在陈旧数据，影响执行精度。 |
+| 12 | 稳定性与精度 | 部分 Hunyuan 模型使用 FA512 算子时，V 侧 per-block dequant scale 被硬编码 block_size=256 校验拦截。 |
+| 13 | 稳定性与精度 | block_sparse_attention V2 在仅含 V1 aclnn 符号的老版本 CANN 上 dlsym 失败，导致路径不可用。 |
+| 14 | 日志 | 各模块日志出口、格式与级别不一致，默认场景信息冗余、异常场景信息不足。 |
+| 15 | 测试 | block_sparse_attention UT 仅支持 A5 设备，其余环境无法执行。 |
 
 ## 遗留问题
 
 | 序号 | 类别 | 问题描述 |
-| :--- | :----------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------- |
-| 1 | 算子 | 缺乏基于CATLASS和Triton实现的矩阵乘法算子 |
-| 2 | 易用性提升 | 需支持更多的扩展，比如cache-dit等 |
-| 3 | 性能提升 | 需支持更多的并行通算掩盖和融合方案 |
+| :--- | :--- | :--- |
+| 1 | 算子 | 持续补齐基于 CATLASS 和 Triton 实现的矩阵乘法算子。 |
+| 2 | 易用性提升 | 持续完善 Cache DiT、DiffSynth-Engine 等第三方框架的端到端对接与可运行样例。 |
+| 3 | 性能提升 | 持续扩展并行通算掩盖与融合方案，推进 EPLB 与 MoE 融合的联合优化。 |
 
 # 升级影响
 
@@ -105,8 +144,12 @@ MindIE SD各组件需要配套使用，请勿跨版本混用各组件。
 
 ## 升级后对现行系统的影响
 
-暂无
+- 若原有代码直接调用 FIA 的 noquant/INT8/HIFLOAT8/MXFP8/PA/mask/rope/prefix/sparse 等历史路径，需迁移至 FP8 E4M3FN per-block 路径，否则将被 host checker 与 tiling key 校验拦截。
+- 日志级别与内容已调整：默认 INFO 日志精简，依赖日志进行监控告警的业务需确认日志内容是否充分。
 
 # 漏洞修补列表
 
-暂无
+| 序号 | 类别 | 漏洞说明 |
+| :--- | :--- | :--- |
+| 1 | 安全 | ZMQ 共享内存句柄广播使用 pickle 反序列化 socket 字节流，存在任意代码执行（RCE）风险。已引入受限反序列化器 SafeUnpickler，仅允许加载白名单内的安全类型。 |
+| 2 | 安全 | LayerNorm 算子 size_t 计算下溢导致越界迭代与潜在内存破坏。已在维度计算前增加 `TORCH_CHECK` 校验。 |
