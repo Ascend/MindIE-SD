@@ -1,12 +1,12 @@
 torch==2.9.0
 torch_npu==2.9.0
 triton>=3.5.0
-# triton-ascend: PyPI mirror only ships 3.2.0; SparseLinearAttention needs
-# >=3.2.1, which is published only at
-# https://gitcode.com/Ascend/triton-ascend/releases (that wheel pins triton==3.5.0).
-triton-ascend>=3.2.1
+triton-ascend==3.2.1
 einops
 numpy>=1.26.4
 safetensors
 strenum
 zmq
+decorator
+scipy
+attrs
