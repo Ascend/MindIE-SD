@@ -584,18 +584,17 @@ class MXFP4QuantFA(nn.Module):
     def _forward_float(self, query, key, value, **kwargs):
         layout = kwargs.get("layout", "BNSD")
         n, s, d = _get_fa_shape(query, layout)
-        output = fused_infer_attention_score_v2(
+        output = torch_npu.npu_fusion_attention(
             query,
             key,
             value,
             input_layout=layout,
-            num_query_heads=n,
-            softmax_scale=kwargs.get("softmax_scale", 1.0 / math.sqrt(d)),
-            pre_tokens=kwargs.get("pre_tokens", 2147483647),
-            next_tokens=kwargs.get("next_tokens", 2147483647),
-            out_dtype=query.dtype,
+            scale=kwargs.get("softmax_scale", 1.0 / math.sqrt(d)),
+            pre_tockens=kwargs.get("pre_tokens", 2147483647),
+            next_tockens=kwargs.get("next_tokens", 2147483647),
+            head_num=n,
         )[0]
-        return _crop_fa_output(output, s, layout)
+        return output
 
     def _forward_fp8(self, query, key, value, **kwargs):
         query, key = self._apply_rotate(query, key)
