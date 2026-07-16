@@ -401,7 +401,7 @@ class TestQuantize(unittest.TestCase):
             quantize_module._ONLINE_QUANT_LAYER_MAP,
             {QuantAlgorithm.W8A8_DYNAMIC: FakeOnlineQuantLinear},
         ):
-            quantized_model = _online_quantize_impl(model, config, dtype=torch.float32)
+            quantized_model = _online_quantize_impl(model, config, dtype=torch.bfloat16)
 
         self.assertIs(quantized_model, model)
         self.assertIsInstance(model["linear"], FakeOnlineQuantLinear)
@@ -423,7 +423,7 @@ class TestQuantize(unittest.TestCase):
             quantize_module._ONLINE_QUANT_LAYER_MAP,
             {QuantAlgorithm.W8A8_DYNAMIC: FakeOnlineQuantLinear},
         ):
-            quantized_model = _online_quantize_impl(model, config, dtype=torch.float32)
+            quantized_model = _online_quantize_impl(model, config, dtype=torch.bfloat16)
 
         self.assertIs(quantized_model, model)
         self.assertIsInstance(model["linear"], FakeOnlineQuantLinear)
