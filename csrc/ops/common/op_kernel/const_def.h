@@ -22,14 +22,12 @@ constexpr uint64_t BYTE_BLOCK = 32UL;
 constexpr uint32_t FP32_BLOCK_ELEMENT_NUM = BYTE_BLOCK / sizeof(float);
 
 enum class TASK_DEAL_MODE : uint32_t {
-    DEAL_ZERO = 0, // actualSeqLen为0，需清零输出
-    SKIP = 1, // 整行S2无需处理
-    CREATE_TASK = 2, // 正常创建任务
-    SKIP_S1OUT = 3, // 跳过不属于当前核的任务，仅S1外切分场景
-    SKIP_ZERO = 4, // 跳过非首个actualSeqLen为0的块
-    S2_END = 5, // 有效行且S2已全部计算完
-    NOT_START = 6, // 有效行且S2还未开始计算
-    SKIP_REMAINING_S2 = 7, // 跳过S2上尚未遍历的任务
+    DEAL_ZERO = 0,
+    SKIP = 1,
+    CREATE_TASK = 2,
+    SKIP_S1OUT = 3,
+    SKIP_ZERO = 4,
+    S2_END = 5,
 };
 
 template <typename T> __aicore__ inline T Align(T num, T rnd) {

@@ -185,9 +185,7 @@ FA（Flash Attention）量化针对注意力计算中的 Q/K/V 激活值进行�
 
 **FP8 Attention**
 
-通过 MindIE-SD 自带的 `torch.ops.mindiesd.fused_infer_attention_score_v2`
-算子进入本仓迁移的 `FusedInferAttentionScore` 实现，在 FP8 域内完成注意力计算，
-输出结果反量化为原始精度。
+调用昇腾 `npu_fused_infer_attention_score_v2` 内核，在 FP8 域内完成注意力计算，输出结果反量化为原始精度。
 
 ### 接口说明
 

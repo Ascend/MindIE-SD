@@ -95,12 +95,37 @@ std::string LayoutToSerialString(FiaLayout layout) {
     return "UNKNOWN";
 }
 
-static const std::string AXIS_SERIAL_STRINGS[] = {
-    "B", "S", "N", "D", "H", "T", "D1", "D0", "S1", "S2", "Bn", "Bs", "CONST"};
-
 std::string AxisToSerialString(FiaAxis axis) {
-    uint32_t idx = static_cast<uint32_t>(axis);
-    return (idx < sizeof(AXIS_SERIAL_STRINGS) / sizeof(AXIS_SERIAL_STRINGS[0])) ? AXIS_SERIAL_STRINGS[idx] : "UNKNOWN";
+    switch (axis) {
+    case FiaAxis::B:
+        return "B";
+    case FiaAxis::S:
+        return "S";
+    case FiaAxis::N:
+        return "N";
+    case FiaAxis::D:
+        return "D";
+    case FiaAxis::H:
+        return "H";
+    case FiaAxis::T:
+        return "T";
+    case FiaAxis::D1:
+        return "D1";
+    case FiaAxis::D0:
+        return "D0";
+    case FiaAxis::S1:
+        return "S1";
+    case FiaAxis::S2:
+        return "S2";
+    case FiaAxis::Bn:
+        return "Bn";
+    case FiaAxis::Bs:
+        return "Bs";
+    case FiaAxis::CONST:
+        return "CONST";
+    default:
+        return "UNKNOWN";
+    }
 }
 
 bool FiaTilingShape::HasAxis(const FiaAxis &axis) const {
@@ -133,8 +158,7 @@ int64_t FiaTilingShape::GetAxisNum(const FiaAxis &axis) const {
 
 ge::graphStatus FiaTilingShape::CheckHasAxis(const FiaAxis &axis, const std::string &funcName) const {
     if (shape_.GetDimNum() == 0) {
-        std::string reason = "[" + funcName + "] The shape dim of " + name_ + " cannot be 0";
-        OP_LOGE_FOR_INVALID_SHAPEDIM_WITH_REASON(opName_, name_.c_str(), std::to_string(0).c_str(), reason.c_str());
+        OP_LOGE(opName_, "[%s] the dim number of %s is 0.", funcName.c_str(), name_.c_str());
         return ge::GRAPH_FAILED;
     }
 
@@ -143,11 +167,11 @@ ge::graphStatus FiaTilingShape::CheckHasAxis(const FiaAxis &axis, const std::str
         return ge::GRAPH_FAILED;
     }
     if (shape_.GetDimNum() != layoutAxes.size()) {
-        std::string dimStr = std::to_string(shape_.GetDimNum());
-        std::string reason = "[" + funcName + "] The shape dim of " + name_ +
-            " must be equal to the axes size of layout(" + LayoutToSerialString(layout_) +
-            "): " + std::to_string(layoutAxes.size());
-        OP_LOGE_FOR_INVALID_SHAPEDIM_WITH_REASON(opName_, name_.c_str(), dimStr.c_str(), reason.c_str());
+        OP_LOGE(opName_,
+            "[%s] %s shape dimension is %zu, expected shape dimension is %zu, layout(%s) axes size is %zu, they should "
+            "be equal.",
+            funcName.c_str(), name_.c_str(), shape_.GetDimNum(), layoutAxes.size(),
+            LayoutToSerialString(layout_).c_str(), layoutAxes.size());
         return ge::GRAPH_FAILED;
     }
 

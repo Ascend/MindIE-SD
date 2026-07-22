@@ -23,9 +23,13 @@ using namespace matmul;
 
 constexpr uint32_t BATCH_NUM_MAX = 128;
 
-enum class Mode { HighPrecision, HighPerformance };
+enum class Mode {
+    HighPrecision,
+    HighPerformance
+};
 
-template <typename T, Mode M = Mode::HighPerformance> struct AdaBlockSparseAttentionTypeTraits {
+template<typename T, Mode M = Mode::HighPerformance>
+struct AdaBlockSparseAttentionTypeTraits {
     using mmInputType = T;
     using mmBiasType = T;
     using mmOutputType = T;
@@ -34,7 +38,8 @@ template <typename T, Mode M = Mode::HighPerformance> struct AdaBlockSparseAtten
     using pseShiftCastType = half;
 };
 
-template <> struct AdaBlockSparseAttentionTypeTraits<half, Mode::HighPerformance> {
+template<>
+struct AdaBlockSparseAttentionTypeTraits<half, Mode::HighPerformance> {
     using mmInputType = half;
     using mmBiasType = float;
     using mmOutputType = half;
@@ -45,26 +50,29 @@ template <> struct AdaBlockSparseAttentionTypeTraits<half, Mode::HighPerformance
 
 #if (__CCE_AICORE__ > 200)
 
-template <> struct AdaBlockSparseAttentionTypeTraits<half, Mode::HighPrecision> {
+template<>
+struct AdaBlockSparseAttentionTypeTraits<half, Mode::HighPrecision> {
     using mmInputType = half;
     using mmBiasType = float;
     using mmOutputType = float;
     using softmaxType = float;
     using pseShiftType = half;
-    using pseShiftCastType = float; // pseShiftCastType is only fp32 in the case of high precision and bf16
+    using pseShiftCastType = float;  // pseShiftCastType is only fp32 in the case of high precision and bf16
 };
 
-template <> struct AdaBlockSparseAttentionTypeTraits<bfloat16_t> {
+template<>
+struct AdaBlockSparseAttentionTypeTraits<bfloat16_t> {
     using mmInputType = bfloat16_t;
     using mmBiasType = float;
     using mmOutputType = float;
     using softmaxType = float;
     using pseShiftType = bfloat16_t;
-    using pseShiftCastType = float; // pseShiftCastType is only fp32 in the case of high precision and bf16
+    using pseShiftCastType = float;  // pseShiftCastType is only fp32 in the case of high precision and bf16
 };
 #endif
 
-template <> struct AdaBlockSparseAttentionTypeTraits<int8_t> {
+template<>
+struct AdaBlockSparseAttentionTypeTraits<int8_t> {
     using mmInputType = int8_t;
     using mmBiasType = int32_t;
     using mmOutputType = half;
@@ -75,22 +83,34 @@ template <> struct AdaBlockSparseAttentionTypeTraits<int8_t> {
 
 constexpr uint32_t BOOLBYTENUM = 32;
 constexpr uint32_t UB_ALIGN = 32U;
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M = Mode::HighPerformance>
+template<typename T, typename U, CubeFormat FORMAT, typename O, Mode M = Mode::HighPerformance>
 class AdaBlockSparseAttentionBase {
-  public:
-    __aicore__ inline AdaBlockSparseAttentionBase(){};
-    __aicore__ inline void Init(__gm__ uint8_t *query, __gm__ uint8_t *key, __gm__ uint8_t *value,
-        __gm__ uint8_t *pseShift, __gm__ uint8_t *attenMask, __gm__ uint8_t *actualSeqLengths,
-        __gm__ uint8_t *actualSeqLengthsKV, __gm__ uint8_t *blocktable, __gm__ uint8_t *queryPaddingSize,
-        __gm__ uint8_t *kvPaddingSize, __gm__ uint8_t *keySharedPrefix, __gm__ uint8_t *valueSharedPrefix,
-        __gm__ uint8_t *actualSharedPrefixLen, __gm__ uint8_t *attentionOut, __gm__ uint8_t *softmaxLse,
-        __gm__ uint8_t *workspace, const AdaBlockSparseAttentionTilingData *__restrict tiling, __gm__ uint8_t *gmTiling,
-        TPipe *tPipe);
+public:
+    __aicore__ inline AdaBlockSparseAttentionBase() {};
+    __aicore__ inline void Init(__gm__ uint8_t* query,
+                                __gm__ uint8_t* key,
+                                __gm__ uint8_t* value,
+                                __gm__ uint8_t* pseShift,
+                                __gm__ uint8_t* attenMask,
+                                __gm__ uint8_t* actualSeqLengths,
+                                __gm__ uint8_t* actualSeqLengthsKV,
+                                __gm__ uint8_t* blocktable,
+                                __gm__ uint8_t* queryPaddingSize,
+                                __gm__ uint8_t* kvPaddingSize,
+                                __gm__ uint8_t* keySharedPrefix,
+                                __gm__ uint8_t* valueSharedPrefix,
+                                __gm__ uint8_t* actualSharedPrefixLen,
+                                __gm__ uint8_t* attentionOut,
+                                __gm__ uint8_t* softmaxLse,
+                                __gm__ uint8_t* workspace,
+                                const AdaBlockSparseAttentionTilingData* __restrict tiling,
+                                __gm__ uint8_t* gmTiling,
+                                TPipe* tPipe);
     __aicore__ inline void Process();
-    __aicore__ inline void InitQuant(__gm__ uint8_t *deq_scale1, __gm__ uint8_t *scale1, __gm__ uint8_t *deq_scale2,
-        __gm__ uint8_t *scale2, __gm__ uint8_t *offset2);
-    __aicore__ inline void InitMsd(__gm__ uint8_t *key_antiquant_scale, __gm__ uint8_t *key_antiquant_offset,
-        __gm__ uint8_t *value_antiquant_scale, __gm__ uint8_t *value_antiquant_offset);
+    __aicore__ inline void InitQuant(__gm__ uint8_t* deq_scale1, __gm__ uint8_t* scale1, __gm__ uint8_t* deq_scale2,
+                                     __gm__ uint8_t* scale2, __gm__ uint8_t* offset2);
+    __aicore__ inline void InitMsd(__gm__ uint8_t* key_antiquant_scale, __gm__ uint8_t* key_antiquant_offset,
+        __gm__ uint8_t* value_antiquant_scale, __gm__ uint8_t* value_antiquant_offset);
 
     // define datatype
     using mmInputType = typename AdaBlockSparseAttentionTypeTraits<T, M>::mmInputType;
@@ -116,9 +136,9 @@ class AdaBlockSparseAttentionBase {
 #endif
     Matmul<a2Type, b2Type, c2Type, bias2Type> bmm2;
 
-  protected:
-    const AdaBlockSparseAttentionTilingData *__restrict tilingData;
-    TPipe *pipe;
+protected:
+    const AdaBlockSparseAttentionTilingData* __restrict tilingData;
+    TPipe* pipe;
     // define the que
     TQue<QuePosition::VECIN, 1> attenMaskQueue;
     TQue<QuePosition::VECIN, 1> eleWiseInQueue;
@@ -160,10 +180,10 @@ class AdaBlockSparseAttentionBase {
     GlobalTensor<uint32_t> deqScale1Fp32Gm;
     GlobalTensor<uint32_t> deqScale2Fp32Gm;
 
-    __gm__ uint8_t *key_ptr;
-    __gm__ uint8_t *value_ptr;
-    __gm__ uint8_t *currentKey;
-    __gm__ uint8_t *currentValue;
+    __gm__ uint8_t* key_ptr;
+    __gm__ uint8_t* value_ptr;
+    __gm__ uint8_t* currentKey;
+    __gm__ uint8_t* currentValue;
 
     bool useMask = false;
     bool usePseShift = false;
@@ -240,7 +260,7 @@ class AdaBlockSparseAttentionBase {
     SoftMaxTiling softmaxTilingData;
     SoftMaxTiling softmaxFlashTilingData;
     CopyTransposeTiling transposeTilingData;
-    uint32_t bmm2_settail_m = 0;
+    uint32_t bmm2_settail_m  = 0;
     uint32_t sOuterSizeTail_tmp = 0;
     uint32_t tailCoresOuterSizeTail_tmp = 0;
     uint32_t MultiHeadQ = 0;
@@ -268,61 +288,74 @@ class AdaBlockSparseAttentionBase {
     uint32_t isKvContinuous = 0;
     uint32_t fromFused = 0;
 
-    __aicore__ inline void ElewiseCompute(LocalTensor<mmOutputType> &mmResUb, uint32_t computeSize, uint32_t type);
+    __aicore__ inline void ElewiseCompute(LocalTensor<mmOutputType>& mmResUb, uint32_t computeSize, uint32_t type);
 
-    __aicore__ inline void SoftmaxBasicComputeFirst(LocalTensor<mmOutputType> &mmResUb,
-        LocalTensor<float> &softmaxMaxUb, LocalTensor<float> &softmaxSumUb, SoftMaxShapeInfo &shapeInfo);
+    __aicore__ inline void SoftmaxBasicComputeFirst(LocalTensor<mmOutputType>& mmResUb,
+        LocalTensor<float>& softmaxMaxUb, LocalTensor<float>& softmaxSumUb, SoftMaxShapeInfo& shapeInfo);
 
-    __aicore__ inline void SoftmaxComputeFirst(LocalTensor<mmOutputType> &mmResUb, LocalTensor<float> &softmaxMaxUb,
-        LocalTensor<float> &softmaxSumUb, SoftMaxShapeInfo &shapeInfo);
+    __aicore__ inline void SoftmaxComputeFirst(LocalTensor<mmOutputType>& mmResUb, LocalTensor<float>& softmaxMaxUb,
+                                               LocalTensor<float>& softmaxSumUb, SoftMaxShapeInfo& shapeInfo);
 
     __aicore__ inline bool IsSoftmaxBasic();
 
-    __aicore__ inline void SoftmaxBasicCompute(LocalTensor<mmOutputType> &mmResUb, LocalTensor<float> &softmaxMaxUb,
-        LocalTensor<float> &softmaxSumUb, LocalTensor<softmaxType> &softmaxExpUb, SoftMaxShapeInfo &shapeInfo);
+    __aicore__ inline void SoftmaxBasicCompute(LocalTensor<mmOutputType>& mmResUb, LocalTensor<float>& softmaxMaxUb,
+                                               LocalTensor<float>& softmaxSumUb, LocalTensor<softmaxType>& softmaxExpUb,
+                                               SoftMaxShapeInfo& shapeInfo);
 
-    __aicore__ inline void SoftmaxCompute(LocalTensor<mmOutputType> &mmResUb, LocalTensor<float> &softmaxMaxUb,
-        LocalTensor<float> &softmaxSumUb, LocalTensor<softmaxType> &softmaxExpUb, SoftMaxShapeInfo &shapeInfo);
+    __aicore__ inline void SoftmaxCompute(LocalTensor<mmOutputType>& mmResUb, LocalTensor<float>& softmaxMaxUb,
+                                          LocalTensor<float>& softmaxSumUb, LocalTensor<softmaxType>& softmaxExpUb,
+                                          SoftMaxShapeInfo& shapeInfo);
 
-    __aicore__ inline void SoftmaxBasicComputeFirstNoTail(LocalTensor<mmOutputType> &mmResUb,
-        LocalTensor<float> &softmaxMaxUb, LocalTensor<float> &softmaxSumUb, LocalTensor<softmaxType> &softmaxExpUb,
-        SoftMaxShapeInfo &shapeInfo);
+    __aicore__ inline void SoftmaxBasicComputeFirstNoTail(LocalTensor<mmOutputType>& mmResUb,
+                                                          LocalTensor<float>& softmaxMaxUb,
+                                                          LocalTensor<float>& softmaxSumUb,
+                                                          LocalTensor<softmaxType>& softmaxExpUb,
+                                                          SoftMaxShapeInfo& shapeInfo);
 
-    __aicore__ inline void SoftmaxBasicComputeNoTail(LocalTensor<mmOutputType> &mmResUb,
-        LocalTensor<float> &softmaxMaxUb, LocalTensor<float> &softmaxSumUb, LocalTensor<softmaxType> &softmaxExpUb,
-        SoftMaxShapeInfo &shapeInfo);
+    __aicore__ inline void SoftmaxBasicComputeNoTail(LocalTensor<mmOutputType>& mmResUb,
+                                                     LocalTensor<float>& softmaxMaxUb, LocalTensor<float>& softmaxSumUb,
+                                                     LocalTensor<softmaxType>& softmaxExpUb,
+                                                     SoftMaxShapeInfo& shapeInfo);
 
-    __aicore__ inline void SoftmaxBasicComputeFirstNoTail(LocalTensor<mmOutputType> &mmResUb,
-        LocalTensor<float> &softmaxMaxUb, LocalTensor<float> &softmaxSumUb, LocalTensor<softmaxType> &softmaxExpUb,
-        LocalTensor<uint8_t> &sharedTmpUb, SoftMaxShapeInfo &shapeInfo);
+    __aicore__ inline void SoftmaxBasicComputeFirstNoTail(LocalTensor<mmOutputType>& mmResUb,
+                                                          LocalTensor<float>& softmaxMaxUb,
+                                                          LocalTensor<float>& softmaxSumUb,
+                                                          LocalTensor<softmaxType>& softmaxExpUb,
+                                                          LocalTensor<uint8_t>& sharedTmpUb,
+                                                          SoftMaxShapeInfo& shapeInfo);
 
-    __aicore__ inline void SoftmaxBasicComputeNoTail(LocalTensor<mmOutputType> &mmResUb,
-        LocalTensor<float> &softmaxMaxUb, LocalTensor<float> &softmaxSumUb, LocalTensor<softmaxType> &softmaxExpUb,
-        LocalTensor<uint8_t> &sharedTmpUb, SoftMaxShapeInfo &shapeInfo);
+    __aicore__ inline void SoftmaxBasicComputeNoTail(LocalTensor<mmOutputType>& mmResUb,
+                                                     LocalTensor<float>& softmaxMaxUb, LocalTensor<float>& softmaxSumUb,
+                                                     LocalTensor<softmaxType>& softmaxExpUb,
+                                                     LocalTensor<uint8_t>& sharedTmpUb,
+                                                     SoftMaxShapeInfo& shapeInfo);
 
-    __aicore__ inline void SoftmaxComputeFirstTail(LocalTensor<mmOutputType> &mmResUb, LocalTensor<float> &softmaxMaxUb,
-        LocalTensor<float> &softmaxSumUb, LocalTensor<softmaxType> &softmaxExpUb, SoftMaxShapeInfo &shapeInfo);
+    __aicore__ inline void SoftmaxComputeFirstTail(LocalTensor<mmOutputType>& mmResUb,
+                                                   LocalTensor<float>& softmaxMaxUb, LocalTensor<float>& softmaxSumUb,
+                                                   LocalTensor<softmaxType>& softmaxExpUb, SoftMaxShapeInfo& shapeInfo);
 
-    __aicore__ inline void SoftmaxComputeTail(LocalTensor<mmOutputType> &mmResUb, LocalTensor<float> &softmaxMaxUb,
-        LocalTensor<float> &softmaxSumUb, LocalTensor<softmaxType> &softmaxExpUb, SoftMaxShapeInfo &shapeInfo);
+    __aicore__ inline void SoftmaxComputeTail(LocalTensor<mmOutputType>& mmResUb,
+                                              LocalTensor<float>& softmaxMaxUb, LocalTensor<float>& softmaxSumUb,
+                                              LocalTensor<softmaxType>& softmaxExpUb, SoftMaxShapeInfo& shapeInfo);
 
     __aicore__ inline bool IsSoftmaxFlashBasic();
 
-    __aicore__ inline void QuantCompute(LocalTensor<int8_t> quantResUb, LocalTensor<mmOutputType> mmResUb, float scale,
-        float offset, uint32_t computeSize);
+    __aicore__ inline void QuantCompute(LocalTensor<int8_t> quantResUb, LocalTensor<mmOutputType> mmResUb,
+        float scale, float offset, uint32_t computeSize);
 
-    __aicore__ inline void Bmm2UpdateDivNoTail(LocalTensor<mmOutputType> &bmm2ResPreUb,
-        LocalTensor<float> &softmaxSumUb, LocalTensor<softmaxType> &softmaxExpUb);
+    __aicore__ inline void Bmm2UpdateDivNoTail(LocalTensor<mmOutputType>& bmm2ResPreUb,
+                                               LocalTensor<float>& softmaxSumUb,
+                                               LocalTensor<softmaxType>& softmaxExpUb);
 
-    __aicore__ inline void Bmm2Compute(uint32_t offset, LocalTensor<mmOutputType> &bmm2ResL1);
+    __aicore__ inline void Bmm2Compute(uint32_t offset, LocalTensor<mmOutputType>& bmm2ResL1);
 
-    __aicore__ inline void UpdateVmul(LocalTensor<softmaxType> &softmaxExpUb);
+    __aicore__ inline void UpdateVmul(LocalTensor<softmaxType>& softmaxExpUb);
 
-    __aicore__ inline void Bmm2UpdateAdd(LocalTensor<mmOutputType> &bmm2ResUb);
+    __aicore__ inline void Bmm2UpdateAdd(LocalTensor<mmOutputType>& bmm2ResUb);
 
-    __aicore__ inline void DataCopyTransposeOut(LocalTensor<mmOutputType> &bmm2ResUb);
+    __aicore__ inline void DataCopyTransposeOut(LocalTensor<mmOutputType>& bmm2ResUb);
 
-    __aicore__ inline void DataCopyOutWithBNSD(LocalTensor<mmOutputType> &bmm2ResUb);
+    __aicore__ inline void DataCopyOutWithBNSD(LocalTensor<mmOutputType>& bmm2ResUb);
 
     __aicore__ inline void ComputePseShiftOffset(int sInnerOffsetDataSize);
 
@@ -341,33 +374,36 @@ class AdaBlockSparseAttentionBase {
 
     __aicore__ inline void initOffset();
 
-    __aicore__ inline void InitTensorSize(const AdaBlockSparseSingleCoreTensorSize *tensorSizeTiling);
+    __aicore__ inline void InitTensorSize(const PromptAttentionSingleCoreTensorSize* tensorSizeTiling);
 
     __aicore__ inline void GetSingleCoreParam(int sIdx);
 
-    __aicore__ inline void GetSparseParam(int32_t *preTokens, int32_t *nextTokens);
+    __aicore__ inline void GetSparseParam(int32_t* preTokens, int32_t* nextTokens);
 
     __aicore__ inline void ComputeTokenOffset();
 
     __aicore__ inline void InitOutputSingleCore();
 };
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
-__aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::Init(__gm__ uint8_t *query, __gm__ uint8_t *key,
-    __gm__ uint8_t *value, __gm__ uint8_t *pseShift, __gm__ uint8_t *attenMask, __gm__ uint8_t *actualSeqLengths,
-    __gm__ uint8_t *actualSeqLengthsKV, __gm__ uint8_t *blocktable, __gm__ uint8_t *queryPaddingSize,
-    __gm__ uint8_t *kvPaddingSize, __gm__ uint8_t *keySharedPrefix, __gm__ uint8_t *valueSharedPrefix,
-    __gm__ uint8_t *actualSharedPrefixLen, __gm__ uint8_t *attentionOut, __gm__ uint8_t *softmaxLse,
-    __gm__ uint8_t *workspace, const AdaBlockSparseAttentionTilingData *__restrict tiling, __gm__ uint8_t *gmTiling,
-    TPipe *tPipe) {
+template<typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+__aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::Init(__gm__ uint8_t* query, __gm__ uint8_t* key,
+                                        __gm__ uint8_t* value, __gm__ uint8_t* pseShift, __gm__ uint8_t* attenMask,
+                                        __gm__ uint8_t* actualSeqLengths, __gm__ uint8_t* actualSeqLengthsKV,
+                                        __gm__ uint8_t* blocktable,  __gm__ uint8_t* queryPaddingSize,
+                                        __gm__ uint8_t* kvPaddingSize, __gm__ uint8_t* keySharedPrefix,
+                                        __gm__ uint8_t* valueSharedPrefix, __gm__ uint8_t* actualSharedPrefixLen,
+                                        __gm__ uint8_t* attentionOut, __gm__ uint8_t* softmaxLse,
+                                        __gm__ uint8_t* workspace,
+                                        const AdaBlockSparseAttentionTilingData* __restrict tiling,
+                                        __gm__ uint8_t* gmTiling, TPipe* tPipe) {
     tmp_block_idx = GetBlockIdx();
     // init global buffer
     tilingData = tiling;
-    queryGm.SetGlobalBuffer((__gm__ T *)query);
+    queryGm.SetGlobalBuffer((__gm__ T*)query);
     key_ptr = key;
     value_ptr = value;
-    attentionOutGm.SetGlobalBuffer((__gm__ O *)attentionOut);
-    workspaceGm.SetGlobalBuffer((__gm__ softmaxType *)workspace);
+    attentionOutGm.SetGlobalBuffer((__gm__ O*)attentionOut);
+    workspaceGm.SetGlobalBuffer((__gm__ softmaxType*)workspace);
 
     pipe = tPipe;
     typeByteNum = tilingData->promptAttentionBaseParams.typeByteNum;
@@ -388,33 +424,34 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::Init(__g
     fromFused = tilingData->promptAttentionBaseParams.fromFused;
 
     if (fromFused) {
-        ListTensorDesc keyListTensorDescInit((__gm__ void *)key_ptr);
-        ListTensorDesc valueListTensorDescInit((__gm__ void *)value_ptr);
-        currentKey = (__gm__ uint8_t *)keyListTensorDescInit.GetDataPtr<__gm__ uint8_t>(0);
-        currentValue = (__gm__ uint8_t *)valueListTensorDescInit.GetDataPtr<__gm__ uint8_t>(0);
+        ListTensorDesc keyListTensorDescInit((__gm__ void*)key_ptr);
+        ListTensorDesc valueListTensorDescInit((__gm__ void*)value_ptr);
+        currentKey = (__gm__ uint8_t*)keyListTensorDescInit.GetDataPtr<__gm__ uint8_t>(0);
+        currentValue = (__gm__ uint8_t*)valueListTensorDescInit.GetDataPtr<__gm__ uint8_t>(0);
 
-        keyGm.SetGlobalBuffer((__gm__ T *)currentKey);
-        valueGm.SetGlobalBuffer((__gm__ T *)currentValue);
+        keyGm.SetGlobalBuffer((__gm__ T*)currentKey);
+        valueGm.SetGlobalBuffer((__gm__ T*)currentValue);
     } else {
-        keyGm.SetGlobalBuffer((__gm__ T *)key);
-        valueGm.SetGlobalBuffer((__gm__ T *)value);
+        keyGm.SetGlobalBuffer((__gm__ T*)key);
+        valueGm.SetGlobalBuffer((__gm__ T*)value);
     }
 
     initOffset();
 
     isActualLenDimsKVNull = true;
     if (!tilingData->promptAttentionBaseParams.isActualSeqLengthsKVNull) {
-        actualSeqLengthsKVGm.SetGlobalBuffer(
-            (__gm__ int64_t *)actualSeqLengthsKV, tilingData->promptAttentionBaseParams.batchSize);
+        actualSeqLengthsKVGm.SetGlobalBuffer((__gm__ int64_t*)actualSeqLengthsKV,
+        tilingData->promptAttentionBaseParams.batchSize);
         isActualLenDimsKVNull = false;
     }
 
     isActualLenDimsNull = true;
     if (!tilingData->promptAttentionBaseParams.isActualSeqLengthsNull) {
-        actualSeqLengthsGm.SetGlobalBuffer(
-            (__gm__ int64_t *)actualSeqLengths, tilingData->promptAttentionBaseParams.batchSize);
+        actualSeqLengthsGm.SetGlobalBuffer((__gm__ int64_t*)actualSeqLengths,
+        tilingData->promptAttentionBaseParams.batchSize);
         isActualLenDimsNull = false;
     }
+
 
     uint32_t preAccumSOuter = 0;
     uint32_t h = tilingData->promptAttentionBaseParams.headNumSize * tilingData->promptAttentionBaseParams.headSize;
@@ -422,8 +459,8 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::Init(__g
     uint32_t actualSeqLengthsIdx = 0;
     uint32_t middle_actualSeqLengths = 0;
     for (int i = 0; i < tilingData->promptAttentionBaseParams.batchSize; i++) {
-        actualSeqLengthsIdx =
-            isActualLenDimsNull ? tilingData->promptAttentionBaseParams.seqSize : actualSeqLengthsGm.GetValue(i);
+        actualSeqLengthsIdx = isActualLenDimsNull ?
+            tilingData->promptAttentionBaseParams.seqSize : actualSeqLengthsGm.GetValue(i);
         if (tilingData->promptAttentionBaseParams.isActualSeqLengthsNull) {
             actualSeqOffsets[i] = i * s * h;
         } else {
@@ -435,24 +472,23 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::Init(__g
             }
         }
 
-        actualSeqLengthsIdx =
-            ((int64_t)actualSeqLengthsIdx > (int64_t)tilingData->promptAttentionBaseParams.seqInnerSize +
-                    (int64_t)tilingData->promptAttentionBaseParams.preTokens) &&
-                (attentionMaskType != 4)
-            ? tilingData->promptAttentionBaseParams.seqInnerSize + tilingData->promptAttentionBaseParams.preTokens
-            : actualSeqLengthsIdx;
-        accumSOuterTilingNums[i] =
-            (((actualSeqLengthsIdx + tilingData->promptAttentionSingleCoreParams.singleProcessSOuterSize - 1) /
-                 tilingData->promptAttentionSingleCoreParams.singleProcessSOuterSize) *
-                tilingData->promptAttentionBaseParams.headNumSize) +
+        actualSeqLengthsIdx = ((int64_t)actualSeqLengthsIdx >
+            (int64_t)tilingData->promptAttentionBaseParams.seqInnerSize +
+            (int64_t)tilingData->promptAttentionBaseParams.preTokens) && (attentionMaskType != 4)?
+            tilingData->promptAttentionBaseParams.seqInnerSize + tilingData->promptAttentionBaseParams.preTokens :
+            actualSeqLengthsIdx;
+        accumSOuterTilingNums[i] = (
+            ((actualSeqLengthsIdx + tilingData->promptAttentionSingleCoreParams.singleProcessSOuterSize - 1) /
+            tilingData->promptAttentionSingleCoreParams.singleProcessSOuterSize) *
+            tilingData->promptAttentionBaseParams.headNumSize) +
             preAccumSOuter;
         preAccumSOuter = accumSOuterTilingNums[i];
     }
 
-    accumSOuterTilingNums[0] = (headNumRatio != 1 || tilingData->promptAttentionInitOutputParams.needInit ||
-                                   tilingData->promptAttentionBaseParams.batchSize != 1)
-        ? 0
-        : accumSOuterTilingNums[0];
+    accumSOuterTilingNums[0] = (headNumRatio != 1 ||
+                                tilingData->promptAttentionInitOutputParams.needInit ||
+                                tilingData->promptAttentionBaseParams.batchSize != 1) ?
+                                0 : accumSOuterTilingNums[0];
 
     uint32_t pseMaskMaxSize = tilingData->promptAttentionBaseParams.pseMaskMaxSize;
     pipe->InitBuffer(attenMaskQueue, 1, (tilingData->promptAttentionTensorSizeRect.attenMaskUbSize) * pseMaskMaxSize);
@@ -484,19 +520,19 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::Init(__g
     attentionMaskType = tilingData->promptAttentionBaseParams.sparseMode;
     if ((attenMask != NULL) && (tilingData->promptAttentionBaseParams.useMask == 1)) {
         useMask = true;
-        attenMaskGm.SetGlobalBuffer((__gm__ U *)attenMask);
+        attenMaskGm.SetGlobalBuffer((__gm__ U*)attenMask);
         attentionMaskStride = tilingData->promptAttentionBaseParams.maskKVsSize;
     }
 
     usePseShift = false;
     if ((pseShift != NULL) && (tilingData->promptAttentionBaseParams.usePseShift == 1)) {
         usePseShift = true;
-        pseShiftGm.SetGlobalBuffer((__gm__ pseShiftType *)pseShift);
+        pseShiftGm.SetGlobalBuffer((__gm__ pseShiftType*)pseShift);
         pseShiftStride = tilingData->promptAttentionBaseParams.pseShiftS2Size;
 
         if constexpr (AscendC::IsSameType<pseShiftCastType, float>::value) {
-            pipe->InitBuffer(
-                pseShiftCastUb, (tilingData->promptAttentionTensorSizeRect.pseShiftUbSize) * sizeof(float));
+            pipe->InitBuffer(pseShiftCastUb,
+                             (tilingData->promptAttentionTensorSizeRect.pseShiftUbSize) * sizeof(float));
         }
     }
 
@@ -505,45 +541,44 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::Init(__g
     }
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
-__aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::InitQuant(__gm__ uint8_t *deq_scale1,
-    __gm__ uint8_t *scale1, __gm__ uint8_t *deq_scale2, __gm__ uint8_t *scale2, __gm__ uint8_t *offset2) {
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
+__aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::InitQuant(__gm__ uint8_t* deq_scale1,
+                                                             __gm__ uint8_t* scale1, __gm__ uint8_t* deq_scale2,
+                                                             __gm__ uint8_t* scale2, __gm__ uint8_t* offset2) {
     if (deq_scale1 != nullptr) {
         if (tilingData->promptAttentionBaseParams.deqScaleFlag == 1) {
-            deqScale1Fp32Gm.SetGlobalBuffer((__gm__ uint32_t *)deq_scale1);
+            deqScale1Fp32Gm.SetGlobalBuffer((__gm__ uint32_t*)deq_scale1);
             dequantScale1 = deqScale1Fp32Gm(0);
         } else {
-            dequantScale1 = *(reinterpret_cast<__gm__ uint64_t *>(deq_scale1));
+            dequantScale1 = *(reinterpret_cast<__gm__ uint64_t*>(deq_scale1));
         }
     }
-    if (scale1 != nullptr) {
-        quantScale1 = *(reinterpret_cast<__gm__ float *>(scale1));
-    }
+    if (scale1 != nullptr) { quantScale1 = *(reinterpret_cast<__gm__ float*>(scale1));}
     if (deq_scale2 != nullptr) {
         if (tilingData->promptAttentionBaseParams.deqScale2Flag == 1) {
-            deqScale2Fp32Gm.SetGlobalBuffer((__gm__ uint32_t *)deq_scale2);
+            deqScale2Fp32Gm.SetGlobalBuffer((__gm__ uint32_t*)deq_scale2);
             dequantScale2 = deqScale2Fp32Gm(0);
         } else {
-            dequantScale2 = *(reinterpret_cast<__gm__ uint64_t *>(deq_scale2));
+            dequantScale2 = *(reinterpret_cast<__gm__ uint64_t*>(deq_scale2));
         }
     }
-    if (scale2 != nullptr) {
-        quantScale2 = *(reinterpret_cast<__gm__ float *>(scale2));
-    }
-    if (offset2 != nullptr) {
-        quantOffset2 = *(reinterpret_cast<__gm__ float *>(offset2));
-    }
+    if (scale2 != nullptr) { quantScale2 = *(reinterpret_cast<__gm__ float*>(scale2));}
+    if (offset2 != nullptr) { quantOffset2 = *(reinterpret_cast<__gm__ float*>(offset2));}
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
-__aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::InitMsd(__gm__ uint8_t *key_antiquant_scale,
-    __gm__ uint8_t *key_antiquant_offset, __gm__ uint8_t *value_antiquant_scale,
-    __gm__ uint8_t *value_antiquant_offset) {
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
+__aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::InitMsd(__gm__ uint8_t* key_antiquant_scale,
+                                                                            __gm__ uint8_t* key_antiquant_offset,
+                                                                            __gm__ uint8_t* value_antiquant_scale,
+                                                                            __gm__ uint8_t* value_antiquant_offset)
+{
     return;
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
-__aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::InitOutputSingleCore() {
+
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
+__aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::InitOutputSingleCore()
+{
     auto &initParams = tilingData->promptAttentionInitOutputParams;
     uint32_t tailSize = initParams.totalOutputSize - tmp_block_idx * initParams.singleCoreSize;
     uint32_t singleInitOutputSize = tailSize < initParams.singleCoreSize ? tailSize : initParams.singleCoreSize;
@@ -551,16 +586,16 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::InitOutp
     SyncAll();
 }
 #ifndef BSA_UT
-template <>
+template<>
 __aicore__ inline void AdaBlockSparseAttentionBase<int8_t, bool, CubeFormat::ND, int8_t>::InitOutputSingleCore() {}
 
-template <>
+template<>
 __aicore__ inline void AdaBlockSparseAttentionBase<int8_t, half, CubeFormat::ND, int8_t>::InitOutputSingleCore() {}
 
-template <>
+template<>
 __aicore__ inline void AdaBlockSparseAttentionBase<int8_t, float, CubeFormat::ND, int8_t>::InitOutputSingleCore() {}
 #endif
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::initOffset() {
     offsetSS = tilingData->promptAttentionBaseParams.seqSize * tilingData->promptAttentionBaseParams.seqSize;
     offsetSH = tilingData->promptAttentionBaseParams.seqSize * tilingData->promptAttentionBaseParams.headSize;
@@ -570,19 +605,19 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::initOffs
     offsetNSH = tilingData->promptAttentionBaseParams.headNumSize * offsetSH;
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::InitTensorSize(
-    const AdaBlockSparseSingleCoreTensorSize *tensorSizeTiling) {
-    mmResUbSize = tensorSizeTiling->mmResUbSize; // Matrix mu result UB size
-    attenMaskUbSize = tensorSizeTiling->attenMaskUbSize; // Attention mask UB size
-    pseShiftUbSize = tensorSizeTiling->pseShiftUbSize; // PSE shift UB size
-    maskSize = tensorSizeTiling->maskSize; // Mask size
-    softmaxMaxSize = tensorSizeTiling->softmaxMaxSize; // Softmax max UB size
-    softmaxSumSize = tensorSizeTiling->softmaxSumSize; // Softmax sum UB size
-    softmaxExpSize = tensorSizeTiling->softmaxExpSize; // Softmax exp UB size
-    spmTmpSize = tensorSizeTiling->spmTmpSize; // SPM temporary size
-    scmTmpSize = tensorSizeTiling->scmTmpSize; // SCM temporary size
-    bmm2ResUbSize = tensorSizeTiling->bmm2ResUbSize; // Second matric mul result UB size
+                const PromptAttentionSingleCoreTensorSize* tensorSizeTiling) {
+    mmResUbSize = tensorSizeTiling->mmResUbSize;            // Matrix mu result UB size
+    attenMaskUbSize = tensorSizeTiling->attenMaskUbSize;    // Attention mask UB size
+    pseShiftUbSize = tensorSizeTiling->pseShiftUbSize;      // PSE shift UB size
+    maskSize = tensorSizeTiling->maskSize;                  // Mask size
+    softmaxMaxSize = tensorSizeTiling->softmaxMaxSize;      // Softmax max UB size
+    softmaxSumSize = tensorSizeTiling->softmaxSumSize;      // Softmax sum UB size
+    softmaxExpSize = tensorSizeTiling->softmaxExpSize;      // Softmax exp UB size
+    spmTmpSize = tensorSizeTiling->spmTmpSize;              // SPM temporary size
+    scmTmpSize = tensorSizeTiling->scmTmpSize;              // SCM temporary size
+    bmm2ResUbSize = tensorSizeTiling->bmm2ResUbSize;        // Second matric mul result UB size
     tmpMMResBmm2PreUbSize = tensorSizeTiling->tmpMMResBmm2PreUbSize;
     tmpSoftmaxBmm2UbSize = tensorSizeTiling->tmpSoftmaxBmm2UbSize;
     selectSpaceUbSize = tensorSizeTiling->selectSpaceUbSize;
@@ -590,9 +625,9 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::InitTens
     mm2TmpUbSize_ = tensorSizeTiling->mm2TmpUbSize;
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::ElewiseCompute(
-    LocalTensor<mmOutputType> &mmResUb, uint32_t computeSize, uint32_t type) {
+    LocalTensor<mmOutputType>& mmResUb, uint32_t computeSize, uint32_t type) {
     if (useMask) {
         if (maskTypeByteNum == BOOLBYTENUM) {
             LocalTensor<U> attenMaskUb = attenMaskQueue.DeQue<U>();
@@ -600,10 +635,10 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::ElewiseC
             LocalTensor<uint8_t> selectSpace = selectSpaceUb.Get<uint8_t>(selectSpaceUbSize);
             mmOutputType scalar;
             if constexpr (IsSameType<mmOutputType, float>::value) {
-                uint32_t tmp = 0xFF7FFFFF; // Minimum of float
+                uint32_t tmp = 0xFF7FFFFF;  // Minimum of float
                 scalar = *((float *)&tmp);
             } else {
-                uint16_t tmp = 0xFBFF; // Minimum of FP16
+                uint16_t tmp = 0xFBFF;   // Minimum of FP16
                 scalar = *((half *)&tmp);
             }
             SelectWithBytesMaskShapeInfo selectWithBytesMaskShapeInfo;
@@ -612,11 +647,11 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::ElewiseC
             selectWithBytesMaskShapeInfo.maskLastAxis = this->maskCopyInCol;
             if (type == 0) {
                 SelectWithBytesMask(mmResUb, mmResUb, static_cast<mmOutputType>(scalar), attenMaskUb, selectSpace,
-                    selectWithBytesMaskShapeInfo);
+                                selectWithBytesMaskShapeInfo);
             } else if (type == 1) {
                 // swape param 2 and param 3 of SelectWithBytesMask to compute attenMaskPre for band mode
                 SelectWithBytesMask(mmResUb, static_cast<mmOutputType>(scalar), mmResUb, attenMaskUb, selectSpace,
-                    selectWithBytesMaskShapeInfo);
+                                selectWithBytesMaskShapeInfo);
             }
 
             pipe_barrier(PIPE_V);
@@ -631,104 +666,111 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::ElewiseC
     }
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::SoftmaxBasicComputeFirst(
-    LocalTensor<mmOutputType> &mmResUb, LocalTensor<float> &softmaxMaxUb, LocalTensor<float> &softmaxSumUb,
-    SoftMaxShapeInfo &shapeInfo) {
-    SoftMax<softmaxType, true, true>(mmResUb, softmaxSumUb, softmaxMaxUb, mmResUb, softmaxTilingData, shapeInfo);
+    LocalTensor<mmOutputType>& mmResUb, LocalTensor<float>& softmaxMaxUb, LocalTensor<float>& softmaxSumUb,
+    SoftMaxShapeInfo& shapeInfo) {
+    SoftMax<softmaxType, true, true> (mmResUb, softmaxSumUb, softmaxMaxUb, mmResUb, softmaxTilingData, shapeInfo);
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::SoftmaxComputeFirst(
-    LocalTensor<mmOutputType> &mmResUb, LocalTensor<float> &softmaxMaxUb, LocalTensor<float> &softmaxSumUb,
-    SoftMaxShapeInfo &shapeInfo) {
-    SoftMax<softmaxType, true>(mmResUb, softmaxSumUb, softmaxMaxUb, mmResUb, softmaxTilingData, shapeInfo);
+    LocalTensor<mmOutputType>& mmResUb, LocalTensor<float>& softmaxMaxUb, LocalTensor<float>& softmaxSumUb,
+    SoftMaxShapeInfo& shapeInfo) {
+    SoftMax<softmaxType, true> (mmResUb, softmaxSumUb, softmaxMaxUb, mmResUb, softmaxTilingData, shapeInfo);
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline bool AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::IsSoftmaxBasic() {
-    return ((this->softmaxTilingData.splitM % 8 == 0) && (this->softmaxTilingData.splitK % 64 == 0));
+    return ((this->softmaxTilingData.splitM % 8 ==0) && (this->softmaxTilingData.splitK % 64 ==0));
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::SoftmaxBasicCompute(
-    LocalTensor<mmOutputType> &mmResUb, LocalTensor<float> &softmaxMaxUb, LocalTensor<float> &softmaxSumUb,
-    LocalTensor<softmaxType> &softmaxExpUb, SoftMaxShapeInfo &shapeInfo) {
-    SoftmaxFlash<softmaxType, true, true>(mmResUb, softmaxSumUb, softmaxMaxUb, mmResUb, softmaxExpUb, softmaxSumUb,
-        softmaxMaxUb, softmaxFlashTilingData, true, shapeInfo);
+    LocalTensor<mmOutputType>& mmResUb, LocalTensor<float>& softmaxMaxUb, LocalTensor<float>& softmaxSumUb,
+    LocalTensor<softmaxType>& softmaxExpUb, SoftMaxShapeInfo& shapeInfo) {
+    SoftmaxFlash<softmaxType, true, true> (mmResUb, softmaxSumUb, softmaxMaxUb,
+                                mmResUb, softmaxExpUb, softmaxSumUb,
+                                softmaxMaxUb, softmaxFlashTilingData, true, shapeInfo);
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::SoftmaxCompute(
-    LocalTensor<mmOutputType> &mmResUb, LocalTensor<float> &softmaxMaxUb, LocalTensor<float> &softmaxSumUb,
-    LocalTensor<softmaxType> &softmaxExpUb, SoftMaxShapeInfo &shapeInfo) {
-    SoftmaxFlash<softmaxType, true>(mmResUb, softmaxSumUb, softmaxMaxUb, mmResUb, softmaxExpUb, softmaxSumUb,
-        softmaxMaxUb, softmaxFlashTilingData, true, shapeInfo);
+                                        LocalTensor<mmOutputType>& mmResUb,
+                                        LocalTensor<float>& softmaxMaxUb, LocalTensor<float>& softmaxSumUb,
+                                        LocalTensor<softmaxType>& softmaxExpUb, SoftMaxShapeInfo& shapeInfo) {
+    SoftmaxFlash<softmaxType, true> (mmResUb, softmaxSumUb, softmaxMaxUb,
+                          mmResUb, softmaxExpUb, softmaxSumUb,
+                          softmaxMaxUb, softmaxFlashTilingData, true, shapeInfo);
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::SoftmaxBasicComputeFirstNoTail(
-    LocalTensor<mmOutputType> &mmResUb, LocalTensor<float> &softmaxMaxUb, LocalTensor<float> &softmaxSumUb,
-    LocalTensor<softmaxType> &softmaxExpUb, LocalTensor<uint8_t> &sharedTmpUb, SoftMaxShapeInfo &shapeInfo) {
-    SoftmaxFlashV2<softmaxType, false, true, true, true>(mmResUb, softmaxSumUb, softmaxMaxUb, mmResUb, softmaxExpUb,
-        softmaxSumUb, softmaxMaxUb, sharedTmpUb, softmaxFlashTilingData, shapeInfo);
+    LocalTensor<mmOutputType>& mmResUb, LocalTensor<float>& softmaxMaxUb, LocalTensor<float>& softmaxSumUb,
+    LocalTensor<softmaxType>& softmaxExpUb, LocalTensor<uint8_t>& sharedTmpUb,
+    SoftMaxShapeInfo& shapeInfo) {
+    SoftmaxFlashV2<softmaxType, false, true, true, true>(mmResUb, softmaxSumUb, softmaxMaxUb,
+        mmResUb, softmaxExpUb, softmaxSumUb, softmaxMaxUb, sharedTmpUb, softmaxFlashTilingData, shapeInfo);
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::SoftmaxBasicComputeNoTail(
-    LocalTensor<mmOutputType> &mmResUb, LocalTensor<float> &softmaxMaxUb, LocalTensor<float> &softmaxSumUb,
-    LocalTensor<softmaxType> &softmaxExpUb, LocalTensor<uint8_t> &sharedTmpUb, SoftMaxShapeInfo &shapeInfo) {
-    SoftmaxFlashV2<softmaxType, true, true, true, true>(mmResUb, softmaxSumUb, softmaxMaxUb, mmResUb, softmaxExpUb,
-        softmaxSumUb, softmaxMaxUb, sharedTmpUb, softmaxFlashTilingData, shapeInfo);
+    LocalTensor<mmOutputType>& mmResUb, LocalTensor<float>& softmaxMaxUb, LocalTensor<float>& softmaxSumUb,
+    LocalTensor<softmaxType>& softmaxExpUb, LocalTensor<uint8_t>& sharedTmpUb,
+    SoftMaxShapeInfo& shapeInfo) {
+    SoftmaxFlashV2<softmaxType, true, true, true, true>(mmResUb, softmaxSumUb, softmaxMaxUb,
+        mmResUb, softmaxExpUb, softmaxSumUb, softmaxMaxUb, sharedTmpUb, softmaxFlashTilingData, shapeInfo);
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::SoftmaxBasicComputeFirstNoTail(
-    LocalTensor<mmOutputType> &mmResUb, LocalTensor<float> &softmaxMaxUb, LocalTensor<float> &softmaxSumUb,
-    LocalTensor<softmaxType> &softmaxExpUb, SoftMaxShapeInfo &shapeInfo) {
-    SoftmaxFlashV2<softmaxType, false, true, true>(mmResUb, softmaxSumUb, softmaxMaxUb, mmResUb, softmaxExpUb,
-        softmaxSumUb, softmaxMaxUb, softmaxFlashTilingData, shapeInfo);
+    LocalTensor<mmOutputType>& mmResUb, LocalTensor<float>& softmaxMaxUb, LocalTensor<float>& softmaxSumUb,
+    LocalTensor<softmaxType>& softmaxExpUb, SoftMaxShapeInfo& shapeInfo) {
+    SoftmaxFlashV2<softmaxType, false, true, true>(mmResUb, softmaxSumUb, softmaxMaxUb,
+        mmResUb, softmaxExpUb, softmaxSumUb, softmaxMaxUb, softmaxFlashTilingData, shapeInfo);
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::SoftmaxBasicComputeNoTail(
-    LocalTensor<mmOutputType> &mmResUb, LocalTensor<float> &softmaxMaxUb, LocalTensor<float> &softmaxSumUb,
-    LocalTensor<softmaxType> &softmaxExpUb, SoftMaxShapeInfo &shapeInfo) {
-    SoftmaxFlashV2<softmaxType, true, true, true>(mmResUb, softmaxSumUb, softmaxMaxUb, mmResUb, softmaxExpUb,
-        softmaxSumUb, softmaxMaxUb, softmaxFlashTilingData, shapeInfo);
+    LocalTensor<mmOutputType>& mmResUb, LocalTensor<float>& softmaxMaxUb, LocalTensor<float>& softmaxSumUb,
+    LocalTensor<softmaxType>& softmaxExpUb, SoftMaxShapeInfo& shapeInfo) {
+    SoftmaxFlashV2<softmaxType, true, true, true>(mmResUb, softmaxSumUb, softmaxMaxUb,
+        mmResUb, softmaxExpUb, softmaxSumUb, softmaxMaxUb, softmaxFlashTilingData, shapeInfo);
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::SoftmaxComputeFirstTail(
-    LocalTensor<mmOutputType> &mmResUb, LocalTensor<float> &softmaxMaxUb, LocalTensor<float> &softmaxSumUb,
-    LocalTensor<softmaxType> &softmaxExpUb, SoftMaxShapeInfo &shapeInfo) {
-    SoftmaxFlashV2<softmaxType, false, true, false>(mmResUb, softmaxSumUb, softmaxMaxUb, mmResUb, softmaxExpUb,
-        softmaxSumUb, softmaxMaxUb, softmaxFlashTilingData, shapeInfo);
+    LocalTensor<mmOutputType>& mmResUb, LocalTensor<float>& softmaxMaxUb, LocalTensor<float>& softmaxSumUb,
+    LocalTensor<softmaxType>& softmaxExpUb, SoftMaxShapeInfo& shapeInfo) {
+    SoftmaxFlashV2<softmaxType, false, true, false>(mmResUb, softmaxSumUb, softmaxMaxUb,
+        mmResUb, softmaxExpUb, softmaxSumUb, softmaxMaxUb, softmaxFlashTilingData, shapeInfo);
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::SoftmaxComputeTail(
-    LocalTensor<mmOutputType> &mmResUb, LocalTensor<float> &softmaxMaxUb, LocalTensor<float> &softmaxSumUb,
-    LocalTensor<softmaxType> &softmaxExpUb, SoftMaxShapeInfo &shapeInfo) {
-    SoftmaxFlashV2<softmaxType, true, true, false>(mmResUb, softmaxSumUb, softmaxMaxUb, mmResUb, softmaxExpUb,
-        softmaxSumUb, softmaxMaxUb, softmaxFlashTilingData, shapeInfo);
+    LocalTensor<mmOutputType>& mmResUb, LocalTensor<float>& softmaxMaxUb, LocalTensor<float>& softmaxSumUb,
+    LocalTensor<softmaxType>& softmaxExpUb, SoftMaxShapeInfo& shapeInfo) {
+    SoftmaxFlashV2<softmaxType, true, true, false>(mmResUb, softmaxSumUb, softmaxMaxUb,
+        mmResUb, softmaxExpUb, softmaxSumUb, softmaxMaxUb, softmaxFlashTilingData, shapeInfo);
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline bool AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::IsSoftmaxFlashBasic() {
-    return ((this->softmaxFlashTilingData.splitM % 8 == 0) && (this->softmaxFlashTilingData.splitK % 64 == 0));
+    return ((this->softmaxFlashTilingData.splitM % 8 ==0) && (this->softmaxFlashTilingData.splitK % 64 ==0));
 }
 
 // quant: add quant functions
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
-__aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::QuantCompute(LocalTensor<int8_t> quantResUb,
-    LocalTensor<mmOutputType> mmResUb, float scale, float offset, uint32_t computeSize) {
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
+__aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::QuantCompute(
+    LocalTensor<int8_t> quantResUb, LocalTensor<mmOutputType> mmResUb,
+    float scale, float offset, uint32_t computeSize) {
     AscendQuant(quantResUb, mmResUb, scale, offset, computeSize);
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::Bmm2UpdateDivNoTail(
-    LocalTensor<mmOutputType> &bmm2ResPreUb, LocalTensor<float> &softmaxSumUb, LocalTensor<softmaxType> &softmaxExpUb) {
+    LocalTensor<mmOutputType>& bmm2ResPreUb, LocalTensor<float>& softmaxSumUb, LocalTensor<softmaxType>& softmaxExpUb) {
     int32_t headLoop = (tilingData->promptAttentionBaseParams.headSize + softmaxTypeByteNum - 1) / softmaxTypeByteNum;
     constexpr int32_t REPEAT_DATA_NUM = 256 / sizeof(softmaxType);
 
@@ -757,31 +799,32 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::Bmm2Upda
         attenMaskQueue.FreeTensor(tmpBuffer);
 
         for (int i = 0; i < loop; i++) {
-            Div(bmm2ResPreUb[i * REPEAT_DATA_NUM], bmm2ResPreUb[i * REPEAT_DATA_NUM], softmaxExpUb, REPEAT_DATA_NUM,
-                singleProcessSOuterSize, repeatParams);
+            Div(bmm2ResPreUb[i * REPEAT_DATA_NUM], bmm2ResPreUb[i * REPEAT_DATA_NUM], softmaxExpUb,
+                REPEAT_DATA_NUM, singleProcessSOuterSize, repeatParams);
         }
         if (remain) {
-            Div(bmm2ResPreUb[loop * REPEAT_DATA_NUM], bmm2ResPreUb[loop * REPEAT_DATA_NUM], softmaxExpUb, remain,
-                singleProcessSOuterSize, repeatParams);
+            Div(bmm2ResPreUb[loop * REPEAT_DATA_NUM], bmm2ResPreUb[loop * REPEAT_DATA_NUM], softmaxExpUb,
+                remain, singleProcessSOuterSize, repeatParams);
         }
     } else {
         for (int i = 0; i < loop; i++) {
-            Div(bmm2ResPreUb[i * REPEAT_DATA_NUM], bmm2ResPreUb[i * REPEAT_DATA_NUM], softmaxSumUb, REPEAT_DATA_NUM,
-                singleProcessSOuterSize, repeatParams);
+            Div(bmm2ResPreUb[i * REPEAT_DATA_NUM], bmm2ResPreUb[i * REPEAT_DATA_NUM], softmaxSumUb,
+                REPEAT_DATA_NUM, singleProcessSOuterSize, repeatParams);
         }
         if (remain) {
-            Div(bmm2ResPreUb[loop * REPEAT_DATA_NUM], bmm2ResPreUb[loop * REPEAT_DATA_NUM], softmaxSumUb, remain,
-                singleProcessSOuterSize, repeatParams);
+            Div(bmm2ResPreUb[loop * REPEAT_DATA_NUM], bmm2ResPreUb[loop * REPEAT_DATA_NUM], softmaxSumUb,
+                remain, singleProcessSOuterSize, repeatParams);
         }
     }
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::Bmm2Compute(
-    uint32_t offset, LocalTensor<mmOutputType> &bmm2ResL1) {
+    uint32_t offset, LocalTensor<mmOutputType>& bmm2ResL1) {
 #if (__CCE_AICORE__ > 200)
     if constexpr (IsSameType<mmInputType, bfloat16_t>::value ||
-        (IsSameType<mmInputType, half>::value && IsSameType<mmOutputType, float>::value)) {
+                  (IsSameType<mmInputType, half>::value &&
+                  IsSameType<mmOutputType, float>::value)) {
         pipe_barrier(PIPE_V);
         LocalTensor<mmInputType> tmpBmm2ResCastTensor; // The same ub buffer is used before and after the cast.
         tmpBmm2ResCastTensor = bmm2ResL1.template ReinterpretCast<mmInputType>();
@@ -807,35 +850,35 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::Bmm2Comp
     bmm2.SetTail(-1, -1, singleProcessSInnerBmmTail);
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::UpdateVmul(
-    LocalTensor<softmaxType> &softmaxExpUb) {
+    LocalTensor<softmaxType>& softmaxExpUb) {
     LocalTensor<mmOutputType> bmm2ResPreUb = tempBmm2Ub.Get<mmOutputType>(bmm2ResUbSize);
 
     BinaryRepeatParams repeatParams;
     repeatParams.src0RepStride = 1;
     repeatParams.src0BlkStride = 0;
-    repeatParams.src1RepStride =
-        (tilingData->promptAttentionBaseParams.headSize + softmaxTypeByteNum - 1) / softmaxTypeByteNum;
-    repeatParams.dstRepStride =
-        (tilingData->promptAttentionBaseParams.headSize + softmaxTypeByteNum - 1) / softmaxTypeByteNum;
+    repeatParams.src1RepStride = (
+        tilingData->promptAttentionBaseParams.headSize + softmaxTypeByteNum - 1) / softmaxTypeByteNum;
+    repeatParams.dstRepStride = (
+        tilingData->promptAttentionBaseParams.headSize + softmaxTypeByteNum - 1) / softmaxTypeByteNum;
 
     // only support singleProcessSOuterSize <=255, headsize 32B align
     int32_t numOneRep = 256 / sizeof(softmaxType);
     int32_t loop = tilingData->promptAttentionBaseParams.headSize / numOneRep;
-    int32_t remain = tilingData->promptAttentionBaseParams.headSize % numOneRep;
+    int32_t remain =  tilingData->promptAttentionBaseParams.headSize % numOneRep;
 
     for (int i = 0; i < loop; i++) {
-        Mul(bmm2ResPreUb[i * numOneRep], softmaxExpUb, bmm2ResPreUb[i * numOneRep], numOneRep, singleProcessSOuterSize,
-            repeatParams);
+        Mul(bmm2ResPreUb[i * numOneRep], softmaxExpUb, bmm2ResPreUb[i * numOneRep],
+            numOneRep, singleProcessSOuterSize, repeatParams);
     }
     if (remain) {
-        Mul(bmm2ResPreUb[loop * numOneRep], softmaxExpUb, bmm2ResPreUb[loop * numOneRep], remain,
-            singleProcessSOuterSize, repeatParams);
+        Mul(bmm2ResPreUb[loop * numOneRep], softmaxExpUb, bmm2ResPreUb[loop * numOneRep],
+            remain, singleProcessSOuterSize, repeatParams);
     }
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::ComputePseShiftOffset(
     int sInnerOffsetDataSize) {
     if (!usePseShift) {
@@ -845,7 +888,7 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::ComputeP
     pseShiftOffset = pseShiftCoreOffset + (uint64_t)sInnerOffsetDataSize;
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::ComputeAttenMaskOffset(
     int sInnerOffsetDataSize) {
     int32_t delta;
@@ -858,35 +901,37 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::ComputeA
         }
 
         if (delta < 0) {
-            attenMaskOffset =
-                ((int32_t)singleProcessSOuterSizeWhole + delta) > 0 ? (-delta) : singleProcessSOuterSizeWhole;
-        } else {
-            attenMaskOffset = (((int32_t)singleProcessSInnerSize - delta) > 0 ? delta : singleProcessSInnerSize) *
-                attentionMaskStride;
+            attenMaskOffset = (
+                (int32_t)singleProcessSOuterSizeWhole + delta) > 0 ? (-delta) : singleProcessSOuterSizeWhole;
+        }
+        else {
+            attenMaskOffset = (
+                ((int32_t)singleProcessSInnerSize - delta) > 0 ? delta : singleProcessSInnerSize) * attentionMaskStride;
         }
     } else {
         attenMaskOffset = attenMaskCoreOffset + (uint64_t)sInnerOffsetDataSize;
     }
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::ComputeAttenMaskOffsetPre(
     int sInnerOffsetDataSize) {
     if (attentionMaskType == 0 || attentionMaskType == 1) {
         return;
     }
     int32_t delta;
-    delta = sOuterOffset - sInnerOffsetDataSize - preTokensPerBatch - 1;
+    delta = sOuterOffset - sInnerOffsetDataSize - preTokensPerBatch -1;
     if (delta < 0) {
-        attenMaskOffsetPre =
-            ((int32_t)singleProcessSOuterSizeWhole + delta) > 0 ? (-delta) : singleProcessSOuterSizeWhole;
-    } else {
-        attenMaskOffsetPre =
-            (((int32_t)singleProcessSInnerSize - delta) > 0 ? delta : singleProcessSInnerSize) * attentionMaskStride;
+        attenMaskOffsetPre = (
+            (int32_t)singleProcessSOuterSizeWhole + delta) > 0 ? (-delta) : singleProcessSOuterSizeWhole;
+    }
+    else {
+        attenMaskOffsetPre = (
+            ((int32_t)singleProcessSInnerSize - delta) > 0 ? delta : singleProcessSInnerSize) * attentionMaskStride;
     }
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::ComputeOffset(uint32_t sInnerLoopIdx) {
     int sInnerOffsetDataSize = sInnerLoopIdx * singleProcessSInnerSize;
     ComputePseShiftOffset(sInnerOffsetDataSize);
@@ -897,7 +942,7 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::ComputeO
     tensorBOffset = tensorBCoreOffset + sInnerOffsetDataSize * MultiHeadKV;
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::ComputeOffsetWithBNSD(uint32_t sInnerLoopIdx) {
     int sInnerOffsetDataSize = sInnerLoopIdx * singleProcessSInnerSize;
     ComputePseShiftOffset(sInnerOffsetDataSize);
@@ -906,9 +951,9 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::ComputeO
     valueOffset = valueCoreOffset + sInnerOffsetDataSize * tilingData->promptAttentionBaseParams.headSize;
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::DataCopyTransposeOut(
-    LocalTensor<mmOutputType> &bmm2ResUb) {
+    LocalTensor<mmOutputType>& bmm2ResUb) {
     TransposeParams transposeParams;
     transposeParams.bIndex = 0;
     transposeParams.nIndex = batchNOffset;
@@ -932,7 +977,7 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::DataCopy
         SetFlag<HardEvent::V_MTE3>(enQueEvtID);
         WaitFlag<HardEvent::V_MTE3>(enQueEvtID);
         if (tilingData->promptAttentionBaseParams.headSize == tilingData->promptAttentionBaseParams.alignedHeadSize) {
-            DataCopyTranspose2<O>(attentionOutGm,
+            DataCopyTranspose2<O> (attentionOutGm,
                 bmm2ResUb[nextTokensOffset * tilingData->promptAttentionBaseParams.headSize],
                 CopyTransposeType::TRANSPOSE_ND_UB_GM, transposeParams, transposeTilingData22, multiSeqOffset);
         } else {
@@ -948,9 +993,9 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::DataCopy
                 for (int j = 0; j < transposeTilingData22.srcShapeN; j++) {
                     for (int k = nextTokensOffset; k < transposeTilingData22.srcShapeS; k++) {
                         DataCopyPad(attentionOutGm[startAddr + i * (transposeTilingData22.shapeSHValue) +
-                                        j * transposeTilingData22.dstShapeHN + k * transposeTilingData22.dstShapeH],
+                            j * transposeTilingData22.dstShapeHN + k * transposeTilingData22.dstShapeH],
                             bmm2ResUb[k * tilingData->promptAttentionBaseParams.alignedHeadSize +
-                                j * transposeTilingData22.shapeNsValue + i * transposeTilingData22.shapeNsnValue],
+                            j * transposeTilingData22.shapeNsValue + i * transposeTilingData22.shapeNsnValue],
                             intriParams);
                     }
                 }
@@ -960,17 +1005,18 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::DataCopy
 #if (__CCE_AICORE__ > 200)
     // Execute the code when core version is greater than 200.
     if constexpr (IsSameType<O, bfloat16_t>::value ||
-        (IsSameType<O, half>::value && IsSameType<mmOutputType, float>::value)) {
+                  (IsSameType<O, half>::value &&
+                  IsSameType<mmOutputType, float>::value)) {
         LocalTensor<O> tmpBmm2ResCastTensor; // 原地Cast
         tmpBmm2ResCastTensor = bmm2ResUb.template ReinterpretCast<O>();
-        tmpBmm2ResCastTensor.SetSize(bmm2ResUb.GetSize()); // Set the size of the converted
+        tmpBmm2ResCastTensor.SetSize(bmm2ResUb.GetSize());  // Set the size of the converted
         pipe_barrier(PIPE_V);
         if (tilingData->promptAttentionBaseParams.headSize == tilingData->promptAttentionBaseParams.alignedHeadSize) {
             Cast(tmpBmm2ResCastTensor, bmm2ResUb, RoundMode::CAST_ROUND, bmm2ResUb.GetSize());
             event_t enQueEvtID = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE3));
             SetFlag<HardEvent::V_MTE3>(enQueEvtID);
             WaitFlag<HardEvent::V_MTE3>(enQueEvtID);
-            DataCopyTranspose2<O>(attentionOutGm,
+            DataCopyTranspose2<O> (attentionOutGm,
                 tmpBmm2ResCastTensor[nextTokensOffset * tilingData->promptAttentionBaseParams.headSize],
                 CopyTransposeType::TRANSPOSE_ND_UB_GM, transposeParams, transposeTilingData22, multiSeqOffset);
         } else {
@@ -987,12 +1033,12 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::DataCopy
             int32_t remain = tilingData->promptAttentionBaseParams.headSize % REPEAT_DATA_NUM;
             UnaryRepeatParams repeatParams;
             repeatParams.srcBlkStride = 1;
-            repeatParams.srcRepStride = (tilingData->promptAttentionBaseParams.headSize * 4 + 32 - 1) / 32;
+            repeatParams.srcRepStride = (tilingData->promptAttentionBaseParams.headSize * 4 + 32 -1) / 32;
             repeatParams.dstBlkStride = 1;
-            repeatParams.dstRepStride = (tilingData->promptAttentionBaseParams.headSize * 2 + 32 - 1) / 32;
+            repeatParams.dstRepStride = (tilingData->promptAttentionBaseParams.headSize * 2 + 32 -1) / 32;
             for (int i = 0; i < loop; i++) {
-                Cast(tmpBmm2ResCastTensor[i * REPEAT_DATA_NUM], bmm2ResUb[i * REPEAT_DATA_NUM], RoundMode::CAST_ROUND,
-                    REPEAT_DATA_NUM, this->singleProcessSOuterSize, repeatParams);
+                Cast(tmpBmm2ResCastTensor[i * REPEAT_DATA_NUM], bmm2ResUb[i * REPEAT_DATA_NUM],
+                    RoundMode::CAST_ROUND, REPEAT_DATA_NUM, this->singleProcessSOuterSize, repeatParams);
             }
             if (remain) {
                 Cast(tmpBmm2ResCastTensor[loop * REPEAT_DATA_NUM], bmm2ResUb[loop * REPEAT_DATA_NUM],
@@ -1008,9 +1054,9 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::DataCopy
                 for (int j = 0; j < transposeTilingData22.srcShapeN; j++) {
                     for (int k = nextTokensOffset; k < transposeTilingData22.srcShapeS; k++) {
                         DataCopyPad(attentionOutGm[startAddr + i * (transposeTilingData22.shapeSHValue) +
-                                        j * transposeTilingData22.dstShapeHN + k * transposeTilingData22.dstShapeH],
+                            j * transposeTilingData22.dstShapeHN + k * transposeTilingData22.dstShapeH],
                             tmpBmm2ResCastTensor[k * tilingData->promptAttentionBaseParams.alignedHeadSize +
-                                j * transposeTilingData22.shapeNsValue + i * transposeTilingData22.shapeNsnValue],
+                            j * transposeTilingData22.shapeNsValue + i * transposeTilingData22.shapeNsnValue],
                             intriParams);
                     }
                 }
@@ -1027,17 +1073,17 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::DataCopy
         event_t enQueEvtID = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE3));
         SetFlag<HardEvent::V_MTE3>(enQueEvtID);
         WaitFlag<HardEvent::V_MTE3>(enQueEvtID);
-        DataCopyTranspose2<O>(attentionOutGm,
-            outputQuantRes[nextTokensOffset * tilingData->promptAttentionBaseParams.headSize],
+        DataCopyTranspose2<O> (
+            attentionOutGm, outputQuantRes[nextTokensOffset * tilingData->promptAttentionBaseParams.headSize],
             CopyTransposeType::TRANSPOSE_ND_UB_GM, transposeParams, transposeTilingData22, multiSeqOffset);
     }
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::DataCopyOutWithBNSD(
-    LocalTensor<mmOutputType> &bmm2ResUb) {
-    uint32_t copySize =
-        (this->singleProcessSOuterSize - nextTokensOffset) * tilingData->promptAttentionBaseParams.headSize;
+    LocalTensor<mmOutputType>& bmm2ResUb) {
+    uint32_t copySize = (this->singleProcessSOuterSize - nextTokensOffset) *
+        tilingData->promptAttentionBaseParams.headSize;
     if (preTokensPerBatch < 0) {
         int32_t preTokenLength = actualSeqLengthKVPerBatch + preTokensPerBatch;
         if (sOuterOffset < preTokenLength && (sOuterOffset + this->singleProcessSOuterSize) > preTokenLength) {
@@ -1059,7 +1105,7 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::DataCopy
         WaitFlag<HardEvent::V_MTE3>(enQueEvtID);
         if (tilingData->promptAttentionBaseParams.headSize == tilingData->promptAttentionBaseParams.alignedHeadSize) {
             DataCopy(attentionOutGm[attentionOutOffset],
-                bmm2ResUb[nextTokensOffset * tilingData->promptAttentionBaseParams.headSize], dataCopyParams);
+                     bmm2ResUb[nextTokensOffset * tilingData->promptAttentionBaseParams.headSize], dataCopyParams);
         } else {
             dataCopyParams.blockCount = this->singleProcessSOuterSize - preTokensOffset;
             // This should be unaligned
@@ -1067,12 +1113,13 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::DataCopy
             dataCopyParams.srcStride = 0;
             dataCopyParams.dstStride = 0;
             DataCopyPad(attentionOutGm[attentionOutOffset],
-                bmm2ResUb[nextTokensOffset * tilingData->promptAttentionBaseParams.headSize], dataCopyParams);
+                        bmm2ResUb[nextTokensOffset * tilingData->promptAttentionBaseParams.headSize], dataCopyParams);
         }
     }
 #if (__CCE_AICORE__ > 200)
     if constexpr (IsSameType<O, bfloat16_t>::value ||
-        (IsSameType<O, half>::value && IsSameType<mmOutputType, float>::value)) {
+                  (IsSameType<O, half>::value &&
+                  IsSameType<mmOutputType, float>::value)) {
         LocalTensor<O> tmpBmm2ResCastTensor; // The same ub buffer is used before and after the cast.
         tmpBmm2ResCastTensor = bmm2ResUb.template ReinterpretCast<O>();
         tmpBmm2ResCastTensor.SetSize(bmm2ResUb.GetSize());
@@ -1083,8 +1130,8 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::DataCopy
             SetFlag<HardEvent::V_MTE3>(enQueEvtID);
             WaitFlag<HardEvent::V_MTE3>(enQueEvtID);
             DataCopy(attentionOutGm[attentionOutOffset],
-                tmpBmm2ResCastTensor[nextTokensOffset * tilingData->promptAttentionBaseParams.headSize],
-                dataCopyParams);
+                    tmpBmm2ResCastTensor[nextTokensOffset * tilingData->promptAttentionBaseParams.headSize],
+                        dataCopyParams);
         } else {
             int32_t headLoop = tilingData->promptAttentionBaseParams.alignedHeadSize / outputTypeByteNum;
             constexpr int32_t REPEAT_DATA_NUM = 256 / sizeof(outputTypeByteNum);
@@ -1092,12 +1139,12 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::DataCopy
             int32_t remain = tilingData->promptAttentionBaseParams.headSize % REPEAT_DATA_NUM;
             UnaryRepeatParams repeatParams;
             repeatParams.srcBlkStride = 1;
-            repeatParams.srcRepStride = (tilingData->promptAttentionBaseParams.headSize * 4 + 32 - 1) / 32;
+            repeatParams.srcRepStride = (tilingData->promptAttentionBaseParams.headSize * 4 + 32 -1) / 32;
             repeatParams.dstBlkStride = 1;
-            repeatParams.dstRepStride = (tilingData->promptAttentionBaseParams.headSize * 2 + 32 - 1) / 32;
+            repeatParams.dstRepStride = (tilingData->promptAttentionBaseParams.headSize * 2 + 32 -1) / 32;
             for (int i = 0; i < loop; i++) {
-                Cast(tmpBmm2ResCastTensor[i * REPEAT_DATA_NUM], bmm2ResUb[i * REPEAT_DATA_NUM], RoundMode::CAST_ROUND,
-                    REPEAT_DATA_NUM, this->singleProcessSOuterSize, repeatParams);
+                Cast(tmpBmm2ResCastTensor[i * REPEAT_DATA_NUM], bmm2ResUb[i * REPEAT_DATA_NUM],
+                    RoundMode::CAST_ROUND, REPEAT_DATA_NUM, this->singleProcessSOuterSize, repeatParams);
             }
             if (remain) {
                 Cast(tmpBmm2ResCastTensor[loop * REPEAT_DATA_NUM], bmm2ResUb[loop * REPEAT_DATA_NUM],
@@ -1113,8 +1160,8 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::DataCopy
             dataCopyParams.srcStride = 0;
             dataCopyParams.dstStride = 0;
             DataCopyPad(attentionOutGm[attentionOutOffset],
-                tmpBmm2ResCastTensor[nextTokensOffset * tilingData->promptAttentionBaseParams.headSize],
-                dataCopyParams);
+                        tmpBmm2ResCastTensor[nextTokensOffset * tilingData->promptAttentionBaseParams.headSize],
+                        dataCopyParams);
         }
     }
 #endif
@@ -1128,11 +1175,11 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::DataCopy
         SetFlag<HardEvent::V_MTE3>(enQueEvtID);
         WaitFlag<HardEvent::V_MTE3>(enQueEvtID);
         DataCopy(attentionOutGm[attentionOutOffset],
-            outputQuantRes[nextTokensOffset * tilingData->promptAttentionBaseParams.headSize], dataCopyParams);
+                 outputQuantRes[nextTokensOffset * tilingData->promptAttentionBaseParams.headSize], dataCopyParams);
     }
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::CalPseShiftOffset(int sIdx) {
     if (!usePseShift) {
         return;
@@ -1147,17 +1194,17 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::CalPseSh
         pseShiftBatchOffset = (uint64_t)sIdx * pseShiftN * pseShiftS1 * pseShiftS2;
     }
 
-    pseShiftCoreOffset =
-        pseShiftBatchOffset + (uint64_t)batchNOffset * pseShiftS1 * pseShiftS2 + (uint64_t)sOuterOffset * pseShiftS2;
+    pseShiftCoreOffset = pseShiftBatchOffset + (uint64_t)batchNOffset * pseShiftS1 * pseShiftS2 +
+                         (uint64_t)sOuterOffset * pseShiftS2;
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::LoopSOuterOffsetInit(
     uint32_t seqListOffsetSize, int sIdx) {
     uint64_t attenMaskBatchOffset = 0;
     if (attenMaskBatch != 1) {
         attenMaskBatchOffset = (uint64_t)sIdx * (uint64_t)tilingData->promptAttentionBaseParams.maskKVsSize *
-            (uint64_t)tilingData->promptAttentionBaseParams.maskQsSize;
+                               (uint64_t)tilingData->promptAttentionBaseParams.maskQsSize;
     }
 
     // mask offset of core
@@ -1166,44 +1213,44 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::LoopSOut
 
     CalPseShiftOffset(sIdx);
 
-    tensorACoreOffset =
-        seqListOffsetSize + sOuterOffset * MultiHeadQ + batchNOffset * tilingData->promptAttentionBaseParams.headSize;
+    tensorACoreOffset = seqListOffsetSize +
+                        sOuterOffset * MultiHeadQ +
+                        batchNOffset * tilingData->promptAttentionBaseParams.headSize;
 
     uint32_t seqInnerOffsetSize =
-        tilingData->promptAttentionBaseParams.seqSize == tilingData->promptAttentionBaseParams.seqInnerSize
-        ? seqListOffsetSize / headNumRatio
-        : sIdx * tilingData->promptAttentionBaseParams.seqInnerSize * MultiHeadKV;
-    tensorBCoreOffset =
-        seqInnerOffsetSize + batchNOffset / headNumRatio * tilingData->promptAttentionBaseParams.headSize;
+        tilingData->promptAttentionBaseParams.seqSize == tilingData->promptAttentionBaseParams.seqInnerSize ?
+        seqListOffsetSize / headNumRatio : sIdx * tilingData->promptAttentionBaseParams.seqInnerSize * MultiHeadKV;
+    tensorBCoreOffset = seqInnerOffsetSize +
+                        batchNOffset / headNumRatio * tilingData->promptAttentionBaseParams.headSize;
 
     valueCoreOffset = tensorBCoreOffset;
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::LoopSOuterOffsetInitWithBNSD(
     uint32_t seqListOffsetSize, int sIdx) {
     uint64_t attenMaskBatchOffset = 0;
     if (attenMaskBatch != 1) {
         attenMaskBatchOffset = (uint64_t)sIdx * (uint64_t)tilingData->promptAttentionBaseParams.maskKVsSize *
-            (uint64_t)tilingData->promptAttentionBaseParams.maskQsSize;
+                               (uint64_t)tilingData->promptAttentionBaseParams.maskQsSize;
     }
     attenMaskCoreOffset =
         (uint64_t)sOuterOffset * (uint64_t)tilingData->promptAttentionBaseParams.maskKVsSize + attenMaskBatchOffset;
 
-    uint32_t head_stride_q =
-        tilingData->promptAttentionBaseParams.headSize * tilingData->promptAttentionBaseParams.seqSize;
-    uint32_t head_stride_kv =
-        tilingData->promptAttentionBaseParams.headSize * tilingData->promptAttentionBaseParams.seqInnerSize;
+    uint32_t head_stride_q = tilingData->promptAttentionBaseParams.headSize *
+                             tilingData->promptAttentionBaseParams.seqSize;
+    uint32_t head_stride_kv = tilingData->promptAttentionBaseParams.headSize *
+                              tilingData->promptAttentionBaseParams.seqInnerSize;
     uint32_t seq_stride = tilingData->promptAttentionBaseParams.headSize;
 
     CalPseShiftOffset(sIdx);
 
-    tensorACoreOffset = seqListOffsetSize + batchNOffset * head_stride_q + sOuterOffset * seq_stride;
+    tensorACoreOffset = seqListOffsetSize + batchNOffset * head_stride_q + sOuterOffset*seq_stride;
 
     uint32_t seqInnerOffsetSize =
-        tilingData->promptAttentionBaseParams.seqSize == tilingData->promptAttentionBaseParams.seqInnerSize
-        ? seqListOffsetSize / headNumRatio
-        : sIdx * head_stride_kv * tilingData->promptAttentionBaseParams.headNumSize / headNumRatio;
+        tilingData->promptAttentionBaseParams.seqSize == tilingData->promptAttentionBaseParams.seqInnerSize ?
+        seqListOffsetSize / headNumRatio : sIdx * head_stride_kv *
+        tilingData->promptAttentionBaseParams.headNumSize / headNumRatio;
 
     tensorBCoreOffset = seqInnerOffsetSize + batchNOffset / headNumRatio * head_stride_kv;
 
@@ -1213,37 +1260,35 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::LoopSOut
         seqListOffsetSize + batchNOffset * head_stride_q + (sOuterOffset + nextTokensOffset) * seq_stride;
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O,  Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::Bmm2UpdateAdd(
-    LocalTensor<mmOutputType> &bmm2ResUb) {
+    LocalTensor<mmOutputType>& bmm2ResUb) {
     LocalTensor<mmOutputType> bmm2ResPreUb = tempBmm2Ub.Get<mmOutputType>(bmm2ResUbSize);
     Add(bmm2ResPreUb, bmm2ResUb, bmm2ResPreUb, bmm2ResUbSize);
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::GetSingleCoreParam(int sIdx) {
-    actualSeqLengthPerBatch =
-        isActualLenDimsNull ? tilingData->promptAttentionBaseParams.seqSize : actualSeqLengthsGm.GetValue(sIdx);
-    actualSeqLengthKVPerBatch = isActualLenDimsKVNull ? tilingData->promptAttentionBaseParams.seqInnerSize
-                                                      : actualSeqLengthsKVGm.GetValue(sIdx);
+    actualSeqLengthPerBatch = isActualLenDimsNull ? tilingData->promptAttentionBaseParams.seqSize :
+                              actualSeqLengthsGm.GetValue(sIdx);
+    actualSeqLengthKVPerBatch = isActualLenDimsKVNull ? tilingData->promptAttentionBaseParams.seqInnerSize :
+                                actualSeqLengthsKVGm.GetValue(sIdx);
 
     singleProcessSInnerSize = tilingData->promptAttentionSingleCoreParams.singleProcessSInnerSize;
     singleProcessSOuterSizeWhole = tilingData->promptAttentionSingleCoreParams.singleProcessSOuterSize;
     MultiHeadQ = tilingData->promptAttentionBaseParams.headSize * tilingData->promptAttentionBaseParams.headNumSize;
     MultiHeadKV = MultiHeadQ / headNumRatio;
 
-    actualSeqLengthPerBatch =
-        ((int64_t)actualSeqLengthPerBatch > (int64_t)tilingData->promptAttentionBaseParams.seqInnerSize +
-                (int64_t)tilingData->promptAttentionBaseParams.preTokens) &&
-            (attentionMaskType != 4)
-        ? tilingData->promptAttentionBaseParams.seqInnerSize + tilingData->promptAttentionBaseParams.preTokens
-        : actualSeqLengthPerBatch;
-    singleProcessSOuterSizeTail = (actualSeqLengthPerBatch % singleProcessSOuterSizeWhole != 0)
-        ? actualSeqLengthPerBatch % singleProcessSOuterSizeWhole
-        : singleProcessSOuterSizeWhole;
-    unalignSInner = (actualSeqLengthKVPerBatch % singleProcessSInnerSize != 0)
-        ? actualSeqLengthKVPerBatch % singleProcessSInnerSize
-        : singleProcessSInnerSize;
+    actualSeqLengthPerBatch = ((int64_t)actualSeqLengthPerBatch >
+                            (int64_t)tilingData->promptAttentionBaseParams.seqInnerSize +
+                            (int64_t)tilingData->promptAttentionBaseParams.preTokens) &&
+                            (attentionMaskType != 4) ? tilingData->promptAttentionBaseParams.seqInnerSize +
+                            tilingData->promptAttentionBaseParams.preTokens :
+                            actualSeqLengthPerBatch;
+    singleProcessSOuterSizeTail = (actualSeqLengthPerBatch % singleProcessSOuterSizeWhole != 0) ?
+        actualSeqLengthPerBatch % singleProcessSOuterSizeWhole : singleProcessSOuterSizeWhole;
+    unalignSInner = (actualSeqLengthKVPerBatch % singleProcessSInnerSize != 0) ?
+                     actualSeqLengthKVPerBatch % singleProcessSInnerSize : singleProcessSInnerSize;
     maxInnerLoopTimes = (actualSeqLengthKVPerBatch + singleProcessSInnerSize - 1) / singleProcessSInnerSize;
     singleProcessSInnerSizeTail = (unalignSInner + typeByteNum - 1) / typeByteNum * typeByteNum;
     maskInnerTailAlign = (unalignSInner + maskTypeByteNum - 1) / maskTypeByteNum * maskTypeByteNum;
@@ -1258,24 +1303,24 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::GetSingl
     softmaxFlashTilingData = tilingData->softmaxFlashTilingDataRect;
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
-__aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::GetSparseParam(
-    int32_t *preTokens, int32_t *nextTokens) {
-    if (attentionMaskType == 3) { // SPARSE_MODE_RIGHT_DOWN : 3
+template<typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+__aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::GetSparseParam(int32_t* preTokens,
+                                                                                 int32_t* nextTokens) {
+    if (attentionMaskType == 3) {  // SPARSE_MODE_RIGHT_DOWN : 3
         *preTokens = 214748647;
         *nextTokens = actualSeqLengthKVPerBatch - actualSeqLengthPerBatch;
     }
     if (attentionMaskType == 4) {
-        *preTokens = (int32_t)tilingData->promptAttentionBaseParams.preTokens - actualSeqLengthKVPerBatch +
-            actualSeqLengthPerBatch;
-        *nextTokens = (int32_t)tilingData->promptAttentionBaseParams.nextTokens + actualSeqLengthKVPerBatch -
-            actualSeqLengthPerBatch;
+        *preTokens = (int32_t)tilingData->promptAttentionBaseParams.preTokens - actualSeqLengthKVPerBatch
+                    + actualSeqLengthPerBatch;
+        *nextTokens = (int32_t)tilingData->promptAttentionBaseParams.nextTokens + actualSeqLengthKVPerBatch
+                    - actualSeqLengthPerBatch;
     }
     preTokensPerBatch = *preTokens;
     nextTokensPerBatch = *nextTokens;
 }
 
-template <typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
+template<typename T, typename U, CubeFormat FORMAT, typename O, Mode M>
 __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::ComputeTokenOffset() {
     if (sOuterOffset < nextTokensPerBatch * (-1) &&
         (sOuterOffset + this->singleProcessSOuterSize) > nextTokensPerBatch * (-1)) {
@@ -1285,4 +1330,4 @@ __aicore__ inline void AdaBlockSparseAttentionBase<T, U, FORMAT, O, M>::ComputeT
     }
 }
 
-#endif // ADA_BLOCK_SPARSE_ATTENTION_BASE_H
+#endif  // ADA_BLOCK_SPARSE_ATTENTION_BASE_H

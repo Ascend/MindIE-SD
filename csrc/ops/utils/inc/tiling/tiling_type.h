@@ -1,13 +1,11 @@
 /**
- * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
- * MindIE is licensed under Mulan PSL v2.
- * You can use this software according to the terms and conditions of the Mulan PSL v2.
- * You may obtain a copy of Mulan PSL v2 at:
- *          http://license.coscl.org.cn/MulanPSL2
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PSL v2 for more details.
+ * Copyright (c) 2023-2024 Huawei Technologies Co., Ltd.
+ * This file is a part of the CANN Open Software.
+ * Licensed under CANN Open Software License Agreement Version 1.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
  */
 
 /*!
@@ -43,20 +41,47 @@ enum class PerformanceOrientedEnum {
     BIG_DOUBLE_BUFFER = 2,
 };
 
-enum class MatmulConfig { NULL_CONFIG = 0, NORMAL_CONFIG = 1, MDL_CONFIG = 2 };
+enum class MatmulConfig {
+    NULL_CONFIG = 0,
+    NORMAL_CONFIG = 1,
+    MDL_CONFIG = 2
+};
 
-enum class PseConfig { NO_PSE = 0, EXIST_PSE = 1 };
+enum class PseConfig {
+    NO_PSE = 0,
+    EXIST_PSE = 1
+};
 
-enum class AttenMaskConfig { NO_ATTEN_MASK = 0, EXIST_ATTEN_MASK = 1 };
+enum class AttenMaskConfig {
+    NO_ATTEN_MASK = 0,
+    EXIST_ATTEN_MASK = 1
+};
 
-enum class DropOutConfig { NO_DROP_OUT = 0, EXIST_DROP_OUT = 1 };
+enum class DropOutConfig {
+    NO_DROP_OUT = 0,
+    EXIST_DROP_OUT = 1
+};
 
-enum class CubeFormatEnum { ND = 0, NZ = 1 };
-enum class LayoutEnum { BSND = 0, SBND = 1, BNSD = 2, TND = 3 };
+enum class CubeFormatEnum {
+    ND = 0,
+    NZ = 1
+};
+enum class LayoutEnum {
+    BSND = 0,
+    SBND = 1,
+    BNSD = 2,
+    TND = 3
+};
 
-enum class CubeInputSourceEnum { GM = 0, L1 = 1 };
+enum class CubeInputSourceEnum {
+    GM = 0,
+    L1 = 1
+};
 
-enum class OptionEnum { DISABLE = 0, ENABLE = 1 };
+enum class OptionEnum {
+    DISABLE = 0,
+    ENABLE = 1
+};
 
 enum class SparseEnum {
     ALL = 0,
@@ -71,10 +96,14 @@ enum class SparseEnum {
     BAND_LEFT_UP_CAUSAL = 9
 };
 
-constexpr uint64_t RecursiveSum() { return 0; }
+constexpr uint64_t RecursiveSum()
+{
+    return 0;
+}
 
-template <typename T, typename... Args> constexpr uint64_t RecursiveSum(T templateId, Args... templateIds) {
-    return static_cast<uint64_t>(templateId) + 10 * RecursiveSum(templateIds...); // 10 is value
+template <typename T, typename... Args> constexpr uint64_t RecursiveSum(T templateId, Args... templateIds)
+{
+    return static_cast<uint64_t>(templateId) + 10 * RecursiveSum(templateIds...);  // 10 is value
 }
 
 // TilingKey 的生成规则：
@@ -92,15 +121,16 @@ template <typename T, typename... Args> constexpr uint64_t RecursiveSum(T templa
 //                                     SupportedDtype::FLOAT32, InputLayout::BSH, SparseCapability::SUPPORT_ALL)
 
 constexpr uint64_t TILINGKEYOFFSET = uint64_t(10000000000000000000UL); // 10^19
-template <typename... Args> constexpr uint64_t GET_TILINGKEY(Args... templateIds) {
+template <typename... Args> constexpr uint64_t GET_TILINGKEY(Args... templateIds)
+{
     return TILINGKEYOFFSET + RecursiveSum(templateIds...);
 }
 
 // usage: get tilingKey from inputed types
 //     uint64_t tilingKey = TILINGKEY(S2, S1, N2, FLOAT32, BSND, ALL)
 
-#define TILINGKEY(ub2, ub1, block, dtype, layout, sparse) \
-    (GET_TILINGKEY( \
-        AxisEnum::ub2, AxisEnum::ub1, AxisEnum::block, DtypeEnum::dtype, LayoutEnum::layout, SparseEnum::sparse))
+#define TILINGKEY(ub2, ub1, block, dtype, layout, sparse)                                                              \
+    (GET_TILINGKEY(AxisEnum::ub2, AxisEnum::ub1, AxisEnum::block, DtypeEnum::dtype, LayoutEnum::layout,                \
+                   SparseEnum::sparse))
 
 } // namespace optiling

@@ -1,13 +1,11 @@
 /**
- * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
- * MindIE is licensed under Mulan PSL v2.
- * You can use this software according to the terms and conditions of the Mulan PSL v2.
- * You may obtain a copy of Mulan PSL v2 at:
- *          http://license.coscl.org.cn/MulanPSL2
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PSL v2 for more details.
+ * Copyright (c) 2024 Huawei Technologies Co., Ltd.
+ * This file is a part of the CANN Open Software.
+ * Licensed under CANN Open Software License Agreement Version 1.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
  */
 
 /*!
@@ -57,7 +55,9 @@ struct DropMaskInfo {
     bool boolMode;
 };
 
-template <bool hasDrop> __aicore__ inline int64_t ComputeDropOffset(DropMaskInfo &dropMaskInfo) {
+template <bool hasDrop>
+__aicore__ inline int64_t ComputeDropOffset(DropMaskInfo &dropMaskInfo)
+{
     if constexpr (hasDrop == true) {
         // boidx * n2 * g* s1 * s2
         int64_t bOffset = dropMaskInfo.bSSOffset * dropMaskInfo.n2G;
@@ -67,8 +67,7 @@ template <bool hasDrop> __aicore__ inline int64_t ComputeDropOffset(DropMaskInfo
         int64_t gOffset = dropMaskInfo.gOutIdx * dropMaskInfo.s1Size * dropMaskInfo.s2Size;
         // s1oIdx * s1BaseSize * s2Size + s1innerindex * vec1S1BaseSize * s2Size
         int64_t s1Offset = (dropMaskInfo.s1OutIdx * dropMaskInfo.s1BaseSize + dropMaskInfo.vecCoreOffset +
-                               dropMaskInfo.s1InnerIdx * dropMaskInfo.splitS1BaseSize) *
-            dropMaskInfo.s2Size;
+                            dropMaskInfo.s1InnerIdx * dropMaskInfo.splitS1BaseSize) * dropMaskInfo.s2Size;
         // s2StartIdx + s2index * s2BaseNratioSize
         int64_t s2Offset = dropMaskInfo.s2StartIdx + dropMaskInfo.s2Idx * dropMaskInfo.s2BaseNratioSize;
         return bOffset + n2Offset + gOffset + s1Offset + s2Offset;
@@ -78,24 +77,26 @@ template <bool hasDrop> __aicore__ inline int64_t ComputeDropOffset(DropMaskInfo
 }
 
 template <bool hasDrop>
-__aicore__ inline void CopyInDropMask(LocalTensor<uint8_t> &dstTensor, GlobalTensor<uint8_t> &srcBoolTensor,
-    GlobalTensor<uint8_t> &srcByteTensor, DropMaskInfo &dropMaskInfo, int64_t alignedSize = blockBytes) {
+__aicore__ inline void CopyInDropMask(LocalTensor<uint8_t>&dstTensor, GlobalTensor<uint8_t>& srcBoolTensor,
+    GlobalTensor<uint8_t>& srcByteTensor, DropMaskInfo &dropMaskInfo, int64_t alignedSize = blockBytes)
+{
     if constexpr (hasDrop == true) {
         int64_t dropMaskOffset = ComputeDropOffset<hasDrop>(dropMaskInfo);
         if (unlikely(dropMaskInfo.boolMode)) {
-            BoolCopyIn(dstTensor, srcBoolTensor, dropMaskOffset, dropMaskInfo.s1CopySize, dropMaskInfo.s2CopySize,
-                dropMaskInfo.s2TotalSize, alignedSize);
+            BoolCopyIn(dstTensor, srcBoolTensor, dropMaskOffset,
+                       dropMaskInfo.s1CopySize, dropMaskInfo.s2CopySize, dropMaskInfo.s2TotalSize, alignedSize);
         } else {
-            Bit2Int8CopyIn(dstTensor, srcByteTensor, dropMaskOffset, 1, dropMaskInfo.s1CopySize,
-                dropMaskInfo.s2CopySize, dropMaskInfo.s2TotalSize, alignedSize);
+            Bit2Int8CopyIn(dstTensor, srcByteTensor, dropMaskOffset, 1,
+                           dropMaskInfo.s1CopySize, dropMaskInfo.s2CopySize, dropMaskInfo.s2TotalSize, alignedSize);
         }
         return;
     }
 }
 
 template <typename T, bool hasDrop>
-__aicore__ inline void ComputeDropMask(LocalTensor<T> &dstTensor, LocalTensor<T> &srcTensor,
-    LocalTensor<uint8_t> &dropoutBuffer, LocalTensor<uint8_t> &tmpDropBuffer, DropMaskInfo &dropMaskInfo) {
+__aicore__ inline void ComputeDropMask(LocalTensor<T>& dstTensor, LocalTensor<T>& srcTensor,
+    LocalTensor<uint8_t>& dropoutBuffer, LocalTensor<uint8_t>& tmpDropBuffer, DropMaskInfo &dropMaskInfo)
+{
     if constexpr (hasDrop == true) {
         DropOutShapeInfo dropOutShapeInfo;
         dropOutShapeInfo.firstAxis = dropMaskInfo.firstAxis;
@@ -109,8 +110,8 @@ __aicore__ inline void ComputeDropMask(LocalTensor<T> &dstTensor, LocalTensor<T>
             if (likely(dropMaskInfo.lstAxis / byteBitRatio % blockBytes == 0)) {
                 DropOut(dstTensor, srcTensor, dropoutBuffer, tmpDropBuffer, dropMaskInfo.keepProb, dropOutShapeInfo);
             } else {
-                DropOut<T, false, DROPOUT_MODE_BIT_MISALIGN>(
-                    dstTensor, srcTensor, dropoutBuffer, tmpDropBuffer, dropMaskInfo.keepProb, dropOutShapeInfo);
+                DropOut<T, false, DROPOUT_MODE_BIT_MISALIGN>(dstTensor, srcTensor, dropoutBuffer, tmpDropBuffer,
+                                                             dropMaskInfo.keepProb, dropOutShapeInfo);
             }
         }
         return;

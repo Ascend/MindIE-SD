@@ -42,12 +42,10 @@ developer_guide/benchmark_and_profiling
 ```
 
 ```{toctree}
-:maxdepth: 2
+:maxdepth: 1
 :caption: 附录
 
 features/supported_matrix
-appendix/log
-appendix/error_code
 ```
 
 ```{toctree}

@@ -16,21 +16,6 @@ import torch
 from . import register_ops
 from ..utils import ParametersInvalid
 
-FREQUENCY_REGULATOR_MAX_FREQ = 0xFFFFFFFF
-
-
-def frequency_regulator(freq: int) -> torch.Tensor:
-    if isinstance(freq, bool) or not isinstance(freq, int):
-        raise ParametersInvalid(f"freq must be an int, but got {type(freq).__name__}")
-    if freq < 0 or freq > FREQUENCY_REGULATOR_MAX_FREQ:
-        raise ParametersInvalid(f"freq must be in range [0, {FREQUENCY_REGULATOR_MAX_FREQ}], but got {freq}")
-    return getattr(torch.ops.mindiesd, "frequency_regulator")(freq)
-
-
-@register_ops.register_mindie_fake_op("frequency_regulator")
-def frequency_regulator_fake(freq: int) -> torch.Tensor:
-    return torch.empty((1,), device="meta", dtype=torch.int64)
-
 
 def laser_attention(
     query: torch.Tensor,
