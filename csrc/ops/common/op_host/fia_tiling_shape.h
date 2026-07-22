@@ -24,7 +24,6 @@
 #include <tiling/platform/platform_ascendc.h>
 #include "err/ops_err.h"
 #include <vector>
-// #include "fia_tiling_info.h"
 
 namespace optiling {
 template <typename T> using CompareFunc = bool (*)(const T &, const T &);

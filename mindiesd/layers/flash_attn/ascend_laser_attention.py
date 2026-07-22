@@ -69,7 +69,7 @@ class AscendLaserAttention(AttentionOperateBase):
 
         value = AscendLaserAttention.pad(value, SEQLEN_BASE, SEQLEN_INDEX)
         value = AscendLaserAttention.pad(value, DIM_BASE, DIM_INDEX)
-        return query, key, value
+        return query.contiguous(), key.contiguous(), value.contiguous()
 
     @staticmethod
     def la_postprocess_output(attention_out, dtype, qseqlen, head_dim):

@@ -404,6 +404,15 @@ class TestMapper:
                 "tests/layers/test_norm.py",
                 "tests/layers/test_layernorm.py",
             ],
+            "csrc/plugin/frequency_regulator.cpp": [
+                "tests/layers/test_custom_ops.py",
+            ],
+            "csrc/plugin/frequency_regulator_register.cpp": [
+                "tests/layers/test_custom_ops.py",
+            ],
+            "csrc/plugin/frequency_regulator.h": [
+                "tests/layers/test_custom_ops.py",
+            ],
             "csrc/plugin/rainfusionattention.cpp": [
                 "tests/plugin/test_rainfusionattention.py",
                 "tests/layers/flash_attn/test_attn_forward.py",

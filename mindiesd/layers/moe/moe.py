@@ -17,7 +17,6 @@ import torch.distributed as dist
 
 from ...quantization.config import QuantConfig
 from ...utils import ParametersInvalid
-from ...utils.get_platform import NPUDevice, get_npu_device
 from ...utils.logs.logging import logger
 from .experts_selector import select_experts
 from .moe_mlp import unified_apply_mlp
@@ -29,6 +28,7 @@ from .moe_context import (
     build_routing_input,
     build_token_dispatch_input,
     get_moe_comm_type,
+    get_moe_group,
     get_moe_quant_algo,
     set_moe_context,
     validate_moe_inputs,
@@ -38,14 +38,15 @@ from .token_dispatcher import DynamicDispatcher, StaticDispatcher
 _MOE_CONFIG_LOGGED = False
 
 
-def _resolve_default_dispatcher():
-    """Select the default dispatcher from communication mode and NPU generation."""
-    if get_moe_comm_type() == MoECommType.EP:
-        npu_device = get_npu_device()
-        if npu_device in (NPUDevice.A3, NPUDevice.A5):
-            return DynamicDispatcher
-        if npu_device in (NPUDevice.A2,):
-            return StaticDispatcher
+def _resolve_default_dispatcher(top_k):
+    """Select the default dispatcher from communication mode and routing fan-out."""
+    if get_moe_comm_type() != MoECommType.EP:
+        return StaticDispatcher
+
+    ep_group = get_moe_group()
+    ep_size = dist.get_world_size(ep_group)
+    if top_k < ep_size:
+        return DynamicDispatcher
     return StaticDispatcher
 
 
@@ -62,11 +63,11 @@ def _resolve_dispatcher(dispatcher_type):
     )
 
 
-def resolve_dispatcher_class(dispatcher_type=None):
+def resolve_dispatcher_class(dispatcher_type=None, top_k=None):
     """Resolve the dispatcher class for the current MoE invocation."""
     if dispatcher_type is not None:
         return _resolve_dispatcher(dispatcher_type)
-    return _resolve_default_dispatcher()
+    return _resolve_default_dispatcher(top_k=top_k)
 
 
 def _log_moe_config_once(dispatcher_cls, tokens_full, reduce_results):
@@ -142,7 +143,10 @@ def moe(
     )
 
     set_moe_context(tp_group=tp_group, ep_group=ep_group, quant_algo=quant_algo)
-    dispatcher_cls = resolve_dispatcher_class(dispatcher_type=dispatcher_type)
+    dispatcher_cls = resolve_dispatcher_class(
+        dispatcher_type=dispatcher_type,
+        top_k=top_k,
+    )
 
     moe_weights = build_moe_weights(
         w13_weight,

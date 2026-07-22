@@ -11,7 +11,6 @@
 # See the Mulan PSL v2 for more details.
 import json
 import os
-from fnmatch import fnmatch
 from collections import OrderedDict
 from functools import wraps
 from typing import Optional
@@ -21,7 +20,15 @@ import safetensors
 from .mode import QuantAlgorithm
 from .config import OnlineQuantConfig, QuantConfig, TimestepPolicyConfig
 from .mode import W4A4_LIST, W8A8_LIST
-from .utils import replace_rank_suffix, get_quant_weight, extract_constructor_args, MAX_WEIGHT_SIZE
+from .utils import (
+    replace_rank_suffix,
+    get_quant_weight,
+    extract_constructor_args,
+    MAX_WEIGHT_SIZE,
+    build_online_fa_rot_weights,
+    match_fa_layer,
+    match_layer_config,
+)
 from .layer import (
     W4A4QuantLinear,
     W4A4MXFP4DualQuantLinear,
@@ -29,6 +36,7 @@ from .layer import (
     W8A8TimeStepQuantLinear,
     WeightQuantLinear,
     FP8RotateQuantFA,
+    MXFP8RotateQuantFA,
     MXFP4QuantFA,
     W8A8MXFP8QuantLinear,
     W4A4MXFP4QuantLinear,
@@ -160,6 +168,8 @@ def add_fa_quant(layer, cfg, prefix, quant_weights, **kwargs):
         layer.fa_quant = MXFP4QuantFA(prefix, quant_weights, **kwargs)
     elif cfg.quant_algo in [QuantAlgorithm.FP8_DYNAMIC]:
         layer.fa_quant = FP8RotateQuantFA(prefix, quant_weights)
+    elif cfg.quant_algo in [QuantAlgorithm.MXFP8_DYNAMIC]:
+        layer.fa_quant = MXFP8RotateQuantFA(prefix, quant_weights)
 
 
 def normalize_quant_config(kwargs):
@@ -428,18 +438,37 @@ _W4A4_QUANT_TYPES = (
 )
 
 
+def _make_online_quant_config(online_config, quant_algo, dtype):
+    return QuantConfig(
+        quant_algo=quant_algo,
+        dtype=dtype,
+        timestep_config=online_config.timestep_config,
+        mxfp4_scale_alg=online_config.mxfp4_scale_alg,
+        mxfp4_dst_type_max=online_config.mxfp4_dst_type_max,
+    )
+
+
+def _create_online_quant_layer(quant_cls, layer, dtype, quant_config=None):
+    if quant_config is not None:
+        try:
+            return quant_cls(layer, dtype=dtype, quant_config=quant_config)
+        except TypeError as exc:
+            if 'quant_config' not in str(exc):
+                raise
+    return quant_cls(layer, dtype=dtype)
+
+
 def _match_fallback(layer_name, fallback_layers):
-    for pattern, algo in fallback_layers.items():
-        if fnmatch(layer_name, pattern):
-            return algo
-    return None
+    return match_layer_config(layer_name, fallback_layers)
 
 
 def _online_quantize_impl(model, online_config, **kwargs):
     quant_type = online_config.quant_type
     fallback_layers = online_config.fallback_layers or {}
-    fallback_timesteps = online_config.fallback_timesteps
+    fa_layers = online_config.fa_layers or ()
+    fa_quant_type = online_config.fa_quant_type
     dtype = kwargs.get('dtype', torch.bfloat16)
+    mm_quant_config = _make_online_quant_config(online_config, quant_type, dtype)
 
     main_quant_cls = _ONLINE_QUANT_LAYER_MAP.get(quant_type)
     if main_quant_cls is None:
@@ -449,18 +478,30 @@ def _online_quantize_impl(model, online_config, **kwargs):
         )
 
     logger.info(
-        "Online quantization started with quant_type=%s, fallback_layers=%s, fallback_timesteps=%s",
+        "Online quantization started with quant_type=%s, fa_quant_type=%s, fa_layers=%s, fallback_layers=%s",
         quant_type,
+        fa_quant_type,
+        fa_layers,
         fallback_layers,
-        fallback_timesteps,
     )
 
     modified_layers = []
+    fa_count = 0
     for name, layer in model.named_modules():
+        fallback_algo = _match_fallback(name, fallback_layers)
+
+        if fa_quant_type is not None and match_fa_layer(name, layer, fa_layers):
+            if fallback_algo == QuantAlgorithm.W16A16:
+                logger.debug("FA layer %s keeps W16A16 (no FA quantization).", name)
+            else:
+                fa_quant_config = _make_online_quant_config(online_config, fa_quant_type, dtype)
+                rot_weights = build_online_fa_rot_weights(name, layer, dtype=dtype)
+                add_fa_quant(layer, fa_quant_config, name, rot_weights, quant_config=fa_quant_config)
+                fa_count += 1
+                logger.debug("Online FA quant layer name:%s, algo:%s.", name, fa_quant_type)
+
         if not isinstance(layer, nn.Linear):
             continue
-
-        fallback_algo = _match_fallback(name, fallback_layers)
 
         if fallback_algo == QuantAlgorithm.W16A16:
             logger.debug("Layer %s keeps W16A16 (no quantization).", name)
@@ -473,20 +514,15 @@ def _online_quantize_impl(model, online_config, **kwargs):
                     f"Unsupported fallback algorithm: {fallback_algo} for layer {name}. "
                     f"Supported fallback types: {list(_ONLINE_QUANT_LAYER_MAP.keys())}"
                 )
-            quant_layer = fallback_cls(layer, dtype=dtype)
+            quant_layer = _create_online_quant_layer(fallback_cls, layer, dtype)
             logger.debug(
                 "Fallback layer name:%s, algo:%s, class:%s.", name, fallback_algo, quant_layer.__class__.__name__
             )
         elif quant_type in _W4A4_QUANT_TYPES:
-            quant_layer = main_quant_cls(layer, dtype=dtype, fallback_timesteps=fallback_timesteps)
-            logger.debug(
-                "Online quant layer name:%s, class:%s, fallback_timesteps:%s.",
-                name,
-                quant_layer.__class__.__name__,
-                fallback_timesteps,
-            )
+            quant_layer = _create_online_quant_layer(main_quant_cls, layer, dtype, mm_quant_config)
+            logger.debug("Online quant layer name:%s, class:%s.", name, quant_layer.__class__.__name__)
         else:
-            quant_layer = main_quant_cls(layer, dtype=dtype)
+            quant_layer = _create_online_quant_layer(main_quant_cls, layer, dtype)
             logger.debug("Online quant layer name:%s, class:%s.", name, quant_layer.__class__.__name__)
 
         modified_layers.append((name, quant_layer))
@@ -494,5 +530,9 @@ def _online_quantize_impl(model, online_config, **kwargs):
     modify_graph(model, modified_layers)
     torch.npu.empty_cache()
 
-    logger.info("Online quantization completed. %d layers quantized.", len(modified_layers))
+    logger.info(
+        "Online quantization completed. %d linear layers quantized, %d FA layers quantized.",
+        len(modified_layers),
+        fa_count,
+    )
     return model

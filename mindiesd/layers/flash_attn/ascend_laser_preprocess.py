@@ -51,7 +51,7 @@ class AscendLaserPreprocess(AttentionOperateBase):
         batch_size, seq_len, head_num, head_dim = query.shape
 
         out_query, out_key, out_value = ops.laser_attention_preprocess(query, key, value, align_len)
-        return out_query, out_key, out_value
+        return out_query.contiguous(), out_key.contiguous(), out_value.contiguous()
 
 
 def la_preprocess(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, align_len: int = 256):

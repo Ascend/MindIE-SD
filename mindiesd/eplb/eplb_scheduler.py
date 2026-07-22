@@ -68,7 +68,21 @@ def start_manager_server(addr, auth_key):
     auth_bytes = auth_key.encode('utf-8')
     multiprocessing.current_process().authkey = auth_bytes
     manager = ScheduleManager(address=addr, authkey=auth_bytes)
-    server = manager.get_server()
+    try:
+        server = manager.get_server()
+    except OSError as error:
+        logger.error(
+            "[MindIE-SD/eplb] EPLB scheduler failed to bind address. "
+            "issue=manager server startup failed, scheduler_addr=%s:%s, actual_error=%s. "
+            "possible_cause=the scheduler port is already in use or the configured address is unavailable. "
+            "Troubleshooting: run ss -ltnp on the scheduler host to find the process occupying scheduler_addr; "
+            "if actual_error is Address already in use, stop the occupying process or configure another --port; "
+            "if the address is unavailable, verify --host is a local bindable address and restart the scheduler.",
+            addr[0],
+            addr[1],
+            error,
+        )
+        raise
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
 
@@ -146,6 +160,17 @@ def _emit_layer_update(context, layer_idx, transfer):
     )
     update, device_indices_list, local_expert_indices_list, local_expert_list, expert_trans_tensor = result
     if not update:
+        logger.error(
+            "[MindIE-SD/eplb] EPLB layout was not updated. "
+            "issue=greedy algorithm produced no layout update, layer_idx=%s, update_count=%s. "
+            "possible_cause=rank reports are incomplete, the target MoE layer is not covered, "
+            "or the reported load does not trigger an update. "
+            "Troubleshooting: verify all world_size ranks reported load and local_expert_list for this layer_idx; "
+            "check block_num covers layer_idx; inspect whether load data changes enough to trigger EPLB thresholds; "
+            "if reports are complete but update_count stays unchanged, review greedy algorithm input and thresholds.",
+            layer_idx,
+            context.update_count,
+        )
         return
 
     transfer.update_emit_task(
@@ -187,8 +212,9 @@ def _process_rank_report(context, rank):
             f"issue=failed to process upload queue, rank={rank}, world_size={context.world_size}, "
             f"mode={context.scheduler_args.mode}, "
             f"actual_error={e}. possible_cause=invalid load report, greedy algorithm failure, or queue state "
-            "mismatch. Troubleshooting: inspect worker load report fields, EPLB mode/redundant settings, "
-            "and scheduler traceback."
+            "mismatch. Troubleshooting: inspect the worker report and confirm it contains moe_layer_idx, load, "
+            "and local_expert_list; verify moe_layer_idx is within block_num and rank count matches world_size; "
+            "if fields are valid, check mode/redundant settings and the chained scheduler traceback."
         ) from e
 
 

@@ -111,7 +111,7 @@ def check_mindie_operator_exists(op_name: str) -> bool:
         return False
 
 
-if torch.__version__.startswith("2.1"):
+if _get_torch_major_minor(torch.__version__) == "2.1":
     # PyTorch 2.1 使用 Library.impl
     _lib = Library(MINDIE_NS, "IMPL")
 

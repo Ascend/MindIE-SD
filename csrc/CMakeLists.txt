@@ -52,9 +52,12 @@ add_library(PTAExtensionOPS SHARED
     ./plugin/ada_block_sparse_attention.cpp
     ./plugin/sparse_block_estimate.cpp
     ./plugin/layernorm.cpp
+    ./plugin/frequency_regulator.cpp
+    ./plugin/frequency_regulator_register.cpp
     ./plugin/block_sparse_attention.cpp
     ./plugin/quant_flash_attn.cpp
-    ./plugin/quant_flash_attn_metadata.cpp)
+    ./plugin/quant_flash_attn_metadata.cpp
+    ./plugin/fused_infer_attention_score.cpp)
 
 target_compile_features(PTAExtensionOPS PRIVATE cxx_std_17)
 if(DEFINED ENV{USER_ABI_VERSION})

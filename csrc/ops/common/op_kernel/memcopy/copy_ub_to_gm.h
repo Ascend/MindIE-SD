@@ -375,7 +375,7 @@ template <typename OUT_T, GmFormat GM_FORMAT, UbFormat UB_FORMAT> class CopyAtte
 //     }
 // }
 
-// // ----------------------------------------------Copy LSE UB To Gm arch22--------------------------------
+// // ----------------------------------------------Copy LSE UB To Gm--------------------------------
 // template <typename T, ActualSeqLensMode Q_MODE, bool WITH_ZERO_HEAD = false, typename ACTLEN_T = uint64_t>
 // __aicore__ inline void DataCopySoftmaxLseBSND(GlobalTensor<float> softmaxLseGm, LocalTensor<T> lseSrc,
 //                                                  uint64_t bN2Offset, uint32_t mOffset, uint32_t dealCount,

@@ -18,7 +18,7 @@ MindIE SD 的测试套件支持在有或无昇腾 NPU 硬件的环境下运行�
 `run_UT_test.sh` 始终以 CPU 模式运行，适合无 NPU 硬件的开发环境。
 
 ```bash
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt --extra-index-url https://triton-ascend.osinfra.cn/pypi/simple --trusted-host triton-ascend.osinfra.cn
 python -m pip install -r requirements-test.txt
 bash tests/run_UT_test.sh
 ```

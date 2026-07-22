@@ -35,6 +35,29 @@ def _make_rotation_matrices(head_dim, device, dtype=torch.float32):
     return rot, rot
 
 
+def _is_bsa_v2_available():
+    """Detect whether aclnnBlockSparseAttentionV2 exists in libopapi.so.
+
+    Older CANN only ships V1 (aclnnBlockSparseAttention); its FP8 path is provided by
+    the V2 kernel. When V2 is absent the plugin falls back to V1 (BF16/FP16 only), so
+    FP8 test scenarios cannot run and must be skipped.
+    """
+    import ctypes
+
+    try:
+        lib = ctypes.CDLL("libopapi.so")
+    except OSError:
+        return False
+    return hasattr(lib, "aclnnBlockSparseAttentionV2")
+
+
+# FP8 BSA relies on aclnnBlockSparseAttentionV2; skip FP8 cases on CANN without V2.
+_SKIP_NO_BSA_V2 = unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU" and not _is_bsa_v2_available(),
+    "FP8 BSA path requires aclnnBlockSparseAttentionV2 (newer CANN); skipped on CANN without V2.",
+)
+
+
 @unittest.skipIf(
     os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
     "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.",
@@ -160,6 +183,7 @@ class TestRfV3Attention(unittest.TestCase):
 
     # bsa_sparse_attention_v3 FP8 output shape/dtype tests
 
+    @_SKIP_NO_BSA_V2
     def test_bsa_sparse_attention_v3_fp8_output_shape(self):
         """bsa_sparse_attention_v3 FP8 path: BF16 output with q_rot/k_rot provided."""
         from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
@@ -206,6 +230,7 @@ class TestRfV3Attention(unittest.TestCase):
         )
         self.assertEqual(out.shape, q.shape, f"unaligned: output shape {out.shape} != input {q.shape}")
 
+    @_SKIP_NO_BSA_V2
     def test_bsa_sparse_attention_v3_fp8_unaligned_seq_len(self):
         """bsa_sparse_attention_v3 FP8 path: unaligned S still produces correct shape."""
         from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
@@ -233,6 +258,7 @@ class TestRfV3Attention(unittest.TestCase):
 
     # cached mask reuse tests
 
+    @_SKIP_NO_BSA_V2
     def test_bsa_sparse_attention_v3_cached_mask_fp8(self):
         """FP8 path with cached_mask: reuse mask from BF16 step, output shape unchanged."""
         from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
@@ -272,6 +298,7 @@ class TestRfV3Attention(unittest.TestCase):
 
     # FP8 cached mask with explicit block_size_kv (regression for double-merge bug)
 
+    @_SKIP_NO_BSA_V2
     def test_bsa_sparse_attention_v3_fp8_cached_mask_block_size_kv_256(self):
         """FP8 both steps with block_size_kv=256: mask at [128,256] is reused correctly."""
         from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3

@@ -1,0 +1,23 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
+#ifndef FIA_ARCH35_LEGACY_TILING_STUB_H
+#define FIA_ARCH35_LEGACY_TILING_STUB_H
+
+#include <exe_graph/runtime/tiling_context.h>
+
+namespace optiling {
+bool RouteToFia(gert::TilingContext *context);
+ge::graphStatus TilingFusedInferAttentionScoreV3(gert::TilingContext *context);
+} // namespace optiling
+
+#endif // FIA_ARCH35_LEGACY_TILING_STUB_H

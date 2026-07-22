@@ -37,19 +37,16 @@ if [ ! -f ${msopgen} ]; then
     exit 1
 fi
 
-base_ascendc_ops='laser_attention;la_preprocess;ada_block_sparse_attention;sparse_block_estimate'
-cann_9_required_ops='quant_flash_attn;quant_flash_attn_metadata'
-ascendc_ops="${base_ascendc_ops}"
+ascendc_ops=${ASCEND_OP_NAME:-'laser_attention;la_preprocess;ada_block_sparse_attention;sparse_block_estimate;quant_flash_attn;quant_flash_attn_metadata;fused_infer_attention_score'}
+
+# ascend950 backend requires CANN 9.0+; remove ascend950 when CANN < 9.0
+default_compute_unit='ascend910;ascend910b;ascend910_93;ascend950'
 cann_version_file="${local_toolkit}/compiler/version.info"
-ascend_compute_unit=${ASCEND_COMPUTE_UNIT:-''}
 if [ -f "${cann_version_file}" ] && grep -Eq '^Version=([0-8])(\.|$)' "${cann_version_file}"; then
-    cann_version=$(grep -E '^Version=' "${cann_version_file}" | head -n 1 | cut -d= -f2)
-    ascend_compute_unit='ascend910;ascend910b;ascend910_93'
-    echo "Warning: ops ${cann_9_required_ops} require CANN >= 9.0, current CANN is ${cann_version}. Skip compiling them."
-else
-    ascendc_ops="${ascendc_ops};${cann_9_required_ops}"
-    ascend_compute_unit='ascend910;ascend910b;ascend910_93;ascend950'
+    echo "Detected CANN < 9.0 from ${cann_version_file}, disable ascend950 backend."
+    default_compute_unit='ascend910;ascend910b;ascend910_93'
 fi
+ascend_compute_unit=${ASCEND_COMPUTE_UNIT:-${default_compute_unit}}
 
 function sync_aicpu_ops_to_transformer_vendor(){
     src_cpu_dir="${current_script_dir}/vendors/aie_ascendc/op_impl/cpu"
@@ -66,8 +63,9 @@ function build_ops(){
     ori_path=${PWD}
     cd ${current_script_dir}
     rm -rf vendors
-    local ascend_op_name=${ASCEND_OP_NAME:-"${ascendc_ops}"}
-    source ${current_script_dir}/build_ascendc_ops.sh -n "${ascend_op_name}" -c "${ascend_compute_unit}"
+    echo "Build AscendC ops: ${ascendc_ops}"
+    echo "Build Ascend compute units: ${ascend_compute_unit}"
+    source ${current_script_dir}/build_ascendc_ops.sh -n "${ascendc_ops}" -c "${ascend_compute_unit}"
     source ${current_script_dir}/build_tik_ops.sh
     sync_aicpu_ops_to_transformer_vendor
     rm -rf ${current_script_dir}/vendors/aie_ascendc/bin

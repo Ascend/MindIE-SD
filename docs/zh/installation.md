@@ -10,13 +10,11 @@ MindIE SD是一个 Python 包，它基于PyTorch构建，可以轻松集成到 P
 * Python: >=3.10
 * Pytorch：2.6, 2.7, 2.8, 2.9, 2.10
 * torch-npu: 2.6, 2.7, 2.8, 2.9, 2.10
-* CANN: 9.0.0
-* triton: 3.5.0
-* triton-ascend: 3.2.1
+* CANN: 9.0.1
 
 #### CANN 安装
 
-MindIE SD 依赖 CANN Toolkit开发套件包和 CANN ops 算子包，请参考 [CANN 软件安装指南](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/900/softwareinst/instg/instg_0000.html?OS=openEuler&InstallType=netyum) 完成安装。根据安装方式、操作系统等选择安装场景，选择完成后单击“开始阅读”，按“安装CANN”章节进行安装。
+MindIE SD 依赖 CANN Toolkit开发套件包和 CANN ops 算子包，请参考 <a href="https://gitcode.com/cann/ops-cv/blob/master/docs/zh/install/quick_install.md" target="_blank" rel="noopener noreferrer">CANN 软件安装指南</a>
 
 安装完成后，执行以下命令设置环境变量（以默认安装路径为例）：
 
@@ -39,7 +37,7 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 
 ### 快速安装
 
-现在最简单的方式是通过pip源安装，我们的软件包名字叫mindiesd，与仓库名有些不一样。
+现在最简单的方式是通过pip源安装，我们的软件包名字叫mindiesd，与仓库名有些不一样。在执行下面的命令安装 mindiesd 之前，需要先安装相关python依赖包，请参考 [源码安装](#源码安装) 小节中的安装依赖步骤进行安装。
 
 ```bash
 pip install mindiesd
@@ -54,14 +52,16 @@ pip install mindiesd
 1. 克隆仓库&进入项目：
 
    ```bash
-   git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
+   git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD && git checkout dev
    ```
 
-2. [可选] 安装依赖：
+2. 安装依赖：
 
    ```bash
-   pip install -r requirements.txt
+   pip install -r requirements.txt --extra-index-url https://triton-ascend.osinfra.cn/pypi/simple --trusted-host triton-ascend.osinfra.cn
    ```
+
+   说明：MindI SD 的部分算子依赖triton-ascend==3.2.1，该版本目前仅在 https://triton-ascend.osinfra.cn/pypi/simple 中提供
 
 3. 编译并安装：
 
@@ -70,6 +70,15 @@ pip install mindiesd
    cd dist
    pip install mindiesd-*.whl
    ```
+
+> **依赖分层说明**
+>
+> 仓库将依赖按用途拆分，按需安装即可：
+>
+> - `requirements.txt`：核心编译构建和运行依赖（最小安装）。
+> - `examples/dummy_run/requirements.txt`：`dummy_run` 模型推理示例依赖（diffusers/transformers 等）。
+> - `examples/service/requirements.txt`：服务化示例依赖（ray、fastapi、uvicorn、pydantic、Pillow）。
+> - 测试、Lint、文档构建依赖分别见 `requirements-test.txt`、`requirements-lint.txt`、`docs/requirements-docs.txt`（详见开发者指南）。
 
 ### 每日构建安装
 
