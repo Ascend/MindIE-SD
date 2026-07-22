@@ -223,17 +223,18 @@ class TestMoeFunction(unittest.TestCase):
     def test_default_dispatcher_selection_and_static_override(self):
         ep_group = MagicMock(spec=dist.ProcessGroup)
 
-        with patch("torch.distributed.get_world_size", return_value=2):
-            _, dynamic_prepare, dynamic_dispatch = run_dynamic_moe(
-                **make_moe_kwargs(num_experts=4, tokens_full=True),
-                ep_group=ep_group,
-            )
-            with patch.object(DynamicDispatcher, "dispatch") as unused_dynamic_dispatch:
-                with patch("torch.distributed.all_reduce"):
-                    _, static_dispatch = run_static_moe(
-                        **make_moe_kwargs(num_experts=4, tokens_full=True, dispatcher_type="static"),
-                        ep_group=ep_group,
-                    )
+        with patch("mindiesd.layers.moe.moe.get_npu_device", return_value=NPUDevice.A3):
+            with patch("torch.distributed.get_world_size", return_value=2):
+                _, dynamic_prepare, dynamic_dispatch = run_dynamic_moe(
+                    **make_moe_kwargs(num_experts=4, tokens_full=True),
+                    ep_group=ep_group,
+                )
+                with patch.object(DynamicDispatcher, "dispatch") as unused_dynamic_dispatch:
+                    with patch("torch.distributed.all_reduce"):
+                        _, static_dispatch = run_static_moe(
+                            **make_moe_kwargs(num_experts=4, tokens_full=True, dispatcher_type="static"),
+                            ep_group=ep_group,
+                        )
 
         dynamic_prepare.assert_called_once()
         dynamic_dispatch.assert_called_once()
@@ -244,14 +245,15 @@ class TestMoeFunction(unittest.TestCase):
         os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
         "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
     )
-    def test_resolve_dispatcher_class_by_topk_and_override(self):
+    def test_resolve_dispatcher_class_by_device_and_override(self):
         ep_group = MagicMock(spec=dist.ProcessGroup)
 
-        self.assertIs(resolve_dispatcher_class(top_k=1), StaticDispatcher)
         with patch("torch.distributed.get_world_size", return_value=2):
             set_moe_comm_context(ep_group=ep_group)
-            self.assertIs(resolve_dispatcher_class(top_k=1), DynamicDispatcher)
-            self.assertIs(resolve_dispatcher_class(top_k=2), StaticDispatcher)
+            with patch("mindiesd.layers.moe.moe.get_npu_device", return_value=NPUDevice.A3):
+                self.assertIs(resolve_dispatcher_class(), DynamicDispatcher)
+            with patch("mindiesd.layers.moe.moe.get_npu_device", return_value=NPUDevice.A2):
+                self.assertIs(resolve_dispatcher_class(), StaticDispatcher)
 
         self.assertIs(resolve_dispatcher_class("static"), StaticDispatcher)
         self.assertIs(resolve_dispatcher_class("dynamic"), DynamicDispatcher)
@@ -272,9 +274,10 @@ class TestMoeFunction(unittest.TestCase):
         kwargs = make_moe_kwargs(num_experts=4, tokens_full=True, dispatcher_type="dynamic")
         ep_group = MagicMock(spec=dist.ProcessGroup)
 
-        with patch("torch.distributed.get_world_size", return_value=2):
-            with patch.object(StaticDispatcher, "dispatch") as static_dispatch:
-                _, _, dynamic_dispatch = run_dynamic_moe(**kwargs, ep_group=ep_group)
+        with patch("mindiesd.layers.moe.moe.get_npu_device", return_value=NPUDevice.A2):
+            with patch("torch.distributed.get_world_size", return_value=2):
+                with patch.object(StaticDispatcher, "dispatch") as static_dispatch:
+                    _, _, dynamic_dispatch = run_dynamic_moe(**kwargs, ep_group=ep_group)
 
         dynamic_dispatch.assert_called_once()
         static_dispatch.assert_not_called()

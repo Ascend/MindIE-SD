@@ -20,11 +20,7 @@ import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
-
-try:
-    from timm.layers import to_2tuple  # timm >= 0.9 (canonical location)
-except ImportError:
-    from timm.models.layers import to_2tuple  # legacy fallback for older timm
+from timm.models.layers import to_2tuple
 from einops import repeat, rearrange
 import torch_npu
 from device import DEVICE_ID

@@ -94,58 +94,41 @@ class TestLayerQuantConfig(unittest.TestCase):
     os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU", "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU."
 )
 class TestOnlineQuantConfig(unittest.TestCase):
-    def test_init_with_supported_quant_type_fallbacks_and_fa(self):
-        timestep_config = TimestepPolicyConfig()
+    def test_init_with_supported_quant_type_and_fallbacks(self):
         config = OnlineQuantConfig(
             quant_type=QuantAlgorithm.W4A4_MXFP4_DYNAMIC,
             fallback_layers={"*.proj": QuantAlgorithm.W8A8, "head": QuantAlgorithm.W16A16},
-            fa_layers=("*.attn", "FluxAttention"),
-            fa_quant_type=QuantAlgorithm.FP8_DYNAMIC,
-            timestep_config=timestep_config,
-            mxfp4_scale_alg=2,
-            mxfp4_dst_type_max=7.25,
+            fallback_timesteps=range(2, 4),
         )
 
         self.assertEqual(config.quant_type, QuantAlgorithm.W4A4_MXFP4_DYNAMIC)
         self.assertEqual(config.fallback_layers["*.proj"], QuantAlgorithm.W8A8)
-        self.assertEqual(config.fa_layers, ("*.attn", "FluxAttention"))
-        self.assertEqual(config.fa_quant_type, QuantAlgorithm.FP8_DYNAMIC)
-        self.assertIs(config.timestep_config, timestep_config)
-        self.assertEqual(config.mxfp4_scale_alg, 2)
-        self.assertEqual(config.mxfp4_dst_type_max, 7.25)
+        self.assertEqual(config.fallback_timesteps, [2, 3])
 
     def test_parse_from_dict_and_serialize(self):
         config = OnlineQuantConfig.parse_from_dict(
             {
                 "quant_type": "W4A4_MXFP4",
                 "fallback_layers": {"decoder.*": "W8A8"},
-                "fa_layers": ["decoder.*.attn", "*Attention"],
-                "fa_quant_type": "MXFP4_DYNAMIC",
-                "mxfp4_scale_alg": 2,
-                "mxfp4_dst_type_max": 7.25,
+                "fallback_timesteps": [1, 5],
             }
         )
 
         self.assertEqual(config.quant_type, QuantAlgorithm.W4A4_MXFP4_DYNAMIC)
         self.assertEqual(config.fallback_layers["decoder.*"], QuantAlgorithm.W8A8)
-        self.assertEqual(config.fa_layers, ("decoder.*.attn", "*Attention"))
-        self.assertEqual(config.fa_quant_type, QuantAlgorithm.MXFP4_DYNAMIC)
         self.assertEqual(
             config.serialize_to_dict(),
             {
                 "quant_type": "W4A4_MXFP4",
                 "fallback_layers": {"decoder.*": "W8A8"},
-                "fa_quant_type": "MXFP4_DYNAMIC",
-                "fa_layers": ["decoder.*.attn", "*Attention"],
-                "mxfp4_scale_alg": 2,
-                "mxfp4_dst_type_max": 7.25,
+                "fallback_timesteps": [1, 5],
             },
         )
 
-    def test_fallback_timesteps_is_rejected(self):
+    def test_fallback_timesteps_only_support_w4a4(self):
         with self.assertRaises(Exception):
             OnlineQuantConfig(
-                quant_type=QuantAlgorithm.W4A4_MXFP4_DYNAMIC,
+                quant_type=QuantAlgorithm.W8A8_DYNAMIC,
                 fallback_timesteps=[1],
             )
 
@@ -155,13 +138,8 @@ class TestOnlineQuantConfig(unittest.TestCase):
             {"fallback_layers": []},
             {"fallback_layers": {1: QuantAlgorithm.W8A8}},
             {"fallback_layers": {"layer": QuantAlgorithm.NO_QUANT}},
-            {"fa_quant_type": QuantAlgorithm.W8A8_DYNAMIC, "fa_layers": ["attn"]},
-            {"fa_quant_type": QuantAlgorithm.FP8_DYNAMIC},
-            {"fa_quant_type": QuantAlgorithm.FP8_DYNAMIC, "fa_layers": [1]},
-            {"fa_quant_type": QuantAlgorithm.FP8_DYNAMIC, "fa_layers": {"attn": True}},
-            {"timestep_config": "invalid"},
-            {"mxfp4_scale_alg": "2"},
-            {"mxfp4_dst_type_max": True},
+            {"quant_type": QuantAlgorithm.W4A4_MXFP4_DYNAMIC, "fallback_timesteps": "1"},
+            {"quant_type": QuantAlgorithm.W4A4_MXFP4_DYNAMIC, "fallback_timesteps": [1, "2"]},
         ]
 
         for config in invalid_configs:

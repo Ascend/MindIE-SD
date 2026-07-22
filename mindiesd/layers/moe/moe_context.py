@@ -259,7 +259,7 @@ def get_moe_quant_algo() -> QuantAlgorithm:
 def dynamic_quant(hidden_states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Apply dynamic quantization according to the current MoE quantization algorithm."""
     if _MOE_QUANT_ALGO == QuantAlgorithm.W8A8_DYNAMIC:
-        return torch_npu.npu_dynamic_quant(hidden_states, dst_type=torch.int8)
+        return torch_npu.npu_dynamic_quant(hidden_states)
     if _MOE_QUANT_ALGO == QuantAlgorithm.W8A8_MXFP8:
         return torch_npu.npu_dynamic_mx_quant(hidden_states, dst_type=torch.float8_e4m3fn)
     raise ParametersInvalid(f"Unsupported MoE quantization algorithm: {_MOE_QUANT_ALGO}.")

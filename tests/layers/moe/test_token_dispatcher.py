@@ -22,7 +22,6 @@ from mindiesd.layers.moe.moe_dataclass import (
     MoEDynamicCombineMetadata,
     MoEPrepareInput,
     MoEPrepareOutput,
-    MoEStaticCombineMetadata,
     MoETokenDispatchInput,
 )
 from mindiesd.layers.moe.moe_context import set_moe_comm_context, set_moe_context
@@ -164,9 +163,7 @@ class TestTokenDispatcher(unittest.TestCase):
                     "torch_npu.npu_moe_token_permute",
                     return_value=(hidden_states.repeat(2, 1), torch.arange(4)),
                 ):
-                    with patch(
-                        "torch_npu.npu_dynamic_quant", return_value=(quant_hidden, dynamic_scale)
-                    ) as dynamic_quant:
+                    with patch("torch_npu.npu_dynamic_quant", return_value=(quant_hidden, dynamic_scale)):
                         with patch(
                             "mindiesd.layers.moe.token_dispatcher.all_to_all_single",
                             side_effect=lambda input_tensor, output_splits, input_splits, group: input_tensor,
@@ -184,8 +181,6 @@ class TestTokenDispatcher(unittest.TestCase):
 
         self.assertIs(dispatch_output.hidden_states, quant_hidden)
         self.assertIs(dispatch_output.dynamic_scale, dynamic_scale)
-        dynamic_quant.assert_called_once()
-        self.assertEqual(dynamic_quant.call_args.kwargs["dst_type"], torch.int8)
         self.assertEqual(all_to_all.call_count, 2)
         split_copy_event.synchronize.assert_called_once()
 
@@ -240,54 +235,6 @@ class TestTokenDispatcher(unittest.TestCase):
         self.assertIsNone(dispatch_output.dynamic_scale)
         self.assertEqual(all_to_all.call_count, 1)
         split_copy_event.synchronize.assert_called_once()
-
-    @unittest.skipIf(
-        os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
-        "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
-    )
-    def test_static_combine_casts_topk_weights_to_output_dtype(self):
-        hidden_states = torch.randn(2, 4, dtype=torch.bfloat16)
-        metadata = MoEStaticCombineMetadata(
-            topk_weights=torch.ones(2, 1, dtype=torch.float32),
-            restore_shape=hidden_states.shape,
-            expanded_row_idx=torch.arange(2, dtype=torch.int32),
-        )
-
-        with patch("torch_npu.npu_moe_token_unpermute", return_value=hidden_states) as token_unpermute:
-            output = StaticDispatcher.combine(hidden_states, metadata)
-
-        self.assertEqual(output.dtype, hidden_states.dtype)
-        self.assertEqual(token_unpermute.call_args.kwargs["probs"].dtype, hidden_states.dtype)
-
-    @unittest.skipIf(
-        os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
-        "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
-    )
-    def test_dynamic_combine_casts_topk_weights_to_output_dtype(self):
-        hidden_states = torch.randn(4, 4, dtype=torch.bfloat16)
-        metadata = MoEDynamicCombineMetadata(
-            topk_weights=torch.ones(2, 2, dtype=torch.float32),
-            hidden_shape=torch.Size([2, 4]),
-            input_splits=[2, 2],
-            output_splits=[2, 2],
-            local_unpermute_indices=torch.arange(4, dtype=torch.int32),
-            global_unpermute_indices=None,
-        )
-
-        with (
-            patch(
-                "mindiesd.layers.moe.token_dispatcher.all_to_all_single",
-                side_effect=lambda input_tensor, output_splits, input_splits, group: input_tensor,
-            ),
-            patch(
-                "torch_npu.npu_moe_token_unpermute",
-                return_value=torch.randn(2, 4, dtype=torch.bfloat16),
-            ) as unpermute,
-        ):
-            output = DynamicDispatcher.combine(hidden_states, metadata)
-
-        self.assertEqual(output.dtype, hidden_states.dtype)
-        self.assertEqual(unpermute.call_args.kwargs["probs"].dtype, hidden_states.dtype)
 
     @unittest.skipIf(
         os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
@@ -470,7 +417,7 @@ class TestTokenDispatcher(unittest.TestCase):
                         topk_ids=topk_ids,
                     )
                 )
-                quant_hidden, dynamic_scale = torch_npu.npu_dynamic_quant(hidden_states, dst_type=torch.int8)
+                quant_hidden, dynamic_scale = torch_npu.npu_dynamic_quant(hidden_states)
                 prepare_quant_output = StaticDispatcher.dispatch(
                     make_token_dispatch_input(
                         hidden_states=quant_hidden,
@@ -583,7 +530,6 @@ class TestTokenDispatcher(unittest.TestCase):
 
         dynamic_quant.assert_called_once()
         self.assertTrue(torch.equal(dynamic_quant.call_args.args[0], hidden_states))
-        self.assertEqual(dynamic_quant.call_args.kwargs["dst_type"], torch.int8)
         self.assertIsInstance(prepare_output, MoEPrepareOutput)
         self.assertEqual(prepare_output.original_shape, hidden_states.shape)
         self.assertEqual(prepare_output.hidden_states.dtype, torch.int8)

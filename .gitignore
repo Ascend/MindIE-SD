@@ -6,7 +6,6 @@ build/output/
 build/lib/
 build/vendors/
 build/bdist.linux-*/
-build/lib.linux-*/
 build/lib/
 fusion_result.json
 dist/
