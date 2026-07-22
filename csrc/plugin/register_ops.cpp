@@ -22,7 +22,6 @@
 #include "block_sparse_attention.h"
 #include "quant_flash_attn.h"
 #include "quant_flash_attn_metadata.h"
-#include "fused_infer_attention_score.h"
 
 TORCH_LIBRARY(mindiesd, m) {
     m.def("la(Tensor query, Tensor key, Tensor value, \
@@ -88,22 +87,6 @@ TORCH_LIBRARY(mindiesd, m) {
         int? q_dtype=None, int? k_dtype=None, int? v_dtype=None, \
         int? mask_mode=None, int? win_left=None, int? win_right=None, \
         str? layout_q=None, str? layout_kv=None, str? layout_out=None) -> Tensor");
-    m.def("fused_infer_attention_score_v2(Tensor query, Tensor key, Tensor value, *, \
-        Tensor? query_rope=None, Tensor? key_rope=None, Tensor? pse_shift=None, Tensor? atten_mask=None, \
-        int[]? actual_seq_qlen=None, int[]? actual_seq_kvlen=None, Tensor? block_table=None, \
-        Tensor? dequant_scale1=None, Tensor? quant_scale1=None, Tensor? dequant_scale2=None, \
-        Tensor? dequant_scale_query=None, Tensor? dequant_scale_key=None, Tensor? dequant_offset_key=None, \
-        Tensor? dequant_scale_value=None, Tensor? dequant_offset_value=None, Tensor? dequant_scale_key_rope=None, \
-        Tensor? quant_scale_out=None, Tensor? quant_offset_out=None, Tensor? learnable_sink=None, \
-        int num_query_heads=1, int num_key_value_heads=0, float softmax_scale=1.0, \
-        int pre_tokens=2147483647, int next_tokens=2147483647, str input_layout='BSH', int sparse_mode=0, \
-        int block_size=0, int query_quant_mode=0, int key_quant_mode=0, int value_quant_mode=0, \
-        int inner_precise=0, bool return_softmax_lse=False, int? query_dtype=None, int? key_dtype=None, \
-        int? value_dtype=None, int? query_rope_dtype=None, int? key_rope_dtype=None, \
-        int? key_shared_prefix_dtype=None, int? value_shared_prefix_dtype=None, \
-        int? dequant_scale_query_dtype=None, int? dequant_scale_key_dtype=None, \
-        int? dequant_scale_value_dtype=None, int? dequant_scale_key_rope_dtype=None, \
-        ScalarType? out_dtype=None) -> (Tensor, Tensor)");
 }
 
 TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m) {
@@ -118,7 +101,6 @@ TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m) {
     m.impl("block_sparse_attention", &block_sparse_attention_impl_npu);
     m.impl("quant_flash_attn", &quant_flash_attn_impl_npu);
     m.impl("quant_flash_attn_metadata", &quant_flash_attn_metadata_impl_npu);
-    m.impl("fused_infer_attention_score_v2", &fused_infer_attention_score_v2_impl_npu);
 }
 
 TORCH_LIBRARY_IMPL(mindiesd, CatchAll, m) { m.impl("quant_flash_attn_metadata", &quant_flash_attn_metadata_impl_npu); }

@@ -1,4 +1,4 @@
-# MindIE-SD
+# vLLM-Omni + MindIE-SD（Ubuntu）
 
 ## 快速参考
 
@@ -14,15 +14,6 @@
 | **Python** | 3.11 |
 | **CANN** | 8.5.1 |
 | **许可证** | 木兰宽松许可证 第2版（Mulan PSL v2） |
-
-本镜像由 [MindIE community](https://www.hiascend.com/cn/developer/software/mindie) 维护。
-
-获取帮助：
-
-- [MindIE 镜像仓库](https://www.hiascend.com/developer/ascendhub/detail/af85b724a7e5469ebd7ea13c3439d48f)
-- [MindIE-SD 文档](https://gitcode.com/Ascend/MindIE-SD/blob/master/docs/zh/index.md)
-- [昇腾开发者社区](https://www.hiascend.com/developer)
-- [问题反馈](https://gitcode.com/Ascend/MindIE-SD/issues)
 
 ## 镜像介绍
 
@@ -56,14 +47,14 @@
 | A2 | `v3.0.0-A2-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0` |
 | A3 | `v3.0.0-A3-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0-a3` |
 
-### v3.0.0 版本 Dockerfile 目录
+### Dockerfile 归档路径
 
-每个系列均有独立 Dockerfile，存放于 MindIE-SD 源码仓库的 `docker/omni` 目录：
+Dockerfile 存放在 MindIE-SD 源码仓库的以下路径：
 
-| 系列 | 示例 Tag | Dockerfile |
-|------|----------|------------|
-| A2 | `v3.0.0-A2-ubuntu22.04-py3.11-aarch64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/master/docker/omni/Dockerfile.a2.ubuntu) |
-| A3 | `v3.0.0-A3-ubuntu22.04-py3.11-aarch64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/master/docker/omni/Dockerfile.a3.ubuntu) |
+```text
+docker/omni/Dockerfile.a2.ubuntu   # A2 系列
+docker/omni/Dockerfile.a3.ubuntu   # A3 系列
+```
 
 ## 快速开始
 
@@ -142,7 +133,7 @@ docker run -it --rm --name=mindiesd \
 A2：
 
 ```bash
-git clone https://gitcode.com/Ascend/MindIE-SD.git
+git clone https://github.com/Ascend/MindIE-SD.git
 cd MindIE-SD/docker/omni
 
 docker build -t mindiesd:v3.0.0-A2-ubuntu22.04-py3.11-aarch64 \
@@ -152,7 +143,7 @@ docker build -t mindiesd:v3.0.0-A2-ubuntu22.04-py3.11-aarch64 \
 A3：
 
 ```bash
-git clone https://gitcode.com/Ascend/MindIE-SD.git
+git clone https://github.com/Ascend/MindIE-SD.git
 cd MindIE-SD/docker/omni
 
 docker build -t mindiesd:v3.0.0-A3-ubuntu22.04-py3.11-aarch64 \
@@ -185,11 +176,11 @@ WORKDIR /workspace/your-app
 
 ## 兼容性变更说明
 
-请参考 [MindIE-SD 文档](https://gitcode.com/Ascend/MindIE-SD/blob/master/docs/zh/index.md) 获取最新的版本发布说明和兼容性信息。
+请参考 [MindIE-SD 文档](../../docs/zh/index.md) 获取最新的版本发布说明和兼容性信息。
 
 ## 许可证/免责声明
 
-本镜像采用 **木兰宽松许可证 第2版（Mulan PSL v2）** 授权。完整许可文本请参见 [LICENSE](https://gitcode.com/Ascend/MindIE-SD/blob/master/LICENSE.md) 文件。
+本镜像采用 **木兰宽松许可证 第2版（Mulan PSL v2）** 授权。完整许可文本请参见 [LICENSE](../../LICENSE.md) 文件。
 
 拉取并使用本容器镜像即表示您接受华为容器许可协议的条款和条件。许可副本可通过以下地址获取：https://www.hiascend.com/legal/ascendhub-download
 

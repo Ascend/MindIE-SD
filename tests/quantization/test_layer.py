@@ -13,7 +13,6 @@
 import os
 import unittest
 from unittest.mock import patch
-
 import torch
 from torch import nn
 import torch_npu
@@ -23,16 +22,13 @@ from mindiesd.quantization.layer import (
     WeightQuantLinear,
     W8A8TimeStepQuantLinear,
     W8A8MXFP8QuantLinear,
-    FP8RotateQuantFA,
     W8A8OnlineQuantLinear,
     W8A8MXFP8OnlineQuantLinear,
     W4A4MXFP4OnlineQuantLinear,
     W4A4MXFP4DualOnlineQuantLinear,
 )
-from mindiesd.quantization.config import QuantConfig, TimestepPolicyConfig
 from mindiesd.quantization.mode import QuantAlgorithm
 from mindiesd.quantization.utils import TimestepManager
-from mindiesd.utils.get_platform import is_a5_device
 
 
 class MockSafeTensorHandler:
@@ -474,12 +470,10 @@ class TestQuantLinearFloat16(unittest.TestCase):
     ):
         in_features = 128
         out_features = 64
-        timestep_config = TimestepPolicyConfig()
-        timestep_config.register([5], "W4A8", target="w4a4_linear")
         linear = W4A4MXFP4OnlineQuantLinear(
             nn.Linear(in_features, out_features),
             dtype=torch.float16,
-            quant_config=QuantConfig(timestep_config=timestep_config),
+            fallback_timesteps=[5],
         ).npu()
 
         TimestepManager.set_timestep_idx_max(10)
@@ -493,9 +487,6 @@ class TestQuantLinearFloat16(unittest.TestCase):
         mock_dynamic_quant.assert_not_called()
         self.assertNotIn("x1_dtype", mock_quant_matmul.call_args.kwargs)
         self.assertEqual(mock_quant_matmul.call_args.kwargs["x2_dtype"], torch_npu.float4_e2m1fn_x2)
-        bias = mock_quant_matmul.call_args.kwargs["bias"]
-        self.assertEqual(bias.shape, (1, out_features))
-        self.assertEqual(bias.dtype, torch.bfloat16)
 
     @patch('torch_npu.npu_dynamic_dual_level_mx_quant', side_effect=mock_npu_dynamic_dual_level_mx_quant)
     @patch('torch_npu.npu_dual_level_quant_matmul', side_effect=mock_npu_dual_level_quant_matmul)
@@ -521,12 +512,10 @@ class TestQuantLinearFloat16(unittest.TestCase):
     ):
         in_features = 128
         out_features = 64
-        timestep_config = TimestepPolicyConfig()
-        timestep_config.register([6], "W4A8", target="w4a4_linear")
         linear = W4A4MXFP4DualOnlineQuantLinear(
             nn.Linear(in_features, out_features),
             dtype=torch.float16,
-            quant_config=QuantConfig(timestep_config=timestep_config),
+            fallback_timesteps=[6],
         ).npu()
 
         TimestepManager.set_timestep_idx_max(10)
@@ -540,9 +529,6 @@ class TestQuantLinearFloat16(unittest.TestCase):
         mock_dynamic_quant.assert_not_called()
         self.assertEqual(mock_dynamic_mx_quant.call_count, 1)
         self.assertEqual(mock_quant_matmul.call_args.kwargs["x2_dtype"], torch_npu.float4_e2m1fn_x2)
-        bias = mock_quant_matmul.call_args.kwargs["bias"]
-        self.assertEqual(bias.shape, (1, out_features))
-        self.assertEqual(bias.dtype, torch.bfloat16)
 
 
 @unittest.skipIf(
@@ -780,219 +766,6 @@ class TestWeightQuantLinearFloat(unittest.TestCase):
         # Verify output shape and type
         self.assertEqual(output.shape, (4, 8, 32, self.out_features))
         self.assertIsInstance(output, torch.Tensor)
-
-
-@unittest.skipIf(
-    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
-)
-@unittest.skipIf(not is_a5_device(), "FP8 Quantization layer tests require A5 (950) NPU.")
-class TestFP8RotateQuantFA(unittest.TestCase):
-    """CPU-compatible tests for FP8RotateQuantFA. All NPU ops are mocked."""
-
-    B = 1
-    N = 8
-    S = 16
-    D = 64
-
-    def setUp(self):
-        if not hasattr(torch_npu, 'float8_e4m3fn'):
-            torch_npu.float8_e4m3fn = torch.float16
-
-    @staticmethod
-    def _make_weights(d, scale=1.0):
-        rot = scale * torch.eye(d)
-        return create_mock_handler({"attn.q_rot": rot, "attn.k_rot": rot})
-
-    @staticmethod
-    def _mock_block_quant(tensor, dst_type=None, row_block_size=128, col_block_size=128):
-        return tensor.to(torch.float16), torch.ones(1, dtype=torch.float32)
-
-    @staticmethod
-    def _mock_fa(*args, **kwargs):
-        q = args[0]
-        out_dtype = kwargs.get('out_dtype', torch.float32)
-        return (torch.zeros(*q.shape, dtype=out_dtype),)
-
-    def _make_model(self):
-        return FP8RotateQuantFA(prefix="attn", weights=self._make_weights(self.D))
-
-    @patch('torch_npu.npu_fused_infer_attention_score_v2', create=True)
-    @patch('torch_npu.npu_dynamic_block_quant', create=True)
-    def test_forward_bnsd_output_shape(self, mock_bq, mock_fa):
-        mock_bq.side_effect = self._mock_block_quant
-        mock_fa.side_effect = self._mock_fa
-
-        model = self._make_model()
-        q = torch.randn(self.B, self.N, self.S, self.D)
-        k = torch.randn(self.B, self.N, self.S, self.D)
-        v = torch.randn(self.B, self.N, self.S, self.D)
-
-        out = model(q, k, v, layout="BNSD")
-
-        self.assertEqual(out.shape, (self.B, self.N, self.S, self.D))
-
-    @patch('torch_npu.npu_fused_infer_attention_score_v2', create=True)
-    @patch('torch_npu.npu_dynamic_block_quant', create=True)
-    def test_forward_bsnd_output_shape(self, mock_bq, mock_fa):
-        mock_bq.side_effect = self._mock_block_quant
-        mock_fa.side_effect = self._mock_fa
-
-        model = self._make_model()
-        q = torch.randn(self.B, self.S, self.N, self.D)
-        k = torch.randn(self.B, self.S, self.N, self.D)
-        v = torch.randn(self.B, self.S, self.N, self.D)
-
-        out = model(q, k, v, layout="BSND")
-
-        self.assertEqual(out.shape, (self.B, self.S, self.N, self.D))
-
-    @patch('torch_npu.npu_fused_infer_attention_score_v2', create=True)
-    @patch('torch_npu.npu_dynamic_block_quant', create=True)
-    def test_forward_invalid_layout_raises_value_error(self, mock_bq, mock_fa):
-        mock_bq.side_effect = self._mock_block_quant
-        mock_fa.side_effect = self._mock_fa
-
-        model = self._make_model()
-        q = torch.randn(self.B, self.N, self.S, self.D)
-        k = torch.randn(self.B, self.N, self.S, self.D)
-        v = torch.randn(self.B, self.N, self.S, self.D)
-
-        with self.assertRaises(ValueError):
-            model(q, k, v, layout="NHWC")
-
-    @patch('torch_npu.npu_fused_infer_attention_score_v2', create=True)
-    @patch('torch_npu.npu_dynamic_block_quant', create=True)
-    def test_forward_bnsd_output_trimmed_when_fa_returns_padded(self, mock_bq, mock_fa):
-        """Verify the slice x[:, :, :s, :] when FA returns a sequence longer than s."""
-        mock_bq.side_effect = self._mock_block_quant
-
-        padded_s = self.S + 16
-
-        def padded_fa(*args, **kwargs):
-            q = args[0]
-            out_dtype = kwargs.get('out_dtype', torch.float32)
-            return (torch.zeros(q.shape[0], q.shape[1], padded_s, q.shape[3], dtype=out_dtype),)
-
-        mock_fa.side_effect = padded_fa
-
-        model = self._make_model()
-        q = torch.randn(self.B, self.N, self.S, self.D)
-        k = torch.randn(self.B, self.N, self.S, self.D)
-        v = torch.randn(self.B, self.N, self.S, self.D)
-
-        out = model(q, k, v, layout="BNSD")
-
-        self.assertEqual(out.shape, (self.B, self.N, self.S, self.D))
-
-    @patch('torch_npu.npu_fused_infer_attention_score_v2', create=True)
-    @patch('torch_npu.npu_dynamic_block_quant', create=True)
-    def test_forward_bsnd_rotation_applied_to_query(self, mock_bq, mock_fa):
-        """Verify that q_rot is applied to query in BSND layout before block_quant."""
-        captured = []
-
-        def capture_bq(tensor, dst_type=None, row_block_size=128, col_block_size=128):
-            captured.append(tensor.clone())
-            return tensor.to(torch.float16), torch.ones(1)
-
-        mock_bq.side_effect = capture_bq
-        mock_fa.side_effect = self._mock_fa
-
-        model = FP8RotateQuantFA(prefix="attn", weights=self._make_weights(self.D, scale=2.0))
-        # BSND: (B, S, N, D)
-        q = torch.ones(self.B, self.S, self.N, self.D)
-        k = torch.ones(self.B, self.S, self.N, self.D)
-        v = torch.ones(self.B, self.S, self.N, self.D)
-
-        model(q, k, v, layout="BSND")
-
-        # After rotation (2*eye) query values double; after transpose and squeeze: (N, S, D)
-        self.assertEqual(len(captured), 3)
-        expected_q = 2.0 * torch.ones(self.N, self.S, self.D)
-        self.assertTrue(torch.allclose(captured[0], expected_q))
-
-
-@unittest.skipIf(
-    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
-)
-@unittest.skipIf(not is_a5_device(), "FP8 Quantization layer tests require A5 (950) NPU.")
-class TestFaBlockQuantPreprocess(unittest.TestCase):
-    """CPU-compatible tests for fa_block_quant_preprocess. All NPU ops are mocked."""
-
-    B = 1
-    N = 8
-    S = 16
-    D = 64
-
-    def setUp(self):
-        if not hasattr(torch_npu, 'float8_e4m3fn'):
-            torch_npu.float8_e4m3fn = torch.float16
-
-    @staticmethod
-    def _mock_block_quant(tensor, dst_type=None, row_block_size=128, col_block_size=128):
-        return tensor.to(torch.float16), torch.ones(1, dtype=torch.float32)
-
-    @patch('torch_npu.npu_dynamic_block_quant', create=True)
-    def test_bsnd_layout_calls_block_quant_with_transposed_shape(self, mock_bq):
-        """Verify BSND input is transposed to BNSD before npu_dynamic_block_quant."""
-        captured_shapes = []
-
-        def capture(tensor, dst_type=None, row_block_size=128, col_block_size=128):
-            captured_shapes.append(tensor.shape)
-            return tensor.to(torch.float16), torch.ones(1)
-
-        mock_bq.side_effect = capture
-        from mindiesd.layers.quant.block_quant import fa_block_quant_preprocess
-
-        x = torch.randn(self.B, self.S, self.N, self.D)
-        fa_block_quant_preprocess(x, block_size=128, layout="BSND")
-
-        # transpose(1,2) + squeeze(0) → (N, S, D)
-        self.assertEqual(captured_shapes[0], torch.Size([self.N, self.S, self.D]))
-
-    @patch('torch_npu.npu_dynamic_block_quant', create=True)
-    def test_bnsd_layout_calls_block_quant_with_correct_shape(self, mock_bq):
-        """Verify BNSD input is squeezed to (N, S, D) before npu_dynamic_block_quant."""
-        captured_shapes = []
-
-        def capture(tensor, dst_type=None, row_block_size=128, col_block_size=128):
-            captured_shapes.append(tensor.shape)
-            return tensor.to(torch.float16), torch.ones(1)
-
-        mock_bq.side_effect = capture
-        from mindiesd.layers.quant.block_quant import fa_block_quant_preprocess
-
-        x = torch.randn(self.B, self.N, self.S, self.D)
-        fa_block_quant_preprocess(x, block_size=128, layout="BNSD")
-
-        # squeeze(0) → (N, S, D)
-        self.assertEqual(captured_shapes[0], torch.Size([self.N, self.S, self.D]))
-
-    @patch('torch_npu.npu_dynamic_block_quant', create=True)
-    def test_invalid_dim_raises_parameters_invalid(self, mock_bq):
-        mock_bq.side_effect = self._mock_block_quant
-        from mindiesd.layers.quant.block_quant import fa_block_quant_preprocess
-        from mindiesd.utils import ParametersInvalid
-
-        x = torch.randn(self.N, self.S, self.D)  # 3D, not 4D
-        with self.assertRaises(ParametersInvalid):
-            fa_block_quant_preprocess(x)
-
-    @patch('torch_npu.npu_dynamic_block_quant', create=True)
-    def test_block_size_forwarded_as_row_block_size(self, mock_bq):
-        """Verify block_size is forwarded as row_block_size to npu_dynamic_block_quant."""
-        captured_kwargs = {}
-
-        def capture(tensor, dst_type=None, row_block_size=128, col_block_size=128):
-            captured_kwargs['row_block_size'] = row_block_size
-            return tensor.to(torch.float16), torch.ones(1)
-
-        mock_bq.side_effect = capture
-        from mindiesd.layers.quant.block_quant import fa_block_quant_preprocess
-
-        x = torch.randn(self.B, self.N, self.S, self.D)
-        fa_block_quant_preprocess(x, block_size=256, layout="BNSD")
-
-        self.assertEqual(captured_kwargs['row_block_size'], 256)
 
 
 if __name__ == '__main__':

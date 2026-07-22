@@ -9,63 +9,17 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-import os
 import unittest
-from unittest.mock import Mock, patch
-
 import torch
 
-from mindiesd.compilation import MindieSDBackend  # pylint: disable=no-name-in-module
 from mindiesd.layers._custom_ops import (
-    FREQUENCY_REGULATOR_MAX_FREQ,
-    frequency_regulator,
-    frequency_regulator_fake,
     laser_attention,
     laser_attention_preprocess,
 )
-from mindiesd.utils import ParametersInvalid
+import os
+
+from mindiesd.compilation import MindieSDBackend  # pylint: disable=no-name-in-module
 from mindiesd.utils.get_platform import is_a5_device
-
-
-class TestFrequencyRegulatorWrapper(unittest.TestCase):
-    def test_frequency_regulator_forwards_valid_freq(self):
-        expected = torch.empty((1,), device="meta", dtype=torch.int64)
-        mock_op = Mock(return_value=expected)
-
-        with patch.object(torch.ops.mindiesd, "frequency_regulator", mock_op, create=True):
-            result = frequency_regulator(1650)
-
-        self.assertIs(result, expected)
-        mock_op.assert_called_once_with(1650)
-
-    def test_frequency_regulator_accepts_uint32_max_freq(self):
-        expected = torch.empty((1,), device="meta", dtype=torch.int64)
-        mock_op = Mock(return_value=expected)
-
-        with patch.object(torch.ops.mindiesd, "frequency_regulator", mock_op, create=True):
-            result = frequency_regulator(FREQUENCY_REGULATOR_MAX_FREQ)
-
-        self.assertIs(result, expected)
-        mock_op.assert_called_once_with(FREQUENCY_REGULATOR_MAX_FREQ)
-
-    def test_frequency_regulator_fake_returns_int64_status(self):
-        result = frequency_regulator_fake(1650)
-
-        self.assertEqual(result.dtype, torch.int64)
-
-    def test_frequency_regulator_rejects_bool_freq(self):
-        with self.assertRaises(ParametersInvalid):
-            frequency_regulator(True)
-
-    def test_frequency_regulator_rejects_non_int_freq(self):
-        with self.assertRaises(ParametersInvalid):
-            frequency_regulator(1650.0)
-
-    def test_frequency_regulator_rejects_out_of_range_freq(self):
-        with self.assertRaises(ParametersInvalid):
-            frequency_regulator(-1)
-        with self.assertRaises(ParametersInvalid):
-            frequency_regulator(FREQUENCY_REGULATOR_MAX_FREQ + 1)
 
 
 @unittest.skipIf(

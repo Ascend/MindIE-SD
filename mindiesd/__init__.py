@@ -26,7 +26,6 @@ __all__ = [
     'TimestepPolicyConfig',
     'sparse_attention',
     'fast_layernorm',
-    'frequency_regulator',
     'fused_moe',
 ]
 
@@ -45,7 +44,6 @@ from .layers import (  # noqa: E402
     RMSNorm,
     sparse_attention,
     fast_layernorm,
-    frequency_regulator,
     fused_moe,
 )
 from .quantization import (  # noqa: E402

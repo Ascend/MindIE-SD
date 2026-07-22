@@ -20,21 +20,12 @@
 using namespace at;
 
 namespace {
-// V2 kernel supports BF16/FP16/FP8 natively; V1 is the legacy fallback (BF16/FP16 only).
-// V2 is preferred but only exists in newer CANN; probe libopapi.so at runtime and fall back
-// to V1 when V2 is absent, so tests can pass on older CANN.
-constexpr std::string_view BLOCK_SPARSE_ATTENTION_V2_NAME = "aclnnBlockSparseAttentionV2";
-constexpr std::string_view BLOCK_SPARSE_ATTENTION_V1_NAME = "aclnnBlockSparseAttention";
+// V2 kernel supports BF16/FP16/FP8 natively.
+constexpr std::string_view BLOCK_SPARSE_ATTENTION_NAME = "aclnnBlockSparseAttentionV2";
 
 constexpr int64_t MASK_TYPE = 0; // no attention mask
 constexpr int64_t PRE_TOKENS = 2147483647; // full context window
 constexpr int64_t NEXT_TOKENS = 2147483647;
-
-// Cache the probe result: is aclnnBlockSparseAttentionV2 available in libopapi.so?
-inline bool IsBlockSparseAttentionV2Available() {
-    static const bool available = (GetOpApiFuncAddr(BLOCK_SPARSE_ATTENTION_V2_NAME.data()) != nullptr);
-    return available;
-}
 } // namespace
 
 std::tuple<at::Tensor, at::Tensor> block_sparse_attention_impl_npu(const at::Tensor &query, const at::Tensor &key,
@@ -89,38 +80,21 @@ std::tuple<at::Tensor, at::Tensor> block_sparse_attention_impl_npu(const at::Ten
     c10::optional<at::Tensor> softmaxLseOpt =
         (softmax_lse_flag != 0) ? c10::optional<at::Tensor>(softmaxLse) : c10::nullopt;
 
-    if (IsBlockSparseAttentionV2Available()) {
-        // V2 API: q/k/v_dequant_scale inserted after blockTableOptional.
-        // BF16/FP16 path: pass nulltensor (nullptr) for all three scales.
-        // FP8 path: pass FLOAT32 scale tensors.
-        EXEC_NPU_CMD<BLOCK_SPARSE_ATTENTION_V2_NAME>(query, key, value, block_sparse_mask,
-            nulltensor, // attenMaskOptional (nullptr)
-            block_shape,
-            optSeqLen, // nullptr when not set
-            optSeqLenKv, // nullptr when not set
-            nulltensor, // blockTableOptional (nullptr)
-            q_dequant_scale, // nullptr for BF16/FP16, FLOAT32 for FP8
-            k_dequant_scale, // nullptr for BF16/FP16, FLOAT32 for FP8
-            v_dequant_scale, // nullptr for BF16/FP16, FLOAT32 for FP8
-            qLayoutPtr, kvLayoutPtr, num_key_value_heads, MASK_TYPE, scale_value, inner_precise, blockSize, PRE_TOKENS,
-            NEXT_TOKENS, softmax_lse_flag, attentionOut,
-            softmaxLseOpt); // nullptr when flag=0
-    } else {
-        // V1 fallback for older CANN without aclnnBlockSparseAttentionV2.
-        // V1 has no dequant_scale params (no FP8 support); reject FP8 inputs explicitly.
-        TORCH_CHECK(!q_dequant_scale.has_value() && !k_dequant_scale.has_value() && !v_dequant_scale.has_value(),
-            "block_sparse_attention: FP8 (q/k/v_dequant_scale) requires aclnnBlockSparseAttentionV2, which is not "
-            "available in the current CANN. Please use BF16/FP16 inputs or upgrade CANN.");
-        EXEC_NPU_CMD<BLOCK_SPARSE_ATTENTION_V1_NAME>(query, key, value, block_sparse_mask,
-            nulltensor, // attenMaskOptional (nullptr)
-            block_shape,
-            optSeqLen, // nullptr when not set
-            optSeqLenKv, // nullptr when not set
-            nulltensor, // blockTableOptional (nullptr)
-            qLayoutPtr, kvLayoutPtr, num_key_value_heads, MASK_TYPE, scale_value, inner_precise, blockSize, PRE_TOKENS,
-            NEXT_TOKENS, softmax_lse_flag, attentionOut,
-            softmaxLseOpt); // nullptr when flag=0
-    }
+    // V2 API: q/k/v_dequant_scale inserted after blockTableOptional.
+    // BF16/FP16 path: pass nulltensor (nullptr) for all three scales.
+    // FP8 path: pass FLOAT32 scale tensors.
+    EXEC_NPU_CMD<BLOCK_SPARSE_ATTENTION_NAME>(query, key, value, block_sparse_mask,
+        nulltensor, // attenMaskOptional (nullptr)
+        block_shape,
+        optSeqLen, // nullptr when not set
+        optSeqLenKv, // nullptr when not set
+        nulltensor, // blockTableOptional (nullptr)
+        q_dequant_scale, // nullptr for BF16/FP16, FLOAT32 for FP8
+        k_dequant_scale, // nullptr for BF16/FP16, FLOAT32 for FP8
+        v_dequant_scale, // nullptr for BF16/FP16, FLOAT32 for FP8
+        qLayoutPtr, kvLayoutPtr, num_key_value_heads, MASK_TYPE, scale_value, inner_precise, blockSize, PRE_TOKENS,
+        NEXT_TOKENS, softmax_lse_flag, attentionOut,
+        softmaxLseOpt); // nullptr when flag=0
 
     return std::make_tuple(attentionOut, softmaxLse);
 }

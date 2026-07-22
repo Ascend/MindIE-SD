@@ -1,12 +1,11 @@
-# Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
-# MindIE is licensed under Mulan PSL v2.
-# You can use this software according to the terms and conditions of the Mulan PSL v2.
-# You may obtain a copy of Mulan PSL v2 at:
-#          http://license.coscl.org.cn/MulanPSL2
-# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
-# EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
-# MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
-# See the Mulan PSL v2 for more details.
+# Copyright (c) 2024 Huawei Technologies Co., Ltd.
+# This file is a part of the CANN Open Software.
+# Licensed under CANN Open Software License Agreement Version 1.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+# ======================================================================================================================
 
 function(add_target_source)
     cmake_parse_arguments(ADD "" "BASE_TARGET;SRC_DIR" "TARGET_NAME" ${ARGN})
@@ -327,9 +326,6 @@ function(add_bin_compile_target)
         file(GLOB_RECURSE _op_kernel_files "${_op_info}/op_kernel/*")
         if (_op_kernel_files)
             set(${_op_name}_dir ${_op_info})
-            if ("${_op_name}" STREQUAL "fused_infer_attention_score")
-                set(eagle_fused_infer_attention_score_dir ${_op_info})
-            endif()
         endif()
     endforeach()
 
@@ -380,27 +376,13 @@ function(add_bin_compile_target)
                 foreach(depend_info ${${op_file}_depends})
                     get_filename_component(_depend_op_name "${depend_info}" NAME)
                     set(_depend_op_target ${_depend_op_name}_${BINARY_COMPUTE_UNIT}_src_copy)
-                    if ("${_depend_op_name}" STREQUAL "common")
-                        add_ops_src_copy(
-                                TARGET_NAME
-                                ${_depend_op_name}_${BINARY_COMPUTE_UNIT}_legacy_src_copy
-                                SRC
-                                ${CMAKE_SOURCE_DIR}/${depend_info}
-                                DST
-                                ${_OUT_DIR}/${_depend_op_name}/op_kernel
-                                COMPUTE_UNIT
-                                ${BINARY_COMPUTE_UNIT}
-                                BE_RELIED
-                                ${OP_TARGET_NAME}_src_copy
-                        )
-                    endif()
                     add_ops_src_copy(
                             TARGET_NAME
                             ${_depend_op_target}
                             SRC
                             ${CMAKE_SOURCE_DIR}/${depend_info}
                             DST
-                            ${SRC_OUT_DIR}/${_depend_op_name}
+                            ${_OUT_DIR}/${_depend_op_name}/op_kernel
                             COMPUTE_UNIT
                             ${BINARY_COMPUTE_UNIT}
                             BE_RELIED

@@ -25,10 +25,8 @@
 #include <torch_npu/csrc/framework/utils/CalcuOpUtil.h>
 #include <torch_npu/csrc/framework/utils/OpAdapter.h>
 
-#include <array>
 #include <fstream>
 #include <string>
-#include <vector>
 
 #include "torch_npu/csrc/aten/NPUNativeFunctions.h"
 #include "torch_npu/csrc/core/npu/NPUStream.h"
@@ -100,16 +98,6 @@ typedef struct {
     aclDataType dtype;
 } TensorWrapper;
 
-typedef struct {
-    const at::TensorList &tensorList;
-    const c10::optional<int64_t> &dtype;
-} TensorListWrapper;
-
-typedef struct {
-    const c10::optional<at::Tensor> &tensor;
-    const c10::optional<int64_t> &dtype;
-} OptionalTensorWrapper;
-
 inline bool Is4BitDtype(const aclDataType aclDataType) {
     return aclDataType == ACL_DTYPE_FLOAT4_E2M1 || aclDataType == ACL_INT4;
 }
@@ -132,16 +120,6 @@ inline aclDataType GetOverrideAclDtype(const at::Tensor &tensor, const c10::opti
 
 inline TensorWrapper MakeTensorWrapper(const at::Tensor &tensor, const c10::optional<int64_t> &realDtype) {
     return TensorWrapper{tensor, GetOverrideAclDtype(tensor, realDtype)};
-}
-
-inline TensorListWrapper MakeTensorListWrapper(
-    const at::TensorList &tensorList, const c10::optional<int64_t> &realDtype) {
-    return TensorListWrapper{tensorList, realDtype};
-}
-
-inline OptionalTensorWrapper MakeOptionalTensorWrapper(
-    const c10::optional<at::Tensor> &tensor, const c10::optional<int64_t> &realDtype) {
-    return OptionalTensorWrapper{tensor, realDtype};
 }
 
 template <typename T> inline bool CheckDataPointer(const T *data) {
@@ -501,22 +479,6 @@ inline AclTensorList *ConvertType(const at::TensorList &atTensorList) {
     }
     auto aclTensorList = aclCreateTensorList(tensorTist.data(), tensorTist.size());
     return aclTensorList;
-}
-
-inline AclTensorList *ConvertType(const TensorListWrapper &tensorListWrapper) {
-    std::vector<const AclTensor *> tensorTist(tensorListWrapper.tensorList.size());
-    for (size_t i = 0; i < tensorListWrapper.tensorList.size(); i++) {
-        tensorTist[i] = ConvertType(MakeTensorWrapper(tensorListWrapper.tensorList[i], tensorListWrapper.dtype));
-    }
-    auto aclTensorList = aclCreateTensorList(tensorTist.data(), tensorTist.size());
-    return aclTensorList;
-}
-
-inline AclTensor *ConvertType(const OptionalTensorWrapper &tensorWrapper) {
-    if (tensorWrapper.tensor.has_value() && tensorWrapper.tensor.value().defined()) {
-        return ConvertType(MakeTensorWrapper(tensorWrapper.tensor.value(), tensorWrapper.dtype));
-    }
-    return nullptr;
 }
 
 inline AclTensor *ConvertType(const c10::optional<at::Tensor> &optTensor) {

@@ -1,13 +1,11 @@
 /**
- * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
- * MindIE is licensed under Mulan PSL v2.
- * You can use this software according to the terms and conditions of the Mulan PSL v2.
- * You may obtain a copy of Mulan PSL v2 at:
- *          http://license.coscl.org.cn/MulanPSL2
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PSL v2 for more details.
+ * Copyright (c) 2024 Huawei Technologies Co., Ltd.
+ * This file is a part of the CANN Open Software.
+ * Licensed under CANN Open Software License Agreement Version 1.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
  */
 
 /*!
@@ -31,9 +29,7 @@ using AscendC::GlobalTensor;
 using AscendC::DataFormat;
 using AscendC::ShapeInfo;
 using AscendC::DataCopyParams;
-using AscendC::DataCopyExtParams;
 using AscendC::DataCopyPadParams;
-using AscendC::DataCopyPadExtParams;
 using AscendC::BinaryRepeatParams;
 using AscendC::IsSameType;
 using AscendC::HardEvent;
@@ -41,37 +37,20 @@ using AscendC::SetFlag;
 using AscendC::WaitFlag;
 
 enum class LayOutTypeEnum {
-    None = 0,
-    LAYOUT_BSH = 1,
-    LAYOUT_SBH = 2,
-    LAYOUT_BNSD = 3,
-    LAYOUT_TND = 4,
-    LAYOUT_NTD_TND = 5,
-    LAYOUT_NTD = 6,
-    LAYOUT_NBSD = 7
-};
-
-enum class TransposeLayoutEnum : uint32_t {
-    None = 0,
-    BNSD_BSND = 1,
-    BSND_BNSD = 2,
-    BSH_BNSD = 3,
-    BNSD_NBSD = 4,
-    BSND_NBSD = 5,
-    BSH_NBSD = 6,
-    NTD_TND = 7,
-    TND_NTD = 8
+    None = 0, LAYOUT_BSH = 1, LAYOUT_SBH = 2, LAYOUT_BNSD = 3, LAYOUT_TND = 4, LAYOUT_NTD_TND = 5
 };
 
 namespace math {
-template <typename T> __aicore__ inline T Ceil(T a, T b) {
+template <typename T> __aicore__ inline T Ceil(T a, T b)
+{
     if (b == 0) {
         return 0;
     }
     return (a + b - 1) / b;
 }
 
-template <typename T> __aicore__ inline T Align(T a, T b) {
+template <typename T> __aicore__ inline T Align(T a, T b)
+{
     if (b == 0) {
         return 0;
     }
@@ -79,22 +58,33 @@ template <typename T> __aicore__ inline T Align(T a, T b) {
 }
 }
 
-template <typename T1, typename T2> __aicore__ inline T1 CeilDiv(T1 a, T2 b) {
+template <typename T1, typename T2>
+__aicore__ inline T1 CeilDiv(T1 a, T2 b)
+{
     if (b == 0) {
         return 0;
     }
     return (a + b - 1) / b;
 }
 
-template <typename T1, typename T2> __aicore__ inline T1 Max(T1 a, T2 b) { return (a > b) ? (a) : (b); }
+template <typename T1, typename T2>
+__aicore__ inline T1 Max(T1 a, T2 b)
+{
+    return (a > b) ? (a) : (b);
+}
 
-template <typename T1, typename T2> __aicore__ inline T1 Min(T1 a, T2 b) { return (a > b) ? (b) : (a); }
+template <typename T1, typename T2>
+__aicore__ inline T1 Min(T1 a, T2 b)
+{
+    return (a > b) ? (b) : (a);
+}
 
-__aicore__ inline void BoolCopyIn(LocalTensor<uint8_t> &dstTensor, GlobalTensor<uint8_t> &srcTensor, int64_t srcOffset,
-    uint32_t s1Size, uint32_t s2Size, int64_t totalS2Size, int64_t alignedSize = blockBytes) {
+__aicore__ inline void BoolCopyIn(LocalTensor<uint8_t> &dstTensor, GlobalTensor<uint8_t> &srcTensor,
+    int64_t srcOffset, uint32_t s1Size, uint32_t s2Size, int64_t totalS2Size, int64_t alignedSize = blockBytes)
+{
     uint32_t alignedS2Size = CeilDiv(s2Size, alignedSize) * alignedSize;
     uint32_t shapeArray[] = {s1Size, alignedS2Size};
-    dstTensor.SetShapeInfo(ShapeInfo(2, shapeArray, DataFormat::ND)); // 2 is index
+    dstTensor.SetShapeInfo(ShapeInfo(2, shapeArray, DataFormat::ND));  // 2 is index
     dstTensor.SetSize(s1Size * alignedS2Size);
     DataCopyParams dataCopyParams;
     dataCopyParams.blockCount = s1Size;
@@ -121,21 +111,23 @@ __aicore__ inline void BoolCopyIn(LocalTensor<uint8_t> &dstTensor, GlobalTensor<
 
 __aicore__ inline void Bit2Int8CopyIn(LocalTensor<uint8_t> &dstTensor, GlobalTensor<uint8_t> &srcTensor,
     int64_t srcOffset, uint32_t batchSize, uint32_t s1BaseSize, uint32_t s2BaseSize, int64_t s2TotalSize,
-    int64_t alignedSize = blockBytes) {
+    int64_t alignedSize = blockBytes)
+{
     uint32_t alignedS2Size = CeilDiv(s2BaseSize / byteBitRatio, alignedSize) * alignedSize;
     uint32_t shapeArray[] = {batchSize * s1BaseSize, alignedS2Size};
-    dstTensor.SetShapeInfo(ShapeInfo(2, shapeArray, DataFormat::ND)); // 2 is index
+    dstTensor.SetShapeInfo(ShapeInfo(2, shapeArray, DataFormat::ND));  // 2 is index
     dstTensor.SetSize(batchSize * s1BaseSize * alignedS2Size);
     DataCopyParams dataCopyParams;
     dataCopyParams.blockCount = batchSize * s1BaseSize;
     dataCopyParams.blockLen = CeilDiv(s2BaseSize / byteBitRatio, blockBytes);
     dataCopyParams.dstStride = 0;
     if (s2TotalSize / byteBitRatio % alignedSize == 0 && s2BaseSize / byteBitRatio % alignedSize == 0) {
-        dataCopyParams.srcStride = (s2TotalSize / byteBitRatio - dataCopyParams.blockLen * blockBytes) / blockBytes;
+        dataCopyParams.srcStride =
+            (s2TotalSize / byteBitRatio - dataCopyParams.blockLen * blockBytes) / blockBytes;
         DataCopy(dstTensor, srcTensor[srcOffset / byteBitRatio], dataCopyParams);
     } else {
         dataCopyParams.blockLen = CeilDiv(s2BaseSize, byteBitRatio);
-        dataCopyParams.srcStride = (s2TotalSize - s2BaseSize) / byteBitRatio;
+        dataCopyParams.srcStride = (s2TotalSize  - s2BaseSize) / byteBitRatio;
         DataCopyPadParams dataCopyPadParams;
         dataCopyPadParams.isPad = true;
         dataCopyPadParams.rightPadding = 0;
@@ -144,7 +136,8 @@ __aicore__ inline void Bit2Int8CopyIn(LocalTensor<uint8_t> &dstTensor, GlobalTen
     }
 }
 
-__aicore__ inline int32_t Align(int32_t shape) {
+__aicore__ inline int32_t Align(int32_t shape)
+{
     int32_t alignFactor = 16;
     int32_t alignedSize = CeilDiv<int32_t, int32_t>(shape, alignFactor) * alignFactor;
     return alignedSize;

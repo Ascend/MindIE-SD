@@ -26,7 +26,7 @@ from mindiesd.layers.moe.moe_dataclass import MoERoutingInput
 )
 class TestExpertsSelector(unittest.TestCase):
     def test_custom_router_output_is_forwarded(self):
-        hidden_states = torch.randint(-8, 8, (2, 4), dtype=torch.int8)
+        hidden_states = torch.randn(2, 4)
         router_logits = torch.randn(2, 3)
         custom_routing_function = MagicMock(
             return_value=(

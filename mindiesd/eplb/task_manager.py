@@ -11,8 +11,6 @@
 # See the Mulan PSL v2 for more details.
 
 import threading
-from multiprocessing.connection import AuthenticationError
-
 import torch_npu
 
 from mindiesd.utils.logs.logging import logger
@@ -25,28 +23,6 @@ TASK_DISPATCHER = {
     TaskType.PROFILE: handle_profile_task,
     TaskType.UPDATE_LAYOUT: handle_update_layout_task,
 }
-
-
-def _log_unknown_instruction(instruction):
-    logger.error(
-        "[MindIE-SD/eplb] Unknown instruction ignored. "
-        "issue=instruction is not a TaskPayload, instruction=%s. "
-        "possible_cause=an unsupported object was inserted into the EPLB instruction queue. "
-        "Troubleshooting: inspect the producer that writes instruction_queue and remove non-TaskPayload "
-        "objects; ensure the queue only contains PROFILE or UPDATE_LAYOUT TaskPayload objects.",
-        instruction,
-    )
-
-
-def _log_unknown_task_type(instruction):
-    logger.error(
-        "[MindIE-SD/eplb] Unknown task type. "
-        "issue=unsupported EPLB task type, task_type=%s. "
-        "possible_cause=an invalid TaskPayload was inserted into the EPLB instruction queue. "
-        "Troubleshooting: inspect the TaskPayload producer and ensure task_type only uses PROFILE or "
-        "UPDATE_LAYOUT; if a new task type was introduced, add it to TASK_DISPATCHER before enqueueing it.",
-        instruction.task_type,
-    )
 
 
 def parse_module(module):
@@ -73,48 +49,15 @@ def expert_info_transfer_pool(module, instruction_queue, upload_queue, device):
             break
         if isinstance(instruction, TaskPayload):
             handler_function = TASK_DISPATCHER.get(instruction.task_type, handle_unknown_task)
-            if handler_function is handle_unknown_task:
-                _log_unknown_task_type(instruction)
             handler_function(instruction, upload_queue, expert_load_collector_list, dispatcher_list, transfer_stream)
         else:
-            _log_unknown_instruction(instruction)
+            logger.debug("[MindIE-SD/eplb] Unknown instruction ignored. instruction=%s.", instruction)
 
 
 def connect_to_schedule_manager(rank_in_group, ip, port, auth_key):
     addr = (ip, port)
     manager = get_manager_client(addr, auth_key)
-    try:
-        manager.connect()
-    except AuthenticationError as error:
-        logger.error(
-            "[MindIE-SD/eplb] EPLB worker authentication failed. "
-            "issue=scheduler rejected worker credentials, rank_in_group=%s, manager_addr=%s:%s, actual_error=%s. "
-            "possible_cause=the scheduler and worker use different EPLB authentication keys. "
-            "Troubleshooting: compare scheduler --auth_key, worker auth_key, and EPLB_AUTH_KEY in both "
-            "environments; use the same key on every rank, then restart scheduler and workers.",
-            rank_in_group,
-            ip,
-            port,
-            error,
-        )
-        raise
-    except OSError as error:
-        logger.error(
-            "[MindIE-SD/eplb] EPLB worker failed to connect to scheduler. "
-            "issue=scheduler connection unavailable, rank_in_group=%s, manager_addr=%s:%s, actual_error=%s. "
-            "possible_cause=the scheduler is not running, the configured address is incorrect, "
-            "or the network path is unavailable. "
-            "Troubleshooting: if actual_error is Connection refused, check whether the scheduler process is running "
-            "and whether manager_addr is listening with ps and ss -ltnp; if the scheduler is listening, compare "
-            "manager_addr with scheduler --host/--port and worker ip/port; if the address matches but connection "
-            "still fails, run nc -vz or telnet from the worker environment to check routing, firewall, or container "
-            "network namespace.",
-            rank_in_group,
-            ip,
-            port,
-            error,
-        )
-        raise
+    manager.connect()
     logger.debug(
         "[MindIE-SD/eplb] Connected to schedule manager. rank_in_group=%s, manager_addr=%s:%s.",
         rank_in_group,

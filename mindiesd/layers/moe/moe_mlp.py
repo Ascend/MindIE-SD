@@ -80,7 +80,7 @@ def w8a8_dynamic_apply_mlp(mlp_input: MoEMlpComputeInput) -> torch.Tensor:
     mlp_output_dtype = mlp_input.mlp_output_dtype
 
     if per_token_scale is None:
-        quant_hidden, per_token_scale = torch_npu.npu_dynamic_quant(hidden_states, dst_type=torch.int8)
+        quant_hidden, per_token_scale = torch_npu.npu_dynamic_quant(hidden_states)
     else:
         quant_hidden = hidden_states
 

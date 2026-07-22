@@ -24,7 +24,6 @@
 #include <graph/utils/type_utils.h>
 #include <tiling/platform/platform_ascendc.h>
 #include "err/ops_err.h"
-#include "platform/soc_spec.h"
 
 #ifdef ASCENDC_OP_TEST
 #define ASCENDC_EXTERN_C extern "C"

@@ -43,7 +43,6 @@ class QuantAlgorithm(StrEnum):
     INT8 = "INT8"
     MIXED_PERCISION = "MIXED_PERCISION"
     FP8_DYNAMIC = "FP8_DYNAMIC"
-    MXFP8_DYNAMIC = "MXFP8_DYNAMIC"
     MXFP4_DYNAMIC = "MXFP4_DYNAMIC"
     NO_QUANT = "NO_QUANT"
     W4A4_MXFP4_SVD = "W4A4_MXFP4_SVD"
@@ -186,7 +185,6 @@ class QuantMode:
             QuantAlgorithm.W8A8_PER_CHANNEL_PER_TOKEN: QuantMode.use_smooth_quant(per_token=True, per_channel=True),
             QuantAlgorithm.W8A8_PER_TENSOR_PER_TOKEN: QuantMode.use_smooth_quant(per_token=True, per_channel=False),
             QuantAlgorithm.FP8_DYNAMIC: QuantMode.from_descriptor(QuantModeDescriptor(use_fa_quant=True)),
-            QuantAlgorithm.MXFP8_DYNAMIC: QuantMode.from_descriptor(QuantModeDescriptor(use_fa_quant=True)),
             QuantAlgorithm.MXFP4_DYNAMIC: QuantMode.from_descriptor(QuantModeDescriptor(use_fa_quant=True)),
             QuantAlgorithm.W8A8_MXFP8: QuantMode.use_smooth_quant(per_token=False, per_channel=False),
             QuantAlgorithm.W4A4_MXFP4_SVD: QuantMode.use_smooth_quant(per_token=False, per_channel=False),
