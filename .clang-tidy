@@ -1,0 +1,111 @@
+# 代码静态检查规则集合
+Checks: |
+  # 先关闭所有规则，再精准开启需要的检查（最规范的企业级写法）
+  -*
+
+  ###########################################################################
+  # 一、Clang 静态分析核心（最关键：防崩溃、空指针、未定义行为、内存错误）
+  ###########################################################################
+  clang-analyzer-core.*,                # 核心静态分析：空指针、未初始化值、除零、栈溢出等
+  clang-analyzer-unix.*,                # Unix 系统调用安全检查：malloc/free 配对、文件描述符泄漏
+  clang-analyzer-cplusplus.*,           # C++ 专项检查：new/delete 匹配、重复释放、野指针
+  clang-analyzer-security.*,            # 安全漏洞检查：缓冲区溢出、格式化字符串漏洞
+
+  ###########################################################################
+  # 二、Google C++ 编码规范
+  ###########################################################################
+  google-extern-c,                      # 检查 extern "C" 语法规范
+  -google-extern-c-internal-include,    # 禁止在 extern "C" 内部包含头文件
+  -google-build-using-namespace,         # 禁止在头文件/全局作用域使用 using namespace
+  google-default-arguments,             # 禁止虚函数使用默认参数（极易引发调用不一致）
+  google-explicit-constructor,          # 单参数构造函数必须加 explicit（防止隐式转换）
+
+  ###########################################################################
+  # 三、代码可读性 & 冗余代码检查
+  ###########################################################################
+  readability-using-namespace-header,   # 禁止在 #include 之前使用 using namespace
+  -modernize-use-trailing-return-type,  # 关闭：强制尾置返回值风格（不强制）
+  readability-commented-out-code,       # 检查并禁止注释掉的废弃代码
+  readability-unused-parameter,         # 检查函数未使用的参数
+  readability-redundant-control-flow,   # 检查冗余的条件/循环控制流
+  readability-redundant-assignment,     # 检查冗余赋值（赋值后立刻覆盖/未使用）
+  readability-isolate-declaration,      # 强制一行只定义一个变量（规范可读性）
+
+  ###########################################################################
+  # 四、死代码 / 不可达代码检查
+  ###########################################################################
+  clang-analyzer-deadcode.DeadStores,       # 变量赋值后从未使用
+  clang-analyzer-deadcode.UnreachableCode,  # 永远不会执行的代码
+  clang-analyzer-deadcode.DeadCode,         # 完全无用的死代码
+
+  ###########################################################################
+  # 五、Bug 预防（直接避免 80% C++ 常见崩溃）
+  ###########################################################################
+  bugprone-switch-missing-default-case,     # switch 必须包含 default 分支
+  bugprone-move-const-arg,                  # 禁止对 const 对象使用 std::move（无意义且危险）
+  bugprone-uninitialized-member,            # 类成员变量未初始化检查
+  bugprone-exception-escape,                # 禁止析构函数抛出异常（会直接导致进程崩溃）
+  bugprone-delete-array,                    # delete / delete[] 不匹配检查
+  bugprone-misplaced-pointer-arithmetic-in-alloc,  # 内存分配时指针运算错误检查
+
+  ###########################################################################
+  # 六、现代 C++ 规范
+  ###########################################################################
+  modernize-use-override,                   # 虚函数重写必须显式写 override/final
+  modernize-use-constexpr,                  # 鼓励使用 constexpr 替代宏/常量
+  modernize-use-equals-delete,              # 禁用的拷贝/赋值函数必须用 =delete 标记
+
+  ###########################################################################
+  # 七、C++ Core Guidelines（工业级最权威规范）
+  ###########################################################################
+  -cppcoreguidelines-pro-type-cstyle-cast,   # 禁止 C 语言强制转换 (type)val
+  -cppcoreguidelines-pro-type-const-cast,   # 关闭：底层 NPU 宏中存在必要的 const_cast
+  -cppcoreguidelines-pro-type-reinterpret-cast, # 关闭：底层 NPU 宏中存在必要的 reinterpret_cast
+  cppcoreguidelines-special-member-functions, # 构造/析构/拷贝/赋值 必须成对规范定义
+  cppcoreguidelines-owning-memory,          # 内存所有权管理：new/delete 必须配对
+  -cppcoreguidelines-macro-usage,            # 禁止用宏定义常量/函数（推荐 constexpr/inline）
+  cppcoreguidelines-avoid-assert,           # 禁止用 assert 做运行期错误检查
+  cppcoreguidelines-lambda-capture-default, # 非局部 lambda 禁止默认按引用捕获（防止悬空引用）
+
+  ###########################################################################
+  # 八、杂项工程化检查
+  ###########################################################################
+  misc-include-cleanup,                     # 清理无用头文件、检测循环依赖
+
+# 所有警告直接作为编译错误（严格模式，企业级门禁必备）
+WarningsAsErrors: '*'
+
+###########################################################################
+# 规则精细配置（命名规范 + 行为控制）
+###########################################################################
+CheckOptions:
+  - key: cppcoreguidelines-macro-usage.AllowConstexprMacros
+    value: 'false'
+  - key: cppcoreguidelines-macro-usage.CheckMacroParameters
+    value: 'true'
+  - key: cppcoreguidelines-macro-usage.IgnoreAssertMacros
+    value: 'true'
+  - key: readability-identifier-naming.FileCase
+    value: lower_case
+  - key: readability-identifier-naming.FunctionCase
+    value: CamelCase
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypedefCase
+    value: CamelCase
+  - key: readability-identifier-naming.VariableCase
+    value: camelBack
+  - key: readability-identifier-naming.GlobalVariableCase
+    value: camelBack
+  - key: readability-identifier-naming.ParameterCase
+    value: camelBack
+  - key: readability-identifier-naming.MemberCase
+    value: camelBack
+  - key: readability-identifier-naming.MacroDefinitionCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.EnumConstantCase
+    value: UPPER_CASE
