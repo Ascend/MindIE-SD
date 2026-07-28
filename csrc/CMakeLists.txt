@@ -58,6 +58,7 @@ add_library(PTAExtensionOPS SHARED
     ./plugin/quant_flash_attn.cpp
     ./plugin/quant_flash_attn_metadata.cpp
     ./plugin/fused_infer_attention_score.cpp
+    ./plugin/mul_add.cpp
     ./plugin/norm_rope_concat.cpp)
 
 target_compile_features(PTAExtensionOPS PRIVATE cxx_std_17)

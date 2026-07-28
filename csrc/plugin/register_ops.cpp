@@ -23,6 +23,7 @@
 #include "quant_flash_attn.h"
 #include "quant_flash_attn_metadata.h"
 #include "fused_infer_attention_score.h"
+#include "mul_add.h"
 #include "norm_rope_concat.h"
 
 TORCH_LIBRARY(mindiesd, m) {
@@ -105,6 +106,7 @@ TORCH_LIBRARY(mindiesd, m) {
         int? dequant_scale_query_dtype=None, int? dequant_scale_key_dtype=None, \
         int? dequant_scale_value_dtype=None, int? dequant_scale_key_rope_dtype=None, \
         ScalarType? out_dtype=None) -> (Tensor, Tensor)");
+    m.def("mul_add(Tensor a, Tensor b, Tensor c) -> Tensor");
     m.def("norm_rope_concat(Tensor query, Tensor key, Tensor value, \
         Tensor? encoder_query=None, Tensor? encoder_key=None, Tensor? encoder_value=None, \
         Tensor? norm_query_weight=None, Tensor? norm_query_bias=None, \
@@ -130,6 +132,7 @@ TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m) {
     m.impl("quant_flash_attn", &quant_flash_attn_impl_npu);
     m.impl("quant_flash_attn_metadata", &quant_flash_attn_metadata_impl_npu);
     m.impl("fused_infer_attention_score_v2", &fused_infer_attention_score_v2_impl_npu);
+    m.impl("mul_add", &mul_add_mindie_sd_impl_npu);
     m.impl("norm_rope_concat", &norm_rope_concat_mindie_sd_impl_npu);
 }
 
