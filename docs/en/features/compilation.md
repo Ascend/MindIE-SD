@@ -49,7 +49,7 @@ CompilationConfig.fusion_patterns.enable_rope = False          # Disable RoPE fu
 CompilationConfig.fusion_patterns.enable_adalayernorm = False  # Disable adaLN fusion
 CompilationConfig.fusion_patterns.enable_fast_gelu = False     # Disable fastGelu fusion
 CompilationConfig.fusion_patterns.enable_mul_add = False       # Disable Mul+Add fusion
- ```
+```
 
 For detailed API documentation of each fusion operator, see [the fusion operator section in core_layers.md](core_layers.md#fused-operators).
 

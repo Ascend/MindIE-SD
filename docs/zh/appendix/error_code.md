@@ -4,7 +4,7 @@ MindIE-SD 的错误码统一采用 `MIE<XX>E<NNNNNN>` 的格式，其中产品�
 
 MindIE-SD 常见错误码及其含义、可能原因与排查建议如[表1](#table1)所示。
 
-**表 1**  MindIE-SD 错误码 <a id="table1"></a>
+**表 1** MindIE-SD 错误码 <a id="table1"></a>
 
 |错误码|错误描述|可能原因|排查建议|
 |--|--|--|--|

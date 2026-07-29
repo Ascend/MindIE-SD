@@ -61,7 +61,7 @@ apply(function: callable, *args, **kwargs) -> Any
 
 ---
 
-## DitCache
+## DiTCache
 
 - **背景**
 
@@ -162,7 +162,7 @@ apply(function: callable, *args, **kwargs) -> Any
 
 - **原理**
 
-  基于相邻时间步的特性相似性，与DitCache不同，AttentionCache通过复用block里的Attention计算结果，从而跳过部分Attention层，减少冗余计算，实现模型推理加速。
+  基于相邻时间步的特性相似性，与DiTCache不同，AttentionCache通过复用block里的Attention计算结果，从而跳过部分Attention层，减少冗余计算，实现模型推理加速。
 
 <br>
 

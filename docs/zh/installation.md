@@ -2,19 +2,19 @@
 
 ## Python包安装
 
-MindIE SD是一个 Python 包，它基于PyTorch构建，可以轻松集成到 Python 应用程序中。
+MindIE SD 是一个 Python 包，它基于PyTorch构建，可以轻松集成到 Python 应用程序中。
 
 ### 安装依赖
 
 * OS: Linux
 * Python: >=3.10
-* Pytorch：2.6, 2.7, 2.8, 2.9, 2.10
+* PyTorch: 2.6, 2.7, 2.8, 2.9, 2.10
 * TorchNPU: 2.6, 2.7, 2.8, 2.9, 2.10
 * CANN: 9.0.1
 
 #### CANN 安装
 
-MindIE SD 依赖 CANN Toolkit开发套件包和 CANN ops 算子包，请参考 <a href="https://gitcode.com/cann/ops-cv/blob/master/docs/zh/install/quick_install.md" target="_blank" rel="noopener noreferrer">CANN 软件安装指南</a>
+MindIE SD 依赖 CANN Toolkit 开发套件包和 CANN ops 算子包，请参考 <a href="https://gitcode.com/cann/ops-cv/blob/master/docs/zh/install/quick_install.md" target="_blank" rel="noopener noreferrer">CANN 软件安装指南</a>
 
 安装完成后，执行以下命令设置环境变量（以默认安装路径为例）：
 
@@ -27,7 +27,7 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 1. MindIE SD主要依赖TorchNPU的版本，会尽力满足其要求的CANN以及Python版本要求。
 2. CANN版本安装后，安装路径下提供进程级环境变量设置脚本`set_env.sh`，以自动完成环境变量设置，该脚本包含如[表1 环境变量](#table_environment0001)所示中的LD_LIBRARY_PATH和ASCEND_CUSTOM_OPP_PATH，用户进程结束后自动失效。
 
-**表 1**  环境变量<a id="table_environment0001"></a>
+**表 1** 环境变量<a id="table_environment0001"></a>
 
 |环境变量|说明|
 |--|--|
@@ -61,7 +61,8 @@ pip install mindiesd
    pip install -r requirements.txt --extra-index-url https://triton-ascend.osinfra.cn/pypi/simple --trusted-host triton-ascend.osinfra.cn
    ```
 
-   说明：MindI SD 的部分算子依赖triton-ascend==3.2.1，该版本目前仅在 https://triton-ascend.osinfra.cn/pypi/simple 中提供
+   > [!NOTE]说明
+   > MindIE SD 的部分算子依赖triton-ascend==3.2.1，该版本目前仅在 https://triton-ascend.osinfra.cn/pypi/simple 中提供
 
 3. 编译并安装：
 

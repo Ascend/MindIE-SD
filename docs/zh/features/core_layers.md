@@ -248,7 +248,7 @@ out = sparse_attention(
 from mindiesd import rotary_position_embedding
 ```
 
-### 函数签名
+#### 函数签名
 
 ```python
 rotary_position_embedding(

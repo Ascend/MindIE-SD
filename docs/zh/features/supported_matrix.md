@@ -46,7 +46,7 @@
  | Qwen-Image-Edit-2509 |  Atlas 800I A2服务器  |    ✅️    | ✅️  |  ✖️   | ✖️ |   ✅️    |
  | Z-Image-Turbo |  Atlas 800I A2服务器  |    ✅️    | ✖️  |  ✖️   | ✖️ |   ✅️    |
 
->**说明：**
+> [!NOTE]说明
 >Atlas 800I A2服务器默认使用的版本算力313T，内存64 GB。
 
 ## Cache DiT + diffusers 特性&模型性能

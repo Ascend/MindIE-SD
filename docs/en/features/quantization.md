@@ -119,8 +119,7 @@ Dynamically quantize rotated Q/K/V into FP8 (`float8_e4m3fn`) block by block. Q 
 
 **FP8 Attention**
 
-Invoke MindIE-SD's own `torch.ops.mindiesd.fused_infer_attention_score_v2`
-operator, which routes to the migrated `FusedInferAttentionScore` implementation
+Invoke MindIE-SD's own `torch.ops.mindiesd.fused_infer_attention_score_v2` operator, which routes to the migrated `FusedInferAttentionScore` implementation
 in this repository, to perform attention computation in the FP8 domain with
 outputs dequantized back to original precision.
 

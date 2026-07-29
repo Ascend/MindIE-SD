@@ -90,7 +90,7 @@ Currently, MindIE SD supports the vLLM Omni framework, Cache DiT framework, and 
 | [Z-Image](https://modelers.cn/models/MindIE/Z-Image) | Atlas 800I A2 Server / Atlas 800I A3 Supernode Server | No | No | No | No | No | N/A |
 | [Z-Image-Turbo](https://modelers.cn/models/MindIE/Z-Image-Turbo) | Atlas 800I A2 Server / Atlas 800I A3 Supernode Server | No | No | No | No | Yes | N/A |
 
-> [!NOTE] Notes
+> [!NOTE] Note
 >
 > - Atlas 300I DUO inference cards default to 280T compute and 48 GB memory.
 > - Atlas 800I A2 servers default to 313T compute and 64 GB memory.

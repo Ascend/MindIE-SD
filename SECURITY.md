@@ -173,7 +173,7 @@
         python3 setup.py bdist_wheel
         ```
 
-- 步骤2 安装Pytorch。支持TLS需要安装torch 2.1.0a0+git7bcf7da版本。
+- 步骤2 安装PyTorch。支持TLS需要安装torch 2.1.0a0+git7bcf7da版本。
 
     ```shell
     cd dist
