@@ -9,7 +9,7 @@ MindIE SD is a Python package built on PyTorch that can be easily integrated int
 * OS: Linux
 * Python: >=3.10
 * PyTorch: 2.6, 2.7, 2.8, 2.9, 2.10
-* torch-npu: 2.6, 2.7, 2.8, 2.9, 2.10
+* TorchNPU: 2.6, 2.7, 2.8, 2.9, 2.10
 * CANN: 9.0.0
 * triton: 3.5.0
 * triton-ascend: 3.2.1
@@ -28,7 +28,7 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 
 #### Notes
 
-1. MindIE SD primarily depends on the torch-npu version and will try to meet the CANN and Python version requirements mandated by torch-npu.
+1. MindIE SD primarily depends on the TorchNPU version and will try to meet the CANN and Python version requirements mandated by TorchNPU.
 2. After CANN installation, the installation path provides a process-level environment variable setup script `set_env.sh` to automatically configure environment variables. This script includes LD_LIBRARY_PATH and ASCEND_CUSTOM_OPP_PATH as shown in [Table 1 Environment Variables](#table_environment0001). These settings automatically expire when the user process ends.
 
 **Table 1** Environment Variables<a id="table_environment0001"></a>
@@ -77,7 +77,7 @@ Follow these steps to install MindIE SD from source:
 >
 > Dependencies are split by purpose in the repository; install the ones you need:
 >
-> - `requirements.txt`: core runtime dependencies (minimal install; only torch/torch_npu pinned, others loose).
+> - `requirements.txt`: core runtime dependencies (minimal install; only torch/TorchNPU pinned, others loose).
 > - `examples/dummy_run/requirements.txt`: dependencies for the `dummy_run` model inference example (diffusers/transformers/etc.).
 > - `examples/service/requirements.txt`: serving-example dependencies (ray, fastapi, uvicorn, pydantic, Pillow).
 > - Testing, linting, and docs-build dependencies are in `requirements-test.txt`, `requirements-lint.txt`, and `docs/requirements-docs.txt` respectively (see the developer guide).

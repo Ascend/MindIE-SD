@@ -94,7 +94,7 @@ python scripts/refresh_features.py \
 
 1. **目标达成**: MindIE-SD compiled 在目标硬件上已满足性能预期
 2. **噪声范围**: 与 baselines 差距 < 3%，继续优化无统计意义
-3. **外部瓶颈**: 根因在 CANN / torch_npu / HCCL 而非 MindIE-SD 代码
+3. **外部瓶颈**: 根因在 CANN / TorchNPU / HCCL 而非 MindIE-SD 代码
 4. **硬件瓶颈**: 已改善但受限于 NPU 物理显存 / 带宽上限
 
 ## Reference Files

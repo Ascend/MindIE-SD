@@ -109,7 +109,7 @@ python performance-analysis/scripts/compare_traces.py \
 
 1. **目标达成**：推理速度或显存占用已满足性能预期
 2. **噪声范围**：与基线差距 < 3%，继续优化无统计意义
-3. **外部瓶颈**：根因在 CANN / torch_npu / HCCL 而非 MindIE-SD 代码
+3. **外部瓶颈**：根因在 CANN / TorchNPU / HCCL 而非 MindIE-SD 代码
 4. **硬件瓶颈**：已改善但受限于 NPU 物理显存 / 带宽上限
 
 ## 产出规范

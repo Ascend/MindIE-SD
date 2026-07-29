@@ -71,7 +71,7 @@ Benchmark 规范见 performance-evaluation/references/benchmark-guide.md。
 - 同一类问题重复出现 ≥ 2 次
 - 开发流程偏离预期（如计划并行但实际串行）
 - 发现新的可用算子或确认算子不可用
-- 远端环境发生变化（torch/torch_npu 版本更新）
+- 远端环境发生变化（torch/TorchNPU 版本更新）
 - 出现新的有效工作方法
 
 ### 6.3 复盘检查清单

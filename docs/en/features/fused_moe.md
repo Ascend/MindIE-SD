@@ -106,7 +106,7 @@ Two token dispatch strategies are supported:
 - **static dispatcher**: Uses a static token dispatch path, suitable for single-card, TP, and some EP scenarios. This path completes token sorting, expert token statistics, and result recovery via NPU MoE routing operators.
 - **dynamic dispatcher**: Uses a dynamic token dispatch path, suitable for EP scenarios. This path performs all-to-all communication based on token-to-expert distribution and restores token order before and after expert computation.
 
-When `dispatcher_type=None`, the API auto-selects based on communication mode and NPU model: A3/A5 hardware uses dynamic dispatcher in EP scenarios, A2 hardware uses static dispatcher; non-EP scenarios (single-card/TP) always use static dispatcher. You can also explicitly specify via `dispatcher_type="static"` or `dispatcher_type="dynamic"`.
+When `dispatcher_type=None`, the API auto-selects based on communication mode and NPU model: Atlas 800I A3 SuperPoD Server / Ascend 950PR / Ascend 950DT  uses dynamic dispatcher in EP scenarios, Atlas 800I A2 inference server uses static dispatcher; non-EP scenarios (single-card/TP) always use static dispatcher. You can also explicitly specify via `dispatcher_type="static"` or `dispatcher_type="dynamic"`.
 
 ### Communication Configuration
 

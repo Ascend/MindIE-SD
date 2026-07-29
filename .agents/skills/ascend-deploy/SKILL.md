@@ -159,7 +159,7 @@ python -c "import mindiesd; print(mindiesd.__version__)"
 在远端容器内验证环境版本兼容性：
 
 ```bash
-# PyTorch + torch_npu 版本匹配
+# PyTorch + TorchNPU 版本匹配
 docker exec <容器名> bash -lc 'python -c "
 import torch, torch_npu
 print(f\"PyTorch={torch.__version__}, torch_npu={torch_npu.__version__}\")
@@ -176,7 +176,7 @@ docker exec <容器名> bash -lc 'source /usr/local/Ascend/ascend-toolkit/set_en
 | 检查项 | 最低要求 | 不满足时 |
 |--------|---------|---------|
 | PyTorch | >= 2.6 | 升级 PyTorch 版本 |
-| torch_npu | >= 2.6，与 PyTorch 主版本匹配 | 升级 torch_npu |
+| TorchNPU | >= 2.6，与 PyTorch 主版本匹配 | 升级 TorchNPU |
 | CANN | >= 9.0.0，含 bisheng 编译器 | 升级 CANN SDK |
 | Python | >= 3.10 | 升级 Python |
 | cmake / build / wheel | 可用 | `pip install cmake build wheel` |
@@ -247,7 +247,7 @@ npu-smi info -l
 | CANN | >= 9.0.0，含 bisheng 编译器 |
 | Python | >= 3.10 |
 | PyTorch | 2.6 / 2.7 / 2.8 / 2.9 / 2.10 |
-| torch_npu | 与 PyTorch 版本匹配 |
+| TorchNPU | 与 PyTorch 版本匹配 |
 | triton | 3.5.0（部署使用时需要） |
 | triton-ascend | 3.2.1（部署使用时需要） |
 | 环境变量 | `source /usr/local/Ascend/ascend-toolkit/set_env.sh` |
@@ -330,6 +330,6 @@ strings /path/to/library.so | grep "搜索关键词"
 
 ## 维护与更新
 
-当远端昇腾环境变化（torch/torch_npu 版本升级、CANN SDK 更新）、
+当远端昇腾环境变化（torch/TorchNPU 版本升级、CANN SDK 更新）、
 容器配置调整、npu-smi 命令行为变化或发现新的部署问题时，
 按 dev-workflow 的复盘流程更新本 skill。
