@@ -1,4 +1,4 @@
-# DiTCache
+# Cache-Based Acceleration Features
 
 <!-- md-trans-meta sourceCommit=unknown translatedAt=2026-06-05T09:59:59.641Z pushedAt=2026-06-08T02:24:29.092Z -->
 

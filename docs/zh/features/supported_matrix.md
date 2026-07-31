@@ -47,7 +47,7 @@
  | Z-Image-Turbo |  Atlas 800I A2服务器  |    ✅️    | ✖️  |  ✖️   | ✖️ |   ✅️    |
 
 >**说明：**
->Atlas 800I A2服务器默认使用的版本算力313T，内存64 GB。
+>Atlas 800I A2服务器默认使用算力313T，内存64GB。
 
 ## Cache DiT + diffusers 特性&模型性能
 
@@ -92,6 +92,6 @@
 
 >[!NOTE]说明
 >
->- Atlas 300I DUO 推理卡默认使用算力280T，内存48 GB。
->- Atlas 800I A2 服务器默认使用算力313T，内存64 GB。
->- Atlas 800I A3 超节点服务器默认使用算力560T，内存64 GB。
+>- Atlas 300I DUO 推理卡默认使用算力280T，内存48GB。
+>- Atlas 800I A2 服务器默认使用算力313T，内存64GB。
+>- Atlas 800I A3 超节点服务器默认使用算力560T，内存64GB。

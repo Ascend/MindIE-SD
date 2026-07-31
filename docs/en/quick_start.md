@@ -58,7 +58,7 @@ bash infer_t2v.sh
 
 ## Acceleration results
 
-The following Wan2.1 example shows the effect of different acceleration features on an Atlas 800I A2 inference server (1*64G), including both single-card and multi-card runs.
+The following Wan2.1 example shows the effect of different acceleration features on an Atlas 800I A2 inference server (1*64GB), including both single-card and multi-card runs.
 
 Where:
 

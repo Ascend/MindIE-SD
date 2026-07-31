@@ -62,9 +62,9 @@ For gated models (e.g., FLUX.1-dev), set `HF_TOKEN` or download via ModelScope a
 
 | Model | Build (ms) | Timed (ms) | Peak Mem | Status |
 |---|---|---|---|---|
-| Wan2.2 | 1,200 | 7,000 | 10.18 GB | PASSED |
-| Qwen-Image | 7,000 | 100 | 6.26 GB | PASSED |
-| FLUX.1-dev | 20,500 | 900 | 24.20 GB | PASSED |
+| Wan2.2 | 1,200 | 7,000 | 10.18GB | PASSED |
+| Qwen-Image | 7,000 | 100 | 6.26GB | PASSED |
+| FLUX.1-dev | 20,500 | 900 | 24.20GB | PASSED |
 
 ## Wan2.2
 

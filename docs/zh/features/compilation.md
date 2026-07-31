@@ -49,7 +49,7 @@ CompilationConfig.fusion_patterns.enable_rope = False          # 关闭 RoPE 融
 CompilationConfig.fusion_patterns.enable_adalayernorm = False  # 关闭 adaLN 融合
 CompilationConfig.fusion_patterns.enable_fast_gelu = False     # 关闭 fastGelu 融合
 CompilationConfig.fusion_patterns.enable_mul_add = False       # 关闭 Mul+Add 融合
- ```
+```
 
 各融合算子的详细 API 说明请参见 [core_layers.md 中的融合算子章节](core_layers.md#融合算子)。
 

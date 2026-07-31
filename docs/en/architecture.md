@@ -14,7 +14,7 @@ The modules are decoupled and can be used independently or together. There are a
 - Multi-card parallelism: Supports CFG, USP, and dynamic expert load balancing (DyEPLB) for MoE, integrated into acceleration operator APIs for automatic enablement upon interface replacement. For details, see [Multi-Card Parallelism](./features/parallelism.md) and [DyEPLB](./features/DyEPLB.md).
 - Automatic affinity acceleration: Leverages `torch.compile`'s inductor mechanism with custom fusion passes to enable seamless replacement with Ascend affinity operators.
 
->[!NOTE]NOTE
+>[!NOTE]
 >
 >- MindIE SD-based, Ascend-accelerated diffusers models are released on [Modelers](https://modelers.cn/models?name=MindIE&page=1&size=16) and [ModelZoo](https://www.hiascend.com/software/modelzoo).
 >For related features not covered in this repository, refer to the `examples` directory. For example, see the [serving](../../examples/service) example for serving deployment, and [Cache](../../examples/cache) for multimodal inference acceleration.

@@ -18,7 +18,7 @@ This solution dynamically adjusts expert weights on Ranks based on load informat
 
 - **Three EP modes**:  standard all-to-all (A2A), all-gather (AG), and controllable mode (EX), selectable via the `mode` parameter.
 
-- **Mutual exclusionreminder with CPU Offload**: Involves H2D data transfer. When used concurrently with [CPU Offload](cpu_offload.md), bandwidth contention may occur, requiring manual adjustment of execution timing.
+- **Mutual exclusion reminder with CPU Offload**: Involves H2D data transfer. When used concurrently with [CPU Offload](cpu_offload.md), bandwidth contention may occur, requiring manual adjustment of execution timing.
 
 ## Interface and Usage
 

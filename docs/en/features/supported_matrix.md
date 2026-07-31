@@ -49,7 +49,7 @@ MindIE SD currently supports vLLM-Omni and Cache DiT, and is available in Modele
  | Z-Image-Turbo | Atlas 800I A2 server |    ✅️    | ✖️  |  ✖️   | ✖️ |   ✅️    |
 
 >**NOTE:**
->Atlas 800I A2 server defaults to 313T computing power and 64 GB memory.
+>Atlas 800I A2 server defaults to 313T computing power and 64GB memory.
 
 ## Cache-DiT + diffusers Features and Model Performance
 
@@ -94,6 +94,6 @@ MindIE SD currently supports vLLM-Omni and Cache DiT, and is available in Modele
 
 >[!NOTE]Note
 >
->- Atlas 300I DUO inference card defaults to 280T computing power and 48 GB memory.
->- Atlas 800I A2 server defaults to 313T computing power and 64 GB memory.
->- Atlas 800I A3 SuperPoD server defaults to 560T computing power and 64 GB memory.
+>- Atlas 300I DUO inference card defaults to 280T computing power and 48GB memory.
+>- Atlas 800I A2 server defaults to 313T computing power and 64GB memory.
+>- Atlas 800I A3 SuperPoD server defaults to 560T computing power and 64GB memory.

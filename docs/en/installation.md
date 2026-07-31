@@ -10,8 +10,8 @@ MindIE SD is a Python package built on PyTorch, which can be easily integrated i
 
 | Version | Dependencies |
 | ---- | ---- |
-| dev  | <ul><li>OS: Linux</li><li>Python: >=3.10</li><li>Pytorch：2.6, 2.7, 2.8, 2.9, 2.10</li><li>torch-npu: 2.6, 2.7, 2.8, 2.9, 2.10</li><li>CANN: 9.0.0</li><li>triton: 3.5.0</li><li>triton-ascend: 3.2.1</li></ul>|
-| master | <ul><li>OS: Linux</li><li>Python: >=3.10</li><li>Pytorch：2.6, 2.7, 2.8, 2.9</li><li>torch-npu: 2.6, 2.7, 2.8, 2.9</li><li>CANN: 8.5.1</li></ul>|
+| dev  | <ul><li>OS: Linux</li><li>Python: >=3.10</li><li>PyTorch: 2.6, 2.7, 2.8, 2.9, 2.10</li><li>torch-npu: 2.6, 2.7, 2.8, 2.9, 2.10</li><li>CANN: 9.0.0</li><li>triton: 3.5.0</li><li>triton-ascend: 3.2.1</li></ul>|
+| master | <ul><li>OS: Linux</li><li>Python: >=3.10</li><li>PyTorch: 2.6, 2.7, 2.8, 2.9</li><li>torch-npu: 2.6, 2.7, 2.8, 2.9</li><li>CANN: 8.5.1</li></ul>|
 
 #### **Precautions**
 
