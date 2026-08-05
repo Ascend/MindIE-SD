@@ -14,7 +14,7 @@
 | 产品名称 | 版本 |
 | -------- | ------ |
 | CANN | 9.0.1 |
-| Ascend Extension for PyTorch | 26.0.0 |
+| TorchNPU | 26.0.0 |
 | MindCluster | 7.3.0 |
 | CCAE | iMaster CCAE V100R026C10SPC100 |
 | Ascend HDK | 版本配套关系参见 [CANN版本配套说明](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/900/releasenote/9.0.1release-notes.md) |
@@ -37,7 +37,7 @@ MindIE各组件需要配套使用，请勿跨版本混用各组件。
 | 3.0.0             |              |Y          |Y            |
 | 2.3.0             |              |            |Y            |
 
-| MindIE SD 版本 | Ascend Extension for PyTorch 26.1.0 | Ascend Extension for PyTorch 26.0.0 | Ascend Extension for PyTorch 7.3.0 |
+| MindIE SD 版本 | TorchNPU 26.1.0 | TorchNPU 26.0.0 | TorchNPU 7.3.0 |
 | ----------------- | ---------- | ---------- | ---------- |
 | 3.1.0             |Y            |Y          |Y            |
 | 3.0.0             |              |Y          |Y            |
@@ -64,7 +64,7 @@ MindIE各组件需要配套使用，请勿跨版本混用各组件。
 | 3    | 稀疏注意力（SLA / BSA）能力增强。为 Sparse Linear Attention 补充 AscendC backend 的 Block Sparse Attention 算子后端；`aclnnBlockSparseAttention` 升级到 V2，兼容 FP8 量化路径，block_size 支持 q=128、kv=256/512；在仅含 V1 aclnn 符号的老版本 CANN 上自动回退到 V1。 |
 | 4    | 量化能力增强。新增在线量化（`OnlineQuantConfig`）支持，提供 FA 与 MM 算法配置及回退手段；新增 FA MXFP8 动态量化（`MXFP8_DYNAMIC`），在传入 FA 前对 Q、K 完成旋转与 MXFP8 量化；新增 MXFP4 量化 Flash Attention（`quant_flash_attn`）及部署端 mxfp4 FA 逻辑，扩展低精度注意力场景覆盖。 |
 | 5    | 多 torch 版本 Wheel 打包。新增 `MINDIESD_WHEEL_MODE=multi_torch` 打包模式，单一 wheel 可同时适配 torch 2.6/2.7/2.8/2.9/2.10，运行时根据 `torch.__version__` 自动选择对应 `libPTAExtensionOPS.so`；默认仍保持原有固定 torch 版本构建方式不变。 |
-| 6    | A5 设备适配与自动路由。新增 `is_a5_device()` 统一识别 A5 设备，`attention_forward` 等公共 API 在 A5 上自动路由到 `fused_attn_score`，并对直接调用下线算子的场景给出清晰报错与迁移指引。 |
+| 6    | Ascend 950PR / Ascend 950DT设备适配与自动路由。新增 `is_a5_device()` 统一识别Ascend 950PR / Ascend 950DT设备，`attention_forward` 等公共 API 在Ascend 950PR / Ascend 950DT上自动路由到 `fused_attn_score`，并对直接调用下线算子的场景给出清晰报错与迁移指引。 |
 | 7    | 频率调节（Frequency Regulator）算子。新增频率优化算子的 MindIE-SD plugin 支持，包括 C++ wrapper、aclnn 两阶段流、BackendSelect 注册与 Python API 导出。 |
 | 8    | 部署与生态扩展。新增 vLLM-Omni + MindIE-SD 合并镜像，并将 omni 镜像重构为独立 MindIE-SD 镜像，统一镜像名、版本 Tag 与 OCI 元数据，pip 安装源切换为公共 PyPI；新增 `.agents/skills/` 开发者技能集（ascend-deploy、auto-optimization、code-standards、compilation-dev）。 |
 
@@ -73,7 +73,7 @@ MindIE各组件需要配套使用，请勿跨版本混用各组件。
 | 编号 | 详细 |
 | :--- | :----------------------------------------------------------------------------------------------------------- |
 | 1    | 算子编译范围调整。移除原 CANN 版本检测与算子过滤逻辑，统一一次编译全部算子、全部平台（ascend910/ascend910b/ascend910_93/ascend950），修复 CANN≥9.0 环境下 laser_attention、ada_block_sparse_attention 等通用算子未生成 910B/910 平台 kernel 的问题；支持通过 `ASCEND_OP_NAME` / `ASCEND_COMPUTE_UNIT` 环境变量覆盖。 |
-| 2    | MoE Dispatcher 默认策略调整。由“A2 默认 static、A3/A5 默认 dynamic”调整为依据 `top_k` 与 `ep_size` 关系精细选择，大 EP 场景优先 dynamic，降低跨机 all-to-all 通信劣化影响。 |
+| 2    | MoE Dispatcher 默认策略调整。由“Atlas 800I A2 推理服务器默认 static、Atlas 800I A3 超节点服务器/Ascend 950PR / Ascend 950DT默认 dynamic”调整为依据 `top_k` 与 `ep_size` 关系精细选择，大 EP 场景优先 dynamic，降低跨机 all-to-all 通信劣化影响。 |
 | 3    | 日志系统重构。统一 MindIE SD Python 模块日志出口，默认与 verbose 模式均包含组件标识；精简默认 INFO 场景日志（正常流程降级为 DEBUG），并增强 WARNING/ERROR 日志的问题描述、可能根因与修复建议。 |
 | 4    | 安全编译选项。按安全编译指南为算子工程新增安全编译与链接选项，提升产物安全性。 |
 
@@ -120,7 +120,7 @@ MindIE各组件需要配套使用，请勿跨版本混用各组件。
 | 12 | 稳定性与精度 | 部分 Hunyuan 模型使用 FA512 算子时，V 侧 per-block dequant scale 被硬编码 block_size=256 校验拦截。 |
 | 13 | 稳定性与精度 | block_sparse_attention V2 在仅含 V1 aclnn 符号的老版本 CANN 上 dlsym 失败，导致路径不可用。 |
 | 14 | 日志 | 各模块日志出口、格式与级别不一致，默认场景信息冗余、异常场景信息不足。 |
-| 15 | 测试 | block_sparse_attention UT 仅支持 A5 设备，其余环境无法执行。 |
+| 15 | 测试 | block_sparse_attention UT 仅支持 Ascend 950PR / Ascend 950DT设备，其余环境无法执行。 |
 
 ## 遗留问题
 

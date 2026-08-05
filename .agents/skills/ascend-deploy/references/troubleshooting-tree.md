@@ -80,5 +80,5 @@ NPU 崩溃
 | `npu-smi info -l` | 列出所有 NPU 卡状态 |
 | `npu-smi info -t memory -i 0` | 查看卡 0 显存 |
 | `docker logs <container>` | 查看容器运行日志 |
-| `python -c "import torch_npu; print(torch_npu.__version__)"` | 确认 torch_npu 版本 |
+| `python -c "import torch_npu; print(torch_npu.__version__)"` | 确认 TorchNPU 版本 |
 | `npu-smi info -t usages -i 0` | 查看卡 0 使用率 |

@@ -27,7 +27,7 @@ pip install -r examples/dummy_run/requirements.txt
 | 依赖 | 最低版本 |
 |---|---|
 | Python | 3.10 |
-| torch / torch_npu | 与 CANN 版本匹配 |
+| torch / TorchNPU | 与 CANN 版本匹配 |
 | diffusers | >= 0.34.0 |
 | transformers | >= 4.44.0 |
 | huggingface_hub | >= 0.23.0 |

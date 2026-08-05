@@ -106,7 +106,7 @@ fused_moe(
 - **static dispatcher**：使用静态 Token 分发路径，适用于单卡、TP 场景，以及部分 EP 场景。该路径通过 NPU MoE routing 算子完成 Token 排序、expert token 统计和结果恢复。
 - **dynamic dispatcher**：使用动态 Token 分发路径，适用于 EP 场景。该路径会根据 Token 到 expert 的分布执行 all-to-all 通信，并在专家计算前后完成 Token 顺序恢复。
 
-当 `dispatcher_type=None` 时，接口根据通信模式和 NPU 型号自动选择：EP 场景下 A3/A5 硬件使用 dynamic dispatcher，A2 硬件使用 static dispatcher；非 EP 场景（单卡/TP）始终使用 static dispatcher。也可以通过 `dispatcher_type="static"` 或 `dispatcher_type="dynamic"` 显式指定。
+当 `dispatcher_type=None` 时，接口根据通信模式和 NPU 型号自动选择：EP 场景下 Atlas 800I A3 超节点服务器 / Ascend 950PR / Ascend 950DT 使用 dynamic dispatcher，Atlas 800I A2 推理服务器使用 static dispatcher；非 EP 场景（单卡/TP）始终使用 static dispatcher。也可以通过 `dispatcher_type="static"` 或 `dispatcher_type="dynamic"` 显式指定。
 
 ### 通信配置
 
@@ -122,8 +122,8 @@ fused_moe(
 
 未传入 `quant_config`，或 `quant_config.quant_algo` 为 `None` / `NO_QUANT` 时，按非量化方式执行 MoE 前向流程。当前支持以下量化配置：
 
-- `QuantConfig(quant_algo=QuantAlgorithm.W8A8_DYNAMIC)`：W8A8 dynamic quantization，支持 A2/A3。
-- `QuantConfig(quant_algo=QuantAlgorithm.W8A8_MXFP8)`：W8A8 MXFP8 quantization，支持 A5。
+- `QuantConfig(quant_algo=QuantAlgorithm.W8A8_DYNAMIC)`：W8A8 dynamic quantization，支持 Atlas 800I A2 推理服务器 / Atlas 800I A3 超节点服务器。
+- `QuantConfig(quant_algo=QuantAlgorithm.W8A8_MXFP8)`：W8A8 MXFP8 quantization，支持Ascend 950PR / Ascend 950DT。
 
 ### 路由选择
 
@@ -217,7 +217,7 @@ out = fused_moe(
 )
 ```
 
-#### W8A8 dynamic quant MoE（A2/A3）
+#### W8A8 dynamic quant MoE（Atlas 800I A2 推理服务器 / Atlas 800I A3 超节点服务器）
 
 W8A8 dynamic quant 路径要求 `w13_weight` 和 `w2_weight` 为 `torch.int8`，并传入对应的
 quantization scale。MindIE-SD 会在 MLP 计算前检查权重格式；若权重不是 NPU NZ 格式，会自动转换为
@@ -272,7 +272,7 @@ out = fused_moe(
 )
 ```
 
-#### MXFP8 dynamic quant MoE（A5）
+#### MXFP8 dynamic quant MoE（Ascend 950PR / Ascend 950DT）
 
 MXFP8 路径使用 `QuantAlgorithm.W8A8_MXFP8` 量化配置，`w13_weight` 和 `w2_weight` 使用
 `torch.float8_e4m3fn`，并传入对应的 quantization scale。

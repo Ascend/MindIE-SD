@@ -14,7 +14,7 @@
 | Product Name | Version |
 | -------- | ------ |
 | CANN | 9.0.0 |
-| Ascend Extension for PyTorch | 7.3.0 |
+| TorchNPU | 7.3.0 |
 | Ascend HDK | See [CANN Version Compatibility Notes](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/900/releasenote/releasenote_0000.html) for version compatibility |
 
 # Version Compatibility
@@ -23,7 +23,7 @@ MindIE SD components must be used with matching versions. Do not mix components 
 
 **Table 1** Software Version Compatibility
 
-| CANN | Ascend Extension for PyTorch |
+| CANN | TorchNPU |
 | ---- | ---------------------------- |
 | 9.0.0 | 7.3.0                        |
 
