@@ -5,7 +5,7 @@
 | Item | Value |
 |------|-------|
 | **Image** | `mindiesd` |
-| **Tags** | `v3.0.0-cann8.5.1-torch_npu2.9.0-a2-ubuntu22.04-py3.11-aarch64` |
+| **Tags** | `v3.0.0-cann8.5.1-torch_npu2.9.0-910b-ubuntu22.04-py3.11-aarch64` |
 | | `v3.0.0-cann8.5.1-torch_npu2.9.0-a3-ubuntu22.04-py3.11-aarch64` |
 | **Base Images** | Atlas 800I A2 inference server: `quay.io/ascend/vllm-omni:v0.20.0` |
 | | Atlas 800I A3 SuperPoD Server: `quay.io/ascend/vllm-omni:v0.20.0-a3` |
@@ -54,7 +54,7 @@ Both variants add the following Atlas tuning and debugging tools:
 
 | Series | Example Tag | Base Image |
 |--------|-------------|------------|
-| Atlas 800I A2 inference server | `v3.0.0-cann8.5.1-torch_npu2.9.0-a2-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0` |
+| Atlas 800I A2 inference server | `v3.0.0-cann8.5.1-torch_npu2.9.0-910b-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0` |
 | Atlas 800I A3 SuperPoD Server | `v3.0.0-cann8.5.1-torch_npu2.9.0-a3-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0-a3` |
 
 ### v3.0.0 Version Dockerfile Directory
@@ -63,7 +63,7 @@ Each series has a dedicated Dockerfile, archived in the `docker/omni` directory 
 
 | Series | Example Tag | Dockerfile |
 |--------|-------------|------------|
-| Atlas 800I A2 inference server | `v3.0.0-cann8.5.1-torch_npu2.9.0-a2-ubuntu22.04-py3.11-aarch64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/master/docker/omni/Dockerfile.a2.ubuntu) |
+| Atlas 800I A2 inference server | `v3.0.0-cann8.5.1-torch_npu2.9.0-910b-ubuntu22.04-py3.11-aarch64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/master/docker/omni/Dockerfile.a2.ubuntu) |
 | Atlas 800I A3 SuperPoD Server | `v3.0.0-cann8.5.1-torch_npu2.9.0-a3-ubuntu22.04-py3.11-aarch64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/master/docker/omni/Dockerfile.a3.ubuntu) |
 
 ## Quick Start
@@ -107,7 +107,7 @@ docker run -it --rm --name=mindiesd \
     -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
     -v /etc/ascend_install.info:/etc/ascend_install.info \
     -v /root/.cache:/root/.cache \
-    mindiesd:v3.0.0-cann8.5.1-torch_npu2.9.0-a2-ubuntu22.04-py3.11-aarch64 \
+    mindiesd:v3.0.0-cann8.5.1-torch_npu2.9.0-910b-ubuntu22.04-py3.11-aarch64 \
     bash
 ```
 
@@ -146,7 +146,7 @@ Atlas 800I A2 inference server:
 git clone https://gitcode.com/Ascend/MindIE-SD.git
 cd MindIE-SD/docker/omni
 
-docker build -t mindiesd:v3.0.0-cann8.5.1-torch_npu2.9.0-a2-ubuntu22.04-py3.11-aarch64 \
+docker build -t mindiesd:v3.0.0-cann8.5.1-torch_npu2.9.0-910b-ubuntu22.04-py3.11-aarch64 \
     -f Dockerfile.a2.ubuntu .
 ```
 
@@ -165,7 +165,7 @@ docker build -t mindiesd:v3.0.0-cann8.5.1-torch_npu2.9.0-a3-ubuntu22.04-py3.11-a
 To add your own dependencies or application code, create a new Dockerfile based on this image:
 
 ```dockerfile
-FROM mindiesd:v3.0.0-cann8.5.1-torch_npu2.9.0-a2-ubuntu22.04-py3.11-aarch64
+FROM mindiesd:v3.0.0-cann8.5.1-torch_npu2.9.0-910b-ubuntu22.04-py3.11-aarch64
 
 # Add your custom packages
 RUN pip install --no-cache-dir your-package
