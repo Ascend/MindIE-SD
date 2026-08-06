@@ -1,0 +1,129 @@
+name: PR-pipeline_mindie-sd
+
+on:
+  pull_request_comment:
+    types: [ created ]
+    branches: [ "dev", "master" ]
+    comments: [ '^compile$' ]
+
+env:
+  pr_id: ${{ atomgit.event.pull_request.number }}
+
+stages:
+  stage1:
+    name: CodeCheck
+    select: selected_by_default
+    jobs:
+
+      CodeCheck_pre_commit:
+        name: CodeCheck_pre_commit
+        runs-on: [ dedicate-hosted, x64, 2xlarge ]
+        container:
+          image: swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_x86:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311
+        steps:
+          - name: checkout
+            uses: checkout
+            with:
+              ref: refs/merge-requests/${{ env.pr_id }}/merge
+          - name: install gitleaks
+            run: |
+              cd ${ATOMGIT_WORKSPACE}
+              # TODO 将gitleaks依赖集成到镜像
+              wget --no-host-directories -c --no-check-certificate https://pytorch-package.obs.cn-north-4.myhuaweicloud.com/pta-codecheck/gitleaks
+              chmod +x gitleaks
+              cd -
+          - name: pre-commit
+            uses: openlibing-pre-commit-action
+
+      Detect_file_changes:
+        name: Detect_file_changes
+        runs-on: [ dedicate-hosted, x64, 2xlarge ]
+        container:
+          image: swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_x86:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311
+        outputs:
+          need_build: ${{ steps.set-skip.outputs.need_build }}
+        steps:
+          - name: checkout
+            uses: checkout
+            with:
+              ref: refs/merge-requests/${{ env.pr_id }}/merge
+              fetch-depth: 0
+          - name: Only_doc_commit
+            id: filter
+            uses: paths-changes-filter
+            with:
+              event-name: 'pull_request'
+              base: ${{ atomgit.event.pull_request.base.ref }}
+              repo: ${{ atomgit.repository }}
+              number: ${{ env.pr_id }}
+              token: ${{ atomgit.ATOMGIT_TOKEN }}
+              list-files: json
+              predicate-quantifier: every
+              filters: |
+                changed:
+                  - '**'
+                non-doc:
+                  - '!**.md'
+                  - '!**.rst'
+                  - '!**.log'
+                  - '!**.png'
+                  - '!**.jpg'
+                  - '!**.doc'
+                  - '!**.eddx'
+                  - '!**.svg'
+          - name: set build skip flag
+            id: set-skip
+            run: |
+              echo "changed: ${{ steps.filter.outputs.changed_files }}"
+              echo "non-doc: ${{ steps.filter.outputs.non-doc }}"
+              if [ "${{ steps.filter.outputs.non-doc }}" = "true" ]; then
+                echo "need_build=yes" >> "$ATOMGIT_OUTPUT"
+              else
+                echo "need_build=no" >> "$ATOMGIT_OUTPUT"
+              fi
+
+  stage2:
+    name: Build
+    select: selected_by_default
+    jobs:
+      Build_linux_x86_abi1:
+        name: Build_linux_x86_abi1
+        if: ${{ jobs.Detect_file_changes.outputs.need_build == 'yes' }}
+        uses: .gitcode/workflows/build_job.yml
+        with:
+          abi_type: "1"
+          arch: "x86_64"
+          CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_x86:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311"
+          runs_on_arch: "x86"
+          pr_id: "${{ atomgit.event.pull_request.number }}"
+
+      Build_linux_arm_abi1:
+        name: Build_linux_arm_abi1
+        if: ${{ jobs.Detect_file_changes.outputs.need_build == 'yes' }}
+        uses: .gitcode/workflows/build_job.yml
+        with:
+          abi_type: "1"
+          arch: "aarch64"
+          CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_aarch64:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311"
+          runs_on_arch: "arm64"
+          pr_id: "${{ atomgit.event.pull_request.number }}"
+
+      Build_linux_arm_abi0:
+        name: Build_linux_arm_abi0
+        if: ${{ jobs.Detect_file_changes.outputs.need_build == 'yes' }}
+        uses: .gitcode/workflows/build_job.yml
+        with:
+          abi_type: "0"
+          arch: "aarch64"
+          CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_aarch64:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311"
+          runs_on_arch: "arm64"
+          pr_id: "${{ atomgit.event.pull_request.number }}"
+
+      UT_linux_arm:
+        name: UT_linux_arm
+        if: ${{ jobs.Detect_file_changes.outputs.need_build == 'yes' }}
+        uses: .gitcode/workflows/ut_job.yml
+        with:
+          CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_aarch64:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311"
+          runs_on_arch: "arm64"
+          pr_id: "${{ atomgit.event.pull_request.number }}"

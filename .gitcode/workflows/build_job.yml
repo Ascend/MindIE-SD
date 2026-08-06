@@ -1,0 +1,62 @@
+name: Build Job
+
+on:
+  workflow_call:
+    inputs:
+      abi_type:
+        required: true
+        type: string
+      CP_DOCKER_IMG:
+        required: true
+        type: string
+      pr_id:
+        required: true
+        type: string
+      runs_on_arch:
+        required: true
+        type: string
+      arch:
+        required: true
+        type: string
+
+jobs:
+  JOB_Compile:
+    name: Compile
+    select: selected_by_default
+    needs: [ ]
+    runs-on: [ 'dedicate-hosted', '${{ inputs.runs_on_arch }}', '2xlarge' ]
+    container:
+      image: ${{ inputs.CP_DOCKER_IMG }}
+      options: --user root
+
+    steps:
+      - name: Checkout repository with pre merge
+        uses: checkout
+        with:
+          repository: ${{atomgit.repositoryurl}}
+          ref: refs/merge-requests/${{ inputs.pr_id }}/merge
+
+      - name: Execute_shell
+        run: |-
+          abi_type=${{ inputs.abi_type }}
+          arch=`uname -m`
+          WORKSPACE=${{atomgit.workspace}}
+          cd ${WORKSPACE}
+          python_version_major=$(python --version 2>&1 |awk '{print $2}' | cut -d. -f1,2)
+          # check python & abi version
+          if [ "${python_version_major}" != "3.11" ]; then
+              echo "Error: note that the required python version is 3.11, but the actual python version is ${python_version_major}"
+              exit 1
+          else
+              echo "python_version_major: ${python_version_major}"
+          fi
+          echo "abi version: ${abi_type}"
+          if [ "${abi_type}"x == "0"x ]; then
+              export PATH=/opt/rh/devtoolset-7/root/usr/bin:${PATH}
+              gcc --version
+          else
+              gcc --version
+          fi
+          source /usr/local/Ascend/ascend-toolkit/set_env.sh
+          export USER_ABI_VERSION="${abi_type}" && python setup.py bdist_wheel
+          ls -l dist/*
