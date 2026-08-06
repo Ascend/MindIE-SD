@@ -90,8 +90,9 @@ class TestMoEContext(unittest.TestCase):
 
     def test_validate_moe_inputs_rejects_invalid_parameters(self):
         invalid_cases = (
-            dict(name="reduce_results", kwargs=dict(reduce_results="false")),
-            dict(name="tokens_full", kwargs=dict(tokens_full="true")),
+            dict(name="reduce_routed_out", kwargs=dict(reduce_routed_out="false")),
+            dict(name="return_dispatcher_type", kwargs=dict(return_dispatcher_type="true")),
+            dict(name="inputs_sharded", kwargs=dict(inputs_sharded="true")),
             dict(name="renormalize", kwargs=dict(renormalize="true")),
             dict(name="num_experts", kwargs=dict(num_experts="2")),
             dict(name="top_k", kwargs=dict(top_k=3)),

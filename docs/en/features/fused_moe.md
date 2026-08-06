@@ -32,7 +32,7 @@ fused_moe(
     tp_group=None,
     ep_group=None,
     dispatcher_type=None,
-    tokens_full=True,
+    inputs_sharded=False,
     k_group=1,
     group_count=1,
     group_select_mode=0,
@@ -40,9 +40,10 @@ fused_moe(
     renormalize=False,
     routed_scaling_factor=1.0,
     custom_routing_function=None,
-    reduce_results=True,
+    reduce_routed_out=True,
+    return_dispatcher_type=False,
     use_fused_op=False,
-) -> torch.Tensor
+) -> torch.Tensor | tuple[torch.Tensor, str]
 ```
 
 ### Parameters
@@ -63,7 +64,7 @@ fused_moe(
 | `tp_group` | `dist.ProcessGroup` / `None` | No | `None` | TP communication group. Takes effect when EP is not enabled and TP group size > 1. |
 | `ep_group` | `dist.ProcessGroup` / `None` | No | `None` | EP communication group. Takes priority when EP group size > 1. |
 | `dispatcher_type` | `str` / `None` | No | `None` | Token dispatch strategy. Options: `"static"`, `"dynamic"`; `None` auto-selects based on platform and communication config. `"dynamic"` is only supported in EP scenarios. |
-| `tokens_full` | `bool` | No | `True` | Input token layout marker. Only two layouts supported: `True` means each rank inputs full tokens; `False` means each rank inputs evenly split local token shards per communication group. |
+| `inputs_sharded` | `bool` | No | `False` | Whether inputs are already sharded along the token dimension across the current MoE communication group. |
 | `k_group` | `int` | No | `1` | Number of expert groups selected per token in grouped routing, range `[1, group_count]`. |
 | `group_count` | `int` | No | `1` | Total number of expert groups; `num_experts` must be divisible by `group_count`. |
 | `group_select_mode` | `int` | No | `0` | Expert group scoring method. `0` uses max score within group, `1` uses sum of top-2 scores within group. Each group must have at least 2 experts when using `1`. |
@@ -71,12 +72,14 @@ fused_moe(
 | `renormalize` | `bool` | No | `False` | Whether to re-normalize top-k routing weights selected by softmax routing. Sigmoid routing outputs normalized weights per NPU gating top-k operator semantics. |
 | `routed_scaling_factor` | `float` | No | `1.0` | Routing weight scaling factor, applied during expert selection. |
 | `custom_routing_function` | `callable` / `None` | No | `None` | Custom routing function, called as `custom_routing_function(hidden_states, gating_output, topk, renormalize)`, must return `(topk_weights, topk_ids)`. |
-| `reduce_results` | `bool` | No | `True` | Whether to perform communication reduction on full token output in static MoE; unused in dynamic MoE path. |
+| `reduce_routed_out` | `bool` | No | `True` | Whether the static dispatcher all-reduces routed output when `inputs_sharded=False`. |
+| `return_dispatcher_type` | `bool` | No | `False` | Whether to return the resolved dispatcher type together with the MoE output. The dispatcher type is `"static"` or `"dynamic"`. |
 | `use_fused_op` | `bool` | No | `False` | Whether to prefer the fused operator path. Currently unsupported; setting `True` falls back to the non-fused path. Default `False` directly uses the non-fused path. |
 
 ### Return Value
 
 `torch.Tensor`: MoE forward computation result, same shape as `hidden_states`.
+If `return_dispatcher_type=True`, returns `(output, dispatcher_type)`.
 
 ## Fused Operator Path (Reserved)
 
@@ -116,7 +119,7 @@ Distributed MoE inference is supported through `tp_group` and `ep_group`. The cu
 - When EP is not enabled and a valid `tp_group` is provided, the TP communication strategy is used.
 - When neither is enabled, the single-card path is used.
 
-Callers must ensure that input activation and router logit layouts are consistent with the `tokens_full` configuration.
+Callers must ensure that input activation and router logit layouts are consistent with the `inputs_sharded` configuration. When `inputs_sharded=True`, inputs should be sharded along the token dimension across the current MoE communication group; otherwise duplicated token computation may occur.
 
 ### Quantization Configuration
 
@@ -264,14 +267,13 @@ out = fused_moe(
     w13_weight_scale=w13_weight_scale,
     w2_weight_scale=w2_weight_scale,
     dispatcher_type="static",
-    tokens_full=True,
-    reduce_results=False,
+    inputs_sharded=False,
 )
 ```
 
 #### TP Static MoE
 
-TP scenarios require `tp_group`. When `tokens_full=True`, each rank inputs full tokens.
+TP scenarios require `tp_group`. When `inputs_sharded=False`, each rank inputs tokens that are unsharded along the token dimension across the current MoE communication group.
 
 ```python
 import torch
@@ -299,8 +301,8 @@ out = fused_moe(
     w2_weight=w2_weight,
     tp_group=tp_group,
     dispatcher_type="static",
-    tokens_full=True,
-    reduce_results=True,
+    inputs_sharded=False,
+    reduce_routed_out=True,
 )
 ```
 
@@ -336,15 +338,15 @@ out = fused_moe(
     w2_weight=w2_weight,
     ep_group=ep_group,
     dispatcher_type="static",
-    tokens_full=True,
-    reduce_results=True,
+    inputs_sharded=False,
+    reduce_routed_out=True,
     renormalize=True,
 )
 ```
 
 #### EP Dynamic MoE
 
-The EP dynamic path requires `ep_group`. When each rank inputs locally sharded tokens evenly split by the communication group, set `tokens_full=False`. Here, `local_hidden_states` and `local_router_logits` represent the current rank's local token input, while `w13_weight` and `w2_weight` still represent the current rank's local expert weights. With this layout, the token count must be divisible by the communication group size.
+The EP dynamic path requires `ep_group`. When each rank receives token inputs sharded along the token dimension across the current MoE communication group, set `inputs_sharded=True`. Here, `local_hidden_states` and `local_router_logits` represent the current rank's local token input, while `w13_weight` and `w2_weight` still represent the current rank's local expert weights. Inputs should be sharded along the token dimension across that group; otherwise duplicated token computation may occur.
 
 ```python
 import torch
@@ -374,7 +376,7 @@ out = fused_moe(
     w2_weight=w2_weight,
     ep_group=ep_group,
     dispatcher_type="dynamic",
-    tokens_full=False,
+    inputs_sharded=True,
     renormalize=True,
 )
 ```

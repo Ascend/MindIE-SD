@@ -84,6 +84,14 @@ def torch_select_experts(router_logits, top_k, renormalize, routed_scaling_facto
     return topk_weights, topk_ids
 
 
+def make_mock_topk(hidden_states, top_k):
+    num_tokens = hidden_states.shape[0]
+    return (
+        torch.ones(num_tokens, top_k),
+        torch.zeros(num_tokens, top_k, dtype=torch.int32),
+    )
+
+
 def run_static_moe(**kwargs):
     dispatch_result = kwargs.pop(
         "dispatch_result",
@@ -92,20 +100,12 @@ def run_static_moe(**kwargs):
     combine_output = kwargs.pop("combine_output", torch.randn_like(kwargs["hidden_states"]))
     dispatched_hidden_states = dispatch_result.hidden_states
     mlp_output = kwargs.pop("mlp_output", torch.randn_like(dispatched_hidden_states))
-    topk_weights = torch.ones(kwargs["hidden_states"].shape[0], kwargs["top_k"])
-    topk_ids = torch.zeros(kwargs["hidden_states"].shape[0], kwargs["top_k"], dtype=torch.int32)
+    topk_weights, topk_ids = make_mock_topk(kwargs["hidden_states"], kwargs["top_k"])
     with (
         patch.object(StaticDispatcher, "dispatch", return_value=dispatch_result) as mock_dispatch,
-        patch.object(
-            StaticDispatcher,
-            "combine",
-            return_value=combine_output,
-        ),
+        patch.object(StaticDispatcher, "combine", return_value=combine_output),
         patch("mindiesd.layers.moe.moe.unified_apply_mlp", return_value=mlp_output),
-        patch(
-            "mindiesd.layers.moe.moe.select_experts",
-            return_value=(topk_weights, topk_ids),
-        ),
+        patch("mindiesd.layers.moe.moe.select_experts", return_value=(topk_weights, topk_ids)),
     ):
         output = moe(**kwargs)
     return output, mock_dispatch
@@ -122,30 +122,14 @@ def run_dynamic_moe(**kwargs):
         original_shape=kwargs["hidden_states"].shape,
         mlp_output_dtype=kwargs["hidden_states"].dtype,
     )
-    topk_weights = torch.ones(kwargs["hidden_states"].shape[0], kwargs["top_k"])
-    topk_ids = torch.zeros(kwargs["hidden_states"].shape[0], kwargs["top_k"], dtype=torch.int32)
+    topk_weights, topk_ids = make_mock_topk(kwargs["hidden_states"], kwargs["top_k"])
     with (
         patch.object(DynamicDispatcher, "prepare", return_value=prepare_output) as mock_prepare,
-        patch.object(
-            DynamicDispatcher,
-            "dispatch",
-            return_value=dispatch_result,
-        ) as mock_dispatch,
-        patch.object(
-            DynamicDispatcher,
-            "combine",
-            return_value=torch.randn_like(kwargs["hidden_states"]),
-        ),
+        patch.object(DynamicDispatcher, "dispatch", return_value=dispatch_result) as mock_dispatch,
+        patch.object(DynamicDispatcher, "combine", return_value=torch.randn_like(kwargs["hidden_states"])),
         patch("mindiesd.layers.moe.moe.unified_apply_mlp"),
-        patch.object(
-            DynamicDispatcher,
-            "finalize",
-            return_value=torch.randn_like(kwargs["hidden_states"]),
-        ),
-        patch(
-            "mindiesd.layers.moe.moe.select_experts",
-            return_value=(topk_weights, topk_ids),
-        ),
+        patch.object(DynamicDispatcher, "finalize", return_value=torch.randn_like(kwargs["hidden_states"])),
+        patch("mindiesd.layers.moe.moe.select_experts", return_value=(topk_weights, topk_ids)),
     ):
         output = moe(**kwargs)
     return output, mock_prepare, mock_dispatch
@@ -208,10 +192,10 @@ class TestMoeFunction(unittest.TestCase):
                     w13_bias=w13_bias.to(device=device, dtype=dtype) if w13_bias is not None else None,
                     w2_bias=w2_bias.to(device=device, dtype=dtype) if w2_bias is not None else None,
                     dispatcher_type="static",
-                    tokens_full=True,
+                    inputs_sharded=False,
                     renormalize=case["renormalize"],
                     routed_scaling_factor=case["routed_scaling_factor"],
-                    reduce_results=False,
+                    reduce_routed_out=False,
                 )
 
                 torch.testing.assert_close(actual.cpu().float(), expected.float(), atol=5e-2, rtol=5e-2)
@@ -225,13 +209,13 @@ class TestMoeFunction(unittest.TestCase):
 
         with patch("torch.distributed.get_world_size", return_value=2):
             _, dynamic_prepare, dynamic_dispatch = run_dynamic_moe(
-                **make_moe_kwargs(num_experts=4, tokens_full=True),
+                **make_moe_kwargs(num_experts=4, inputs_sharded=False),
                 ep_group=ep_group,
             )
             with patch.object(DynamicDispatcher, "dispatch") as unused_dynamic_dispatch:
                 with patch("torch.distributed.all_reduce"):
                     _, static_dispatch = run_static_moe(
-                        **make_moe_kwargs(num_experts=4, tokens_full=True, dispatcher_type="static"),
+                        **make_moe_kwargs(num_experts=4, inputs_sharded=False, dispatcher_type="static"),
                         ep_group=ep_group,
                     )
 
@@ -247,14 +231,14 @@ class TestMoeFunction(unittest.TestCase):
     def test_resolve_dispatcher_class_by_topk_and_override(self):
         ep_group = MagicMock(spec=dist.ProcessGroup)
 
-        self.assertIs(resolve_dispatcher_class(top_k=1), StaticDispatcher)
+        self.assertIs(resolve_dispatcher_class(1), StaticDispatcher)
         with patch("torch.distributed.get_world_size", return_value=2):
             set_moe_comm_context(ep_group=ep_group)
-            self.assertIs(resolve_dispatcher_class(top_k=1), DynamicDispatcher)
-            self.assertIs(resolve_dispatcher_class(top_k=2), StaticDispatcher)
+            self.assertIs(resolve_dispatcher_class(1), DynamicDispatcher)
+            self.assertIs(resolve_dispatcher_class(2), StaticDispatcher)
 
-        self.assertIs(resolve_dispatcher_class("static"), StaticDispatcher)
-        self.assertIs(resolve_dispatcher_class("dynamic"), DynamicDispatcher)
+        self.assertIs(resolve_dispatcher_class(1, "static"), StaticDispatcher)
+        self.assertIs(resolve_dispatcher_class(1, "dynamic"), DynamicDispatcher)
 
     @unittest.skipIf(
         os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
@@ -262,14 +246,14 @@ class TestMoeFunction(unittest.TestCase):
     )
     def test_resolve_dispatcher_class_rejects_dynamic_without_ep(self):
         with self.assertRaises(ParametersInvalid):
-            resolve_dispatcher_class("dynamic")
+            resolve_dispatcher_class(1, "dynamic")
 
     @unittest.skipIf(
         os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
         "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
     )
     def test_dispatcher_type_overrides_default_routing_to_dynamic(self):
-        kwargs = make_moe_kwargs(num_experts=4, tokens_full=True, dispatcher_type="dynamic")
+        kwargs = make_moe_kwargs(num_experts=4, inputs_sharded=False, dispatcher_type="dynamic")
         ep_group = MagicMock(spec=dist.ProcessGroup)
 
         with patch("torch.distributed.get_world_size", return_value=2):
@@ -278,6 +262,19 @@ class TestMoeFunction(unittest.TestCase):
 
         dynamic_dispatch.assert_called_once()
         static_dispatch.assert_not_called()
+
+    @unittest.skipIf(
+        os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
+        "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
+    )
+    def test_return_dispatcher_type_returns_resolved_dispatcher(self):
+        output, _ = run_static_moe(
+            **make_moe_kwargs(dispatcher_type="static", return_dispatcher_type=True),
+        )
+
+        routed_out, dispatcher_type = output
+        self.assertIsInstance(routed_out, torch.Tensor)
+        self.assertEqual(dispatcher_type, "static")
 
 
 @unittest.skipIf(
@@ -327,8 +324,8 @@ class TestMoeW8A8Dynamic(unittest.TestCase):
             w13_weight_scale=w13_weight_scale,
             w2_weight_scale=w2_weight_scale,
             dispatcher_type="static",
-            tokens_full=True,
-            reduce_results=False,
+            inputs_sharded=False,
+            reduce_routed_out=False,
         )
 
         self.assertEqual(tuple(output.shape), (num_tokens, hidden_size))
@@ -378,8 +375,8 @@ class TestMoeW8A8Mxfp8(unittest.TestCase):
             w13_weight_scale=w13_weight_scale,
             w2_weight_scale=w2_weight_scale,
             dispatcher_type="static",
-            tokens_full=True,
-            reduce_results=False,
+            inputs_sharded=False,
+            reduce_routed_out=False,
         )
 
         self.assertEqual(tuple(output.shape), (num_tokens, hidden_size))

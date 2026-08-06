@@ -35,7 +35,7 @@ def fused_moe(
     tp_group: dist.ProcessGroup | None = None,
     ep_group: dist.ProcessGroup | None = None,
     dispatcher_type: str | None = None,
-    tokens_full: bool = True,
+    inputs_sharded: bool = False,
     k_group: int = 1,
     group_count: int = 1,
     group_select_mode: int = 0,
@@ -43,9 +43,10 @@ def fused_moe(
     renormalize: bool = False,
     routed_scaling_factor: float = 1.0,
     custom_routing_function: Callable | None = None,
-    reduce_results: bool = True,
+    reduce_routed_out: bool = True,
+    return_dispatcher_type: bool = False,
     use_fused_op: bool = False,
-) -> torch.Tensor:
+) -> torch.Tensor | tuple[torch.Tensor, str]:
     """Run MoE through the public fused-MoE entry.
 
     The current version exposes the fused-op switch for forward compatibility,
@@ -86,12 +87,9 @@ def fused_moe(
         dispatcher_type (str, optional):
             Manual MoE dispatcher override. Supported values are ``"static"`` and
             ``"dynamic"``. ``None`` uses the default device and communication routing.
-        tokens_full (bool, optional):
-            Token layout across the resolved MoE communication group (TP or EP).
-            ``True`` means ``hidden_states`` and ``router_logits`` contain the
-            full token set on each rank. ``False`` means each rank receives the
-            token shard evenly split by the communication group. Other token
-            layouts are not supported.
+        inputs_sharded (bool, optional):
+            Whether inputs are already sharded along the token dimension across
+            the current MoE communication group.
         k_group (int, optional):
             Number of expert groups selected per token during grouped routing.
         group_count (int, optional):
@@ -108,16 +106,20 @@ def fused_moe(
             Scaling factor applied to routing weights during expert selection.
         custom_routing_function (optional):
             Optional routing callback. It must return ``(topk_weights, topk_ids)``.
-        reduce_results (bool, optional):
-            Whether static MoE reduces full-token routed outputs across the
-            resolved MoE communication group. This only applies when static MoE
-            is used with ``tokens_full=True``.
+        reduce_routed_out (bool, optional):
+            Whether static dispatcher all-reduces routed outputs when
+            ``inputs_sharded=False``.
+        return_dispatcher_type (bool, optional):
+            Whether to return the resolved dispatcher type together with the MoE
+            output. The dispatcher type is ``"static"`` or ``"dynamic"``.
         use_fused_op (bool, optional):
             Whether to use the real fused MoE op. The current version does not
             support this path and falls back to the non-fused MoE implementation.
 
     Returns:
         torch.Tensor: Output activations with the same shape as ``hidden_states``.
+        If ``return_dispatcher_type`` is ``True``, returns
+        ``(output, dispatcher_type)``.
     """
     if not isinstance(use_fused_op, bool):
         raise ParametersInvalid(f"use_fused_op must be a bool, but got {type(use_fused_op)}.")
@@ -137,7 +139,7 @@ def fused_moe(
         "tp_group": tp_group,
         "ep_group": ep_group,
         "dispatcher_type": dispatcher_type,
-        "tokens_full": tokens_full,
+        "inputs_sharded": inputs_sharded,
         "k_group": k_group,
         "group_count": group_count,
         "group_select_mode": group_select_mode,
@@ -145,6 +147,7 @@ def fused_moe(
         "renormalize": renormalize,
         "routed_scaling_factor": routed_scaling_factor,
         "custom_routing_function": custom_routing_function,
-        "reduce_results": reduce_results,
+        "reduce_routed_out": reduce_routed_out,
+        "return_dispatcher_type": return_dispatcher_type,
     }
     return moe(**moe_kwargs)
