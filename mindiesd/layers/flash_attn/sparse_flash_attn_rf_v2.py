@@ -369,14 +369,11 @@ def do_tensor_rearrange_pooling(query, key, value, text_len, pool_size, latent_s
             tensor_t = tensor[:, :, :text_len, :]
             tensor_i = tensor[:, :, text_len:, :]
         tensor_i_2 = rearrange_with_remaining(tensor_i, latent_shape_q, latent_shape_k, input_layout)
-        tensor_i_pool = avgpool(tensor_i_2, pool_size, input_layout)
-        tensor_t_pool = avgpool(tensor_t, pool_size, input_layout)
         if input_layout == "BSND":
             tensor = torch.concat((tensor_i_2, tensor_t), dim=1)
-            tensor_pool = torch.concat((tensor_i_pool, tensor_t_pool), dim=1)
         else:
             tensor = torch.concat((tensor_i_2, tensor_t), dim=2)
-            tensor_pool = torch.concat((tensor_i_pool, tensor_t_pool), dim=2)
+        tensor_pool = avgpool(tensor, pool_size, input_layout)
     else:
         tensor = rearrange_with_remaining(tensor, latent_shape_q, latent_shape_k, input_layout)
         tensor_pool = avgpool(tensor, pool_size, input_layout)
