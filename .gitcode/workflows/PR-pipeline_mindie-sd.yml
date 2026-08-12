@@ -63,14 +63,14 @@ stages:
                 changed:
                   - '**'
                 non-doc:
-                  - '!**.md'
-                  - '!**.rst'
-                  - '!**.log'
-                  - '!**.png'
-                  - '!**.jpg'
-                  - '!**.doc'
-                  - '!**.eddx'
-                  - '!**.svg'
+                  - '!**/*.md'
+                  - '!**/*.rst'
+                  - '!**/*.log'
+                  - '!**/*.png'
+                  - '!**/*.jpg'
+                  - '!**/*.doc'
+                  - '!**/*.eddx'
+                  - '!**/*.svg'
           - name: set build skip flag
             id: set-skip
             run: |
