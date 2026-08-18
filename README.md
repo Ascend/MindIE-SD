@@ -2,7 +2,14 @@
 
 ## 📢 Latest News
 
-- 08/03/2026: vLLM Omni x MindIE SD 实现 Minimax H3 昇腾原生高性能推理
+- 08/03/2026: 完成 [MiniMax-H3 昇腾高性能推理适配与优化](examples/minimax-h3/infer.md)
+- 06/2026: 完成低精度推理、多模态 MoE、稀疏注意力和部署生态增强
+- 05/28/2026: [Cache-DiT 完成 MindIE-SD 接入](https://github.com/vipshop/cache-dit/pull/1004)
+- 05/2026: 完成多模态 MoE 推理能力建设和多模型适配验证
+- 04/2026: 完成图编译、算子融合与稀疏计算能力增强
+- 03/2026: 扩展 W4A4 与 MXFP4 量化能力
+- 02/2026: 新增稀疏注意力算子与 Dynamic EPLB
+- 01/2026: 新增内存优化能力与服务化样例
 - 12/31/2025: MindIE SD提供稀疏Attention计算能力
 - 12/25/2025：vLLM Omni x MindIE SD 实现 Qwen-Image-Edit-2511 / Qwen-Image-Layered 昇腾原生高性能推理
 - 11/30/2025：MindIE SD 正式宣布开源并面向公众开放！[会议日历](https://meeting.ascend.osinfra.cn/?sig=sig-MindIE-SD)
@@ -40,6 +47,8 @@ MindIE SD 架构和关键特性详见[架构介绍](docs/zh/architecture.md)。
 
 [快速开始](docs/zh/quick_start.md): 以wan2.1为例，介绍使用mindiesd后的整体加速效果。
 
+[MiniMax-H3 推理与性能优化](examples/minimax-h3/infer.md): 介绍 MiniMax-H3 在昇腾上的推理部署、适配与性能优化。
+
 ## 💬 联系我们
 
 欢迎通过 [GitCode Issues](https://gitcode.com/Ascend/MindIE-SD/issues) 直接参与讨论与反馈。
@@ -64,8 +73,8 @@ MindIE SD 架构和关键特性详见[架构介绍](docs/zh/architecture.md)。
 
 以下项目已集成MindIE SD作为多模态推理后端：
 
-+ [vLLM Omni](https://github.com/vllm-project/vllm-omni)
-+ [Cache Dit](https://github.com/vipshop/cache-dit)
+- [vLLM Omni](https://github.com/vllm-project/vllm-omni)
+- [Cache-DiT](https://github.com/vipshop/cache-dit)
 
 ## 📝 Paper Citations
 

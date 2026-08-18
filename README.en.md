@@ -2,6 +2,14 @@
 
 ## Latest News
 
+- 08/03/2026: Completed [high-performance MiniMax-H3 inference adaptation and optimization on Ascend](examples/minimax-h3/infer.md)
+- 06/2026: Enhanced low-precision inference, multimodal MoE, sparse attention, and the deployment ecosystem
+- 05/28/2026: [Cache-DiT completed its MindIE-SD integration](https://github.com/vipshop/cache-dit/pull/1004)
+- 05/2026: Completed multimodal MoE inference capability development and multi-model adaptation validation
+- 04/2026: Enhanced graph compilation, operator fusion, and sparse computation capabilities
+- 03/2026: Extended W4A4 and MXFP4 quantization capabilities
+- 02/2026: Added sparse attention operators and Dynamic EPLB
+- 01/2026: Added memory optimization capabilities and serving examples
 - 12/31/2025: MindIE SD provides sparse Attention computation capability
 - 12/25/2025: vLLM Omni x MindIE SD achieves native high-performance Ascend inference for Qwen-Image-Edit-2511 / Qwen-Image-Layered
 - 11/30/2025: MindIE SD officially open-sourced and available to the public! [Meeting Calendar](https://meeting.ascend.osinfra.cn/?sig=sig-MindIE-SD)
@@ -39,6 +47,8 @@ For MindIE SD architecture and key features, see [Architecture Overview](docs/zh
 
 [Quick Start](docs/zh/quick_start.md): Using Wan2.1 as an example, introduces the overall acceleration effect with MindIE SD.
 
+[MiniMax-H3 Inference and Performance Optimization](examples/minimax-h3/infer.md): Introduces MiniMax-H3 inference deployment, adaptation, and performance optimization on Ascend.
+
 ## Developer Documentation
 
 [Contribution Guide](docs/zh/developer_guide/contribution_guide.md): Explains how to submit Issues, Pull Requests, and coding standards.
@@ -49,8 +59,8 @@ For MindIE SD architecture and key features, see [Architecture Overview](docs/zh
 
 The following projects have integrated MindIE SD as a multimodal inference backend:
 
-+ [vLLM Omni](https://github.com/vllm-project/vllm-omni):
-+ [Cache Dit](https://github.com/vipshop/cache-dit):
+- [vLLM Omni](https://github.com/vllm-project/vllm-omni):
+- [Cache-DiT](https://github.com/vipshop/cache-dit):
 
 ## Paper Citations
 
