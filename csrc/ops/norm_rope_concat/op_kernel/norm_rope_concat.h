@@ -79,7 +79,54 @@ private:
 
     #if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
         __aicore__ inline void DoMulAddVfCall(const LocalTensor<float> &x, uint32_t heads);
-        __simd_vf__ inline void DoMulAddVf(__ubuf__ float* xBuf, __ubuf__ float* weightBuf, __ubuf__ float* biasBuf, uint32_t heads);
+        __simd_vf__ static inline void DoMulAddVf(__ubuf__ float* xBuf, __ubuf__ float* weightBuf,
+                                                  __ubuf__ float* biasBuf, uint32_t heads, uint32_t alignedNormDim)
+        {
+            RegTensor<float> xRegTensor;
+            RegTensor<float> weightRegTensor;
+            RegTensor<float> biasRegTensor;
+
+            uint32_t oneRepeatSize = AscendC::GetVecLen() / sizeof(float);
+            uint32_t repeatTimes = (alignedNormDim + oneRepeatSize - 1) / oneRepeatSize;
+
+            for (uint32_t i = 0; i < heads; ++i) {
+                uint32_t len = alignedNormDim;
+                __ubuf__ float* tempXBuf = xBuf + i * len;
+                __ubuf__ float* tempWeightBuf = weightBuf;
+                __ubuf__ float* tempBiasBuf = biasBuf;
+                for (uint32_t j = 0; j < repeatTimes; ++j) {
+                    MaskReg maskReg = UpdateMask<float>(len);
+                    LoadAlign(xRegTensor, tempXBuf + j * oneRepeatSize);
+                    LoadAlign(weightRegTensor, tempWeightBuf + j * oneRepeatSize);
+                    LoadAlign(biasRegTensor, tempBiasBuf + j * oneRepeatSize);
+                    MulDstAdd(xRegTensor, weightRegTensor, biasRegTensor, maskReg);
+                    StoreAlign(tempXBuf + j * oneRepeatSize, xRegTensor, maskReg);
+                }
+            }
+        }
+        __aicore__ inline void DoMulVfCall(const LocalTensor<float> &x, uint32_t heads);
+        __simd_vf__ static inline void DoMulVf(__ubuf__ float* xBuf, __ubuf__ float* weightBuf, uint32_t heads,
+                                               uint32_t alignedNormDim)
+        {
+            RegTensor<float> xRegTensor;
+            RegTensor<float> weightRegTensor;
+
+            uint32_t oneRepeatSize = AscendC::GetVecLen() / sizeof(float);
+            uint32_t repeatTimes = (alignedNormDim + oneRepeatSize - 1) / oneRepeatSize;
+
+            for (uint32_t i = 0; i < heads; ++i) {
+                uint32_t len = alignedNormDim;
+                __ubuf__ float* tempXBuf = xBuf + i * len;
+                __ubuf__ float* tempWeightBuf = weightBuf;
+                for (uint32_t j = 0; j < repeatTimes; ++j) {
+                    MaskReg maskReg = UpdateMask<float>(len);
+                    LoadAlign(xRegTensor, tempXBuf + j * oneRepeatSize);
+                    LoadAlign(weightRegTensor, tempWeightBuf + j * oneRepeatSize);
+                    Mul(xRegTensor, xRegTensor, weightRegTensor, maskReg);
+                    StoreAlign(tempXBuf + j * oneRepeatSize, xRegTensor, maskReg);
+                }
+            }
+        }
     #endif
 private:
     TQue<QuePosition::VECIN, DOUBLE_BUFFER> inQue_;
@@ -129,37 +176,20 @@ __aicore__ inline void NormOperationForward<isTraining>::DoMulAdd(const LocalTen
 
 #if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
     template <bool isTraining>
-    __simd_vf__ inline void NormOperationForward<isTraining>::DoMulAddVf(
-        __ubuf__ float* xBuf, __ubuf__ float* weightBuf, __ubuf__ float* biasBuf, uint32_t heads) {
-        RegTensor<float> xRegTensor;
-        RegTensor<float> weightRegTensor;
-        RegTensor<float> biasRegTensor;
-
-        uint32_t oneRepeatSize = AscendC::GetVecLen() / sizeof(float);
-        uint32_t repeatTimes = (this->alignedNormDim_ + oneRepeatSize - 1) / oneRepeatSize;
-        for (uint32_t i = 0; i < heads; ++i) {
-            uint32_t len = this->alignedNormDim_;
-            __ubuf__ float* tempXBuf = xBuf + i * len;
-            __ubuf__ float* tempWeightBuf = weightBuf;
-            __ubuf__ float* tempBiasBuf = biasBuf;
-            for (uint32_t j = 0; j < repeatTimes; ++j) {
-                MaskReg maskReg = UpdateMask<float>(len);
-                LoadAlign(xRegTensor, tempXBuf + j * oneRepeatSize);
-                LoadAlign(weightRegTensor, tempWeightBuf + j * oneRepeatSize);
-                LoadAlign(biasRegTensor, tempBiasBuf + j * oneRepeatSize);
-                MulDstAdd(xRegTensor, weightRegTensor, biasRegTensor, maskReg);
-                StoreAlign(tempXBuf + j * oneRepeatSize, xRegTensor, maskReg);
-            }
-        }
-    }
-
-    template <bool isTraining>
     __aicore__ inline void NormOperationForward<isTraining>::DoMulAddVfCall(const LocalTensor<float> &x, uint32_t heads)
     {
         __ubuf__ float* xBuf = (__ubuf__ float*)x.GetPhyAddr();
         __ubuf__ float* weightBuf = (__ubuf__ float*)weight_.GetPhyAddr();
         __ubuf__ float* biasBuf = (__ubuf__ float*)bias_.GetPhyAddr();
-        DoMulAddVf(xBuf, weightBuf, biasBuf, heads);
+        DoMulAddVf(xBuf, weightBuf, biasBuf, heads, this->alignedNormDim_);
+    }
+
+    template <bool isTraining>
+    __aicore__ inline void NormOperationForward<isTraining>::DoMulVfCall(const LocalTensor<float> &x, uint32_t heads)
+    {
+        __ubuf__ float* xBuf = (__ubuf__ float*)x.GetPhyAddr();
+        __ubuf__ float* weightBuf = (__ubuf__ float*)weight_.GetPhyAddr();
+        DoMulVf(xBuf, weightBuf, heads, this->alignedNormDim_);
     }
 #endif
 
@@ -323,7 +353,11 @@ __aicore__ inline void NormOperationForward<isTraining>::DoRMSNorm(const LocalTe
     Div(x, x, tmp0, size);
     PipeBarrier<PIPE_V>();
     if constexpr (normType == NormType::RMS_NORM_AFFINE) {
-        DoMul(x, heads);
+        #if defined(__NPU_ARCH__) && (__NPU_ARCH__ == 3510)
+            DoMulVfCall(x, heads);
+        #else
+            DoMul(x, heads);
+        #endif
     }
     PipeBarrier<PIPE_V>();
 }
