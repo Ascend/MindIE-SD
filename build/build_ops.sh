@@ -36,7 +36,8 @@ if [ ! -f ${msopgen} ]; then
     echo "${msopgen} not exists"
     exit 1
 fi
-ascendc_ops=${ASCEND_OP_NAME:-'laser_attention;la_preprocess;ada_block_sparse_attention;sparse_block_estimate;norm_rope_concat;quant_flash_attn;quant_flash_attn_metadata;fused_infer_attention_score;mul_add'}
+
+ascendc_ops=${ASCEND_OP_NAME:-'laser_attention;la_preprocess;ada_block_sparse_attention;sparse_block_estimate;norm_rope_concat;quant_flash_attn;quant_flash_attn_metadata;fused_infer_attention_score;eagle_quant_block_sparse_attention;mul_add'}
 
 # ascend950 backend requires CANN 9.0+; remove ascend950 when CANN < 9.0
 default_compute_unit='ascend910;ascend910b;ascend910_93;ascend950'
