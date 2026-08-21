@@ -20,6 +20,7 @@
 #include "sparse_block_estimate.h"
 #include "layernorm.h"
 #include "block_sparse_attention.h"
+#include "eagle_quant_block_sparse_attention.h"
 #include "quant_flash_attn.h"
 #include "quant_flash_attn_metadata.h"
 #include "fused_infer_attention_score.h"
@@ -69,6 +70,16 @@ TORCH_LIBRARY(mindiesd, m) {
         int softmax_lse_flag=0, \
         Tensor? q_dequant_scale=None, Tensor? k_dequant_scale=None, \
         Tensor? v_dequant_scale=None) -> (Tensor, Tensor)");
+    m.def("eagle_quant_block_sparse_attention(Tensor query, Tensor key, Tensor value, \
+        Tensor? block_sparse_mask=None, int[] block_shape=[128,128], \
+        str q_input_layout='BNSD', str kv_input_layout='BNSD', \
+        int num_key_value_heads=1, float scale_value=1.0, int inner_precise=0, \
+        int[]? actual_seq_lengths=None, int[]? actual_seq_lengths_kv=None, \
+        int softmax_lse_flag=0, \
+        Tensor? query_scale=None, Tensor? key_scale=None, \
+        Tensor? value_scale=None, \
+        ScalarType? query_dtype=None, ScalarType? key_dtype=None, \
+        ScalarType? value_dtype=None, ScalarType? output_dtype=None) -> (Tensor, Tensor)");
     m.def("quant_flash_attn(Tensor query, Tensor key, Tensor value, \
         Tensor q_descale, Tensor k_descale, Tensor v_descale, \
         int q_quant_mode, int k_quant_mode, int v_quant_mode, \
@@ -129,6 +140,7 @@ TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m) {
     m.impl("sparse_block_estimate", &sparse_block_estimate_mindie_sd_impl_npu);
     m.impl("layernorm", &layernorm_mindie_sd_impl_npu);
     m.impl("block_sparse_attention", &block_sparse_attention_impl_npu);
+    m.impl("eagle_quant_block_sparse_attention", &eagle_quant_block_sparse_attention_impl_npu);
     m.impl("quant_flash_attn", &quant_flash_attn_impl_npu);
     m.impl("quant_flash_attn_metadata", &quant_flash_attn_metadata_impl_npu);
     m.impl("fused_infer_attention_score_v2", &fused_infer_attention_score_v2_impl_npu);

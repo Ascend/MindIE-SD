@@ -55,6 +55,7 @@ add_library(PTAExtensionOPS SHARED
     ./plugin/frequency_regulator.cpp
     ./plugin/frequency_regulator_register.cpp
     ./plugin/block_sparse_attention.cpp
+    ./plugin/eagle_quant_block_sparse_attention.cpp
     ./plugin/quant_flash_attn.cpp
     ./plugin/quant_flash_attn_metadata.cpp
     ./plugin/fused_infer_attention_score.cpp
