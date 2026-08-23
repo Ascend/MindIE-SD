@@ -33,8 +33,12 @@ def activate_pattern_once():
             "enable_wan_adalayernorm": ("WanAdaLayerNormPatternGroup", "..patterns"),
             # 残差+gate 需在 adaLN/rope 之后(先融合 modulation 与 4D 链, 防误匹配)
             "enable_wan_rope": ("WanRopePatternGroup", "..patterns"),
+            # MiniMax-H3 RoPE 先注册:先吃掉 rope 子图, 防 wan residual_gate 误匹配(F2 教训)
+            "enable_minimax_h3_rope": ("MiniMaxH3RopePatternGroup", "..patterns"),
             "enable_wan_residual_gate": ("WanResidualGatePatternGroup", "..patterns"),
             "enable_wan_rmsnorm": ("WanRmsNormPatternGroup", "..patterns"),
+            # MiniMax-H3 RMSNorm: torch 2.11 下 rms_norm 在 freeze 前已分解为链, before 即命中
+            "enable_minimax_h3_rmsnorm": ("MiniMaxH3RmsNormPatternGroup", "..patterns"),
         }
 
         fusion_config = CompilationConfig.fusion_patterns

@@ -26,6 +26,15 @@ class FusionPatterns:
     # qk_norm(RMSNorm)融合: npu_rms_norm 在 eager GraphModule 下不会被 torch_npu
     # decomp 表分解; eps 常量须 float32 舍入(9.999999974752427e-07)才能命中
     enable_wan_rmsnorm: bool = True
+    # MiniMax-H3 RMSNorm 融合(register_replacement,见 patterns/minimax_h3_rmsnorm_pattern.py):
+    # torch 2.11 下 rms_norm 在 freeze 前已被 Dynamo 分解为 pow/mean/rsqrt 链,before_freezing
+    # 的 pattern matcher 一次命中, 替换为 torch_npu.npu_rms_norm 单 kernel。覆盖 DiT block 内
+    # norm1/norm2、qk_norm(norm_q/norm_k)、token_refiner 与 norm_out。
+    enable_minimax_h3_rmsnorm: bool = True
+    # MiniMax-H3 RoPE 融合(register_replacement,见 patterns/minimax_h3_rope_pattern.py):
+    # 匹配 rotate_half 部分旋转链(slice/split/neg/cat/mul×2/add) → npu_rotary_mul。
+    # 需在 wan_residual_gate 之前注册, 防止其误匹配 rope 子图(F2 教训)。
+    enable_minimax_h3_rope: bool = True
 
 
 class CompilationConfig:

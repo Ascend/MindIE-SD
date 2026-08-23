@@ -17,6 +17,8 @@ __all__ = [
     'AdaLayerNormPatternGroup',
     'GELUPatternGroup',
     'MulAddPatternGroup',
+    'MiniMaxH3RmsNormPatternGroup',
+    'MiniMaxH3RopePatternGroup',
     'WanAdaLayerNormPatternGroup',
     'WanResidualGatePatternGroup',
     'WanRopePatternGroup',
@@ -25,6 +27,8 @@ __all__ = [
 
 from .adalayernorm_pattern import AdaLayerNormPatternGroup
 from .gelu_pattern import GELUPatternGroup
+from .minimax_h3_rmsnorm_pattern import MiniMaxH3RmsNormPatternGroup
+from .minimax_h3_rope_pattern import MiniMaxH3RopePatternGroup
 from .mul_add_pattern import MulAddPatternGroup
 from .rms_norm_pattern import RMSNormPatternGroup
 from .rope_pattern import RopePatternGroup
