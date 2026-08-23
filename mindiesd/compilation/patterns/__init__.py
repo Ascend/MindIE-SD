@@ -17,10 +17,18 @@ __all__ = [
     'AdaLayerNormPatternGroup',
     'GELUPatternGroup',
     'MulAddPatternGroup',
+    'WanAdaLayerNormPatternGroup',
+    'WanResidualGatePatternGroup',
+    'WanRopePatternGroup',
+    'WanRmsNormPatternGroup',
 ]
 
-from .rms_norm_pattern import RMSNormPatternGroup
-from .rope_pattern import RopePatternGroup
 from .adalayernorm_pattern import AdaLayerNormPatternGroup
 from .gelu_pattern import GELUPatternGroup
 from .mul_add_pattern import MulAddPatternGroup
+from .rms_norm_pattern import RMSNormPatternGroup
+from .rope_pattern import RopePatternGroup
+from .wan_adalayernorm_pattern import WanAdaLayerNormPatternGroup
+from .wan_residual_gate_pattern import WanResidualGatePatternGroup
+from .wan_rmsnorm_pattern import WanRmsNormPatternGroup
+from .wan_rope_pattern import WanRopePatternGroup

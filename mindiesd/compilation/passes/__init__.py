@@ -30,6 +30,11 @@ def activate_pattern_once():
             "enable_adalayernorm": ("AdaLayerNormPatternGroup", "..patterns"),
             "enable_fast_gelu": ("GELUPatternGroup", "..patterns"),
             "enable_mul_add": ("MulAddPatternGroup", "..patterns"),
+            "enable_wan_adalayernorm": ("WanAdaLayerNormPatternGroup", "..patterns"),
+            # 残差+gate 需在 adaLN/rope 之后(先融合 modulation 与 4D 链, 防误匹配)
+            "enable_wan_rope": ("WanRopePatternGroup", "..patterns"),
+            "enable_wan_residual_gate": ("WanResidualGatePatternGroup", "..patterns"),
+            "enable_wan_rmsnorm": ("WanRmsNormPatternGroup", "..patterns"),
         }
 
         fusion_config = CompilationConfig.fusion_patterns
