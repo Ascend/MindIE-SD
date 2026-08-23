@@ -26,6 +26,12 @@ class FusionPatterns:
     # qk_norm(RMSNorm)融合: npu_rms_norm 在 eager GraphModule 下不会被 torch_npu
     # decomp 表分解; eps 常量须 float32 舍入(9.999999974752427e-07)才能命中
     enable_wan_rmsnorm: bool = True
+    # MiniMax-H3 AdaLN 调制: x*(1+scale)+shift(index_select 表行) -> triton gather_scale_shift(表 [3,D] L2 驻留)
+    enable_minimax_h3_adaln: bool = True
+    # MiniMax-H3 SwiGLU: split->silu->mul -> triton swiglu(免 cat)
+    enable_minimax_h3_swiglu: bool = True
+    # MiniMax-H3 残差 gate: hidden + gate_table[idx]*attn/ff -> triton gather_residual_gate(先于 residual_gate 注册)
+    enable_minimax_h3_gate: bool = True
     # MiniMax-H3 RMSNorm 融合(register_replacement,见 patterns/minimax_h3_rmsnorm_pattern.py):
     # torch 2.11 下 rms_norm 在 freeze 前已被 Dynamo 分解为 pow/mean/rsqrt 链,before_freezing
     # 的 pattern matcher 一次命中, 替换为 torch_npu.npu_rms_norm 单 kernel。覆盖 DiT block 内

@@ -37,6 +37,10 @@ def activate_pattern_once():
             "enable_minimax_h3_rope": ("MiniMaxH3RopePatternGroup", "..patterns"),
             "enable_wan_residual_gate": ("WanResidualGatePatternGroup", "..patterns"),
             "enable_wan_rmsnorm": ("WanRmsNormPatternGroup", "..patterns"),
+            "enable_minimax_h3_gate": ("MiniMaxH3GatePatternGroup", "..patterns"),
+            "enable_minimax_h3_adaln": ("MiniMaxH3AdaLnPatternGroup", "..patterns"),
+            # MiniMax-H3 SwiGLU: split->silu->mul -> triton swiglu(免 cat)
+            "enable_minimax_h3_swiglu": ("MiniMaxH3SwigluPatternGroup", "..patterns"),
             # MiniMax-H3 RMSNorm: torch 2.11 下 rms_norm 在 freeze 前已分解为链, before 即命中
             "enable_minimax_h3_rmsnorm": ("MiniMaxH3RmsNormPatternGroup", "..patterns"),
         }
