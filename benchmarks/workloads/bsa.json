@@ -1,0 +1,16 @@
+{
+  "bsa": [
+    {
+      "arg_type": "default",
+      "batch_size": [1],
+      "num_heads": [16],
+      "head_dim": [128],
+      "q_len": [8192],
+      "kv_len": [8192],
+      "causal": [false],
+      "dtype": ["bf16", "fp8"],
+      "sparsity": [0.6, 0.8, 0.9, 0.95, 0.99],
+      "mask_type": ["rf_v3"]
+    }
+  ]
+}
