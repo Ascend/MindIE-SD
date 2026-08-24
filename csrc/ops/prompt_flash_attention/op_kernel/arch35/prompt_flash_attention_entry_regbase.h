@@ -46,26 +46,8 @@
 #include "../../eagle_fused_infer_attention_score/eagle_common/op_kernel/arch35/fia_kernel_fullquant_mx.h"
 #include "../../eagle_fused_infer_attention_score/eagle_common/op_kernel/arch35/fia_kernel_fullquant_gqa.h"
 #include "../../eagle_fused_infer_attention_score/eagle_common/op_kernel/arch35/fia_template_dispatcher.h"
-#elif __has_include("../../../common/op_kernel/arch35/flash_attention_score_kernel_infer.h")
-#include "../../../common/op_kernel/arch35/flash_attention_score_kernel_infer.h"
-#include "../../../common/op_kernel/arch35/flash_attention_noquant_kernel_infer.h"
-#include "../../../common/op_kernel/arch35/flash_attention_score_kernel_infer_mla_fullquant.h"
-#include "../../../common/op_kernel/arch35/flash_attention_score_kernel_infer_gqa_fullquant.h"
-#include "../../../common/op_kernel/arch35/flash_attention_score_kernel_infer_mx_fullquant.h"
-#include "../../../common/op_kernel/arch35/flash_attention_kernel_noquant_mla.h"
-#include "../../../common/op_kernel/arch35/fia_kernel_noquant_gqa.h"
-#include "../../../common/op_kernel/arch35/fia_kernel_fullquant_mx.h"
-#include "../../../common/op_kernel/arch35/fia_kernel_fullquant_gqa.h"
-#include "../../../common/op_kernel/arch35/fia_template_dispatcher.h"
 #else
-#include "../../common/arch35/flash_attention_score_kernel_infer.h"
-#include "../../common/arch35/flash_attention_score_kernel_infer_mla_fullquant.h"
-#include "../../common/arch35/flash_attention_score_kernel_infer_gqa_fullquant.h"
-#include "../../common/arch35/flash_attention_score_kernel_infer_mx_fullquant.h"
-#include "../../common/arch35/flash_attention_kernel_noquant_mla.h"
-#include "../../common/arch35/fia_kernel_noquant_gqa.h"
-#include "../../common/arch35/fia_kernel_fullquant_mx.h"
-#include "../../common/arch35/fia_kernel_fullquant_gqa.h"
+#error "FIA arch35 kernels must live under fused_infer_attention_score/op_kernel/eagle_common/op_kernel/arch35"
 #endif
 
 using namespace regbaseutil;

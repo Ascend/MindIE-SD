@@ -38,6 +38,7 @@ set(FIA_HOST_DIR "${FIA_OP_DIR}/op_host")
 set(FIA_COMMON_HOST_DIR "${OPS_DIR}/common/op_host")
 set(FIA_COMMON_ARCH35_HOST_DIR "${OPS_DIR}/common/op_host/arch35")
 set(FIA_COMMON_KERNEL_DIR "${OPS_DIR}/common/op_kernel")
+set(FIA_EAGLE_KERNEL_DIR "${FIA_OP_DIR}/op_kernel/eagle_common/op_kernel")
 set(FIA_UTILS_INC_DIR "${OPS_DIR}/utils/inc")
 set(FIA_PROMPT_HOST_DIR "${OPS_DIR}/prompt_flash_attention/op_host")
 set(FIA_PROMPT_KERNEL_DIR "${OPS_DIR}/prompt_flash_attention/op_kernel")
@@ -99,6 +100,7 @@ set(FIA_INCLUDE_DIRS
     "${FIA_COMMON_HOST_DIR}"
     "${FIA_COMMON_ARCH35_HOST_DIR}"
     "${FIA_COMMON_KERNEL_DIR}"
+    "${FIA_EAGLE_KERNEL_DIR}"
     "${FIA_UTILS_INC_DIR}"
     "${FIA_PROMPT_HOST_DIR}"
     "${FIA_PROMPT_KERNEL_DIR}"
