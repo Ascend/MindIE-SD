@@ -22,6 +22,14 @@ import torch_npu
 
 sys.path.append(os.path.dirname(__file__))
 from model import _PhaseTimer, check_npu, resolve_config_path
+from model.common import (
+    apply_compute_precision,
+    apply_w8a8_quant,
+    compute_dtype_from_precision,
+    replace_zero_dropout,
+    report_quant_layers,
+    verify_compute_precision_graph,
+)
 from model.flux_model import build_flux_pipeline
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -50,6 +58,20 @@ def _parse_args():
         "--compile",
         action="store_true",
         help="Enable MindieSDBackend compilation",
+    )
+    parser.add_argument(
+        "--quant",
+        type=str,
+        default="bf16",
+        choices=["fp32", "bf16", "w8a8"],
+        help="Quant/compute mode (default bf16). bf16 = FLUX transformer/text-encoder "
+             "weights are cast to bf16 and the diffusers apply_rotary_emb fp32 island "
+             "is rewritten at the source level (x/cos/sin stay bf16), so the compiled "
+             "graph is genuinely bf16 with no implicit conversion (GEMM ~15x faster "
+             "than fp32; equivalent to the former --compute-precision bf16). w8a8 = "
+             "W8A8 online quantization for Matmul (FA quantization not enabled) on a "
+             "bf16 base; format by device: A5 -> MXFP8, A2/A3 -> INT8. fp32 = original "
+             "fp32 compute.",
     )
     parser.add_argument(
         "--profile",
@@ -88,6 +110,15 @@ def _start_profile():
 
 
 def main():
+    # 外部并行添加的 minimax adaln/swiglu pattern 在部分模型上存在编译卡死风险;
+    # 通过环境变量可按需禁用(默认保持全部开启)
+    if os.environ.get("MINDIE_DISABLE_EXT_PATTERNS", "0") == "1":
+        from mindiesd.compilation.compiliation_config import CompilationConfig
+
+        CompilationConfig.fusion_patterns.enable_minimax_h3_adaln = False
+        CompilationConfig.fusion_patterns.enable_minimax_h3_swiglu = False
+        logger.warning("External minimax adaln/swiglu patterns disabled (env)")
+
     logging.basicConfig(
         level=logging.INFO,
         format="[%(asctime)s] %(levelname)s: %(message)s",
@@ -116,6 +147,8 @@ def main():
         args.num_layers,
     )
 
+    compute_dtype = compute_dtype_from_precision(
+        "bf16" if args.quant == "w8a8" else args.quant)
     pipe = build_flux_pipeline(
         config_dir,
         num_layers=args.num_layers,
@@ -123,11 +156,33 @@ def main():
         num_t5_layers=2,
         device=device,
         timer=timer,
+        compute_dtype=compute_dtype,
     )
 
     t0 = time.time()
     pipe.to(device)
     timer.record_build("Move to device", time.time() - t0)
+
+    # quant mode (default bf16): model-level weights cast + .float() island rewrite;
+    # w8a8 = bf16 base + W8A8 online quantization for Matmul (A5 -> MXFP8, A2/A3 -> INT8).
+    _cp_findings = verify_compute_precision_graph()
+    t0 = time.time()
+    if args.quant == "w8a8":
+        apply_compute_precision(pipe, "bf16")
+        apply_w8a8_quant(pipe, attrs=("transformer",))
+        report_quant_layers(pipe, attrs=("transformer",))
+    else:
+        apply_compute_precision(pipe, args.quant)
+    timer.record_build(f"Apply quant ({args.quant})", time.time() - t0)
+
+    # F4 评估结论(2026-08): pos_embed 输出固化(预计算+返回 buffer)在 torch 2.11 +
+    # MindieSDBackend 下导致 Dynamo/freeze 卡死(closure 与 buffer 方案均验证失败);
+    # FLUX pos_embed 生成链无 AiCpu 热点(profiling top15 外), 收益小, 不做。
+
+    # 劣化修复: p=0 的 nn.Dropout -> nn.Identity(DropoutV3 kernel 1.43ms 纯浪费)
+    t0 = time.time()
+    replace_zero_dropout(pipe.transformer)
+    timer.record_build("Replace zero-dropout", time.time() - t0)
 
     if args.compile:
         t0 = time.time()
@@ -149,6 +204,15 @@ def main():
         )
     torch.npu.synchronize()
     timer.capture_warmup()
+
+    if args.compile and args.quant != "fp32":
+        if _cp_findings:
+            logger.warning("Compute-precision verification FAILED: %d fp32/int32 "
+                           "compute-input violation(s), first 10=%s",
+                           len(_cp_findings), _cp_findings[:10])
+        else:
+            logger.warning("Compute-precision verification PASSED: "
+                           "no fp32/tf32/int32 compute nodes in the compiled graph")
 
     prof = None
     if args.profile:

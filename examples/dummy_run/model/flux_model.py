@@ -40,9 +40,9 @@ _ATTR_TEXT_ENCODER = "text_encoder"
 _ATTR_TEXT_ENCODER_2 = "text_encoder_2"
 
 
-def _from_config_npu(cls, cfg, npu_device):
+def _from_config_npu(cls, cfg, npu_device, compute_dtype=None):
     with torch.device("meta"):
-        model = cls.from_config(cfg, torch_dtype=torch.bfloat16)
+        model = cls.from_config(cfg, torch_dtype=compute_dtype or torch.bfloat16)
     model.to_empty(device=torch.device("cpu"))
     model.to(npu_device)
     return model
@@ -55,6 +55,7 @@ def build_flux_pipeline(
     num_t5_layers=2,
     device=None,
     timer=None,
+    compute_dtype=None,
 ):
     t_start = time.time()
     npu_device = torch.device(device) if device else torch.device("npu:0")
@@ -70,14 +71,14 @@ def build_flux_pipeline(
             transformer_cfg[_K_NUM_JOINT_BLOCKS] = num_layers
     t0 = time.time()
     transformer = _from_config_npu(
-        FluxTransformer2DModel, transformer_cfg, npu_device
+        FluxTransformer2DModel, transformer_cfg, npu_device, compute_dtype
     )
     if timer:
         timer.record_build("Transformer", time.time() - t0)
 
     vae_cfg = AutoencoderKL.load_config(config_or_dir, subfolder=_ATTR_VAE)
     t0 = time.time()
-    vae = _from_config_npu(AutoencoderKL, vae_cfg, npu_device)
+    vae = _from_config_npu(AutoencoderKL, vae_cfg, npu_device, compute_dtype)
     if timer:
         timer.record_build("VAE", time.time() - t0)
 
@@ -90,9 +91,10 @@ def build_flux_pipeline(
         os.path.join(config_or_dir, _ATTR_TEXT_ENCODER)
     )
     text_encoder_cfg.num_hidden_layers = num_clip_layers
+    build_dtype = compute_dtype or torch.bfloat16
     t0 = time.time()
     text_encoder = CLIPTextModel(text_encoder_cfg)
-    text_encoder.to(torch.bfloat16)
+    text_encoder.to(build_dtype)
 
     tokenizer = CLIPTokenizer.from_pretrained(
         os.path.join(config_or_dir, "tokenizer")
@@ -103,7 +105,7 @@ def build_flux_pipeline(
     )
     text_encoder_2_cfg.num_hidden_layers = num_t5_layers
     text_encoder_2 = T5EncoderModel(text_encoder_2_cfg)
-    text_encoder_2.to(torch.bfloat16)
+    text_encoder_2.to(build_dtype)
 
     tokenizer_2 = T5Tokenizer.from_pretrained(
         os.path.join(config_or_dir, "tokenizer_2")

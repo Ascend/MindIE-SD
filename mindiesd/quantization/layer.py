@@ -740,8 +740,7 @@ class W8A8MXFP8QuantLinear(W8A8QuantBaseLinear):
         else:
             x1, input_scale = torch_npu.npu_dynamic_mx_quant(x, dst_type=torch_npu.float8_e4m3fn)
 
-        if self.bias.dtype != torch.float32:
-            self.bias = self.bias.to(torch.float32)
+        bias = self.bias.to(torch.float32) if self.bias.dtype != torch.float32 else self.bias
 
         x2 = self.weight
         if x2.dtype != torch.float8_e4m3fn:
@@ -755,7 +754,7 @@ class W8A8MXFP8QuantLinear(W8A8QuantBaseLinear):
             scale_dtype=torch_npu.float8_e8m0fnu,
             pertoken_scale=input_scale,
             pertoken_scale_dtype=torch_npu.float8_e8m0fnu,
-            bias=self.bias,
+            bias=bias,
             output_dtype=self.dtype,
             group_sizes=[1, 1, 32],
         )
@@ -786,8 +785,7 @@ class W4A4MXFP4DualQuantLinear(W8A8QuantBaseLinear):
             x = x.to(self.dtype)
 
         x1, l0_scale, l1_scale = torch_npu.npu_dynamic_dual_level_mx_quant(x, smooth_scale=self.mul_scale)
-        if self.bias.dtype != torch.float32:
-            self.bias = self.bias.to(torch.float32)
+        bias = self.bias.to(torch.float32) if self.bias.dtype != torch.float32 else self.bias
 
         output = torch_npu.npu_dual_level_quant_matmul(
             x1,
@@ -796,7 +794,7 @@ class W4A4MXFP4DualQuantLinear(W8A8QuantBaseLinear):
             self.weight_dual_scale,
             l1_scale,
             self.weight_scale,
-            bias=self.bias,
+            bias=bias,
             output_dtype=self.dtype,
         )
         return output
@@ -982,8 +980,7 @@ class W8A8MXFP8OnlineQuantLinear(_OnlineQuantLinearBase):
         if x.dtype != self.dtype:
             x = x.to(self.dtype)
         x1, input_scale = torch_npu.npu_dynamic_mx_quant(x, dst_type=torch_npu.float8_e4m3fn)
-        if self.bias is not None and self.bias.dtype != torch.float32:
-            self.bias = self.bias.to(torch.float32)
+        bias = self.bias.to(torch.float32) if (self.bias is not None and self.bias.dtype != torch.float32) else self.bias
         x2 = self.weight
         if x2.dtype != torch.float8_e4m3fn:
             x2 = torch_npu.npu_dtype_cast(x2, torch_npu.float8_e4m3fn)
@@ -995,7 +992,7 @@ class W8A8MXFP8OnlineQuantLinear(_OnlineQuantLinearBase):
             scale_dtype=torch_npu.float8_e8m0fnu,
             pertoken_scale=input_scale,
             pertoken_scale_dtype=torch_npu.float8_e8m0fnu,
-            bias=self.bias,
+            bias=bias,
             output_dtype=self.dtype,
             group_sizes=[1, 1, 32],
         )
@@ -1017,8 +1014,7 @@ class W4A4MXFP4OnlineQuantLinear(_OnlineQuantLinearBase):
 
     def _w4a4_matmul(self, x):
         x1, input_scale = _dynamic_mx_quant(x, dst_type=torch_npu.float4_e2m1fn_x2, quant_config=self.quant_config)
-        if self.bias is not None and self.bias.dtype != torch.float32:
-            self.bias = self.bias.to(torch.float32)
+        bias = self.bias.to(torch.float32) if (self.bias is not None and self.bias.dtype != torch.float32) else self.bias
         x2 = self.weight.transpose(0, 1)
         output = torch_npu.npu_quant_matmul(
             x1,
@@ -1029,7 +1025,7 @@ class W4A4MXFP4OnlineQuantLinear(_OnlineQuantLinearBase):
             x2_dtype=torch_npu.float4_e2m1fn_x2,
             pertoken_scale=input_scale,
             pertoken_scale_dtype=torch_npu.float8_e8m0fnu,
-            bias=self.bias,
+            bias=bias,
             output_dtype=self.dtype,
             group_sizes=MXFP4_GROUP_SIZES_W4A4,
         )
@@ -1085,8 +1081,7 @@ class W4A4MXFP4DualOnlineQuantLinear(_OnlineQuantLinearBase):
 
     def _w4a4_matmul(self, x):
         x1, l0_scale, l1_scale = torch_npu.npu_dynamic_dual_level_mx_quant(x, smooth_scale=self.mul_scale)
-        if self.bias is not None and self.bias.dtype != torch.float32:
-            self.bias = self.bias.to(torch.float32)
+        bias = self.bias.to(torch.float32) if (self.bias is not None and self.bias.dtype != torch.float32) else self.bias
         output = torch_npu.npu_dual_level_quant_matmul(
             x1,
             self.weight,
@@ -1094,7 +1089,7 @@ class W4A4MXFP4DualOnlineQuantLinear(_OnlineQuantLinearBase):
             self.weight_dual_scale,
             l1_scale,
             self.weight_scale,
-            bias=self.bias,
+            bias=bias,
             output_dtype=self.dtype,
         )
         return output

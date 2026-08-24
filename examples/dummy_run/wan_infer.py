@@ -22,6 +22,7 @@ import torch_npu
 
 sys.path.append(os.path.dirname(__file__))
 from model import _PhaseTimer, check_npu, resolve_config_path
+from model.common import apply_w8a8_quant, report_quant_layers
 from model.wan_model import build_wan_pipeline
 
 os.environ.setdefault("PYTORCH_NPU_ALLOC_CONF", "expandable_segments:True")
@@ -60,13 +61,16 @@ def _parse_args():
                         help="Video height (latent S scales with frames and resolution).")
     parser.add_argument("--width", type=int, default=WIDTH,
                         help="Video width.")
-    parser.add_argument("--compute-precision", type=str, default="bf16",
-                        choices=["fp32", "bf16"],
-                        help="Compute precision (default bf16). bf16 = Wan activations and "
+    parser.add_argument("--quant", type=str, default="bf16",
+                        choices=["fp32", "bf16", "w8a8"],
+                        help="Quant/compute mode (default bf16). bf16 = Wan activations and "
                              "weights both run natively in bf16 (the model's .float() "
                              "conversions are branched to .to(bf16) at the code level; no "
-                             "implicit conversion happens in compilation). fp32 = original "
-                             "fp32 compute (slower, ~14x on GEMMs).")
+                             "implicit conversion happens in compilation; equivalent to the "
+                             "former --compute-precision bf16). w8a8 = W8A8 online "
+                             "quantization for Matmul (FA quantization not enabled) on a "
+                             "bf16 base; format by device: A5 -> MXFP8, A2/A3 -> INT8. "
+                             "fp32 = original fp32 compute (slower, ~14x on GEMMs).")
     return parser.parse_args()
 
 
@@ -177,8 +181,20 @@ def main():
     pipe.to(device)
     timer.record_build("Move to device", time.time() - t0)
 
-    # compute precision (default bf16): model-level weights cast + .float() branching
-    _apply_compute_precision(pipe, args.compute_precision)
+    # quant mode (default bf16): model-level weights cast + .float() branching;
+    # w8a8 = bf16 base + W8A8 online quantization for Matmul (A5 -> MXFP8, A2/A3 -> INT8).
+    if args.quant == "w8a8":
+        # Wan forward uses next(iter(self.time_embedder.parameters())).dtype to probe
+        # dtype; after quantization the module params are empty -> StopIteration,
+        # so fall back time_embedder to W16A16.
+        from mindiesd.quantization.mode import QuantAlgorithm
+
+        _apply_compute_precision(pipe, "bf16")
+        apply_w8a8_quant(pipe, attrs=("transformer", "transformer_2"),
+                         fallback_layers={"*time_embedder*": QuantAlgorithm.W16A16})
+        report_quant_layers(pipe, attrs=("transformer", "transformer_2"))
+    else:
+        _apply_compute_precision(pipe, args.quant)
 
     if args.compile:
         t0 = time.time()

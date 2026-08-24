@@ -22,6 +22,7 @@ import torch_npu
 
 sys.path.append(os.path.dirname(__file__))
 from model import _PhaseTimer, check_npu, resolve_config_path
+from model.common import apply_w8a8_quant, report_quant_layers
 from model.minimax_h3_model import build_minimax_h3_pipeline
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -63,14 +64,16 @@ def _parse_args():
                         help="Enable MindieSDBackend compilation")
     parser.add_argument("--profile", action="store_true",
                         help="Enable NPU profiling (level=l1, with_stack=False)")
-    parser.add_argument("--compute-precision", type=str, default="bf16",
-                        choices=["fp32", "bf16"],
-                        help="Compute precision (default bf16). bf16 = MiniMax-H3 DiT "
-                             "weights are cast to bf16; the transformer has no fp32 "
-                             "forcing (.float()) islands, so the whole DiT block stack "
-                             "then runs natively in bf16 (GEMM ~15x faster than fp32), "
-                             "with no implicit conversion in compilation. fp32 = original "
-                             "fp32 compute.")
+    parser.add_argument("--quant", type=str, default="bf16",
+                        choices=["fp32", "bf16", "w8a8"],
+                        help="Quant/compute mode (default bf16). bf16 = model-level bf16 "
+                             "compute precision (MiniMax-H3 DiT weights cast to bf16; no "
+                             "fp32 forcing (.float()) islands, GEMM ~15x faster than fp32, "
+                             "no implicit conversion in compilation; equivalent to the "
+                             "former --compute-precision bf16). w8a8 = W8A8 online "
+                             "quantization for Matmul (FA quantization not enabled) on a "
+                             "bf16 base; format by device: A5 -> MXFP8, A2/A3 -> INT8. "
+                             "fp32 = original fp32 compute.")
     return parser.parse_args()
 
 
@@ -294,12 +297,18 @@ def main():
     pipe.to(device)
     timer.record_build("Move to device", time.time() - t0)
 
-    # compute precision (default bf16): model-level weights cast; the compiled
-    # transformer then traces a genuinely bf16 graph (no implicit conversion).
+    # quant mode (default bf16): model-level weights cast; the compiled transformer
+    # then traces a genuinely bf16 graph (no implicit conversion). w8a8 = bf16 base
+    # + W8A8 online quantization for Matmul (A5 -> MXFP8, A2/A3 -> INT8).
     _cp_findings = _verify_compute_precision_graph()
     t0 = time.time()
-    _apply_compute_precision(pipe, args.compute_precision)
-    timer.record_build(f"Apply compute precision ({args.compute_precision})", time.time() - t0)
+    if args.quant == "w8a8":
+        _apply_compute_precision(pipe, "bf16")
+        apply_w8a8_quant(pipe, attrs=("transformer",))
+        report_quant_layers(pipe, attrs=("transformer",))
+    else:
+        _apply_compute_precision(pipe, args.quant)
+    timer.record_build(f"Apply quant ({args.quant})", time.time() - t0)
 
     if args.compile:
         t0 = time.time()
@@ -325,7 +334,7 @@ def main():
     torch.npu.synchronize()
     timer.capture_warmup()
 
-    if args.compile and args.compute_precision != "fp32":
+    if args.compile and args.quant != "fp32":
         if _cp_findings:
             logger.warning("Compute-precision verification FAILED: %d fp32/int32 "
                            "compute-input violation(s), first 10=%s",
