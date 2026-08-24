@@ -31,10 +31,15 @@ def activate_pattern_once():
             "enable_fast_gelu": ("GELUPatternGroup", "..patterns"),
             "enable_mul_add": ("MulAddPatternGroup", "..patterns"),
             "enable_wan_adalayernorm": ("WanAdaLayerNormPatternGroup", "..patterns"),
+            # FLUX/Qwen norm_out: (1+scale)[:,None] form, NOT covered by wan_adalayernorm
+            "enable_norm_out_adaln": ("NormOutAdaLayerNormPatternGroup", "..patterns"),
             # 残差+gate 需在 adaLN/rope 之后(先融合 modulation 与 4D 链, 防误匹配)
             "enable_wan_rope": ("WanRopePatternGroup", "..patterns"),
             # MiniMax-H3 RoPE 先注册:先吃掉 rope 子图, 防 wan residual_gate 误匹配(F2 教训)
             "enable_minimax_h3_rope": ("MiniMaxH3RopePatternGroup", "..patterns"),
+            # Qwen-Image RoPE 同规则: 必须先于 wan_residual_gate 注册, 防止其误匹配
+            # rope 的 add(mul(x,cos), mul(x_rot,sin)) 子图 (qwen 4D fallback 实测)
+            "enable_qwen_rope": ("QwenRopePatternGroup", "..patterns"),
             "enable_wan_residual_gate": ("WanResidualGatePatternGroup", "..patterns"),
             "enable_wan_rmsnorm": ("WanRmsNormPatternGroup", "..patterns"),
             "enable_minimax_h3_gate": ("MiniMaxH3GatePatternGroup", "..patterns"),
