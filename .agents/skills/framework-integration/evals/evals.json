@@ -1,0 +1,50 @@
+{
+  "skill_name": "framework-integration",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "把 MindIE-SD 的 MindieSDBackend 编译接入 DiffSynth-Engine，Qwen-Image 真实权重在远端 <model_weight_dir>/qwen/Qwen/，怎么部署和适配？",
+      "expected_output": "路由到 framework-integration §3 / references/diffsynth-engine-notes.md：部署（pip install -e . --no-deps + SETUPTOOLS_SCM_PRETEND_VERSION）、compile 适配（compile_backend='mindie' + _compiled_call_impl 原地写入）、Qwen-Image RoPE 实数域改写与 text encoder key 归一化，并说明融合算子使能判断方法",
+      "files": [],
+      "expectations": [
+        "提到 --no-deps 安装与 setuptools-scm 无 .git 的 PRETEND_VERSION 处理",
+        "提到 compile_transformer_blocks 须写入 submodule._compiled_call_impl（直接 torch.compile 不赋值不生效）",
+        "提到 Qwen-Image RoPE 实数域改写命中 qwen_rope_pattern",
+        "提到用 graph_log_url DOT 图 / kernel_details.csv 判断融合算子使能（日志 2048 截断会误判 0 命中）"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "外部框架（diffsynth_engine）里跑 compile 后，怎么确认 qwen_rope 这些 pattern 真的使能了？能直接用 dummy run 的结果判断吗？",
+      "expected_output": "按 diffsynth-engine-notes.md §3：三层证据（DEBUG 日志 → graph_log_url DOT 图 → kernel_details.csv）；使能判断不依赖层数/权重，dummy run 与真实权重的融合 kernel 使能集合一致；只做使能判断不做耗时比较（耗时须真实权重 + kernel diff）",
+      "files": [],
+      "expectations": [
+        "输出三层使能证据（日志 / DOT 图 / kernel_details.csv）并说明以 DOT 图或 kernel csv 为最终依据",
+        "说明使能集合与 dummy run 一致（qwen_rope / qk_norm / 残差 gate / 调制 / GELU），可用于判断",
+        "说明图命中不等于运行期全部生效（residual_gate_add 对 4D 张量 fallback）",
+        "明确不做耗时比较，耗时评估须真实权重 + kernel diff"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "vllm serve --omni 启动 Qwen-Image-2512 时报 hcclCommInitRootInfoConfig error code is 4，怎么排查？",
+      "expected_output": "路由到 framework-integration §2 / references/troubleshooting-vllm-omni.md E2：容器缺 HCCL ranktable（/usr/local/Ascend/driver/topo/950/atlas_350_*.json）→ docker cp 或挂载",
+      "files": [],
+      "expectations": [
+        "定位为 HCCL ranktable 缺失（/usr/local/Ascend/driver/topo）",
+        "给出 docker cp / 挂载解决方案并说明容器重启后丢失",
+        "引用 troubleshooting-vllm-omni.md"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "已部署的 Qwen-Image 模型想验证 1 步推理是否正确，用 Cache DiT + diffusers 的方式怎么跑？",
+      "expected_output": "按 framework-integration §1.2：from_pretrained 加载 → 1 步推理 → 验证无异常/OOM、输出 shape 合法",
+      "files": [],
+      "expectations": [
+        "给出 from_pretrained + 1 步推理的验证代码路径",
+        "按 §1.4 通过标准检查（无异常、输出合法、显存正常）"
+      ]
+    }
+  ]
+}

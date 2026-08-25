@@ -1,5 +1,6 @@
 ---
 name: ascend-deploy
+compatibility: paramiko；远端 SSH + Docker + CANN；本地 cmake/build/wheel、triton-ascend
 description: MindIE-SD 代码部署与编译安装。已在昇腾设备上直接编译安装；本地开发机通过 SSH 推送到远端昇腾设备，
              支持 Docker 容器内源码编译。当用户需要部署安装 MindIE-SD、更新远端容器内代码、
              或管理多人共享 NPU 环境时使用此 skill。
@@ -14,7 +15,8 @@ description: MindIE-SD 代码部署与编译安装。已在昇腾设备上直接
 ```text
 你当前在哪里？
 ├─ 已在昇腾设备上 → 跳到 §2 编译安装
-└─ 本地开发机（需推送到远端） → §1 远端前置 → §2 编译安装
+├─ 本地开发机（需推送到远端） → §1 远端前置 → §2 编译安装
+└─ 部署 vLLM-Omni + MindIE-SD 全栈（Qwen-Image / Wan / MiniMax-H3）→ framework-integration §2
 ```
 
 ## §1 远端前置（仅本地→远端场景）
@@ -217,7 +219,7 @@ npu-smi info -l
 | OOM 优雅退出 | try/except + 明确提示 | 告知预期结果 |
 
 > 需要 profiling 数据时使用 profiling-collection skill。
-> 部署完成后，使用 model-verification §B 验证已部署模型的推理正确性。
+> 部署完成后，使用 framework-integration §1 验证已部署模型的推理正确性。
 
 ## 编译原理
 
@@ -307,6 +309,7 @@ strings /path/to/library.so | grep "搜索关键词"
 | `import triton` 成功但 `0 active drivers` | 安装了标准 triton（非 Ascend 版本） | `pip uninstall triton -y && pip install triton-ascend && pip install pybind11` |
 | SSH 连接过多导致拒绝访问 | 远端 `MaxStartups` 限制 | 遵循 §1 连接复用原则 |
 | `ModuleNotFoundError: mindiesd` | `pip install -e .` 未重新索引 | 重新执行 `pip install -e .` |
+| git/curl HTTPS 报 `SEC_E_NO_CREDENTIALS`（Windows 开发机） | git 默认 schannel TLS 后端在受限进程里握手失败 | `git -c http.sslBackend=openssl fetch`（可全局 `git config --global http.sslBackend openssl`） |
 
 > 其他问题（SSH 认证、文件缺失、docker exec 引号转义、CRLF、环境依赖等）见 references/troubleshooting-tree.md。
 
@@ -325,6 +328,7 @@ strings /path/to/library.so | grep "搜索关键词"
 
 - `scripts/deploy_to_remote.py` — 增量传输 + 编译部署主脚本（**仅 §1 远端路径需要**）
 - `scripts/pick_free_device.py` — 自动检测 HBM 占用最低的空闲 NPU 卡（本地/远端通用）
+- `scripts/ssh_helper.py` — 单连接 SSH 命令执行器（连接复用原则；`--host/--user/--password/--container/--cmd`）
 
 > Profiling 采集脚本 (`deploy_and_profile.py`) 已拆分并迁移至 profiling-collection skill（见 `collect_profile.py`）。
 
