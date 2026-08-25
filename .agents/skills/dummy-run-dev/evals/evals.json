@@ -1,0 +1,38 @@
+{
+  "skill_name": "dummy-run-dev",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "没有真实权重（只有配置文件），怎么验证一个新模型架构在 NPU 上能不能跑通？",
+      "expected_output": "按 dummy-run-dev §A：从 diffusers/transformers 加载 config → 随机权重逐组件构造（transformer/text_encoder/tokenizer/vae）→ 组装 pipeline → 跑通验证",
+      "files": [],
+      "expectations": [
+        "给出逐组件构造方法（config → 随机权重）",
+        "提到 tokenizer 需要真实词表（KB 级，离线下载）",
+        "提到配置缓存 --config_cache 免联网"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "dummy run 时 NPU 显存不够，怎么把模型压小？",
+      "expected_output": "按 §A3 优化技巧：num_layers 裁剪（num_layers=2）、关闭 CFG（guidance_scale=1.0）、跳过 VAE decode（output_type=latent）、warmup 与计时分离",
+      "files": [],
+      "expectations": [
+        "提到 num_layers 裁剪（仅支持动态层数模型）",
+        "提到 output_type=latent 跳过 VAE decode",
+        "提到 warmup + timed 分离排除 JIT 冷启动"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "dummy run 报 AttributeError: 'list' object has no attribute '__module__'，怎么解决？",
+      "expected_output": "按 §A5 常见问题：Pipeline.from_config() tokenizer bug → 改为手动逐组件构造",
+      "files": [],
+      "expectations": [
+        "定位为 Pipeline.from_config() 构造问题",
+        "给出手动逐组件构造的解决方式",
+        "提到环境类问题（diffusers 缺失）路由到 ascend-deploy 排查"
+      ]
+    }
+  ]
+}
