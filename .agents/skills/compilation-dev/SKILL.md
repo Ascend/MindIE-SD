@@ -1,10 +1,11 @@
 ---
 name: compilation-dev
+compatibility: torch + torch_npu NPU 环境、已安装 mindiesd、CANN（集成验证需 NPU）
 description: >
-  MindIE-SD 编译后端适配与分析。覆盖 Pattern 创建/注册/调试、Copy 算子消减、
-  四后端选择 (default / torchair_ge / npugraph_ex / aclgraph) 的全生命周期。
-  触发: "pattern", "compile", "Copy", "InplaceCopy", "fusion", "backend",
-  "torchair_ge", "--npugraph", "register_replacement".
+  MindIE-SD Pattern matcher 与 Inductor/default 后端开发。覆盖 Pattern 创建/注册/调试、
+  Copy 算子消减（default 路径）的全生命周期。批量下发（aclgraph）见 aclgraph-dev，
+  算子本体开发见 operator-dev。
+  触发: "pattern", "compile", "Copy", "InplaceCopy", "fusion", "register_replacement".
 ---
 
 # 编译开发（Pattern + Copy 消减 + 后端选择）
@@ -94,7 +95,7 @@ Test Model 的 forward 与 Phase 1 提取的代码完全一致。
 
 ### 路径 B: 改用自定义 Graph Pass（类型 6）
 
-当 mismatch 原因为 `placeholder` vs `get_attr`（mismatch 类型 6），
+当 mismatch 原因为 `placeholder` vs `get_attr`（mismatch 类型 7），
 `register_replacement` 框架无法修复。回退到 Phase 2，实现自定义 FX graph traversal pass。
 
 **关键注意**: 自定义 pass 中插入的 NPU custom op（如 `npu_rms_norm`）必须在
@@ -124,6 +125,12 @@ Test Model 的 forward 与 Phase 1 提取的代码完全一致。
 3. 对比 `eager_only`（被融合的原始算子）和 `compile_only`（新增的融合 kernel）
 4. 同名 kernel 耗时差排序 → 定位编译开销
 
+一键执行（`scripts/compare_profiles.py`，含算子族聚合 + 逐 kernel delta）：
+
+```bash
+python scripts/compare_profiles.py --eager eager/kernel_details.csv --compile compile/kernel_details.csv
+```
+
 **Kernel 名称确认**:
 
 - RMSNorm → `rms_norm` / `RmsNorm`
@@ -133,7 +140,7 @@ Test Model 的 forward 与 Phase 1 提取的代码完全一致。
 
 ---
 
-## Phase 7: Copy 算子消减
+## Phase 7: Copy 算子消减（default/Inductor 路径）
 
 Pattern 匹配成功后检查 Copy 算子膨胀。`default` 后端的 `aot_autograd` functionalization
 将 view/reshape 转为 `_to_copy` → Inductor codegen → `InplaceCopy` NPU kernel。
@@ -141,14 +148,22 @@ Pattern 匹配成功后检查 Copy 算子膨胀。`default` 后端的 `aot_autog
 **检测**: 在 `kernel_details.csv` 中搜索 `InplaceCopy/ViewCopy/TensorMove/StridedSlice`。
 同时对比 eager vs compile 的同名 kernel 耗时差，定位膨胀源。
 
-**消减方案**:
+一键执行（`scripts/analyze_copy_kernels.py`，含 Copy 统计 + Top kernel + 前后算子归因）：
 
-- **方案 A** (推荐 3D attn): torchair_ge 绕过 aot_autograd
-- **方案 B** (2D attn): 修复 pattern 匹配，减少 Copy 膨胀
-- **方案 C**: 混合模式（VAE eager + transformer compile）
-- **方案 D** (不推荐): npugraph_ex（与 default 等价）
+```bash
+python scripts/analyze_copy_kernels.py --csv compile/kernel_details.csv --label compile
+```
 
-完整流程见 `references/copy-elimination-guide.md`。后端对比见 `references/backend-comparison.md`。
+**消减方案**（本仓可实现）:
+
+- **方案 A** (推荐): 修复 pattern 匹配，减少 functionalization 引入的 Copy 膨胀
+- **方案 B**: 混合模式（VAE eager + transformer compile）
+- **方案 C**: 静态 shape / 大 batch 场景改用 aclgraph 批量下发（见 aclgraph-dev）
+
+> torchair_ge / npugraph_ex 作为后端选项**在本仓未实现**（`CompilationConfig` 无
+> `backend_mode` 及对应常量），历史上记录的"四后端对比"不适用于本仓，勿按旧文档执行。
+
+完整流程见 `references/copy-elimination-guide.md`。
 
 ---
 
@@ -157,13 +172,21 @@ Pattern 匹配成功后检查 Copy 算子膨胀。`default` 后端的 `aot_autog
 | 文件 | 加载时机 |
 |------|---------|
 | `references/pattern-templates.md` | Phase 2: 创建 pattern 代码模板 + 融合 op 速查 |
+| `references/pattern-dev.md` | Phase 2/4: 注册机制易错细节（ABCMeta isinstance 陷阱、去重注册） |
 | `references/registration-checklist.md` | Phase 3: 注册核对清单 |
 | `references/test-templates.md` | Phase 4: 测试组织 + 双层测试模板 |
 | `references/mismatch-catalog.md` | Phase 5: 7 类 mismatch 目录 |
 | `references/graph-comparison-guide.md` | Phase 5: Graph dump + 节点对齐方法 |
 | `references/custom-graph-pass.md` | Phase 5: 自定义 Graph Pass 实现指南 |
-| `references/copy-elimination-guide.md` | Phase 7: Copy 消减全流程 |
-| `references/backend-comparison.md` | Phase 7: 四后端架构对比 + 决策树 |
+| `references/copy-elimination-guide.md` | Phase 7: Copy 消减全流程（default 路径） |
+| `references/benchmark-guide.md` | Phase 6/7: 计时方法（L2-flush 放计时区外、warm/cold 双档） |
+| `references/benefit-rootcause.md` | Phase 6: pattern 命中后验证收益（kernel diff → 逐 pass AB → R1-R5 根因目录） |
+
+## Bundled Scripts
+
+- `scripts/compare_profiles.py` — Phase 6: eager vs compile kernel diff（算子族聚合 + 逐 kernel delta）
+- `scripts/cmp_kernels.py` — Phase 6: 算子类 count/耗时轻量对比
+- `scripts/analyze_copy_kernels.py` — Phase 7: Copy 膨胀检测（统计 + Top kernel + 前后算子归因）
 
 ## 维护与更新
 
