@@ -110,7 +110,7 @@
 ## 5. Skill 路由规则
 
 - 优先查看本仓库 `.agents/skills/` 中是否已有最贴合当前任务的 skill。
-- 本仓库没有合适 skill，或本地 skill 缺少必要规范时，再参考 `https://gitcode.com/Ascend/agent-skills`。
+- 本仓库没有合适 skill，或本地 skill 缺少必要规范时，再参考 `https://gitcode.com/Ascend/agent-skills` 或 `https://gitcode.com/cann/cannbot-skills`（算子级开发/优化场景）。
 - 只选择最小、最贴合当前任务的 skill，不做全量加载。
 - 对高风险流程类任务，`AGENTS.md` 允许显式指定必须优先加载的本地 skill。
 - 以下请求必须先读取 `.agents/skills/mindie-sd-community-governance/SKILL.md`：

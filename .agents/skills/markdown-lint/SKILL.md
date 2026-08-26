@@ -1,5 +1,6 @@
 ---
 name: markdown-lint
+compatibility: markdownlint-cli v0.44.0, pre-commit
 description: MindIE-SD 仓库 Markdown 格式 lint 规则。当编写、修改或审查 Markdown 文件（README、文档、
               变更日志等）、或 CI 门禁报出 markdownlint 违规时使用此 skill。
               即使用户只提到"格式问题"或"MD040报错"而未说 markdownlint，也应触发。
@@ -13,7 +14,7 @@ description: MindIE-SD 仓库 Markdown 格式 lint 规则。当编写、修改�
 事实来源：
 
 - `.pre-commit-config.yaml`（`markdownlint` 钩子配置）
-- `markdownlint-cli` v0.46.0 规则集
+- `markdownlint-cli` v0.44.0 规则集
 
 ---
 

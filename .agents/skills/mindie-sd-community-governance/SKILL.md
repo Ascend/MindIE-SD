@@ -1,5 +1,6 @@
 ---
 name: mindie-sd-community-governance
+compatibility: 无（assets/mr_ruleset_*.xlsx 随 skill 内置）
 description: "Handle MindIE-SD documentation, governance, contributor workflow, commit or PR conventions, history cleanup, template changes, and version-policy updates with minimal context, fixed review steps, and deterministic output."
 ---
 
@@ -78,7 +79,6 @@ description: "Handle MindIE-SD documentation, governance, contributor workflow, 
 - `.gitcode/PULL_REQUEST_TEMPLATE.md`
 - `README.md`
 - `docs/zh/developer_guide/test.md`
-- `docs/zh/developer_guide/tooling.md`
 - `assets/mr_ruleset_20260327101328.xlsx`，按需读取
 
 ### 3.3 文档内容或站点构建变更
@@ -177,7 +177,7 @@ description: "Handle MindIE-SD documentation, governance, contributor workflow, 
 ### 5.4 提交前检查
 
 - 本地提交前检查入口统一使用 `pre-commit`
-- 事实依据来自 `README.md`、`docs/zh/developer_guide/test.md` 与 `docs/zh/developer_guide/tooling.md`
+- 事实依据来自 `README.md` 与 `docs/zh/developer_guide/test.md`
 - 最小检查命令：
   - `python -m pip install -r requirements-lint.txt`
   - `pre-commit install`

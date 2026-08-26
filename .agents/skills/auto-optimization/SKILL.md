@@ -1,5 +1,6 @@
 ---
 name: auto-optimization
+compatibility: 依赖 profiling-collection / performance-analysis / performance-optimization；NPU 设备
 description: 端到端性能优化闭环，组合 profiling-collection、performance-analysis、performance-optimization
              三个下层 skill 完成从 profiling 采集到方案实施的完整流程。
              当用户需要完整优化模型推理性能、并确认优化效果时使用此 skill。
@@ -32,7 +33,7 @@ profiling-collection + performance-analysis（复验）
 ## 前置条件
 
 - ascend-deploy 已完成：代码已编译安装、`import mindiesd` 成功
-- 模型已部署并通过验证：用 model-verification §B 确认推理正确
+- 模型已部署并通过验证：用 framework-integration §1 确认推理正确
 - NPU 设备可用且显存充足
 
 ## 核心流程
@@ -101,16 +102,12 @@ python performance-analysis/scripts/compare_traces.py \
 - Host Bound / 通信暴露率变化
 - 总推理耗时变化
 
-差距 < 3% 视为噪声，不宣称有效。
+差距 < 3% 视为噪声，不宣称有效（阈值同 performance-optimization 单点维护）。
 
 ## 停止条件
 
-满足任一条件即停止优化循环：
-
-1. **目标达成**：推理速度或显存占用已满足性能预期
-2. **噪声范围**：与基线差距 < 3%，继续优化无统计意义
-3. **外部瓶颈**：根因在 CANN / TorchNPU / HCCL 而非 MindIE-SD 代码
-4. **硬件瓶颈**：已改善但受限于 NPU 物理显存 / 带宽上限
+同 `performance-optimization/SKILL.md` 的「停止条件」（目标达成 / 噪声范围 / 外部瓶颈 / 硬件瓶颈），
+本 skill 只编排不重复定义。
 
 ## 产出规范
 

@@ -1,11 +1,13 @@
 ---
 name: performance-optimization
-description: 针对 performance-analysis 发现的性能瓶颈，从 mindiesd-features.md（唯一真相源）
-             中选取最优 MindIE-SD 解决方案（量化/稀疏/并行/通信掩盖/缓存等）。
-             5步闭环: baseline→分析→根因→修补→复验。
-             即使用户只提到"这个模型怎么加速"而未说 benchmark，也应触发。
-             当用户需要将分析结论转化为具体优化操作时使用此 skill。
-             由 dev-workflow 的优化阶段触发。
+compatibility: 已安装 mindiesd, docs/zh/features 文档（refresh_features.py 数据源）, NPU 复验
+description: >
+  针对 performance-analysis 发现的性能瓶颈，从 mindiesd-features.md（唯一真相源）
+  中选取最优 MindIE-SD 解决方案（量化/稀疏/并行/通信掩盖/缓存等）。
+  5步闭环: baseline→分析→根因→修补→复验。
+  即使用户只提到"这个模型怎么加速"而未说 benchmark，也应触发。
+  当用户需要将分析结论转化为具体优化操作时使用此 skill。
+  由 dev-workflow 的优化阶段触发。
 ---
 
 # 性能优化
@@ -20,7 +22,7 @@ description: 针对 performance-analysis 发现的性能瓶颈，从 mindiesd-fe
 
 ### Step 1: 建立基线
 
-使用 performance-evaluation 建立基线，记录模型 / 分辨率 / 帧数 / 精度 / NPU 数等配置。
+使用 profiling-collection 采集 + performance-analysis 分析建立基线，记录模型 / 分辨率 / 帧数 / 精度 / NPU 数等配置。
 
 ### Step 2: 获取分析诊断
 
@@ -63,7 +65,7 @@ description: 针对 performance-analysis 发现的性能瓶颈，从 mindiesd-fe
 
 ### Step 5: 复验
 
-- 重新运行 performance-evaluation 的相同 benchmark
+- 重新运行 profiling-collection + performance-analysis 复验相同配置
 - 重新运行 performance-analysis 确认 5 层分析指标变化
 - 差距 < 3% 视为噪声
 

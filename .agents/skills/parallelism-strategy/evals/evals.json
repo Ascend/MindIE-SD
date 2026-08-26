@@ -1,0 +1,38 @@
+{
+  "skill_name": "parallelism-strategy",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "多卡推理时 profiling 显示通信暴露 30%，怎么优化？",
+      "expected_output": "路由到 parallelism-strategy：通信掩盖（comm-stream masking，mindiesd.parallel 专用流 + monkey-patch funcol.all_to_all_single/all_gather_tensor），参考实测收益（Communication -95%）",
+      "files": [],
+      "expectations": [
+        "提到 comm-stream masking 方案（独立 HCCL 流与计算重叠）",
+        "提到 monkey-patch 入口（funcol.all_to_all_single / all_gather_tensor）",
+        "给出实测收益参考（通信未掩盖 31.4ms → 1.5ms）"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "配了 Ulysses 并行但 profiling 里只有 allGather 没有 allToAll，FA 切头没生效？",
+      "expected_output": "按 USP 触发条件：必须给每个 attn.processor._parallel_config 设 ParallelConfig(context_parallel_config=cp_cfg)（ParallelConfig 包装而非 ContextParallelConfig），否则走非 CP 路径",
+      "files": [],
+      "expectations": [
+        "定位为 _parallel_config 未正确设置",
+        "提到 ParallelConfig 包装（不是 ContextParallelConfig）",
+        "提到设置后才会触发 all_to_all FA 切头路径"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "多卡跑的时候 HcclAlltoAllV 直接 SIGSEGV 崩了，怎么办？",
+      "expected_output": "按 AlltoAllV 缺陷绕过：等分 HcclAlltoAll 正常、split 路径 SIGSEGV → 用 pad + 等分方案（pad 到 S_PAD 128 倍数，等分交换后 slice），实测 err=0.0",
+      "files": [],
+      "expectations": [
+        "说明 HcclAlltoAllV split 路径缺陷（CANN 9.1.0）",
+        "给出 pad + 等分绕过方案",
+        "提到 kernel 名从 hcom_alltoallv 变为 hcom_alltoall"
+      ]
+    }
+  ]
+}

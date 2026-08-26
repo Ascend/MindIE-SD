@@ -1,10 +1,11 @@
 ---
 name: profiling-collection
+compatibility: torch_npu.profiler, CANN set_env.sh, paramiko（collect_profile.py）, tar
 description: 在远端昇腾 NPU 设备上采集性能 profiling 数据，打包回传本地供 performance-analysis 使用。
              统一采集流程：开启 Profiler → 运行推理 → 压缩 → 回传（部署由 ascend-deploy 完成）。
              当用户需要采集模型 profiling 数据、开启 profiler 跑推理、或为性能分析准备数据时使用此 skill。
              即使用户只提到"帮我采一下 profile"或"开 profiler 跑这个模型"，也应触发。
-             通常由 model-verification、ascend-deploy 或 performance-evaluation 的 NPU 路径路由触发。
+             通常由 dummy-run-dev、ascend-deploy、framework-integration 的 NPU 路径路由触发。
 ---
 
 # Profiling 数据采集
@@ -48,10 +49,10 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 
 Profiling 采集时必须在 profiler 外部完成 warmup，确保分析数据不含 JIT 编译开销：
 
-- Profiler 打开前先执行 **2 步 warmup**（含 `torch.npu.synchronize()`）
+- Profiler 打开前先执行 **5 步 warmup**（`--warmup-steps` 默认 5，含 `torch.npu.synchronize()`）
 - Profiler 仅在 warmup 之后开启 **capture ≥5 步** timed steps
-- MindieSDBackend 编译场景：warmup 步数需同时覆盖 JIT 编译（最多 8 次，建议 2 步以上）
-- `--warmup-steps` 参数（默认 2）控制 warmup 步数
+- MindieSDBackend 编译场景：warmup 步数需同时覆盖 JIT 编译（最多 8 次，建议 ≥10 步）
+- `--warmup-steps` 参数（默认 5）控制 warmup 步数
 
 > performance-analysis 会验证 warmup 是否已剔除，未剔除时标注 `WARMUP_NOT_STRIPPED` 异常。
 
@@ -66,7 +67,7 @@ assert output.images[0].size is not None, "Output shape is invalid"
 print(f"Pre-check OK: output shape={output.images[0].size}")
 ```
 
-验证通过后再开启 profiler 采集。验证失败时中止，排查推理问题（参考 model-verification §B）。
+验证通过后再开启 profiler 采集。验证失败时中止，排查推理问题（参考 framework-integration §1）。
 
 ## 输出产物
 
@@ -79,14 +80,14 @@ print(f"Pre-check OK: output shape={output.images[0].size}")
 | `step_trace_time.csv` | CANN Profiler CSV | Step 级汇总 |
 | `communication.json` | JSON | 通信算子详情（若开启） |
 
-> 此格式直接对接 performance-analysis 的三层递进分析。
+> 此格式直接对接 performance-analysis 的 5 层递进分析（Layer 3 内含三层子分析）。
 
 ## 数据流向
 
 ```text
 profiling-collection ──→ performance-analysis ──→ performance-optimization
        │                        │                        │
-   采集数据                 三层递进分析             选取最优方案
+   采集数据                 5 层递进分析           选取最优方案
 ```
 
 上游数据消费者：`performance-analysis/SKILL.md` 的 `## 数据源` 章节。

@@ -1,0 +1,38 @@
+{
+  "skill_name": "performance-optimization",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "性能分析报告说 MatMul 占 DiT 58%，优化方向是量化，具体选哪个方案？",
+      "expected_output": "按 performance-optimization Step 3：查 mindiesd-features.md §MatMul量化（唯一真相源），考虑硬件约束/模型兼容/精度权衡，选具体 API（如 W8A8_MXFP8）；优先 MindIE-SD Pattern > 量化 > 稀疏 > 通信 > 通用",
+      "files": [],
+      "expectations": [
+        "引用 mindiesd-features.md 作为唯一真相源",
+        "给出方案优先级（Pattern > 量化 > 稀疏 > 通信 > 通用）",
+        "提到硬件约束与精度权衡检查"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "优化方案实施后怎么确认没破坏正确性？",
+      "expected_output": "按 Step 4/5 复验：重新跑相同 benchmark 与 5 层分析；正确性用 cosine similarity 不下降验证；差距 <3% 视为噪声",
+      "files": [],
+      "expectations": [
+        "提到复验相同配置（profiling-collection + performance-analysis）",
+        "提到 cosine similarity 正确性门槛",
+        "提到 3% 噪声阈值"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "建议的 API 在远端环境里不存在或签名不一样，怎么办？",
+      "expected_output": "按特性映射刷新规则：触发 mindiesd-features.md 更新检查，用 scripts/refresh_features.py 从 docs/zh/features 重新生成",
+      "files": [],
+      "expectations": [
+        "识别为 features.md 过期信号",
+        "给出 refresh_features.py 更新命令",
+        "提到版本号不一致/支持矩阵矛盾也是更新信号"
+      ]
+    }
+  ]
+}

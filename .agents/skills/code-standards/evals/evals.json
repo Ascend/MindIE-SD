@@ -1,0 +1,38 @@
+{
+  "skill_name": "code-standards",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我新写的 Python 文件 lint 报了一堆错，怎么修？",
+      "expected_output": "按 code-standards：ruff check --fix 自动修复 + ruff format；文件头（shebang/coding/Mulan 版权）；导入排序（isort）；只修改动行，禁止批量格式化未修改代码",
+      "files": [],
+      "expectations": [
+        "给出 ruff check --fix 与 ruff format 命令",
+        "提到文件头模板（Mulan PSL v2 版权头）",
+        "提到禁止对未修改行做格式化"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "提交前要跑哪些代码质量检查？",
+      "expected_output": "pre-commit run --all-files（ruff-check/ruff-format/codespell/typos/trailing-whitespace 等钩子），Markdown 另跑 markdownlint",
+      "files": [],
+      "expectations": [
+        "给出 pre-commit run --all-files",
+        "列出主要钩子（ruff、codespell、typos）",
+        "提到 markdownlint 走 manual stage 需显式触发"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "门禁报 avoid-import-method 违规，怎么改？",
+      "expected_output": "把 __import__ 改为 importlib.import_module；同时注意 Ruff UP015 也会覆盖，两处检查都要过",
+      "files": [],
+      "expectations": [
+        "给出 importlib.import_module 正例",
+        "提到与 Ruff UP015 的关系",
+        "提到 examples/ 目录同样适用"
+      ]
+    }
+  ]
+}

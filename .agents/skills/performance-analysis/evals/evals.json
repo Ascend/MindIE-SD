@@ -1,0 +1,38 @@
+{
+  "skill_name": "performance-analysis",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我看看这份 kernel_details.csv 和 trace_view.json，模型为什么这么慢？",
+      "expected_output": "跑 5 层递进分析（analyze_trace.py --profile-dir/--output-dir）：Layer 1 DiT/VAE 分离 → Layer 2 分类占比 → Layer 3 Host Bound/通信/融合 → Layer 4 算子明细 → Layer 5 P0-P2 建议",
+      "files": [],
+      "expectations": [
+        "输出 Layer 1（DiT vs VAE 阶段占比）",
+        "输出 Layer 2（FA/MatMul/Vector/Comm 分类占比）",
+        "输出 Layer 5 方向级建议（P0-P2 优先级）"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "优化前后各采了一次 profiling，帮我对比看有没有效果",
+      "expected_output": "用 compare_traces.py --baseline/--target/--baseline-label/--target-label 做算子级对比，标注 REGRESSION/improvement",
+      "files": [],
+      "expectations": [
+        "使用 compare_traces.py",
+        "对比按 kernel 名称聚合",
+        "标注 REGRESSION/improvement 并给出结论"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "profile 数据里第一步耗时异常高，怀疑 warmup 没剔除",
+      "expected_output": "Layer 0 warmup 校验：检测首步耗时异常/编译 kernel 集中出现 → 标注 WARMUP_NOT_STRIPPED，建议重新采集（warmup ≥5 步）",
+      "files": [],
+      "expectations": [
+        "提到 WARMUP_NOT_STRIPPED 标注",
+        "给出重新采集建议（warmup 步数）",
+        "说明 warmup 未剔除会影响分析结论"
+      ]
+    }
+  ]
+}

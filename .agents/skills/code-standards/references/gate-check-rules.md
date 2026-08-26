@@ -134,3 +134,7 @@ if npu_smi is None:
     raise RuntimeError("npu-smi not found in PATH")
 subprocess.run([npu_smi, "info", "-l"], ...)
 ```
+
+## 维护与更新
+
+当门禁规则集更新或新增违规示例时，按 dev-workflow 的复盘流程更新本文件。

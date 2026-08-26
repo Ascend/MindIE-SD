@@ -1,6 +1,6 @@
 # 返工教训
 
-> **目录** · 1. 拒绝未实现功能的前置配置 · 2. 最小必要改动原则 · 3. 独立任务必须实际并行执行 · 4. 非代码仓内容不入库 · 5. PLAN.md 未随任务变更同步更新 · 6. triton vs triton-ascend 包名混淆 · 7. pip install -e . 新增文件未被索引 · 8. SSH 连接重复创建 · 9. dummy_run 门禁违规综合教训 · 10. Markdown 代码块未指定语言触发 MD040 · 11. 嵌套 Shell 引号转义失败 · 12. Profiling 结果回传与 GBK 编码 · 13. 通用分析脚本纳入 Skills · 14. meta→to_empty 构造后未注册 buffer · 15. CRLF→LF 转换破坏二进制文件 · 16. 远端 model 模块名冲突 · 17. Gated Model 配置下载 · 18. expandable_segments 池锁定误判 OOM · 19. 多模型 CLI 参数不一致 · 20. 首次部署未检查远端文件完整性 · 21. 过度抽象 · 22. 未请求的额外功能 · 23. Pattern 单元测试通过但全模型不命中 · 24. register_replacement 无法处理 get_attr · 25. Inductor freeze 不识别自定义 NPU ops · 26. 编译开销定位方法
+> **目录** · 1. 拒绝未实现功能的前置配置 · 2. 最小必要改动原则 · 3. 独立任务必须实际并行执行 · 4. 非代码仓内容不入库 · 5. PLAN.md 未随任务变更同步更新 · 6. triton vs triton-ascend 包名混淆 · 7. pip install -e . 新增文件未被索引 · 8. SSH 连接重复创建 · 9. dummy_run 门禁违规综合教训 · 10. Markdown 代码块未指定语言触发 MD040 · 11. 嵌套 Shell 引号转义失败 · 12. Profiling 结果回传与 GBK 编码 · 13. 通用分析脚本纳入 Skills · 14. meta→to_empty 构造后未注册 buffer · 15. CRLF→LF 转换破坏二进制文件 · 16. 远端 model 模块名冲突 · 17. Gated Model 配置下载 · 18. expandable_segments 池锁定误判 OOM · 19. 多模型 CLI 参数不一致 · 20. 首次部署未检查远端文件完整性 · 21. 过度抽象 · 22. 未请求的额外功能 · 23. Pattern 单元测试通过但全模型不命中 · 24. register_replacement 无法处理 get_attr · 25. Inductor freeze 不识别自定义 NPU ops · 26. 编译开销定位方法 · 27. 打包排除 build 目录误删源码脚本 · 28. 权重分片缺失未对照 index.json 预检 · 29. vllm-omni 源码包缺 .git 导致版本非法 · 30. pip 依赖解析降级 torch 后未复原 · 31. 容器缺 HCCL ranktable 导致多卡失败 · 32. 第三方 wheel 文件名重命名破坏 pip 解析 · 33. 量化层 forward 内就地修改模块状态 → compile 每次重编译 · 34. 先诊断再下结论：性能劣化勿直接归因 kernel
 
 以下问题均在 MindIE-SD 开发中实际发生并导致返工。
 
@@ -282,3 +282,107 @@ def graph_rewrite_after_freezing(fx_graph, inputs):
    - RMSNorm 融合节省约 9ms（Pow+Mean → RmsNorm）
 
 5. 确认 Custom Pattern 生效：搜索 compile 独有的 `RmsNorm` kernel（16ms）
+
+## 27. 打包排除 build 目录误删源码脚本
+
+**问题**：用 tar 打包上传 vllm-ascend / MindIE-SD 源码时，EXCLUDE 列表包含 `build` 目录
+（本意排除编译产物），但 **vllm-ascend 的 patch 目录**（`csrc/cmake/third_party/build/modules/patch/`）
+和 **MindIE-SD 的构建脚本目录**（`build/*.sh`）都含 `build` 路径段，被一并排除。
+后果：vllm-ascend 编译报 `protobuf_25.1_change_version.patch: No such file or directory`；
+mindiesd 报 `No such file or directory: .../MindIE-SD/build`。
+
+**规则**：
+
+- 不要用 `in ('build', ...)` 匹配任意路径段，用精确路径或白名单
+
+## 28. 权重分片缺失未对照 index.json 预检
+
+**问题**：vllm serve 启动到权重加载时报
+`ValueError: ... weights were not initialized from checkpoint`，列出几百个未加载权重。
+根因是 `transformer/` 下**缺少分片 00001**（`diffusion_pytorch_model-00001-of-00009.safetensors`），
+但 00002-00009 都在，目录看似"完整"。
+
+**规则**：
+
+- 不能只看目录里有多少个分片，必须对照 `*.safetensors.index.json` 的 `weight_map` 逐分片核对
+- 缺失分片补下载：`https://hf-mirror.com/<org>/<model>/resolve/main/transformer/<缺失分片名>`
+
+## 29. vllm-omni 源码包缺 .git 导致版本非法
+
+**问题**：tar 打包排除 `.git` 后，vllm-omni `setup.py` 的 `get_version()`（setuptools_scm）
+返回 `dev`，NPU 模式再拼 `+npu` 得到非法版本 `dev+npu`，
+pip 报 `packaging.version.InvalidVersion`，metadata 生成失败。
+
+**规则**：
+
+- 源码安装时设 `export VLLM_OMNI_VERSION_OVERRIDE=0.26.0`（与目标 vllm 版本一致）
+
+## 30. pip 依赖解析降级 torch 后未复原
+
+**问题**：安装 vllm-omni 时 pip 按 vllm-ascend/vllm-omni 的 `requirements.txt`
+（旧 pin `torch==2.10.0` / `torchaudio==2.10.0`）把 torch 从 2.11.0 **降级到 2.10.0**，
+导致 torch_npu 2.11.0 报 `torch-npu requires torch==2.11.0+cpu`，NPU 后端加载失败。
+
+**规则**：
+
+- 后装组件用 `--no-deps` 或装完后**立即复核版本**（`python -c "import torch; print(torch.__version__)"`）
+- 不以 vllm-ascend/omni 的 requirements.txt 旧 pin 为准
+- 一次确认全栈版本（torch/torch_npu/vllm/vllm-ascend/vllm-omni）
+
+## 31. 容器缺 HCCL ranktable 导致多卡失败
+
+**问题**：vllm serve 多卡启动时，`--tensor-parallel-size 8` 的 worker 初始化报
+`hcclCommInitRootInfoConfig error code is 4` / `Config_Error_Ranktable(EI0014)`。
+根因：容器只挂载了 `/usr/local/Ascend/driver/lib64` 和 `version.info`，
+**未挂载 `/usr/local/Ascend/driver/topo`**（HCCL ranktable JSON 所在目录）。
+
+**规则**：
+
+- 已运行容器可用 `docker cp /usr/local/Ascend/driver/topo <容器>:/usr/local/Ascend/driver/topo`
+- 注意：docker cp 在容器重启后丢失，需重建或持久化挂载
+
+## 32. 第三方 wheel 文件名重命名破坏 pip 解析
+
+**问题**：为下载方便把 wheel 重命名为 `torch.whl` / `torch_npu.whl` 后
+`pip install torch.whl` 报 `Invalid wheel filename (wrong number of parts)`。
+pip 要求 wheel 文件名符合 `{name}-{version}-{build}-{py}-{abi}-{platform}.whl` 规范。
+
+**规则**：
+
+- 保留原始文件名，如 `torch-2.11.0+cpu-cp312-cp312-manylinux_2_28_x86_64.whl`
+
+## 33. 量化层 forward 内就地修改模块状态 → compile 每次重编译
+
+**问题**：w8a8/mxfp8 `--compile` 比 eager 慢 11~229×（transformer 1.8s vs 20ms）。
+kernel profile 显示 wall 1873ms 中 kernel 仅 17ms（0.9%），Wait Time 1856ms，单个 1843ms
+设备空闲间隙 —— 极端 host-bound。
+
+**根因**：`W8A8MXFP8OnlineQuantLinear.quant_matmul`（`mindiesd/quantization/layer.py`）forward 内
+`self.bias = self.bias.to(torch.float32)` **就地修改模块状态**。Dynamo guard 记录 trace 时的
+bias dtype（bf16），执行后变成 fp32 → 每次调用 guard 失败 → 每次执行完整重编译
+（Dynamo trace + Inductor + triton JIT ≈ 1.8s）。
+
+**定位**：`TORCH_LOGS=recompiles` 直接给出 guard failure 与具体 tensor
+（`'..._buffers['bias']' dtype mismatch. expected BFloat16, actual Float`）。
+
+**规则**：
+
+- 算子层 forward **禁止就地修改模块属性**（`self.xxx = ...`）；dtype 转换用局部变量
+  （fp32 精度可通过局部变量传给算子保留）
+- compile 性能异常先跑 `TORCH_LOGS=recompiles` 排除重编译，再进入 kernel 分析
+- 修复后 w8a8 compile 从 1860ms 降至 16ms，全面优于 eager 与 bf16 compile
+
+## 34. 先诊断再下结论：性能劣化勿直接归因 kernel
+
+**问题**：曾将 mxfp8 compile 劣化初步归因于"量化算子无法融合/copy 开销"，但 profiling
+证明 kernel 只占墙钟 0.9%，真正瓶颈是重编译（见上条）。若按错误归因去优化 kernel 会白费功夫。
+
+**规则**：
+
+- 用 kernel_details 区分 kernel-bound 与 host-bound：`wall_ms / kernel_sum_ms > 10` + Wait Time
+  高 → host-bound，先查 host 侧（重编译、launch、sync），再优化 kernel
+- 结论必须基于 profiling 数据（kernel 时间占比、间隙位置、recompile 日志），不凭直觉
+
+## 维护与更新
+
+当出现新的返工教训时（复盘流程同步补充），按 dev-workflow 的复盘流程更新本文件。

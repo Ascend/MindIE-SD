@@ -33,7 +33,7 @@ python profiling-collection/scripts/collect_profile.py \
 
 ### Step 3: 本地分析
 
-使用 `analyze_trace.py` 对 Profiling 数据做三层递进分析：
+使用 `analyze_trace.py` 对 Profiling 数据做 5 层递进分析（Layer 3 内含三层子分析）：
 
 ```bash
 tar xzf profile_l1.tar.gz
@@ -70,3 +70,7 @@ python analyze_trace.py --profile-dir ./profile_l1 --output-dir ./
 - [ascend-profiling-anomaly](https://github.com/Ascend/agent-skills/tree/master/skills/ascend-profiling-anomaly): Bubble 检测、Anomaly 标签、Wait-Anchor 扫描、AICPU 分类
 - [ascend-deploy](../../ascend-deploy/SKILL.md): 远端部署
 - [profiling-collection](../../profiling-collection/SKILL.md): Profiling 数据采集
+
+## 维护与更新
+
+当分析流程或脚本调用方式变化时，按 dev-workflow 的复盘流程更新本文件。

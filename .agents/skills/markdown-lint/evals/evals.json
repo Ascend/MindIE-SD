@@ -1,0 +1,38 @@
+{
+  "skill_name": "markdown-lint",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "CI 报 MD040 违规，代码块没有语言标识，怎么批量修？",
+      "expected_output": "按 markdown-lint：给围栏代码块补语言（python/shell/text/yaml 等），覆盖顶格与缩进两种变体，修复后重跑 markdownlint 验证",
+      "files": [],
+      "expectations": [
+        "给出代码块语言选用指南（python/shell/text）",
+        "提到覆盖顶格与缩进两种变体",
+        "提到修复后重跑 markdownlint -c .markdownlint.json 验证 0 违规"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "批量修改含中文的 Markdown 文件，怎么保证编码不被破坏？",
+      "expected_output": "按 §5.1：用 Python（open utf-8）或 Node.js 处理，避免 PowerShell Get-Content/Set-Content（引入 BOM 与乱码）",
+      "files": [],
+      "expectations": [
+        "明确禁止 PowerShell 读写 UTF-8 中文文件",
+        "给出 Python/Node.js 的安全处理方式",
+        "提到修复后检查中文未损坏、无 BOM"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "提交前只想检查本次改动的 md 文件，怎么只跑这几个文件？",
+      "expected_output": "pre-commit run markdownlint --files <file> 或 git diff --name-only HEAD~1..HEAD -- '*.md' | xargs markdownlint -c .markdownlint.json",
+      "files": [],
+      "expectations": [
+        "给出单文件检查命令",
+        "给出提交范围检查命令（git diff --name-only + markdownlint）",
+        "提到始终使用 -c .markdownlint.json 而非 --disable"
+      ]
+    }
+  ]
+}

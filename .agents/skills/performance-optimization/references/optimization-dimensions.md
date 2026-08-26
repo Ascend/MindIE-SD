@@ -92,3 +92,7 @@ MatMul 本身的性能瓶颈通过低比特量化解决。
 └─ 冗余计算 (相邻步相似 latent)
     └─ → mindiesd-features.md §缓存加速
 ```
+
+## 维护与更新
+
+当优化维度决策树变化时，按 dev-workflow 的复盘流程更新本文件。
