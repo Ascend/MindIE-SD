@@ -1,5 +1,7 @@
 # MindIE SD
 
+English | [简体中文](./README.md)
+
 ## Latest News
 
 - 08/03/2026: Completed [high-performance MiniMax-H3 inference adaptation and optimization on Ascend](examples/minimax-h3/infer.md)

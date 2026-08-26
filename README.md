@@ -1,5 +1,7 @@
 # MindIE SD
 
+简体中文 | [English](./README.en.md)
+
 ## 📢 Latest News
 
 - 08/03/2026: 完成 [MiniMax-H3 昇腾高性能推理适配与优化](examples/minimax-h3/infer.md)
