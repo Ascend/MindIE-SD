@@ -10,7 +10,6 @@
 # MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-import os
 import unittest
 from unittest.mock import MagicMock
 
@@ -19,11 +18,10 @@ import torch
 from mindiesd.layers.moe.experts_selector import select_experts
 from mindiesd.layers.moe.moe_dataclass import MoERoutingInput
 
+from .common import cpu_test, npu_test
 
-@unittest.skipIf(
-    os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
-    "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
-)
+
+@cpu_test
 class TestExpertsSelector(unittest.TestCase):
     def test_custom_router_output_is_forwarded(self):
         hidden_states = torch.randint(-8, 8, (2, 4), dtype=torch.int8)
@@ -99,10 +97,7 @@ def torch_softmax_topk_reference(router_logits, top_k):
     return topk_weights.to(dtype=dtype), topk_ids.to(torch.int32)
 
 
-@unittest.skipIf(
-    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
-    "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.",
-)
+@npu_test
 class TestExpertsSelectorNPU(unittest.TestCase):
     def test_gating_topk_matches_torch_reference(self):
         router_logits = torch.tensor(

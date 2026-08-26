@@ -31,6 +31,7 @@ from .moe_context import (
     get_moe_group,
     get_moe_quant_algo,
     set_moe_context,
+    should_use_gmm_finalize_routing,
     validate_moe_inputs,
 )
 from .token_dispatcher import DynamicDispatcher, StaticDispatcher
@@ -121,7 +122,7 @@ def moe(
     reduce_routed_out: bool = True,
     return_dispatcher_type: bool = False,
 ) -> torch.Tensor | tuple[torch.Tensor, str]:
-    """Run the non-fused MoE forward pass on NPU."""
+    """Run the MoE forward pass on NPU."""
 
     quant_algo = validate_moe_inputs(
         hidden_states=hidden_states,
@@ -155,7 +156,7 @@ def moe(
         top_k=top_k,
         dispatcher_type=dispatcher_type,
     )
-
+    use_gmm_finalize_routing = should_use_gmm_finalize_routing(_get_dispatcher_type_name(dispatcher_cls))
     moe_weights = build_moe_weights(
         w13_weight,
         w2_weight,
@@ -199,6 +200,7 @@ def moe(
         top_k=top_k,
         weights=moe_weights,
         dynamic_scale=prepare_output.dynamic_scale,
+        use_gmm_finalize_routing=use_gmm_finalize_routing,
     )
     dispatch_output = dispatcher_cls.dispatch(token_dispatch_input)
 
@@ -207,12 +209,17 @@ def moe(
         weights=moe_weights,
         mlp_output_dtype=prepare_output.mlp_output_dtype,
     )
-    expert_output = unified_apply_mlp(mlp_input)
-
-    routed_out = dispatcher_cls.combine(
-        hidden_states=expert_output,
-        combine_metadata=dispatch_output.combine_metadata,
+    expert_output = unified_apply_mlp(
+        mlp_input,
+        dispatch_output.combine_metadata if use_gmm_finalize_routing else None,
     )
+    if use_gmm_finalize_routing:
+        routed_out = expert_output
+    else:
+        routed_out = dispatcher_cls.combine(
+            hidden_states=expert_output,
+            combine_metadata=dispatch_output.combine_metadata,
+        )
 
     output = dispatcher_cls.finalize(
         routed_out=routed_out,

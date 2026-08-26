@@ -131,17 +131,18 @@ class StaticDispatcher(TokenDispatcher):
             scale=dynamic_scale,
             active_num=num_tokens * token_dispatch_input.top_k,
             expert_num=token_dispatch_input.num_experts,
-            expert_tokens_num_type=1,
+            expert_tokens_num_type=0,
             expert_tokens_num_flag=True,
             active_expert_range=active_expert_range,
             quant_mode=get_init_routing_quant_mode(dynamic_scale),
+            row_idx_type=1 if token_dispatch_input.use_gmm_finalize_routing else 0,
         )
         sorted_hidden_states, expanded_row_idx, expert_tokens, dynamic_scale = output[:4]
         return MoETokenDispatchOutput(
             hidden_states=sorted_hidden_states,
             dynamic_scale=dynamic_scale if is_moe_quant() else None,
             group_list=expert_tokens.to(torch.int64),
-            group_list_type=1,
+            group_list_type=0,
             combine_metadata=MoEStaticCombineMetadata(
                 topk_weights=local_topk_weights,
                 restore_shape=restore_shape,

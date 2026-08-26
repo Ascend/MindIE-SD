@@ -259,6 +259,11 @@ def get_moe_quant_algo() -> QuantAlgorithm:
     return _MOE_QUANT_ALGO
 
 
+def should_use_gmm_finalize_routing(dispatcher_type: str) -> bool:
+    """Return whether the current MoE invocation can use GMM finalize routing."""
+    return dispatcher_type == "static" and get_moe_quant_algo() == QuantAlgorithm.W8A8_MXFP8
+
+
 def dynamic_quant(hidden_states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Apply dynamic quantization according to the current MoE quantization algorithm."""
     if _MOE_QUANT_ALGO == QuantAlgorithm.W8A8_DYNAMIC:
@@ -376,6 +381,7 @@ def build_token_dispatch_input(
     top_k: int,
     weights: MoEWeights,
     dynamic_scale: torch.Tensor | None = None,
+    use_gmm_finalize_routing: bool = False,
 ) -> MoETokenDispatchInput:
     """Build the token-dispatch input wrapper."""
     return MoETokenDispatchInput(
@@ -386,6 +392,7 @@ def build_token_dispatch_input(
         top_k=top_k,
         local_num_experts=weights.w13_weight.shape[0],
         dynamic_scale=dynamic_scale,
+        use_gmm_finalize_routing=use_gmm_finalize_routing,
     )
 
 
