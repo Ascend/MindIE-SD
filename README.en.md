@@ -1,5 +1,7 @@
 # MindIE SD
 
+English | [简体中文](./README.md)
+
 <!-- md-trans-meta sourceCommit=unknown translatedAt=2026-06-05T08:12:48.888Z pushedAt=2026-06-09T02:55:32.820Z -->
 
 ## 📢 Latest News
