@@ -192,10 +192,10 @@ vllm serve "${MODEL}" \
 
 ##### 使能在线int8量化
 
-在 `--text-encoder-tp-size 8` 之后追加 `--quantization int8`，并为逐层卸载追加 `--dlo-no-use-allgather`：
+在 `--text-encoder-tp-size 8` 之后追加 `--diffusion-quantization-config '{"transformer":{"method":"int8"}}`，并为逐层卸载追加 `--dlo-no-use-allgather`：
 
 ```bash
-  --quantization int8 \
+  --diffusion-quantization-config '{"transformer":{"method":"int8"}}' \
   --dlo-no-use-allgather
 ```
 
@@ -231,7 +231,7 @@ vllm serve "${MODEL}" \
   --vae-patch-parallel-size 8 \
   --enable-diffusion-pipeline-profiler \
   --diffusion-attention-backend FLASH_ATTN \
-  --quantization mxfp8
+  --diffusion-quantization-config '{"transformer":{"method":"mxfp8"}}'
 ```
 
 #### 其他可选性能优化配置
