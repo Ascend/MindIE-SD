@@ -72,6 +72,14 @@ def _resolve_sparse_type_for_a5(sparse_type, inner_precise):
             )
         return "rf_v3", A5_V3_INNER_PRECISE
 
+    if sparse_type == "rf_v3" and inner_precise != A5_V3_INNER_PRECISE:
+        raise ParametersInvalid(
+            f"A5 devices require inner_precise={A5_V3_INNER_PRECISE} for "
+            f"sparse_type='rf_v3'; got {inner_precise}. "
+            "Troubleshooting: pass inner_precise=4 explicitly, or use "
+            "sparse_type='rf_v2' which is remapped to rf_v3 automatically."
+        )
+
     return sparse_type, inner_precise
 
 
@@ -95,6 +103,7 @@ def sparse_attention(
     keep_recent: Optional[bool] = True,
     cdf_threshold: float = 1.0,
     sparsity: float = 0.0,
+    precision: str = "bf16",
     **kwargs,
 ):
     """
@@ -143,6 +152,11 @@ def sparse_attention(
             Only takes effect when sparse_type is 'ada_bsa'.
         sparsity:
             Sparse ratio, the value range is [0, 1], where 0 represents not using sparse algo.
+        precision (str, default to 'bf16'):
+            Kernel precision mode for sparse_type='rf_v3':
+              - 'mix': EagleQBSA mixed precision (Q/K per-block INT8 + V per-channel FP8).
+              - 'fp8': BSA FP8 path (Hadamard rotation + full FP8 block quantization of Q/K/V).
+              - 'bf16' (default): no quantization, pure BF16 sparse attention.
     """
     check_params(input_layout, sparse_type)
     sparse_type, inner_precise = _resolve_sparse_type_for_a5(sparse_type, inner_precise)
@@ -200,6 +214,7 @@ def sparse_attention(
             head_num=head_num,
             scale=scale,
             inner_precise=inner_precise,
+            precision=precision,
         )
     elif sparse_type == "ada_bsa":
         smask, sct = get_estimate_mask(
