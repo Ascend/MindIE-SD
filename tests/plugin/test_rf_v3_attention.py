@@ -183,6 +183,31 @@ class TestRfV3Attention(unittest.TestCase):
         self.assertEqual(out.shape, q.shape, f"output shape {out.shape} != input {q.shape}")
         self.assertEqual(out.dtype, self.dtype)
 
+    def test_multi_video_sparse_attention_uses_rf_v3(self):
+        """The multi-video sparse_attention path dispatches to rf_v3 on A5."""
+        from mindiesd.layers.flash_attn.sparse_flash_attn import sparse_attention
+
+        q, k, v = self._make_qkv_bsnd()
+        spans = [
+            {"start": 64, "latent_shape": [2, 8, 16]},
+            {"start": 512, "latent_shape": [2, 8, 16]},
+        ]
+        out = sparse_attention(
+            q,
+            k,
+            v,
+            video_spans=spans,
+            block_size=self.pool_size,
+            sparsity=0.5,
+            input_layout="BSND",
+            head_num=self.head_num,
+            inner_precise=self.inner_precise,
+            sparse_type="rf_v2",
+        )
+
+        self.assertEqual(out.shape, q.shape)
+        self.assertEqual(out.dtype, self.dtype)
+
     # bsa_sparse_attention_v3 FP8 output shape/dtype tests
 
     @_SKIP_NO_BSA_V2

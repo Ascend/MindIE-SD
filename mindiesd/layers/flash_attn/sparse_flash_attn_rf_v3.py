@@ -21,8 +21,10 @@ import torch_npu
 from .sparse_flash_attn_rf_v2 import (
     avgpool,
     do_tensor_rearrange_pooling,
+    do_multi_span_tensor_rearrange_pooling,
     rearrange_with_remaining,
     get_blockwise_mask,
+    get_multi_span_blockwise_mask,
     do_tensor_inv_rearrange,
 )
 
@@ -455,6 +457,7 @@ def bsa_sparse_attention_v3(
     k_rot=None,
     block_size=128,
     block_size_kv=None,
+    video_spans=None,
     precision="bf16",
 ):
     """End-to-end rf_v3 sparse attention: rearrange -> mask -> [quant] -> BSA -> inv-rearrange.
@@ -473,7 +476,7 @@ def bsa_sparse_attention_v3(
 
     Args:
         q / k / v:           BF16 tensors [B, S, N, D] (BSND) or [B, N, S, D] (BNSD)
-        latent_shape_q:      (t, h, w) for query; t*h*w == S
+        latent_shape_q:      (t, h, w) for query; t*h*w == S. Omit in multi-span mode.
         latent_shape_k:      (t, h, w) for key/value, default equals latent_shape_q
         txt_len:             text token length (currently only 0 is supported)
         sparsity:            sparsity ratio [0, 1); 0 means no sparsity
@@ -492,6 +495,13 @@ def bsa_sparse_attention_v3(
         block_size_kv:       KV block size for CANN operator blockShapeY and FP8 KV quant.
                              FP8: must be a multiple of 256, defaults to 256.
                              BF16: defaults to block_size.
+        video_spans:
+                             Multi-video layout over an unpadded input sequence.
+                             The spans use
+                             ``{"start": int, "latent_shape": [T, H, W]}``.
+                             The public ``sparse_attention`` API validates
+                             its compatibility with legacy layout arguments.
+                             The same layout reorders Q, K, and V.
         precision:           Execution precision for the sparse kernel:
                              'bf16' (default, no quantization), 'mix' (EagleQBSA),
                              or 'fp8' (BSA FP8 with Hadamard rotation).
@@ -500,7 +510,8 @@ def bsa_sparse_attention_v3(
         out (Tensor):      BF16 attention output, same layout as input
         new_mask (Tensor): int8 block_sparse_mask for caching
     """
-    if latent_shape_k is None:
+    multi_span = video_spans is not None
+    if not multi_span and latent_shape_k is None:
         latent_shape_k = latent_shape_q
     if head_num is None:
         head_num = q.shape[1] if input_layout == "BNSD" else q.shape[2]
@@ -518,7 +529,6 @@ def bsa_sparse_attention_v3(
     if precision == "fp8" and (q_rot is None or k_rot is None):
         q_rot, k_rot = _get_rot_matrices(q.device, q.dtype, q.shape[-1])
 
-    tq, hq, wq = latent_shape_q
     # S dimension index: dim 2 for BNSD, dim 1 for BSND
     s_dim = 2 if input_layout == "BNSD" else 1
 
@@ -531,9 +541,31 @@ def bsa_sparse_attention_v3(
         effective_block_size_kv = block_size_kv if block_size_kv is not None else 256
     else:
         effective_block_size_kv = block_size
+    if multi_span and effective_block_size_kv != block_size:
+        raise ValueError(
+            "rf_v3 multi-video spans currently require identical Q and KV block sizes; "
+            "the FP8 KV=256 path is not yet span-aware."
+        )
 
     new_mask = None
-    if cached_mask is None:
+    inverse = None
+    if multi_span:
+        q_, k_, v_, tensor_pool, inverse, dense_blocks, first_frame_blocks = (
+            do_multi_span_tensor_rearrange_pooling(
+                q, k, v, video_spans, block_size, input_layout
+            )
+        )
+        if cached_mask is None:
+            new_mask = get_multi_span_blockwise_mask(
+                tensor_pool,
+                sparsity,
+                scale,
+                dense_blocks,
+                first_frame_blocks,
+                input_layout,
+                return_binary=True,
+            )
+    elif cached_mask is None:
         # --- Mask generation ---
         if effective_block_size_kv == block_size:
             # Same Q/KV granularity — rearrange + pool once, reuse tensor_pool.
@@ -681,8 +713,11 @@ def bsa_sparse_attention_v3(
             out = out.permute(0, 2, 1, 3).contiguous()
 
     # inverse rearrange to restore (t, h, w) order
-    if txt_len > 0:
+    if multi_span:
+        out = out.index_select(1 if input_layout == "BSND" else 2, inverse)
+    elif txt_len > 0:
         out = do_tensor_inv_rearrange(out, txt_len, latent_shape_q, latent_shape_k, input_layout)
     else:
+        tq, hq, wq = latent_shape_q
         out = _bsa_inv_rearrange(out, tq, hq, wq, input_layout)
     return out, new_mask

@@ -143,6 +143,42 @@ class TestSparseAttention(unittest.TestCase):
         result, _, max_err = data_compare(out.cpu(), fascore.cpu())
         self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
 
+    def test_multi_video_sparse_attention_matches_dense(self):
+        """Non-contiguous clips use one global sparse invocation at sparsity=0."""
+        used = 1024
+        shape = (1, used, self.head, self.headdim)
+        q = torch.randn(shape, dtype=torch.float16, device=self.device)
+        k = torch.randn(shape, dtype=torch.float16, device=self.device)
+        v = torch.randn(shape, dtype=torch.float16, device=self.device)
+        spans = [
+            {"start": 64, "latent_shape": [2, 8, 16]},
+            {"start": 512, "latent_shape": [2, 8, 16]},
+        ]
+        out = sparse_attention(
+            q,
+            k,
+            v,
+            scale=self.scale,
+            head_num=self.head,
+            input_layout="BSND",
+            inner_precise=0,
+            sparsity=0.0,
+            sparse_type="rf_v2",
+            video_spans=spans,
+        )
+        dense = torch_npu.npu_fusion_attention(  # pylint: disable=no-member
+            q,
+            k,
+            v,
+            input_layout="BSND",
+            scale=self.scale,
+            pre_tockens=2147483647,
+            next_tockens=2147483647,
+            head_num=self.head,
+        )[0]
+        result, _, max_err = data_compare(out.cpu(), dense.cpu())
+        self.assertEqual(result, "success", msg=f"Data compare failed. Max error is: {max_err}")
+
     def test_ada_bsa_result(self):
         out = sparse_attention(
             self.q,
