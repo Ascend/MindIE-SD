@@ -149,6 +149,7 @@ class FiaInfoParser {
     MlaMode mlaMode_ = MlaMode::NO_MLA;
     FiaQuantMode quantMode_ = FiaQuantMode::NO_QUANT;
     FiaFullQuantMode fullQuantMode_ = FiaFullQuantMode::NO_FULL_QUANT;
+    bool enableC8V16_ = false;
 
     // Layout
     FiaLayout qLayout_ = FiaLayout::BSND;

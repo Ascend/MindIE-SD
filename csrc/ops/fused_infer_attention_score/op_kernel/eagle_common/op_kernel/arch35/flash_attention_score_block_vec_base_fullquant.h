@@ -59,6 +59,10 @@ class FABlockVecBaseFullquant {
         ((isFp8 && s2BaseSize == 256) || isMxfp8FullQuant), pseMode, hasAtten, hasDrop, s1BaseSize == 64, dTemplateType,
         hasRope, enableKVPrefix, isInfer, IsSameType<INPUT_T, hifloat8_t>::value);
     static constexpr bool useNz = IsSameType<INPUT_T, hifloat8_t>::value && !isInfer;
+    static constexpr bool useC8V16Score =
+        enableC8V16 && isInfer && useDn && IsSameType<INPUT_T, fp8_e4m3fn_t>::value && !hasRope && s2BaseSize == 256;
+    using SCORE_T = std::conditional_t<useC8V16Score, half, T>;
+    using SOFTMAX_T = std::conditional_t<useC8V16Score, half, T>;
     static constexpr bool hasPse = pseMode != PseTypeEnum::PSE_NONE_TYPE;
     static constexpr bool hasPseOuter =
         (pseMode == PseTypeEnum::PSE_OUTER_ADD_MUL_TYPE) || (pseMode == PseTypeEnum::PSE_OUTER_MUL_ADD_TYPE);
@@ -142,6 +146,8 @@ class FABlockVecBaseFullquant {
     TBuf<> softmaxMaxBuf[3];
     TBuf<> softmaxSumBuf[3];
     TBuf<> softmaxExpBuf[3];
+    TBuf<> softmaxVecMaxBuf[3];
+    TBuf<> softmaxVecSumBuf[3];
     TBuf<> pScaleBuf[3];
     TBuf<> preLoopMaxBuf;
     TBuf<> preLoopSumBuf;
@@ -233,7 +239,7 @@ __aicore__ inline void FABlockVecBaseFullquant<TEMPLATE_BASE_ARGS>::InitCommonGl
                 pScaleGm.SetGlobalBuffer((__gm__ float *)pScale);
                 constInfo.pScale = this->pScaleGm.GetValue(0);
             } else {
-                constInfo.pScale = 1.0f;
+                constInfo.pScale = useC8V16Score ? 448.0f : 1.0f;
             }
         }
 
@@ -486,16 +492,29 @@ __aicore__ inline void FABlockVecBaseFullquant<TEMPLATE_BASE_ARGS>::ProcessVec1D
                 ((runInfo.s2EndIdx - s1BaseSize >= s2BaseSize) && (runInfo.s2LoopCount == runInfo.s2LoopLimit)));
         attenMaskUb = this->attenMaskInQue[0].template DeQue<uint8_t>();
     }
-    LocalTensor<float> sumUb = this->softmaxSumBuf[runInfo.multiCoreIdxMod3].template Get<float>()[0];
-    LocalTensor<float> maxUb = this->softmaxMaxBuf[runInfo.multiCoreIdxMod3].template Get<float>()[0];
+    LocalTensor<float> sumUb =
+        this->softmaxSumBuf[runInfo.multiCoreIdxMod3].template Get<float>()[0];
+    LocalTensor<SOFTMAX_T> maxUb =
+        this->softmaxMaxBuf[runInfo.multiCoreIdxMod3].template Get<SOFTMAX_T>()[0];
 
-    auto expUb = this->softmaxExpBuf[runInfo.taskIdMod3].template Get<T>()[0];
+    auto expUb = this->softmaxExpBuf[runInfo.taskIdMod3].template Get<float>()[0];
+    LocalTensor<half> vecMaxStateUb;
+    LocalTensor<float> vecSumStateUb;
+    if constexpr (useC8V16Score) {
+        vecMaxStateUb = this->softmaxVecMaxBuf[runInfo.multiCoreIdxMod3].template Get<half>()[0];
+        vecSumStateUb = this->softmaxVecSumBuf[runInfo.multiCoreIdxMod3].template Get<float>()[0];
+    }
     int64_t stage1Offset = runInfo.taskIdMod2;
 
     float descaleQK = 1.0;
     if constexpr (isFp8) {
         int64_t deScaleQOffset = 0;
-        if constexpr (layout == LayOutTypeEnum::LAYOUT_NTD) {
+        if constexpr (useC8V16Score) {
+            int64_t s2BlockCnt = CeilDiv(constInfo.s2Size,
+                FP8_QUANT_KV_BLOCK_SIZE); // KV的反量化scale内容在Gm中的偏移 原始shape为 [B, N2, G, Ceil(S2, 256), 1]
+            runInfo.deScaleKvOffset = runInfo.boIdx * constInfo.n2Size * s2BlockCnt + runInfo.n2oIdx * s2BlockCnt +
+                (runInfo.s2StartIdx >> 8) + runInfo.s2LoopCount; // 8 ：按照256分块计算deScaleKv偏移
+        } else if constexpr (layout == LayOutTypeEnum::LAYOUT_NTD) {
             int64_t s1BlockCnt = constInfo.t1Size / FP8_QUANT_BLOCK_SIZE +
                 constInfo.bSize; // Q的反量化scale内容在Gm中的偏移 原始shape为 [N2, G,T // 128 + B, 1]
             int64_t s2BlockCnt = constInfo.t2Size / FP8_QUANT_KV_BLOCK_SIZE +
@@ -504,6 +523,9 @@ __aicore__ inline void FABlockVecBaseFullquant<TEMPLATE_BASE_ARGS>::ProcessVec1D
                 runInfo.s1ScaleNumAcc + runInfo.s1oIdx;
             runInfo.deScaleKvOffset = runInfo.n2oIdx * s2BlockCnt + runInfo.s2ScaleNumAcc +
                 runInfo.s2LoopCount; // 8 ：按照256分块计算deScaleKv偏移
+            float deSCaleQValue = this->deScaleQGm.GetValue(deScaleQOffset);
+            float deSCaleKValue = this->deScaleKGm.GetValue(runInfo.deScaleKvOffset); // [0-128)
+            descaleQK = deSCaleQValue * deSCaleKValue;
         } else {
             int64_t s1BlockCnt = CeilDiv(constInfo.s1Size,
                 FP8_QUANT_BLOCK_SIZE); // Q的反量化scale内容在Gm中的偏移 原始shape为 [B, N2, G, Ceil(S1, 128), 1]
@@ -513,37 +535,110 @@ __aicore__ inline void FABlockVecBaseFullquant<TEMPLATE_BASE_ARGS>::ProcessVec1D
                 runInfo.n2oIdx * constInfo.gSize * s1BlockCnt + runInfo.goIdx * s1BlockCnt + runInfo.s1oIdx;
             runInfo.deScaleKvOffset = runInfo.boIdx * constInfo.n2Size * s2BlockCnt + runInfo.n2oIdx * s2BlockCnt +
                 (runInfo.s2StartIdx >> 8) + runInfo.s2LoopCount; // 8 ：按照256分块计算deScaleKv偏移
+            float deSCaleQValue = this->deScaleQGm.GetValue(deScaleQOffset);
+            float deSCaleKValue = this->deScaleKGm.GetValue(runInfo.deScaleKvOffset); // [0-128)
+            descaleQK = deSCaleQValue * deSCaleKValue;
         }
-        float deSCaleQValue = this->deScaleQGm.GetValue(deScaleQOffset);
-        float deSCaleKValue = this->deScaleKGm.GetValue(runInfo.deScaleKvOffset); // [0-128)
-        descaleQK = deSCaleQValue * deSCaleKValue;
     }
 
-    LocalTensor<T> mmRes = bmm1ResBuf.template GetTensor<T>();
+    LocalTensor<SCORE_T> mmRes = bmm1ResBuf.template GetTensor<SCORE_T>();
+    if constexpr (useC8V16Score) {
+        uint32_t scoreS2Round = (runInfo.s2RealSize + 15) >> 4 << 4;
+        uint32_t qNdNum = (runInfo.halfS1RealSize + 31) >> 5;
+        if (runInfo.s2RealSize < scoreS2Round) {
+            uint32_t scorePaddingSize = (scoreS2Round - runInfo.s2RealSize) * 32;
+            Duplicate(mmRes[runInfo.s2RealSize * 32], static_cast<half>(negativeFloatScalar), scorePaddingSize);
+            if (qNdNum == 2) {
+                Duplicate(mmRes[scoreS2Round * 32 + runInfo.s2RealSize * 32],
+                    static_cast<half>(negativeFloatScalar), scorePaddingSize);
+            }
+            PipeBarrier<PIPE_V>();
+        }
+    }
     auto stage1CastTensor = this->stage1OutQue[stage1Offset].template AllocTensor<INPUT_T>();
-    if (unlikely(runInfo.s2LoopCount == 0)) {
-        if constexpr (isFp8) {
-            FaVectorApi::ProcessVec1VfDn<T, INPUT_T, false, hasAtten, s2BaseSize>(stage1CastTensor, sumUb, maxUb, mmRes,
-                expUb, this->vselrIndexesBuf, attenMaskUb, ((runInfo.s1RealSizeAlign32 >> 1) + 63) >> 6 << 6,
-                runInfo.s2AlignedSize, runInfo.s2RealSize, static_cast<T>(constInfo.scaleValue), descaleQK,
-                negativeFloatScalar, constInfo.keepProb, runInfo.s2EndIdx - s1BaseSize < s2BaseSize, constInfo.pScale);
-        } else {
-            FaVectorApi::ProcessVec1VfDn<T, INPUT_T, false, false, s2BaseSize>(stage1CastTensor, sumUb, maxUb, mmRes,
-                expUb, this->vselrIndexesBuf, attenMaskUb, runInfo.s1RealSizeAlign32 >> 1, runInfo.s2AlignedSize,
-                runInfo.s2RealSize, static_cast<T>(constInfo.scaleValue), descaleQK, negativeFloatScalar,
-                constInfo.keepProb, false);
+    if constexpr (useC8V16Score) {
+        uint32_t scoreS2Round = (runInfo.s2RealSize + 15) >> 4 << 4;
+        uint32_t pS2Round = (runInfo.s2RealSize + 63) >> 6 << 6;
+        uint32_t qNdNum = (runInfo.halfS1RealSize + 31) >> 5;
+        if (qNdNum > 0) {
+            LocalTensor<int8_t> stage1Int8Tensor = stage1CastTensor.template ReinterpretCast<int8_t>();
+            if (pS2Round > scoreS2Round) {
+                uint32_t tailPaddingSize = (pS2Round - scoreS2Round) * 32;
+                for (uint32_t qNdIdx = 0; qNdIdx < qNdNum; ++qNdIdx) {
+                    Duplicate(stage1Int8Tensor[qNdIdx * pS2Round * 32 + scoreS2Round * 32],
+                        static_cast<int8_t>(0), tailPaddingSize);
+                }
+                PipeBarrier<PIPE_V>();
+            }
+            if (unlikely(runInfo.s2LoopCount == 0)) {
+                if (runInfo.s2LoopCount == runInfo.s2LoopLimit) {
+                    FaVectorApi::ProcessVec1VfDnFp16Softmax<INPUT_T, false, true>(
+                        stage1CastTensor, sumUb, maxUb, mmRes, expUb, vecSumStateUb, vecMaxStateUb,
+                        static_cast<uint16_t>(scoreS2Round), constInfo.pScale);
+                    if (qNdNum == 2) {
+                        FaVectorApi::ProcessVec1VfDnFp16Softmax<INPUT_T, false, true>(
+                            stage1CastTensor[pS2Round * 32], sumUb[32], maxUb[32], mmRes[scoreS2Round * 32], expUb[64],
+                            vecSumStateUb[64], vecMaxStateUb[128], static_cast<uint16_t>(scoreS2Round),
+                            constInfo.pScale);
+                    }
+                } else {
+                    FaVectorApi::ProcessVec1VfDnFp16Softmax<INPUT_T, false>(
+                        stage1CastTensor, sumUb, maxUb, mmRes, expUb, vecSumStateUb, vecMaxStateUb,
+                        static_cast<uint16_t>(scoreS2Round), constInfo.pScale);
+                    if (qNdNum == 2) {
+                        FaVectorApi::ProcessVec1VfDnFp16Softmax<INPUT_T, false>(
+                            stage1CastTensor[pS2Round * 32], sumUb[32], maxUb[32], mmRes[scoreS2Round * 32], expUb[64],
+                            vecSumStateUb[64], vecMaxStateUb[128], static_cast<uint16_t>(scoreS2Round),
+                            constInfo.pScale);
+                    }
+                }
+            } else if (runInfo.s2LoopCount == runInfo.s2LoopLimit) {
+                FaVectorApi::ProcessVec1VfDnFp16Softmax<INPUT_T, true, true>(
+                    stage1CastTensor, sumUb, maxUb, mmRes, expUb, vecSumStateUb, vecMaxStateUb,
+                    static_cast<uint16_t>(scoreS2Round), constInfo.pScale);
+                if (qNdNum == 2) {
+                    FaVectorApi::ProcessVec1VfDnFp16Softmax<INPUT_T, true, true>(
+                        stage1CastTensor[pS2Round * 32], sumUb[32], maxUb[32], mmRes[scoreS2Round * 32], expUb[64],
+                        vecSumStateUb[64], vecMaxStateUb[128], static_cast<uint16_t>(scoreS2Round), constInfo.pScale);
+                }
+            } else {
+                FaVectorApi::ProcessVec1VfDnFp16Softmax<INPUT_T, true>(
+                    stage1CastTensor, sumUb, maxUb, mmRes, expUb, vecSumStateUb, vecMaxStateUb,
+                    static_cast<uint16_t>(scoreS2Round), constInfo.pScale);
+                if (qNdNum == 2) {
+                    FaVectorApi::ProcessVec1VfDnFp16Softmax<INPUT_T, true>(
+                        stage1CastTensor[pS2Round * 32], sumUb[32], maxUb[32], mmRes[scoreS2Round * 32], expUb[64],
+                        vecSumStateUb[64], vecMaxStateUb[128], static_cast<uint16_t>(scoreS2Round), constInfo.pScale);
+                }
+            }
         }
     } else {
-        if constexpr (isFp8) {
-            FaVectorApi::ProcessVec1VfDn<T, INPUT_T, true, hasAtten, s2BaseSize>(stage1CastTensor, sumUb, maxUb, mmRes,
-                expUb, this->vselrIndexesBuf, attenMaskUb, ((runInfo.s1RealSizeAlign32 >> 1) + 63) >> 6 << 6,
-                runInfo.s2AlignedSize, runInfo.s2RealSize, static_cast<T>(constInfo.scaleValue), descaleQK,
-                negativeFloatScalar, constInfo.keepProb, runInfo.s2LoopCount == runInfo.s2LoopLimit, constInfo.pScale);
+        if (unlikely(runInfo.s2LoopCount == 0)) {
+            if constexpr (isFp8) {
+                FaVectorApi::ProcessVec1VfDn<T, INPUT_T, false, hasAtten, s2BaseSize>(
+                    stage1CastTensor, sumUb, maxUb, mmRes, expUb, this->vselrIndexesBuf, attenMaskUb,
+                    ((runInfo.s1RealSizeAlign32 >> 1) + 63) >> 6 << 6, runInfo.s2AlignedSize, runInfo.s2RealSize,
+                    static_cast<T>(constInfo.scaleValue), descaleQK, negativeFloatScalar, constInfo.keepProb,
+                    runInfo.s2EndIdx - s1BaseSize < s2BaseSize, constInfo.pScale);
+            } else {
+                FaVectorApi::ProcessVec1VfDn<T, INPUT_T, false, false, s2BaseSize>(
+                    stage1CastTensor, sumUb, maxUb, mmRes, expUb, this->vselrIndexesBuf, attenMaskUb,
+                    runInfo.s1RealSizeAlign32 >> 1, runInfo.s2AlignedSize, runInfo.s2RealSize,
+                    static_cast<T>(constInfo.scaleValue), descaleQK, negativeFloatScalar, constInfo.keepProb, false);
+            }
         } else {
-            FaVectorApi::ProcessVec1VfDn<T, INPUT_T, true, false, s2BaseSize>(stage1CastTensor, sumUb, maxUb, mmRes,
-                expUb, this->vselrIndexesBuf, attenMaskUb, runInfo.s1RealSizeAlign32 >> 1, runInfo.s2AlignedSize,
-                runInfo.s2RealSize, static_cast<T>(constInfo.scaleValue), descaleQK, negativeFloatScalar,
-                constInfo.keepProb, false);
+            if constexpr (isFp8) {
+                FaVectorApi::ProcessVec1VfDn<T, INPUT_T, true, hasAtten, s2BaseSize>(
+                    stage1CastTensor, sumUb, maxUb, mmRes, expUb, this->vselrIndexesBuf, attenMaskUb,
+                    ((runInfo.s1RealSizeAlign32 >> 1) + 63) >> 6 << 6, runInfo.s2AlignedSize, runInfo.s2RealSize,
+                    static_cast<T>(constInfo.scaleValue), descaleQK, negativeFloatScalar, constInfo.keepProb,
+                    runInfo.s2LoopCount == runInfo.s2LoopLimit, constInfo.pScale);
+            } else {
+                FaVectorApi::ProcessVec1VfDn<T, INPUT_T, true, false, s2BaseSize>(
+                    stage1CastTensor, sumUb, maxUb, mmRes, expUb, this->vselrIndexesBuf, attenMaskUb,
+                    runInfo.s1RealSizeAlign32 >> 1, runInfo.s2AlignedSize, runInfo.s2RealSize,
+                    static_cast<T>(constInfo.scaleValue), descaleQK, negativeFloatScalar, constInfo.keepProb, false);
+            }
         }
     }
     bmm1ResBuf.SetCrossCore();
@@ -555,7 +650,14 @@ __aicore__ inline void FABlockVecBaseFullquant<TEMPLATE_BASE_ARGS>::ProcessVec1D
     //-------------------------Data copy to l1-------------------------
     LocalTensor<INPUT_T> mm2AL1Tensor = outputBuf.GetTensor<INPUT_T>();
 
-    if constexpr (isFp8) {
+    if constexpr (useC8V16Score) {
+        uint32_t pS2Round = (runInfo.s2RealSize + 63) >> 6 << 6;
+        uint32_t qNdNum = (runInfo.halfS1RealSize + 31) >> 5;
+        if (qNdNum > 0) {
+            DataCopy(mm2AL1Tensor[constInfo.subBlockIdx * vec1HalfS1BaseSize * pS2Round], stage1CastTensor,
+                qNdNum * 32 * pS2Round);
+        }
+    } else if constexpr (isFp8) {
         // 按照64对齐搬运
         DataCopy(mm2AL1Tensor[constInfo.subBlockIdx * vec1HalfS1BaseSize * ((runInfo.s2RealSize + 63) >> 6 << 6)],
             stage1CastTensor, {static_cast<uint16_t>((runInfo.s2RealSize + 63) >> 6), 64, 66, 0});
@@ -582,7 +684,11 @@ __aicore__ inline void FABlockVecBaseFullquant<TEMPLATE_BASE_ARGS>::ProcessVec1D
     //-----------------------------------------------------------------
     this->stage1OutQue[stage1Offset].template FreeTensor(stage1CastTensor);
     if (unlikely(runInfo.s2LoopCount == runInfo.s2LoopLimit)) {
-        GetDerived()->SoftmaxDataCopyOut(runInfo, constInfo, sumUb, maxUb);
+        if constexpr (useC8V16Score) {
+            GetDerived()->SoftmaxDataCopyOutFp8(runInfo, constInfo, sumUb, maxUb);
+        } else {
+            GetDerived()->SoftmaxDataCopyOut(runInfo, constInfo, sumUb, maxUb);
+        }
     }
     return;
 }
@@ -1092,7 +1198,7 @@ __aicore__ inline void FABlockVecBaseFullquant<TEMPLATE_BASE_ARGS>::ProcessVec2O
     if (unlikely(runInfo.s2LoopCount == 0)) {
         DataCopy(vec2ResUb, mmRes, vec2CalcSize);
     } else {
-        LocalTensor<T> expUb = softmaxExpBuf[runInfo.taskIdMod3].template Get<T>();
+        LocalTensor<float> expUb = softmaxExpBuf[runInfo.taskIdMod3].template Get<float>();
         LocalTensor<T> pScaleUb;
         if constexpr (isMlaFullQuant) {
             pScaleUb = pScaleBuf[runInfo.taskIdMod3].template Get<T>();
@@ -1135,13 +1241,23 @@ __aicore__ inline void FABlockVecBaseFullquant<TEMPLATE_BASE_ARGS>::ProcessVec2O
         if (runInfo.s2LoopCount < runInfo.s2LoopLimit) {
             if constexpr (isFp8 || isInt8) {
                 if (unlikely(runInfo.s2LoopCount == 1)) {
-                    FlashUpdateNew<T, INPUT_T, OUTPUT_T, dTemplateAlign64, true, isMlaFullQuant>(vec2ResUb, mmRes,
-                        vec2ResUb, expUb, pScaleUb, runInfo.vec2S1RealSize, dTemplateAlign64, deSCaleVValue,
-                        deSCalePreVValue);
+                    if constexpr (useC8V16Score && dTemplateAlign64 == 128) {
+                        FlashUpdateFp32StatC8V16<INPUT_T, dTemplateAlign64, true>(vec2ResUb, mmRes, vec2ResUb,
+                            expUb, runInfo.vec2S1RealSize, deSCaleVValue, deSCalePreVValue);
+                    } else {
+                        FlashUpdateNew<T, INPUT_T, OUTPUT_T, dTemplateAlign64, true, isMlaFullQuant>(
+                            vec2ResUb, mmRes, vec2ResUb, expUb, pScaleUb, runInfo.vec2S1RealSize, dTemplateAlign64,
+                            deSCaleVValue, deSCalePreVValue);
+                    }
                 } else {
-                    FlashUpdateNew<T, INPUT_T, OUTPUT_T, dTemplateAlign64, false, isMlaFullQuant>(vec2ResUb, mmRes,
-                        vec2ResUb, expUb, pScaleUb, runInfo.vec2S1RealSize, dTemplateAlign64, deSCaleVValue,
-                        deSCalePreVValue);
+                    if constexpr (useC8V16Score && dTemplateAlign64 == 128) {
+                        FlashUpdateFp32StatC8V16<INPUT_T, dTemplateAlign64, false>(vec2ResUb, mmRes, vec2ResUb,
+                            expUb, runInfo.vec2S1RealSize, deSCaleVValue, deSCalePreVValue);
+                    } else {
+                        FlashUpdateNew<T, INPUT_T, OUTPUT_T, dTemplateAlign64, false, isMlaFullQuant>(
+                            vec2ResUb, mmRes, vec2ResUb, expUb, pScaleUb, runInfo.vec2S1RealSize, dTemplateAlign64,
+                            deSCaleVValue, deSCalePreVValue);
+                    }
                 }
             } else {
                 FlashUpdateNew<T, INPUT_T, OUTPUT_T, dTemplateAlign64, false, isMlaFullQuant>(
@@ -1150,29 +1266,48 @@ __aicore__ inline void FABlockVecBaseFullquant<TEMPLATE_BASE_ARGS>::ProcessVec2O
         } else {
             if constexpr (isFp8 || isInt8) {
                 if (unlikely(runInfo.s2LoopCount == 1)) {
-                    LocalTensor<float> sumUb = this->softmaxSumBuf[runInfo.multiCoreIdxMod3].template Get<float>();
-                    FlashUpdateLastNew<T, INPUT_T, OUTPUT_T, dTemplateAlign64, true, isMlaFullQuant>(vec2ResUb, mmRes,
-                        vec2ResUb, expUb, pScaleUb, sumUb, runInfo.vec2S1RealSize, dTemplateAlign64, deSCaleVValue,
-                        deSCalePreVValue);
+                    LocalTensor<float> sumUb =
+                        this->softmaxSumBuf[runInfo.multiCoreIdxMod3].template Get<float>();
+                    if constexpr (useC8V16Score && dTemplateAlign64 == 128) {
+                        FlashUpdateLastFp32StatC8V16<INPUT_T, dTemplateAlign64, true>(vec2ResUb, mmRes, vec2ResUb,
+                            expUb, sumUb, runInfo.vec2S1RealSize, deSCaleVValue, deSCalePreVValue);
+                    } else {
+                        FlashUpdateLastNew<T, INPUT_T, OUTPUT_T, dTemplateAlign64, true, isMlaFullQuant>(
+                            vec2ResUb, mmRes, vec2ResUb, expUb, pScaleUb, sumUb, runInfo.vec2S1RealSize,
+                            dTemplateAlign64, deSCaleVValue, deSCalePreVValue);
+                    }
                 } else {
-                    LocalTensor<float> sumUb = this->softmaxSumBuf[runInfo.multiCoreIdxMod3].template Get<float>();
-                    FlashUpdateLastNew<T, INPUT_T, OUTPUT_T, dTemplateAlign64, false, isMlaFullQuant>(vec2ResUb, mmRes,
-                        vec2ResUb, expUb, pScaleUb, sumUb, runInfo.vec2S1RealSize, dTemplateAlign64, deSCaleVValue,
-                        deSCalePreVValue);
+                    LocalTensor<float> sumUb =
+                        this->softmaxSumBuf[runInfo.multiCoreIdxMod3].template Get<float>();
+                    if constexpr (useC8V16Score && dTemplateAlign64 == 128) {
+                        FlashUpdateLastFp32StatC8V16<INPUT_T, dTemplateAlign64, false>(vec2ResUb, mmRes, vec2ResUb,
+                            expUb, sumUb, runInfo.vec2S1RealSize, deSCaleVValue, deSCalePreVValue);
+                    } else {
+                        FlashUpdateLastNew<T, INPUT_T, OUTPUT_T, dTemplateAlign64, false, isMlaFullQuant>(
+                            vec2ResUb, mmRes, vec2ResUb, expUb, pScaleUb, sumUb, runInfo.vec2S1RealSize,
+                            dTemplateAlign64, deSCaleVValue, deSCalePreVValue);
+                    }
                 }
             } else {
                 LocalTensor<float> sumUb = this->softmaxSumBuf[runInfo.multiCoreIdxMod3].template Get<float>();
-                FlashUpdateLastNew<T, INPUT_T, OUTPUT_T, dTemplateAlign64, false, isMlaFullQuant>(vec2ResUb, mmRes,
-                    vec2ResUb, expUb, pScaleUb, sumUb, runInfo.vec2S1RealSize, dTemplateAlign64, 1.0, 1.0);
+                FlashUpdateLastNew<T, INPUT_T, OUTPUT_T, dTemplateAlign64, false, isMlaFullQuant>(
+                    vec2ResUb, mmRes, vec2ResUb, expUb, pScaleUb, sumUb, runInfo.vec2S1RealSize, dTemplateAlign64, 1.0,
+                    1.0);
             }
         }
     }
     bmm2ResBuf.SetCrossCore();
     if (runInfo.s2LoopCount == runInfo.s2LoopLimit) {
         if (unlikely(runInfo.s2LoopCount == 0)) {
-            LocalTensor<float> sumUb = this->softmaxSumBuf[runInfo.multiCoreIdxMod3].template Get<float>();
-            LastDivNew<T, INPUT_T, OUTPUT_T, dTemplateAlign64, isMlaFullQuant>(
-                vec2ResUb, vec2ResUb, sumUb, runInfo.vec2S1RealSize, (uint16_t)dTemplateAlign64, deSCaleVValue);
+            LocalTensor<float> sumUb =
+                this->softmaxSumBuf[runInfo.multiCoreIdxMod3].template Get<float>();
+            if constexpr (useC8V16Score && dTemplateAlign64 == 128) {
+                LastDivFp32StatC8V16<INPUT_T, dTemplateAlign64>(
+                    vec2ResUb, vec2ResUb, sumUb, runInfo.vec2S1RealSize, deSCaleVValue);
+            } else {
+                LastDivNew<T, INPUT_T, OUTPUT_T, dTemplateAlign64, isMlaFullQuant>(
+                    vec2ResUb, vec2ResUb, sumUb, runInfo.vec2S1RealSize, (uint16_t)dTemplateAlign64, deSCaleVValue);
+            }
         }
         GetDerived()->CopyOutAttentionOut(runInfo, constInfo, vec2ResUb, 0, vec2CalcSize);
     }
@@ -1747,19 +1882,31 @@ __aicore__ inline void FABlockVecBaseFullquant<TEMPLATE_BASE_ARGS>::Bmm2DataCopy
 }
 TEMPLATES_DEF_BASE_NO_DEFAULT
 __aicore__ inline void FABlockVecBaseFullquant<TEMPLATE_BASE_ARGS>::SoftmaxInitBuffer() {
-    tPipe->InitBuffer(softmaxSumBuf[0], 256); // [64, 1]
-    tPipe->InitBuffer(softmaxSumBuf[1], 256); // [64, 1]
-    tPipe->InitBuffer(softmaxSumBuf[2], 256); // [64, 1]
+    constexpr uint32_t softmaxMaxStateBytes = useC8V16Score ? 128 : 256;
+    constexpr uint32_t softmaxStateBytes = 256;
+    constexpr uint32_t softmaxExpStateBytes = useC8V16Score ? 512 : 256;
+    constexpr uint32_t vecStateBytes = useC8V16Score ? 512 : 0;
+    tPipe->InitBuffer(softmaxSumBuf[0], softmaxStateBytes); // [64, 1]
+    tPipe->InitBuffer(softmaxSumBuf[1], softmaxStateBytes); // [64, 1]
+    tPipe->InitBuffer(softmaxSumBuf[2], softmaxStateBytes); // [64, 1]
     if constexpr (isFd) {
         tPipe->InitBuffer(maxBrdcst, 1, 2048); // [64, 8]
         tPipe->InitBuffer(sumBrdcst, 1, 2048); // [64, 8]
     }
-    tPipe->InitBuffer(softmaxMaxBuf[0], 256); // [64, 1]
-    tPipe->InitBuffer(softmaxMaxBuf[1], 256); // [64, 1]
-    tPipe->InitBuffer(softmaxMaxBuf[2], 256); // [64, 1]
-    tPipe->InitBuffer(softmaxExpBuf[0], 256); // [64, 1]
-    tPipe->InitBuffer(softmaxExpBuf[1], 256); // [64, 1]
-    tPipe->InitBuffer(softmaxExpBuf[2], 256); // [64, 1]
+    tPipe->InitBuffer(softmaxMaxBuf[0], softmaxMaxStateBytes); // [64, 1]
+    tPipe->InitBuffer(softmaxMaxBuf[1], softmaxMaxStateBytes); // [64, 1]
+    tPipe->InitBuffer(softmaxMaxBuf[2], softmaxMaxStateBytes); // [64, 1]
+    tPipe->InitBuffer(softmaxExpBuf[0], softmaxExpStateBytes); // [64, 2]
+    tPipe->InitBuffer(softmaxExpBuf[1], softmaxExpStateBytes); // [64, 2]
+    tPipe->InitBuffer(softmaxExpBuf[2], softmaxExpStateBytes); // [64, 2]
+    if constexpr (useC8V16Score) {
+        tPipe->InitBuffer(softmaxVecMaxBuf[0], vecStateBytes); // [2, 4, 32]
+        tPipe->InitBuffer(softmaxVecMaxBuf[1], vecStateBytes); // [2, 4, 32]
+        tPipe->InitBuffer(softmaxVecMaxBuf[2], vecStateBytes); // [2, 4, 32]
+        tPipe->InitBuffer(softmaxVecSumBuf[0], vecStateBytes); // [2, 4, 32]
+        tPipe->InitBuffer(softmaxVecSumBuf[1], vecStateBytes); // [2, 4, 32]
+        tPipe->InitBuffer(softmaxVecSumBuf[2], vecStateBytes); // [2, 4, 32]
+    }
     tPipe->InitBuffer(preLoopMaxBuf, 256); // [64, 1]
     tPipe->InitBuffer(preLoopSumBuf, 256); // [64, 1]
     tPipe->InitBuffer(firstLoopSumBuf, 256); // [64, 1]
@@ -1778,8 +1925,9 @@ __aicore__ inline void FABlockVecBaseFullquant<TEMPLATE_BASE_ARGS>::InitLocalBuf
             tPipe->InitBuffer(stage2OutBuf, 64 * dTemplateAlign64 * sizeof(T));
             SoftmaxInitBuffer();
             if constexpr (isFp8 || isInt8) {
-                tPipe->InitBuffer(stage1OutQue[0], 1, 16896); // (32 + 1) * (256 / 32) * 64
-                tPipe->InitBuffer(stage1OutQue[1], 1, 16896);
+                constexpr uint32_t pBufferBytes = useC8V16Score ? 16384 : 16896;
+                tPipe->InitBuffer(stage1OutQue[0], 1, pBufferBytes);
+                tPipe->InitBuffer(stage1OutQue[1], 1, pBufferBytes);
                 if constexpr (hasAtten) {
                     tPipe->InitBuffer(attenMaskInQue[0], 1, 16384); // 256 * 64
                 }
@@ -1883,12 +2031,14 @@ __aicore__ inline void FABlockVecBaseFullquant<TEMPLATE_BASE_ARGS>::InitLocalBuf
     }
     if constexpr (isFp8 || isInt8) {
         if constexpr (useDn) {
-            tPipe->InitBuffer(vselrIndexesBuf[static_cast<uint32_t>(VselrIndexEnum::DN_INDEX)], 256);
-            LocalTensor<uint8_t> vselrIndexesTensor =
-                vselrIndexesBuf[static_cast<uint32_t>(VselrIndexEnum::DN_INDEX)].template Get<uint8_t>();
-            for (uint32_t i = 0; i < 4; i++) {
-                for (uint32_t j = 0; j < (256 >> 2); j++) {
-                    vselrIndexesTensor.SetValue(i * (256 >> 2) + j, i + (j << 2));
+            if constexpr (!useC8V16Score) {
+                tPipe->InitBuffer(vselrIndexesBuf[static_cast<uint32_t>(VselrIndexEnum::DN_INDEX)], 256);
+                LocalTensor<uint8_t> vselrIndexesTensor =
+                    vselrIndexesBuf[static_cast<uint32_t>(VselrIndexEnum::DN_INDEX)].template Get<uint8_t>();
+                for (uint32_t i = 0; i < 4; i++) {
+                    for (uint32_t j = 0; j < (256 >> 2); j++) {
+                        vselrIndexesTensor.SetValue(i * (256 >> 2) + j, i + (j << 2));
+                    }
                 }
             }
         } else if constexpr (useNz) {

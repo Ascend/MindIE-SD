@@ -1403,6 +1403,7 @@ ge::graphStatus FusedInferAttentionScoreTilingImpl::UpdateTilingKeyInfo(const Fi
         tilingKeyInfo_.enableKvPrefix = fiaInfo.sysPrefixFlag;
         tilingKeyInfo_.enableS1OutSplit = enableS1OutSplit;
         tilingKeyInfo_.isReconstructTemp = false;
+        tilingKeyInfo_.enableC8V16 = fiaInfo.enableC8V16;
     }
     return ge::GRAPH_SUCCESS;
 }
@@ -1443,17 +1444,17 @@ ge::graphStatus FusedInferAttentionScoreTilingImpl::GenTilingKey(
     uint64_t genTilingkey = GET_TPL_TILING_KEY(tilingKeyInfo_.inputLayout, tilingKeyInfo_.config,
         tilingKeyInfo_.pseMode, tilingKeyInfo_.quantMode, tilingKeyInfo_.hasAttenMask, tilingKeyInfo_.hasRope,
         tilingKeyInfo_.KvLayoutType, tilingKeyInfo_.isFd, tilingKeyInfo_.emptyTensor, tilingKeyInfo_.enableKvPrefix,
-        tilingKeyInfo_.enableS1OutSplit, tilingKeyInfo_.isReconstructTemp);
+        tilingKeyInfo_.enableS1OutSplit, tilingKeyInfo_.isReconstructTemp, tilingKeyInfo_.enableC8V16);
     context->SetTilingKey(genTilingkey);
     OP_LOGI(fiaInfo.opName, "The tilingkey is %llu.", genTilingkey);
     OP_LOGI(fiaInfo.opName,
         "The tilingkey param is inOutLayoutType: %llu, config: %llu, pseMode: %llu, quantMode: %llu, "
         "hasAttenMask: %u, hasRope: %u, KvLayoutType: %llu, isFd: %u, emptyTensor: %u, "
-        "enableKvPrefix: %u, enableS1OutSplit: %u, isReconstructTemp: %u",
+        "enableKvPrefix: %u, enableS1OutSplit: %u, isReconstructTemp: %u, enableC8V16: %u",
         tilingKeyInfo_.inputLayout, tilingKeyInfo_.config, tilingKeyInfo_.pseMode, tilingKeyInfo_.quantMode,
         tilingKeyInfo_.hasAttenMask, tilingKeyInfo_.hasRope, tilingKeyInfo_.KvLayoutType, tilingKeyInfo_.isFd,
         tilingKeyInfo_.emptyTensor, tilingKeyInfo_.enableKvPrefix, tilingKeyInfo_.enableS1OutSplit,
-        tilingKeyInfo_.isReconstructTemp);
+        tilingKeyInfo_.isReconstructTemp, tilingKeyInfo_.enableC8V16);
     return ge::GRAPH_SUCCESS;
 }
 

@@ -26,6 +26,183 @@ using namespace MicroAPI;
 #define VMULSCVT false
 #define DROPOUT false
 
+template <typename T2, bool isUpdate, bool isFinalS2Tile>
+__simd_vf__ inline void ProcessVec1DnFp16SoftmaxVF(__ubuf__ T2 *dstUb, __ubuf__ half *srcUb,
+    __ubuf__ float *expMaxUb, __ubuf__ float *sumUb, __ubuf__ half *maxUb, __ubuf__ float *vecSumStateUb,
+    __ubuf__ half *vecMaxStateUb, const uint16_t n, const half pScale) {
+    static_assert(IsSameType<T2, fp8_e4m3fn_t>::value,
+        "C8V16 online softmax only supports fp8_e4m3fn_t P");
+    static constexpr CastTrait castTraitFp16ToFp32Zero = {
+        RegLayout::ZERO, SatMode::UNKNOWN, MaskMergeMode::ZEROING, AscendC::RoundMode::UNKNOWN};
+
+    constexpr uint16_t m = 32;
+    constexpr uint16_t halfRepSize = 128; // Four S2 rows by 32 query columns.
+    constexpr uint16_t rowsPerLoop = 16;
+    constexpr int16_t fp8MinPositiveBits = 8256;
+    constexpr int16_t fp16Fp8ExponentBiasOffset = -8128;
+    constexpr int16_t fp16ToFp8MantissaShift = 7;
+
+    RegTensor<half> src0, src1, src2, src3;
+    RegTensor<half> max0, max1, max2, max3;
+    RegTensor<half> acc0, acc1, acc2, acc3;
+    RegTensor<half> tmp0, tmp1;
+    RegTensor<half> localMax, globalMax, expMaxBroadcast;
+    RegTensor<half> oldMax;
+    RegTensor<half> alpha;
+    RegTensor<half> localSum;
+    RegTensor<float> alphaState32, localSumState32, oldSum32, compactSum32;
+    RegTensor<half> compactState;
+
+    MaskReg pregHalf = CreateMask<half, MaskPattern::ALL>();
+    MaskReg pregFloat = CreateMask<float, MaskPattern::ALL>();
+    uint32_t rowCount = m;
+    uint32_t stateCount = m;
+    MaskReg pregRows = UpdateMask<half>(rowCount);
+    MaskReg pregState = UpdateMask<float>(stateCount);
+
+    Duplicate(max0, static_cast<half>(-65504.0f));
+    Duplicate(max1, static_cast<half>(-65504.0f));
+    Duplicate(max2, static_cast<half>(-65504.0f));
+    Duplicate(max3, static_cast<half>(-65504.0f));
+
+    for (uint16_t i = 0; i < static_cast<uint16_t>(n / rowsPerLoop); ++i) {
+        uint32_t offset = i * rowsPerLoop * m;
+        LoadAlign(src0, srcUb + offset);
+        LoadAlign(src1, srcUb + offset + halfRepSize);
+        LoadAlign(src2, srcUb + offset + halfRepSize * 2);
+        LoadAlign(src3, srcUb + offset + halfRepSize * 3);
+        Max(max0, max0, src0, pregHalf);
+        Max(max1, max1, src1, pregHalf);
+        Max(max2, max2, src2, pregHalf);
+        Max(max3, max3, src3, pregHalf);
+    }
+
+    Max(max0, max0, max1, pregHalf);
+    Max(max2, max2, max3, pregHalf);
+    Max(max0, max0, max2, pregHalf);
+    Interleave(tmp0, tmp1, max0, max0);
+    Max(max1, tmp0, tmp1, pregHalf);
+    Interleave(tmp0, tmp1, max1, max1);
+    Max(localMax, tmp0, tmp1, pregHalf);
+
+    if constexpr (isUpdate) {
+        LoadAlign(oldMax, vecMaxStateUb);
+        Max(globalMax, localMax, oldMax, pregHalf);
+        // Reg ExpSub only supports an FP32 destination for FP16 sources on A5.
+        Sub(alpha, oldMax, globalMax, pregHalf);
+        Exp(alpha, alpha, pregHalf);
+    } else {
+        Max(globalMax, localMax, localMax, pregHalf);
+        Duplicate(alpha, static_cast<half>(1.0f));
+    }
+
+    StoreAlign<half, StoreDist::DIST_NORM>(vecMaxStateUb, globalMax, pregHalf);
+    if constexpr (isFinalS2Tile) {
+        DeInterleave(tmp0, tmp1, globalMax, globalMax);
+        DeInterleave(compactState, tmp1, tmp0, tmp0);
+        StoreAlign<half, StoreDist::DIST_NORM_B16>(maxUb, compactState, pregRows);
+    }
+    // The reduced max keeps four B16 copies per query row. Restore the
+    // score-lane broadcast layout before score - max; using the reduced
+    // state directly mixes rows and can make every exponent smaller than 1.
+    DeInterleave(tmp0, tmp1, globalMax, globalMax);
+    DeInterleave(expMaxBroadcast, tmp1, tmp0, tmp0);
+    // Keep online state in paired B32 layout: [q0, q0, q1, q1, ...].
+    Cast<float, half, castTraitFp16ToFp32Zero>(alphaState32, alpha, pregHalf);
+    StoreAlign<float, StoreDist::DIST_NORM_B32>(expMaxUb, alphaState32, pregFloat);
+
+    Duplicate(acc0, static_cast<half>(0.0f));
+    Duplicate(acc1, static_cast<half>(0.0f));
+    Duplicate(acc2, static_cast<half>(0.0f));
+    Duplicate(acc3, static_cast<half>(0.0f));
+
+    for (uint16_t i = 0; i < static_cast<uint16_t>(n / rowsPerLoop); ++i) {
+        uint32_t offset = i * rowsPerLoop * m;
+        LoadAlign(src0, srcUb + offset);
+        LoadAlign(src1, srcUb + offset + halfRepSize);
+        LoadAlign(src2, srcUb + offset + halfRepSize * 2);
+        LoadAlign(src3, srcUb + offset + halfRepSize * 3);
+
+        Sub(src0, src0, expMaxBroadcast, pregHalf);
+        Sub(src1, src1, expMaxBroadcast, pregHalf);
+        Sub(src2, src2, expMaxBroadcast, pregHalf);
+        Sub(src3, src3, expMaxBroadcast, pregHalf);
+        Exp(src0, src0, pregHalf);
+        Exp(src1, src1, pregHalf);
+        Exp(src2, src2, pregHalf);
+        Exp(src3, src3, pregHalf);
+
+        Add(acc0, acc0, src0, pregHalf);
+        Add(acc1, acc1, src1, pregHalf);
+        Add(acc2, acc2, src2, pregHalf);
+        Add(acc3, acc3, src3, pregHalf);
+
+        // Keep softmax sum unscaled and apply pScale only to P consumed by BMM2.
+        Muls(src0, src0, pScale, pregHalf);
+        Muls(src1, src1, pScale, pregHalf);
+        Muls(src2, src2, pScale, pregHalf);
+        Muls(src3, src3, pScale, pregHalf);
+
+        Maxs((RegTensor<int16_t> &)src0, (RegTensor<int16_t> &)src0, fp8MinPositiveBits, pregHalf);
+        Maxs((RegTensor<int16_t> &)src1, (RegTensor<int16_t> &)src1, fp8MinPositiveBits, pregHalf);
+        Maxs((RegTensor<int16_t> &)src2, (RegTensor<int16_t> &)src2, fp8MinPositiveBits, pregHalf);
+        Maxs((RegTensor<int16_t> &)src3, (RegTensor<int16_t> &)src3, fp8MinPositiveBits, pregHalf);
+        Adds((RegTensor<int16_t> &)src0, (RegTensor<int16_t> &)src0, fp16Fp8ExponentBiasOffset, pregHalf);
+        Adds((RegTensor<int16_t> &)src1, (RegTensor<int16_t> &)src1, fp16Fp8ExponentBiasOffset, pregHalf);
+        Adds((RegTensor<int16_t> &)src2, (RegTensor<int16_t> &)src2, fp16Fp8ExponentBiasOffset, pregHalf);
+        Adds((RegTensor<int16_t> &)src3, (RegTensor<int16_t> &)src3, fp16Fp8ExponentBiasOffset, pregHalf);
+        ShiftRights((RegTensor<int16_t> &)src0, (RegTensor<int16_t> &)src0, fp16ToFp8MantissaShift, pregHalf);
+        ShiftRights((RegTensor<int16_t> &)src1, (RegTensor<int16_t> &)src1, fp16ToFp8MantissaShift, pregHalf);
+        ShiftRights((RegTensor<int16_t> &)src2, (RegTensor<int16_t> &)src2, fp16ToFp8MantissaShift, pregHalf);
+        ShiftRights((RegTensor<int16_t> &)src3, (RegTensor<int16_t> &)src3, fp16ToFp8MantissaShift, pregHalf);
+        StoreAlign<T2, StoreDist::DIST_PACK_B16>(dstUb + offset, (RegTensor<T2> &)src0, pregHalf);
+        StoreAlign<T2, StoreDist::DIST_PACK_B16>(
+            dstUb + offset + halfRepSize, (RegTensor<T2> &)src1, pregHalf);
+        StoreAlign<T2, StoreDist::DIST_PACK_B16>(
+            dstUb + offset + halfRepSize * 2, (RegTensor<T2> &)src2, pregHalf);
+        StoreAlign<T2, StoreDist::DIST_PACK_B16>(
+            dstUb + offset + halfRepSize * 3, (RegTensor<T2> &)src3, pregHalf);
+    }
+
+    Add(acc0, acc0, acc1, pregHalf);
+    Add(acc2, acc2, acc3, pregHalf);
+    Add(acc0, acc0, acc2, pregHalf);
+    Interleave(tmp0, tmp1, acc0, acc0);
+    Add(acc1, tmp0, tmp1, pregHalf);
+    Interleave(tmp0, tmp1, acc1, acc1);
+    Add(localSum, tmp0, tmp1, pregHalf);
+
+    Cast<float, half, castTraitFp16ToFp32Zero>(localSumState32, localSum, pregHalf);
+    if constexpr (isUpdate) {
+        LoadAlign(oldSum32, vecSumStateUb);
+        Mul(oldSum32, oldSum32, alphaState32, pregFloat);
+        Add(localSumState32, localSumState32, oldSum32, pregFloat);
+    }
+    StoreAlign<float, StoreDist::DIST_NORM_B32>(vecSumStateUb, localSumState32, pregFloat);
+    if constexpr (isFinalS2Tile) {
+        // Compact paired state only at the external boundary consumed by Vector2.
+        DeInterleave(compactSum32, oldSum32, localSumState32, localSumState32);
+        Muls(compactSum32, compactSum32, static_cast<float>(pScale), pregFloat);
+        StoreAlign<float, StoreDist::DIST_NORM_B32>(sumUb, compactSum32, pregState);
+    }
+}
+
+template <typename T2, bool isUpdate = false, bool isFinalS2Tile = false>
+__aicore__ inline void ProcessVec1VfDnFp16Softmax(const LocalTensor<T2> &dstTensor,
+    const LocalTensor<float> &sumTensor, const LocalTensor<half> &maxTensor, const LocalTensor<half> &srcTensor,
+    const LocalTensor<float> &expMaxTensor, const LocalTensor<float> &vecSumStateTensor,
+    const LocalTensor<half> &vecMaxStateTensor, const uint16_t n, const float pScale) {
+    __ubuf__ T2 *dstUb = (__ubuf__ T2 *)dstTensor.GetPhyAddr();
+    __ubuf__ half *srcUb = (__ubuf__ half *)srcTensor.GetPhyAddr();
+    __ubuf__ float *expMaxUb = (__ubuf__ float *)expMaxTensor.GetPhyAddr();
+    __ubuf__ float *sumUb = (__ubuf__ float *)sumTensor.GetPhyAddr();
+    __ubuf__ half *maxUb = (__ubuf__ half *)maxTensor.GetPhyAddr();
+    __ubuf__ float *vecSumStateUb = (__ubuf__ float *)vecSumStateTensor.GetPhyAddr();
+    __ubuf__ half *vecMaxStateUb = (__ubuf__ half *)vecMaxStateTensor.GetPhyAddr();
+    ProcessVec1DnFp16SoftmaxVF<T2, isUpdate, isFinalS2Tile>(
+        dstUb, srcUb, expMaxUb, sumUb, maxUb, vecSumStateUb, vecMaxStateUb, n, static_cast<half>(pScale));
+}
+
 template <typename T, typename T2, bool hasAtten = false, uint16_t ubN = 128, bool hasSink = false>
 __simd_vf__ inline void ProcessVec1DnNoUpdateVF(__ubuf__ T2 *x_exp, __ubuf__ float *input_x_local_UB,
     __ubuf__ float *exp_max_fp32, __ubuf__ float *new_global_sum, __ubuf__ float *new_global_max,

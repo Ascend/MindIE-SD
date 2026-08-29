@@ -40,6 +40,7 @@ struct FiaTilingKeyInfo {
     bool enableKvPrefix = false;
     bool enableS1OutSplit = false;
     bool isReconstructTemp = false;
+    bool enableC8V16 = false;
 };
 
 struct FiaPlatFormInfo {

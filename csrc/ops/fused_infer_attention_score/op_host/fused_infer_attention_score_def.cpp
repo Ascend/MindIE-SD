@@ -516,7 +516,7 @@ class EagleFusedInferAttentionScore : public OpDef {
         this->Attr("input_layout").AttrType(OPTIONAL).String("BSH");
         this->Attr("num_key_value_heads").AttrType(OPTIONAL).Int(0);
         this->Attr("sparse_mode").AttrType(OPTIONAL).Int(0);
-        this->Attr("inner_precise").AttrType(OPTIONAL).Int(1);
+        this->Attr("inner_precise").AttrType(OPTIONAL).Int(0);
         this->Attr("block_size").AttrType(OPTIONAL).Int(0);
         this->Attr("antiquant_mode").AttrType(OPTIONAL).Int(0);
         this->Attr("softmax_lse_flag").AttrType(OPTIONAL).Bool(false);

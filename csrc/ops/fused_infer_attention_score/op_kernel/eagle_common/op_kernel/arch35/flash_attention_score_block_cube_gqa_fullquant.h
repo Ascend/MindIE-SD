@@ -115,6 +115,9 @@ class FABlockCubeGqaFullquant {
         IsDn(((IsSameType<INPUT_T, float>::value) || isFp8), (isFp8 && (s2BaseSize == 256)), pseMode, hasAtten, hasDrop,
             s1BaseSize == 64, dTemplateType, hasRope, enableKVPrefix, isInfer, IsSameType<INPUT_T, hifloat8_t>::value);
     static constexpr bool useNz = IsSameType<INPUT_T, hifloat8_t>::value && !isInfer;
+    static constexpr bool useC8V16Score =
+        enableC8V16 && isInfer && useDn && IsSameType<INPUT_T, fp8_e4m3fn_t>::value && !hasRope;
+    using SCORE_T = std::conditional_t<useC8V16Score, half, T>;
     using ROPE_T = std::conditional_t<isMlaFullQuant, bfloat16_t, INPUT_T>;
     static constexpr TPosition bmm2OutPos = GetC2Position(dVTemplateType,
         UbOutCondition<INPUT_T>(
@@ -1112,26 +1115,64 @@ __aicore__ inline void FABlockCubeGqaFullquant<TEMPLATE_ARGS>::IterateBmm1Dn(
     outputBuf.WaitCrossCore();
 
     FixpipeParamsC310<CO2Layout::ROW_MAJOR> fixpipeParams; // L0C→UB
-    fixpipeParams.nSize = (runInfo.s1RealSize + 31) >> 5
-            << 5; // L0C上的bmm1结果矩阵N方向的size大小; 同mmadParams.n; 为什么要8个元素对齐(32B对齐) // 128
     fixpipeParams.mSize =
         runInfo
             .s2RealSize; // 有效数据不足16行，只需要输出部分行即可; L0C上的bmm1结果矩阵M方向的size大小(必须为偶数) // 128
     fixpipeParams.srcStride = ((fixpipeParams.mSize + 15) / 16) *
         16; // L0C上bmm1结果相邻连续数据片段间隔(前面一个数据块的头与后面数据块的头的间隔), 单位为16*sizeof(T) // 源Nz矩阵中相邻大Z排布的起始地址偏移
-    if constexpr (useDn && isFp8) {
-        fixpipeParams.dstStride = 64;
-    } else {
-        fixpipeParams.dstStride = fixpipeParams.nSize /
-            2; // mmResUb上两行之间的间隔，单位：element。 // 128:根据比对dump文件得到, ND方案(S1*S2)时脏数据用mask剔除
-    }
+    if constexpr (useC8V16Score) {
+        int64_t s1BlockCnt = CeilDivision(constInfo.s1Size, 128);
+        int64_t s2BlockCnt = CeilDivision(constInfo.s2Size, 256);
+        int64_t deScaleQOffset = runInfo.boIdx * constInfo.n2G * s1BlockCnt +
+            runInfo.n2oIdx * constInfo.gSize * s1BlockCnt + runInfo.goIdx * s1BlockCnt + runInfo.s1oIdx;
+        runInfo.deScaleKvOffset = runInfo.boIdx * constInfo.n2Size * s2BlockCnt +
+            runInfo.n2oIdx * s2BlockCnt + (runInfo.s2StartIdx >> 8) + runInfo.s2LoopCount;
+        float deScaleQValue = this->deScaleQGm.GetValue(deScaleQOffset);
+        float deScaleKValue = this->deScaleKGm.GetValue(runInfo.deScaleKvOffset);
+        float fixpipeScale = constInfo.scaleValue * deScaleQValue * deScaleKValue;
+        uint32_t scoreS2Round = (runInfo.s2RealSize + 15) >> 4 << 4;
+        uint32_t firstHalfS1RealSize =
+            runInfo.s1RealSize <= 16 ? runInfo.s1RealSize : ((runInfo.s1RealSize + 31) >> 5 << 4);
+        uint32_t secondHalfS1RealSize = runInfo.s1RealSize - firstHalfS1RealSize;
 
-    fixpipeParams.dualDstCtl = 2; // 双目标模式，按M维度拆分，M / 2 * N写入每个UB, M必须为2的倍数
-    fixpipeParams.params.ndNum = 1;
-    fixpipeParams.params.srcNdStride = 0;
-    fixpipeParams.params.dstNdStride = 0;
-    Fixpipe<T, T, PFA_CFG_ROW_MAJOR_UB>(
-        outputBuf.template GetTensor<T>(), mm1ResL0C.GetTensor<T>(), fixpipeParams); // 将matmul结果从L0C搬运到UB
+        fixpipeParams.nSize = 32;
+        fixpipeParams.dstStride = 32;
+        fixpipeParams.params.srcNdStride = 2 * fixpipeParams.srcStride;
+        fixpipeParams.params.dstNdStride = scoreS2Round * 32;
+        fixpipeParams.dualDstCtl = 0;
+        fixpipeParams.quantPre = QuantMode_t::QF322F16_PRE;
+        fixpipeParams.deqScalar = static_cast<uint64_t>(*reinterpret_cast<int32_t *>(&fixpipeScale));
+        if (firstHalfS1RealSize > 0) {
+            uint32_t qNdNum = (firstHalfS1RealSize + 31) >> 5;
+            fixpipeParams.params.ndNum = qNdNum;
+            fixpipeParams.subBlockId = 0;
+            Fixpipe<SCORE_T, T, PFA_CFG_ROW_MAJOR_UB>(
+                outputBuf.template GetTensor<SCORE_T>(), mm1ResL0C.GetTensor<T>(), fixpipeParams);
+        }
+        if (secondHalfS1RealSize > 0) {
+            uint32_t qNdNum = (secondHalfS1RealSize + 31) >> 5;
+            uint32_t subBlock1L0COffset = (firstHalfS1RealSize >> 4) * fixpipeParams.srcStride * 16;
+            fixpipeParams.params.ndNum = qNdNum;
+            fixpipeParams.subBlockId = 1;
+            Fixpipe<SCORE_T, T, PFA_CFG_ROW_MAJOR_UB>(outputBuf.template GetTensor<SCORE_T>(),
+                mm1ResL0C.GetTensor<T>()[subBlock1L0COffset], fixpipeParams);
+        }
+    } else {
+        fixpipeParams.nSize = (runInfo.s1RealSize + 31) >> 5
+            << 5; // L0C上的bmm1结果矩阵N方向的size大小; 同mmadParams.n; 为什么要8个元素对齐(32B对齐) // 128
+        if constexpr (useDn && isFp8) {
+            fixpipeParams.dstStride = 64;
+        } else {
+            fixpipeParams.dstStride = fixpipeParams.nSize /
+                2; // mmResUb上两行之间的间隔，单位：element。 // 128:根据比对dump文件得到, ND方案(S1*S2)时脏数据用mask剔除
+        }
+        fixpipeParams.params.ndNum = 1;
+        fixpipeParams.params.srcNdStride = 0;
+        fixpipeParams.params.dstNdStride = 0;
+        fixpipeParams.dualDstCtl = 2; // 双目标模式，按N维度拆分，M * N / 2写入每个UB
+        Fixpipe<T, T, PFA_CFG_ROW_MAJOR_UB>(
+            outputBuf.template GetTensor<T>(), mm1ResL0C.GetTensor<T>(), fixpipeParams);
+    }
     mm1ResL0C.Set<HardEvent::FIX_M>(); // 释放L0C
     outputBuf.SetCrossCore();
 }

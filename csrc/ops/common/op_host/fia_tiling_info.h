@@ -313,6 +313,7 @@ class FiaTilingInfo : public TilingInfo {
     MlaMode mlaMode = MlaMode::NO_MLA;
     FiaQuantMode quantMode = FiaQuantMode::NO_QUANT;
     FiaFullQuantMode fullQuantMode = FiaFullQuantMode::NO_FULL_QUANT;
+    bool enableC8V16 = false;
 
     // Layout
     FiaLayout qLayout = FiaLayout::BSND;
