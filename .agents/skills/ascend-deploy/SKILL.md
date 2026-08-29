@@ -1,5 +1,6 @@
 ---
 name: ascend-deploy
+compatibility: paramiko；远端 SSH + Docker + CANN；本地 cmake/build/wheel、triton-ascend
 description: MindIE-SD 代码部署与编译安装。已在昇腾设备上直接编译安装；本地开发机通过 SSH 推送到远端昇腾设备，
              支持 Docker 容器内源码编译。当用户需要部署安装 MindIE-SD、更新远端容器内代码、
              或管理多人共享 NPU 环境时使用此 skill。
@@ -14,7 +15,8 @@ description: MindIE-SD 代码部署与编译安装。已在昇腾设备上直接
 ```text
 你当前在哪里？
 ├─ 已在昇腾设备上 → 跳到 §2 编译安装
-└─ 本地开发机（需推送到远端） → §1 远端前置 → §2 编译安装
+├─ 本地开发机（需推送到远端） → §1 远端前置 → §2 编译安装
+└─ 部署 vLLM-Omni + MindIE-SD 全栈（Qwen-Image / Wan / MiniMax-H3）→ framework-integration §2
 ```
 
 ## §1 远端前置（仅本地→远端场景）
@@ -159,7 +161,7 @@ python -c "import mindiesd; print(mindiesd.__version__)"
 在远端容器内验证环境版本兼容性：
 
 ```bash
-# PyTorch + torch_npu 版本匹配
+# PyTorch + TorchNPU 版本匹配
 docker exec <容器名> bash -lc 'python -c "
 import torch, torch_npu
 print(f\"PyTorch={torch.__version__}, torch_npu={torch_npu.__version__}\")
@@ -176,7 +178,7 @@ docker exec <容器名> bash -lc 'source /usr/local/Ascend/ascend-toolkit/set_en
 | 检查项 | 最低要求 | 不满足时 |
 |--------|---------|---------|
 | PyTorch | >= 2.6 | 升级 PyTorch 版本 |
-| torch_npu | >= 2.6，与 PyTorch 主版本匹配 | 升级 torch_npu |
+| TorchNPU | >= 2.6，与 PyTorch 主版本匹配 | 升级 TorchNPU |
 | CANN | >= 9.0.0，含 bisheng 编译器 | 升级 CANN SDK |
 | Python | >= 3.10 | 升级 Python |
 | cmake / build / wheel | 可用 | `pip install cmake build wheel` |
@@ -217,7 +219,7 @@ npu-smi info -l
 | OOM 优雅退出 | try/except + 明确提示 | 告知预期结果 |
 
 > 需要 profiling 数据时使用 profiling-collection skill。
-> 部署完成后，使用 model-verification §B 验证已部署模型的推理正确性。
+> 部署完成后，使用 framework-integration §1 验证已部署模型的推理正确性。
 
 ## 编译原理
 
@@ -247,7 +249,7 @@ npu-smi info -l
 | CANN | >= 9.0.0，含 bisheng 编译器 |
 | Python | >= 3.10 |
 | PyTorch | 2.6 / 2.7 / 2.8 / 2.9 / 2.10 |
-| torch_npu | 与 PyTorch 版本匹配 |
+| TorchNPU | 与 PyTorch 版本匹配 |
 | triton | 3.5.0（部署使用时需要） |
 | triton-ascend | 3.2.1（部署使用时需要） |
 | 环境变量 | `source /usr/local/Ascend/ascend-toolkit/set_env.sh` |
@@ -307,6 +309,7 @@ strings /path/to/library.so | grep "搜索关键词"
 | `import triton` 成功但 `0 active drivers` | 安装了标准 triton（非 Ascend 版本） | `pip uninstall triton -y && pip install triton-ascend && pip install pybind11` |
 | SSH 连接过多导致拒绝访问 | 远端 `MaxStartups` 限制 | 遵循 §1 连接复用原则 |
 | `ModuleNotFoundError: mindiesd` | `pip install -e .` 未重新索引 | 重新执行 `pip install -e .` |
+| git/curl HTTPS 报 `SEC_E_NO_CREDENTIALS`（Windows 开发机） | git 默认 schannel TLS 后端在受限进程里握手失败 | `git -c http.sslBackend=openssl fetch`（可全局 `git config --global http.sslBackend openssl`） |
 
 > 其他问题（SSH 认证、文件缺失、docker exec 引号转义、CRLF、环境依赖等）见 references/troubleshooting-tree.md。
 
@@ -325,11 +328,12 @@ strings /path/to/library.so | grep "搜索关键词"
 
 - `scripts/deploy_to_remote.py` — 增量传输 + 编译部署主脚本（**仅 §1 远端路径需要**）
 - `scripts/pick_free_device.py` — 自动检测 HBM 占用最低的空闲 NPU 卡（本地/远端通用）
+- `scripts/ssh_helper.py` — 单连接 SSH 命令执行器（连接复用原则；`--host/--user/--password/--container/--cmd`）
 
 > Profiling 采集脚本 (`deploy_and_profile.py`) 已拆分并迁移至 profiling-collection skill（见 `collect_profile.py`）。
 
 ## 维护与更新
 
-当远端昇腾环境变化（torch/torch_npu 版本升级、CANN SDK 更新）、
+当远端昇腾环境变化（torch/TorchNPU 版本升级、CANN SDK 更新）、
 容器配置调整、npu-smi 命令行为变化或发现新的部署问题时，
 按 dev-workflow 的复盘流程更新本 skill。

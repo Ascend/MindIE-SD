@@ -6,14 +6,14 @@
 
 | 条件 | 选择 |
 |------|------|
-| Copy 膨胀 >50% 且 模型含 3D attention | **torchair_ge** (绕过 aot_autograd functionalization) |
+| 静态 shape / 大 batch，需减少 host launch 开销 | **aclgraph** 批量下发（见 `aclgraph-dev`） |
 | 模型使用标准 Norm 层 (如 FLUX) | **default** (MindieSDBackend, pattern 全部命中) |
-| 模型使用 FP32LayerNorm (如 Wan2.2) | **torchair_ge** (pattern 不匹配, Copy 膨胀) |
+| Pattern 命中但 Copy 膨胀 | 修复 pattern / 混合模式（见 compilation-dev Phase 7） |
 | 模型未支持 MindieSDBackend | eager baseline → 标记为"待编译器适配" |
 | VAE 部分不稳定 | compiled transformer + eager VAE (混合模式) |
-| 实验/对比原生 npugraph_ex | **npugraph_ex** — torch 2.9 上与 default 等价 (仍走 aot_autograd) |
 
-> 完整 4-backend 对比见 `compilation-dev/references/backend-comparison.md`
+> 后端事实：本仓只有 default（Inductor）与 aclgraph（批量下发）两条路径；
+> torchair_ge / npugraph_ex 在本仓未实现，不采用。
 
 ## 融合机会判断
 
@@ -74,3 +74,7 @@ Attention 自身不可融合——优化手段为 FA 量化和稀疏注意力。
 | MindIE-SD Pattern 命中 | — | 开启 CompilationConfig 开关 | 标注开关名 |
 
 优先级规则：P0 = MindIE-SD Pattern 命中 → P1 = 算子分类触发 → P2 = 通用融合/数据质量
+
+## 维护与更新
+
+当优化启发式或决策表变化时，按 dev-workflow 的复盘流程更新本文件。

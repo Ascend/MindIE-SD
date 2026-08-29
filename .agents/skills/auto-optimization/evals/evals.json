@@ -1,0 +1,28 @@
+{
+  "skill_name": "auto-optimization",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我想完整优化一个扩散模型的推理性能，从采集 profiling 到出优化方案，怎么走？",
+      "expected_output": "按 auto-optimization 闭环：profiling-collection 采集（warmup ≥10 步）→ performance-analysis 5 层分析（P0-P2 方向级建议）→ performance-optimization 查 mindiesd-features.md 选方案实施 → 复验对比",
+      "files": [],
+      "expectations": [
+        "输出 4 步闭环（采集→分析→选方案→复验）",
+        "提到 warmup ≥10 步、capture ≥5 步的采集要求",
+        "提到复验用 compare_traces.py 对比前后指标",
+        "引用停止条件（同 performance-optimization 单点）"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "优化做完后怎么判断是不是真的有效？",
+      "expected_output": "复验：重新采集 + 分析，对比 DiT/VAE 阶段耗时、算子占比、Host Bound、总耗时；差距 <3% 视为噪声；满足停止条件（目标达成/噪声/外部瓶颈/硬件瓶颈）即停止",
+      "files": [],
+      "expectations": [
+        "给出复验指标（阶段耗时/占比/Host Bound/总耗时）",
+        "提到 3% 噪声阈值",
+        "提到停止条件 4 项（引用 performance-optimization）"
+      ]
+    }
+  ]
+}

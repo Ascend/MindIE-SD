@@ -29,10 +29,8 @@ namespace optiling {};
     __has_include( \
         "../../eagle_fused_infer_attention_score/eagle_common/op_kernel/arch35/flash_attention_score_antiquant_kernel.h")
 #include "../../eagle_fused_infer_attention_score/eagle_common/op_kernel/arch35/flash_attention_score_antiquant_kernel.h"
-#elif __has_include("../../../common/op_kernel/arch35/flash_attention_score_antiquant_kernel.h")
-#include "../../../common/op_kernel/arch35/flash_attention_score_antiquant_kernel.h"
 #else
-#include "../../common/arch35/flash_attention_score_antiquant_kernel.h"
+#error "FIA arch35 antiquant kernel must live under fused_infer_attention_score/op_kernel/eagle_common/op_kernel/arch35"
 #endif
 
 #include "incre_flash_attention_dummy.h"

@@ -1,0 +1,39 @@
+{
+  "skill_name": "ascend-deploy",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "本地改完代码，怎么推到远端昇腾容器里编译安装验证？",
+      "expected_output": "按 ascend-deploy §1 远端前置：确认远端 IP/用户名/密码/容器等参数 → deploy_to_remote.py 增量传输（连接复用、CRLF→LF）→ 容器内编译安装 → 验证 import mindiesd",
+      "files": [],
+      "expectations": [
+        "输出部署前参数确认清单（远端 IP/容器/工作目录）",
+        "提到 deploy_to_remote.py 与 SSH 连接复用原则",
+        "提到 build_tik_ops.sh 失败时注释该行的 workaround",
+        "给出验证命令（import mindiesd 打印版本）"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "远端编译报 build_ops.sh exit code 101，怎么解决？",
+      "expected_output": "定位为 build_tik_ops.sh 失败：按 §2 Step 3 注释掉 build/build_ops.sh 中的 source build_tik_ops.sh 行后重编译",
+      "files": [],
+      "expectations": [
+        "定位到 build_tik_ops.sh",
+        "给出注释 source 行的具体修改",
+        "提到 CANN 环境需先 source set_env.sh"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "模型推理时 NPU 显存不够 OOM 了，有哪些处理方案？",
+      "expected_output": "按 ascend-deploy §2 Step 7 OOM 处理：cpu_offload（--mode cpu_offload）、多卡 torchrun 分摊、OOM 优雅退出提示",
+      "files": [],
+      "expectations": [
+        "给出 cpu_offload 方案（enable_sequential_cpu_offload）",
+        "给出多卡 torchrun 方案",
+        "提到先 npu-smi info -t memory 检查显存占用"
+      ]
+    }
+  ]
+}

@@ -1299,6 +1299,7 @@ ge::graphStatus FiaInfoParser::GetFullQuantMode() {
         if (*opParamInfo_.queryQuantMode == 7 && *opParamInfo_.keyAntiquantMode == 7 &&
             *opParamInfo_.valueAntiquantMode == 7) {
             fullQuantMode_ = FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT;
+            enableC8V16_ = (*opParamInfo_.innerPrecise == arch35FIA::LOW_HIGH_MIXED);
         } else if (*opParamInfo_.queryQuantMode == 6 && *opParamInfo_.keyAntiquantMode == 6 &&
             *opParamInfo_.valueAntiquantMode == 8) {
             fullQuantMode_ = FiaFullQuantMode::QKV_MXFP8_FULL_QUANT;
@@ -1412,6 +1413,7 @@ void FiaInfoParser::GenerateInfo(FiaTilingInfo &fiaInfo) {
     fiaInfo.mlaMode = mlaMode_;
     fiaInfo.quantMode = quantMode_;
     fiaInfo.fullQuantMode = fullQuantMode_;
+    fiaInfo.enableC8V16 = enableC8V16_;
     fiaInfo.l2CacheSize = l2CacheSize_;
 
     fiaInfo.kCache = kCache_;

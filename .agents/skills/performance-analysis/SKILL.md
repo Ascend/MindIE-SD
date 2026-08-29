@@ -1,5 +1,6 @@
 ---
 name: performance-analysis
+compatibility: Python 3.10+（脚本仅用标准库）；输入为 profiling 数据（kernel_details.csv / trace_view.json）
 description: 针对真实 NPU 设备的 profiling 数据（trace.json / kernel_details.csv），
              分析模型性能分布，定位算子级耗时与显存热点，输出瓶颈诊断和改进建议。
              当用户有实际 profiling 产出、需要理解"模型为什么慢"或查找具体瓶颈时使用此 skill。
@@ -14,7 +15,7 @@ description: 针对真实 NPU 设备的 profiling 数据（trace.json / kernel_d
 ## 数据源
 
 Profiling 数据由 profiling-collection skill 在远端 NPU 设备上采集产出（已剔除 warmup）。
-也可来自 model-verification 的粗粒度时序或 performance-evaluation 的 msmodeling 分析。
+也可来自 dummy-run-dev 的粗粒度时序。
 
 | 数据文件 | 格式 | 说明 |
 |---------|------|------|
@@ -83,7 +84,7 @@ DiT: xx ms (xx%)  |  VAE: xx ms (xx%)
 
 对每个阶段独立做三层分析：
 
-**Layer 3a: Host Bound 分析**
+#### Layer 3a: Host Bound 分析
 
 多指标核算体系：同时维护以下指标（参照 ascend-profiling-anomaly）：
 
@@ -111,7 +112,24 @@ Anomaly 标签（参照 ascend-profiling-anomaly）：
 | `INTERNAL_BUBBLE_HEAVY` | largest_internal_bubble >= max(1ms, 10% step) |
 | `HOST_ORIGINATED_RISK` | 高 underfeed + 周期性 bubble + host event 证据 |
 
-**Layer 3b: 通信掩盖分析（多卡）**
+**快捷判别：先排除 torch.compile 重编译，再归因 kernel**
+
+当 `wall_ms / kernel_sum_ms >> 10`（kernel 总耗时只占墙钟个位数百分比）、`Wait Time` 合计接近
+wall、且出现**单个超大设备空闲间隙**（如 1.8s 里 99% 空闲）时，优先怀疑 **Dynamo guard 失败导致
+每次调用重编译**，而不是 kernel 慢。典型根因：算子层 forward 内就地修改模块状态（如把 bias 从
+bf16 改 fp32）使 guard 不稳定。
+
+```shell
+# 确认重编译与 guard 失败原因（比 trace 分析更直接）
+TORCH_LOGS=recompiles python <infer>.py --compile ... 2>&1 | grep -E "Recompiling|guard failure"
+# 输出形如: tensor '..._buffers['bias']' dtype mismatch. expected BFloat16, actual Float
+```
+
+重编译一次 ≈ Dynamo trace + Inductor codegen + triton JIT（~1.8s），会让 compile 比 eager 慢
+10~200×。修复（forward 用局部变量、不 mutate 模块状态）后 compile 恢复应有的收益。
+详见 compilation-dev/references/pattern-dev.md §4 与 dev-workflow/references/rework-lessons.md。
+
+#### Layer 3b: 通信掩盖分析（多卡）
 
 ```text
 Exposed Ratio = 未与计算重叠的通信耗时 / 通信总耗时
@@ -131,7 +149,7 @@ Exposed Ratio = 未与计算重叠的通信耗时 / 通信总耗时
 
 > 完整 HCCL 测试和带宽数据见 hccl-test（Ascend agent-skills）。
 
-**Layer 3c: 融合机会分析**
+#### Layer 3c: 融合机会分析
 
 优先检查 MindIE-SD 编译 Pattern（有开关可直接启用）：
 

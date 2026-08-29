@@ -26,12 +26,8 @@
     __has_include("../../../eagle_fused_infer_attention_score/eagle_common/op_kernel/arch35/vf/vf_antiquant_w4.h")
 #include "../../../eagle_fused_infer_attention_score/eagle_common/op_kernel/arch35/vf/vf_antiquant_w4.h"
 #include "../../../eagle_fused_infer_attention_score/eagle_common/op_kernel/arch35/vf/vf_antiquant_w8.h"
-#elif __has_include("../../../../common/op_kernel/arch35/vf/vf_antiquant_w4.h")
-#include "../../../../common/op_kernel/arch35/vf/vf_antiquant_w4.h"
-#include "../../../../common/op_kernel/arch35/vf/vf_antiquant_w8.h"
 #else
-#include "../../../common/arch35/vf/vf_antiquant_w4.h"
-#include "../../../common/arch35/vf/vf_antiquant_w8.h"
+#error "FIA arch35 vf_antiquant must live under fused_infer_attention_score/op_kernel/eagle_common/op_kernel/arch35"
 #endif
 
 struct AntiquantTaskParam {

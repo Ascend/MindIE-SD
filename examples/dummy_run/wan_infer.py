@@ -22,6 +22,7 @@ import torch_npu
 
 sys.path.append(os.path.dirname(__file__))
 from model import _PhaseTimer, check_npu, resolve_config_path
+from model.common import apply_w8a8_quant, report_quant_layers
 from model.wan_model import build_wan_pipeline
 
 os.environ.setdefault("PYTORCH_NPU_ALLOC_CONF", "expandable_segments:True")
@@ -52,6 +53,24 @@ def _parse_args():
                         help="Enable NPU profiling (level=l1, with_stack=False)")
     parser.add_argument("--skip-vae", action=argparse.BooleanOptionalAction, default=True,
                         help="Skip VAE decode (default). Use --no-skip-vae to enable decode.")
+    parser.add_argument("--num-frames", type=int, default=NUM_FRAMES,
+                        help="Video frames per generation (Wan requires (N-1) %% 4 == 0; "
+                             "17 frames ~= 1s at 16fps). Vary to validate pass generality "
+                             "across sequence lengths.")
+    parser.add_argument("--height", type=int, default=HEIGHT,
+                        help="Video height (latent S scales with frames and resolution).")
+    parser.add_argument("--width", type=int, default=WIDTH,
+                        help="Video width.")
+    parser.add_argument("--quant", type=str, default="bf16",
+                        choices=["fp32", "bf16", "w8a8"],
+                        help="Quant/compute mode (default bf16). bf16 = Wan activations and "
+                             "weights both run natively in bf16 (the model's .float() "
+                             "conversions are branched to .to(bf16) at the code level; no "
+                             "implicit conversion happens in compilation; equivalent to the "
+                             "former --compute-precision bf16). w8a8 = W8A8 online "
+                             "quantization for Matmul (FA quantization not enabled) on a "
+                             "bf16 base; format by device: A5 -> MXFP8, A2/A3 -> INT8. "
+                             "fp32 = original fp32 compute (slower, ~14x on GEMMs).")
     return parser.parse_args()
 
 
@@ -64,6 +83,60 @@ def _apply_mindie_compile(pipe):
             compiled = torch.compile(t, backend=MindieSDBackend())
             setattr(pipe, attr, compiled)
             logger.warning("%s compiled with MindieSDBackend", attr)
+
+
+# ---------------------------------------------------------------------------
+# Compute precision (default bf16): transformer 权重 cast bf16 + 模型 `.float()`
+# 源码级分支为 `.to(bf16)`, 编译侧零隐式精度转换。
+# ---------------------------------------------------------------------------
+
+
+def _rewrite_wan_float_conversions(compute_dtype):
+    """把 Wan forwards 里的 `.float()` 改写为 `.to(_mindie_compute_dtype)`(源码级)。
+
+    Dynamo trace 时绕过 `torch.Tensor.float` patch, 必须改写源码才能让图真正 bf16。
+    """
+    import inspect
+    import textwrap
+    import typing as _typing
+
+    from diffusers.models import normalization
+    from diffusers.models.transformers import transformer_wan as tw
+
+    normalization._mindie_compute_dtype = compute_dtype
+    tw._mindie_compute_dtype = compute_dtype
+
+    for cls, hint in ((normalization.FP32LayerNorm, "FP32LayerNorm"),
+                      (tw.WanTransformerBlock, "WanTransformerBlock"),
+                      (tw.WanTransformer3DModel, "WanTransformer3DModel")):
+        try:
+            src = textwrap.dedent(inspect.getsource(cls.forward))
+        except (OSError, TypeError):
+            continue
+        if ".float()" not in src:
+            continue
+        new_src = src.replace(".float()", ".to(_mindie_compute_dtype)")
+        # exec 进真实模块 dict(Dynamo guard 要求 __globals__ 是模块);
+        # 模块启用 from __future__ import annotations, exec 求值注解需注入 typing 名
+        module_ns = cls.forward.__globals__
+        module_ns["_mindie_compute_dtype"] = compute_dtype
+        for _name in ("Any", "Optional", "Tuple", "List", "Dict", "Union",
+                      "Callable", "Sequence", "Mapping", "Type"):
+            module_ns.setdefault(_name, getattr(_typing, _name, None))
+        exec(compile(new_src, f"<wan-{hint}-compute-dtype>", "exec"), module_ns)
+        setattr(cls, "forward", module_ns["forward"])
+
+
+def _apply_compute_precision(pipe, precision):
+    """bf16: transformer 权重 cast + `.float()` 分支; fp32: 原行为。"""
+    if precision != "bf16":
+        return
+    for attr in ("transformer", "transformer_2"):
+        t = getattr(pipe, attr, None)
+        if t is not None:
+            t.to(torch.bfloat16)
+    _rewrite_wan_float_conversions(torch.bfloat16)
+    logger.warning("Compute precision: bf16 (model-level, no implicit conversion in compilation)")
 
 
 def _start_profile():
@@ -108,6 +181,21 @@ def main():
     pipe.to(device)
     timer.record_build("Move to device", time.time() - t0)
 
+    # quant mode (default bf16): model-level weights cast + .float() branching;
+    # w8a8 = bf16 base + W8A8 online quantization for Matmul (A5 -> MXFP8, A2/A3 -> INT8).
+    if args.quant == "w8a8":
+        # Wan forward uses next(iter(self.time_embedder.parameters())).dtype to probe
+        # dtype; after quantization the module params are empty -> StopIteration,
+        # so fall back time_embedder to W16A16.
+        from mindiesd.quantization.mode import QuantAlgorithm
+
+        _apply_compute_precision(pipe, "bf16")
+        apply_w8a8_quant(pipe, attrs=("transformer", "transformer_2"),
+                         fallback_layers={"*time_embedder*": QuantAlgorithm.W16A16})
+        report_quant_layers(pipe, attrs=("transformer", "transformer_2"))
+    else:
+        _apply_compute_precision(pipe, args.quant)
+
     if args.compile:
         t0 = time.time()
         _apply_mindie_compile(pipe)
@@ -117,8 +205,8 @@ def main():
 
     logger.warning("Warmup (1 step):")
     with torch.no_grad():
-        pipe(prompt=PROMPT, height=HEIGHT, width=WIDTH,
-             num_frames=NUM_FRAMES, num_inference_steps=1,
+        pipe(prompt=PROMPT, height=args.height, width=args.width,
+             num_frames=args.num_frames, num_inference_steps=1,
              guidance_scale=1.0,
              output_type="latent" if args.skip_vae else "pil")
     torch.npu.synchronize()
@@ -132,8 +220,8 @@ def main():
     torch.npu.synchronize()
     t0 = time.time()
     with torch.no_grad():
-        pipe(prompt=PROMPT, height=HEIGHT, width=WIDTH,
-             num_frames=NUM_FRAMES, num_inference_steps=1,
+        pipe(prompt=PROMPT, height=args.height, width=args.width,
+             num_frames=args.num_frames, num_inference_steps=1,
              guidance_scale=1.0,
              output_type="latent" if args.skip_vae else "pil")
     torch.npu.synchronize()

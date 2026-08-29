@@ -1,7 +1,17 @@
 # MindIE SD
 
+简体中文 | [English](./README.en.md)
+
 ## 📢 Latest News
 
+- 08/03/2026: 完成 [MiniMax-H3 昇腾高性能推理适配与优化](examples/minimax-h3/infer.md)
+- 06/2026: 完成低精度推理、多模态 MoE、稀疏注意力和部署生态增强
+- 05/28/2026: [Cache-DiT 完成 MindIE-SD 接入](https://github.com/vipshop/cache-dit/pull/1004)
+- 05/2026: 完成多模态 MoE 推理能力建设和多模型适配验证
+- 04/2026: 完成图编译、算子融合与稀疏计算能力增强
+- 03/2026: 扩展 W4A4 与 MXFP4 量化能力
+- 02/2026: 新增稀疏注意力算子与 Dynamic EPLB
+- 01/2026: 新增内存优化能力与服务化样例
 - 12/31/2025: MindIE SD提供稀疏Attention计算能力
 - 12/25/2025：vLLM Omni x MindIE SD 实现 Qwen-Image-Edit-2511 / Qwen-Image-Layered 昇腾原生高性能推理
 - 11/30/2025：MindIE SD 正式宣布开源并面向公众开放！[会议日历](https://meeting.ascend.osinfra.cn/?sig=sig-MindIE-SD)
@@ -39,6 +49,22 @@ MindIE SD 架构和关键特性详见[架构介绍](docs/zh/architecture.md)。
 
 [快速开始](docs/zh/quick_start.md): 以wan2.1为例，介绍使用mindiesd后的整体加速效果。
 
+[MiniMax-H3 推理与性能优化](examples/minimax-h3/infer.md): 介绍 MiniMax-H3 在昇腾上的推理部署、适配与性能优化。
+
+## 💬 联系我们
+
+欢迎通过 [GitCode Issues](https://gitcode.com/Ascend/MindIE-SD/issues) 直接参与讨论与反馈。
+
+为了更便捷地交流并获得更快的响应，我们建立了 MindIE-SD 微信交流群。您可以扫描左侧的微信群二维码加入交流群；若群二维码已失效，请扫描右侧的个人微信二维码，添加好友后由其邀请您加入交流群。
+
+<div align="center">
+
+| 微信交流群 | 个人微信（群二维码失效时添加） |
+| --- | --- |
+| ![微信群聊二维码](docs/figures/wx_sd.jpg) | ![个人微信二维码](docs/figures/wx_lwl.jpg) |
+
+</div>
+
 ## 📚 开发文档
 
 [贡献指南](docs/zh/developer_guide/contribution_guide.md):说明如何提交 Issue、Pull Request 以及代码规范。
@@ -49,8 +75,8 @@ MindIE SD 架构和关键特性详见[架构介绍](docs/zh/architecture.md)。
 
 以下项目已集成MindIE SD作为多模态推理后端：
 
-+ [vLLM Omni](https://github.com/vllm-project/vllm-omni)
-+ [Cache Dit](https://github.com/vipshop/cache-dit)
+- [vLLM Omni](https://github.com/vllm-project/vllm-omni)
+- [Cache-DiT](https://github.com/vipshop/cache-dit)
 
 ## 📝 Paper Citations
 

@@ -87,6 +87,7 @@ constexpr uint32_t MLA_ROPE_D_DIM_64 = 64;
 constexpr uint32_t INNER_PRECISE_LIMIT = 4;
 constexpr uint32_t HIGH_PRECISION = 0;
 constexpr uint32_t HIGH_PERFORMANCE = 1;
+constexpr uint32_t LOW_HIGH_MIXED = 4;
 
 constexpr uint32_t BYTE_BLOCK = 32;
 constexpr int64_t SHAPE_PARAMS_CONST = 1;

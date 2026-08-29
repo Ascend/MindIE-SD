@@ -73,6 +73,23 @@ NPU 崩溃
     4. 若稳定复现 → 标记为算子兼容性问题
 ```
 
+### E. 本地环境（Windows 开发机）
+
+```text
+本地环境问题
+├─ git/curl HTTPS 握手失败: schannel: AcquireCredentialsHandle failed:
+│   SEC_E_NO_CREDENTIALS (0x8009030e) —— 沙箱/受限进程下 schannel 拿不到凭据，
+│   curl 与 git 均受影响；python urllib(openssl) 正常（可用此判断是否为 schannel 问题）
+│   └─ 解决: git -c http.sslBackend=openssl fetch；或 git config --global http.sslBackend openssl
+├─ deploy_to_remote.py 路径语义与仓库实际远端不一致
+│   ├─ 脚本把文件传到 {workspace}/{local_root.name}（如 /home/<user>/code/MindIE-SD_compile）
+│   │   但 build 却在 {workspace}/MindIE-SD 内执行 → 与本仓实际远端
+│   │   （如 /home/<user>/code/mindie-sd-compile）不一致时不要直接用，改精准 SFTP 同步
+│   └─ 注意: refs/ 等大目录不在脚本排除列表，全量传输会带上 profiling 数据
+└─ 凭据安全: refs/ssh_helper.py 明文存 host/user/password —— 属历史遗留，
+    新代码改用环境变量或 SSH key；报告/日志中不回显密码
+```
+
 ## 工具速查
 
 | 工具 | 用途 |
@@ -80,5 +97,9 @@ NPU 崩溃
 | `npu-smi info -l` | 列出所有 NPU 卡状态 |
 | `npu-smi info -t memory -i 0` | 查看卡 0 显存 |
 | `docker logs <container>` | 查看容器运行日志 |
-| `python -c "import torch_npu; print(torch_npu.__version__)"` | 确认 torch_npu 版本 |
+| `python -c "import torch_npu; print(torch_npu.__version__)"` | 确认 TorchNPU 版本 |
 | `npu-smi info -t usages -i 0` | 查看卡 0 使用率 |
+
+## 维护与更新
+
+当部署/编译故障模式变化或新增高危问题时，按 dev-workflow 的复盘流程更新本文件。

@@ -110,6 +110,8 @@ class FlashAttentionScoreKernelBaseFullquant {
     static constexpr bool useDn = CubeBlockType::useDn;
     /* HIFLOAT8场景 softmax计算使用Nz格式计算，vec1ResBuffer可以和bmm1ResBuffer进行复用*/
     static constexpr bool useNz = CubeBlockType::useNz;
+    static constexpr bool useC8V16Score =
+        enableC8V16 && isInfer && useDn && IsSameType<INPUT_T, fp8_e4m3fn_t>::value && !hasRope && s2BaseSize == 256;
     static constexpr TPosition bmm2OutPos = CubeBlockType::bmm2OutPos;
     static constexpr bool bmm2Write2Ub = CubeBlockType::bmm2Write2Ub;
     static constexpr bool splitD = CubeBlockType::splitD;
@@ -337,7 +339,7 @@ FlashAttentionScoreKernelBaseFullquant<ChildClass, CubeBlockType, VecBlockType>:
 template <typename ChildClass, typename CubeBlockType, typename VecBlockType>
 __aicore__ inline void FlashAttentionScoreKernelBaseFullquant<ChildClass, CubeBlockType, VecBlockType>::InitMMResBuf() {
     uint32_t mm1OutDtype = sizeof(T);
-    if constexpr (useNz) {
+    if constexpr (useNz || useC8V16Score) {
         mm1OutDtype = sizeof(half);
     }
     uint32_t mm1ResultSize = s1BaseSize / CV_RATIO * s2BaseSize * mm1OutDtype;
@@ -400,6 +402,7 @@ FlashAttentionScoreKernelBaseFullquant<ChildClass, CubeBlockType, VecBlockType>:
     constInfo.s2Size = sharedParams.s2Size;
     constInfo.dSize = sharedParams.dSize;
     constInfo.dSizeV = sharedParams.dSizeV;
+    constInfo.scaleValue = sharedParams.scaleValue;
     constInfo.dBasicBlock = Align64Func((uint16_t)constInfo.dSizeV);
     if constexpr (hasRope) {
         constInfo.dSizeRope = sharedParams.dSizeRope;

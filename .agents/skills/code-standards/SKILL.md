@@ -1,5 +1,6 @@
 ---
 name: code-standards
+compatibility: ruff, pre-commit（含 codespell/typos 钩子）
 description: MindIE-SD Python 代码格式与 lint 规则。当编写、格式化、lint 检查或审查 MindIE-SD 项目的 Python 代码时使用此 skill。
              即使用户只提到"提个MR"或"代码好像有 lint 问题"而未明确说格式化，也应触发。
              通常由 dev-workflow 在编码阶段指引加载。

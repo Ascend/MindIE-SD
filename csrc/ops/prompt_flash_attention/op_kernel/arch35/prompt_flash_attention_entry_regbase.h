@@ -46,26 +46,8 @@
 #include "../../eagle_fused_infer_attention_score/eagle_common/op_kernel/arch35/fia_kernel_fullquant_mx.h"
 #include "../../eagle_fused_infer_attention_score/eagle_common/op_kernel/arch35/fia_kernel_fullquant_gqa.h"
 #include "../../eagle_fused_infer_attention_score/eagle_common/op_kernel/arch35/fia_template_dispatcher.h"
-#elif __has_include("../../../common/op_kernel/arch35/flash_attention_score_kernel_infer.h")
-#include "../../../common/op_kernel/arch35/flash_attention_score_kernel_infer.h"
-#include "../../../common/op_kernel/arch35/flash_attention_noquant_kernel_infer.h"
-#include "../../../common/op_kernel/arch35/flash_attention_score_kernel_infer_mla_fullquant.h"
-#include "../../../common/op_kernel/arch35/flash_attention_score_kernel_infer_gqa_fullquant.h"
-#include "../../../common/op_kernel/arch35/flash_attention_score_kernel_infer_mx_fullquant.h"
-#include "../../../common/op_kernel/arch35/flash_attention_kernel_noquant_mla.h"
-#include "../../../common/op_kernel/arch35/fia_kernel_noquant_gqa.h"
-#include "../../../common/op_kernel/arch35/fia_kernel_fullquant_mx.h"
-#include "../../../common/op_kernel/arch35/fia_kernel_fullquant_gqa.h"
-#include "../../../common/op_kernel/arch35/fia_template_dispatcher.h"
 #else
-#include "../../common/arch35/flash_attention_score_kernel_infer.h"
-#include "../../common/arch35/flash_attention_score_kernel_infer_mla_fullquant.h"
-#include "../../common/arch35/flash_attention_score_kernel_infer_gqa_fullquant.h"
-#include "../../common/arch35/flash_attention_score_kernel_infer_mx_fullquant.h"
-#include "../../common/arch35/flash_attention_kernel_noquant_mla.h"
-#include "../../common/arch35/fia_kernel_noquant_gqa.h"
-#include "../../common/arch35/fia_kernel_fullquant_mx.h"
-#include "../../common/arch35/fia_kernel_fullquant_gqa.h"
+#error "FIA arch35 kernels must live under fused_infer_attention_score/op_kernel/eagle_common/op_kernel/arch35"
 #endif
 
 using namespace regbaseutil;
@@ -352,7 +334,7 @@ constexpr uint32_t L1BUFSIZE = 65536; // D最大支持256, 65536: 128 * 256 * 2
 
 template <uint8_t inOutLayoutType, uint16_t config, uint8_t pseMode, uint8_t quantMode, bool hasAttenMask, bool hasRope,
     uint8_t KvLayoutType, bool isFd, bool emptyTensor, bool enableKVPrefix, bool enableS1OutSplit,
-    bool isReconstructTemp>
+    bool isReconstructTemp, bool c8v16>
 inline __aicore__ void prompt_flash_attention_FIAS_regbase(__gm__ uint8_t *query, __gm__ uint8_t *key,
     __gm__ uint8_t *value, __gm__ uint8_t *pseShift, __gm__ uint8_t *attenMask, __gm__ uint8_t *actualSeqLengths,
     __gm__ uint8_t *actualSeqLengthsKV, __gm__ uint8_t *deq_scale1, __gm__ uint8_t *quant_scale1,
@@ -745,7 +727,7 @@ inline __aicore__ void prompt_flash_attention_FIAS_regbase(__gm__ uint8_t *query
                 BaseApi::FlashAttentionScoreKernelInferGqaFullquant, vec1ResultSize, qkvSizeRsv2, fp8_e4m3fn_t, float,
                 half, ImplModeEnum::AA_HIGH_PRECISION, inputLayoutType, s1TemplateType, s2TemplateType, dTemplateType,
                 dVTemplateType, static_cast<PseTypeEnum>(pseMode), hasAttenMask, false, hasRope, true, isPa, isFd,
-                enableKVPrefix, enableS1OutSplit);
+                enableKVPrefix, enableS1OutSplit, false, c8v16);
         }
     }
 #endif
@@ -844,7 +826,7 @@ inline __aicore__ void prompt_flash_attention_FIAS_regbase(__gm__ uint8_t *query
                 BaseApi::FlashAttentionScoreKernelInferGqaFullquant, vec1ResultSize, qkvSizeRsv2, fp8_e4m3fn_t, float,
                 bfloat16_t, ImplModeEnum::AA_HIGH_PRECISION, inputLayoutType, s1TemplateType, s2TemplateType,
                 dTemplateType, dVTemplateType, static_cast<PseTypeEnum>(pseMode), hasAttenMask, false, hasRope, true,
-                isPa, isFd, enableKVPrefix);
+                isPa, isFd, enableKVPrefix, false, false, c8v16);
         }
     }
 #endif

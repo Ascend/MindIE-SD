@@ -31,6 +31,7 @@ from .moe_context import (
     get_moe_group,
     get_moe_quant_algo,
     set_moe_context,
+    should_use_gmm_finalize_routing,
     validate_moe_inputs,
 )
 from .token_dispatcher import DynamicDispatcher, StaticDispatcher
@@ -63,30 +64,36 @@ def _resolve_dispatcher(dispatcher_type):
     )
 
 
-def resolve_dispatcher_class(dispatcher_type=None, top_k=None):
+def resolve_dispatcher_class(top_k: int, dispatcher_type=None):
     """Resolve the dispatcher class for the current MoE invocation."""
     if dispatcher_type is not None:
         return _resolve_dispatcher(dispatcher_type)
     return _resolve_default_dispatcher(top_k=top_k)
 
 
-def _log_moe_config_once(dispatcher_cls, tokens_full, reduce_results):
+def _log_moe_config_once(dispatcher_cls, inputs_sharded, reduce_routed_out):
     global _MOE_CONFIG_LOGGED
     if _MOE_CONFIG_LOGGED:
         return
-    dispatcher_name = "dynamic" if dispatcher_cls.__name__ == "DynamicDispatcher" else "static"
+    dispatcher_name = _get_dispatcher_type_name(dispatcher_cls)
     comm_type = get_moe_comm_type()
+    moe_group = get_moe_group()
+    comm_world_size = dist.get_world_size(moe_group) if moe_group is not None else 1
     quant_algo = get_moe_quant_algo()
     logger.debug(
-        "[MindIE-SD/moe] MoE config resolved. dispatcher=%s, comm_type=%s, "
-        "quant_algo=%s, tokens_full=%s, reduce_results=%s.",
+        "[MindIE-SD/moe] MoE config resolved. dispatcher=%s, comm=%s, quant_algo=%s, "
+        "inputs_sharded=%s, reduce_routed_out=%s.",
         dispatcher_name,
-        comm_type.value,
+        f"{comm_type.value}-{comm_world_size}",
         quant_algo.value,
-        tokens_full,
-        reduce_results,
+        inputs_sharded,
+        reduce_routed_out,
     )
     _MOE_CONFIG_LOGGED = True
+
+
+def _get_dispatcher_type_name(dispatcher_cls) -> str:
+    return "dynamic" if dispatcher_cls is DynamicDispatcher else "static"
 
 
 def moe(
@@ -104,7 +111,7 @@ def moe(
     tp_group: dist.ProcessGroup | None = None,
     ep_group: dist.ProcessGroup | None = None,
     dispatcher_type: str | None = None,
-    tokens_full: bool = True,
+    inputs_sharded: bool = False,
     k_group: int = 1,
     group_count: int = 1,
     group_select_mode: int = 0,
@@ -112,9 +119,10 @@ def moe(
     renormalize: bool = False,
     routed_scaling_factor: float = 1.0,
     custom_routing_function: Callable | None = None,
-    reduce_results: bool = True,
-) -> torch.Tensor:
-    """Run the non-fused MoE forward pass on NPU."""
+    reduce_routed_out: bool = True,
+    return_dispatcher_type: bool = False,
+) -> torch.Tensor | tuple[torch.Tensor, str]:
+    """Run the MoE forward pass on NPU."""
 
     quant_algo = validate_moe_inputs(
         hidden_states=hidden_states,
@@ -131,7 +139,7 @@ def moe(
         tp_group=tp_group,
         ep_group=ep_group,
         dispatcher_type=dispatcher_type,
-        tokens_full=tokens_full,
+        inputs_sharded=inputs_sharded,
         k_group=k_group,
         group_count=group_count,
         group_select_mode=group_select_mode,
@@ -139,15 +147,16 @@ def moe(
         renormalize=renormalize,
         routed_scaling_factor=routed_scaling_factor,
         custom_routing_function=custom_routing_function,
-        reduce_results=reduce_results,
+        reduce_routed_out=reduce_routed_out,
+        return_dispatcher_type=return_dispatcher_type,
     )
 
     set_moe_context(tp_group=tp_group, ep_group=ep_group, quant_algo=quant_algo)
     dispatcher_cls = resolve_dispatcher_class(
-        dispatcher_type=dispatcher_type,
         top_k=top_k,
+        dispatcher_type=dispatcher_type,
     )
-
+    use_gmm_finalize_routing = should_use_gmm_finalize_routing(_get_dispatcher_type_name(dispatcher_cls))
     moe_weights = build_moe_weights(
         w13_weight,
         w2_weight,
@@ -160,9 +169,13 @@ def moe(
     prepare_input = build_prepare_input(
         hidden_states=hidden_states,
         router_logits=router_logits,
-        tokens_full=tokens_full,
+        inputs_sharded=inputs_sharded,
     )
-    _log_moe_config_once(dispatcher_cls, prepare_input.tokens_full, reduce_results)
+    _log_moe_config_once(
+        dispatcher_cls,
+        prepare_input.inputs_sharded,
+        reduce_routed_out,
+    )
     prepare_output = dispatcher_cls.prepare(prepare_input)
 
     routing_input = build_routing_input(
@@ -187,6 +200,7 @@ def moe(
         top_k=top_k,
         weights=moe_weights,
         dynamic_scale=prepare_output.dynamic_scale,
+        use_gmm_finalize_routing=use_gmm_finalize_routing,
     )
     dispatch_output = dispatcher_cls.dispatch(token_dispatch_input)
 
@@ -195,16 +209,24 @@ def moe(
         weights=moe_weights,
         mlp_output_dtype=prepare_output.mlp_output_dtype,
     )
-    expert_output = unified_apply_mlp(mlp_input)
-
-    routed_out = dispatcher_cls.combine(
-        hidden_states=expert_output,
-        combine_metadata=dispatch_output.combine_metadata,
+    expert_output = unified_apply_mlp(
+        mlp_input,
+        dispatch_output.combine_metadata if use_gmm_finalize_routing else None,
     )
+    if use_gmm_finalize_routing:
+        routed_out = expert_output
+    else:
+        routed_out = dispatcher_cls.combine(
+            hidden_states=expert_output,
+            combine_metadata=dispatch_output.combine_metadata,
+        )
 
-    return dispatcher_cls.finalize(
+    output = dispatcher_cls.finalize(
         routed_out=routed_out,
         original_shape=prepare_output.original_shape,
-        tokens_full=prepare_input.tokens_full,
-        reduce_results=reduce_results,
+        inputs_sharded=prepare_input.inputs_sharded,
+        reduce_routed_out=reduce_routed_out,
     )
+    if return_dispatcher_type:
+        return output, _get_dispatcher_type_name(dispatcher_cls)
+    return output

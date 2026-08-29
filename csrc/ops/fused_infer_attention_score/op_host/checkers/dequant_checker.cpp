@@ -759,10 +759,10 @@ ge::graphStatus DequantChecker::CheckFeaturePerblockFullquant(const FiaTilingInf
             fiaInfo.opName, "atten_mask", "In per-block quant scenario, atten_mask must be empty"),
         return ge::GRAPH_FAILED);
 
-    // innerPrecise 仅支持 0/1
-    OP_CHECK_IF((fiaInfo.innerPrecise != HIGH_PRECISION) && (fiaInfo.innerPrecise != HIGH_PERFORMANCE),
+    // innerPrecise=0 selects the original path; innerPrecise=4 selects C8V16.
+    OP_CHECK_IF((fiaInfo.innerPrecise != HIGH_PRECISION) && (fiaInfo.innerPrecise != LOW_HIGH_MIXED),
         OP_LOGE_FOR_INVALID_VALUE_WITH_REASON(fiaInfo.opName, "inner_precise",
-            std::to_string(fiaInfo.innerPrecise).c_str(), "In per-block quant scenario, inner_precise must be 0 or 1"),
+            std::to_string(fiaInfo.innerPrecise).c_str(), "In per-block quant scenario, inner_precise must be 0 or 4"),
         return ge::GRAPH_FAILED);
 
     // 不支持 rope

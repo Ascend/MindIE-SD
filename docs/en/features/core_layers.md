@@ -176,6 +176,7 @@ sparse_attention(
     keep_recent=True,
     cdf_threshold=1.0,
     sparsity=0.0,
+    precision="bf16",
     **kwargs
 ) -> torch.Tensor
 ```
@@ -192,16 +193,17 @@ sparse_attention(
 | `is_causal` | `bool` | No | `False` | Whether to use causal attention mask |
 | `head_num` | `int` | No | `1` | Number of attention heads |
 | `input_layout` | `str` | No | `"BNSD"` | Tensor layout, supports `"BNSD"` or `"BSND"` |
-| `inner_precise` | `int` | No | `0` | Computation precision mode, `0` for high precision, `1` for high performance |
+| `inner_precise` | `int` | No | `0` | Computation precision mode, `0` for high precision, `1` for high performance. On A5 devices, `sparse_type="rf_v3"` requires `4` (enforced at the entry) |
 | `sparse_type` | `str` | No | `None` | Sparse type, supports `None`, `"rf_v2"`, `"rf_v3"`, `"ada_bsa"` |
-| `txt_len` | `int` | No | `0` | Text sequence length, only effective when `sparse_type="rf_v2"` |
+| `txt_len` | `int` | No | `0` | Text sequence length, effective when `sparse_type="rf_v2"` or `"rf_v3"` |
 | `block_size` | `int` | No | `128` | Block size, currently only supports `128` |
-| `latent_shape_q` | `list` | No | `None` | Latent space shape of query `[t, h, w]`, `t*h*w = qseqlen`, only effective when `sparse_type="rf_v2"` |
-| `latent_shape_k` | `list` | No | `None` | Latent space shape of key `[t, h, w]`, `t*h*w = kseqlen`, only effective when `sparse_type="rf_v2"` |
+| `latent_shape_q` | `list` | No | `None` | Latent space shape of query `[t, h, w]`, `t*h*w = qseqlen`, effective when `sparse_type="rf_v2"` or `"rf_v3"` |
+| `latent_shape_k` | `list` | No | `None` | Latent space shape of key `[t, h, w]`, `t*h*w = kseqlen`, effective when `sparse_type="rf_v2"` or `"rf_v3"` |
 | `keep_sink` | `bool` | No | `True` | Whether to keep sink tokens, only effective when `sparse_type="ada_bsa"` |
 | `keep_recent` | `bool` | No | `True` | Whether to keep recent tokens, only effective when `sparse_type="ada_bsa"` |
 | `cdf_threshold` | `float` | No | `1.0` | CDF threshold, only effective when `sparse_type="ada_bsa"` |
 | `sparsity` | `float` | No | `0.0` | Sparsity ratio, range `[0, 1]`, `0` means no sparse algorithm is used |
+| `precision` | `str` | No | `"bf16"` | Kernel precision mode for `sparse_type="rf_v3"`: `"bf16"` (default) no quantization, pure BF16 sparse attention; `"mix"` EagleQBSA mixed precision (Q/K per-block INT8 + V per-channel FP8); `"fp8"` BSA FP8 path (Hadamard rotation + full FP8 block quantization) |
 
 #### Return Value
 

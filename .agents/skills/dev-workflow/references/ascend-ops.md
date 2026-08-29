@@ -1,8 +1,8 @@
 # NPU 算子验证经验
 
-## 已验证可用的 torch_npu 算子
+## 已验证可用的 TorchNPU 算子
 
-远端环境（910B, torch 2.8.0, torch_npu 2.8.0）：
+远端环境（910B, torch 2.8.0, TorchNPU 2.8.0）：
 
 | 算子 | 状态 |
 |------|------|
@@ -24,3 +24,7 @@
 - Ascend 环境安装 triton 时必须用 `pip install triton-ascend`，不能安装标准 `triton`
 - 需同时安装 `pybind11` 作为隐式依赖
 - 代码中通过 `_TRITON_ON_ASCEND` 标志区分 triton 是否真正可用（而非仅可 import）
+
+## 维护与更新
+
+当NPU 算子 API 或环境诊断方法变化时，按 dev-workflow 的复盘流程更新本文件。

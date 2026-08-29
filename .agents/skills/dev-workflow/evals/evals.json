@@ -1,0 +1,38 @@
+{
+  "skill_name": "dev-workflow",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我给 MiniMax-H3 新增一个 fusion pattern，走完整开发流程：先写测试再实现，最后推到远端昇腾环境验证",
+      "expected_output": "遵循 Test-First 闭环（先写预期 FAIL 的测试 → 实现 → 远端部署 → pytest 验证），并正确路由：pattern 开发到 compilation-dev、部署到 ascend-deploy、验证到 dummy-run-dev/framework-integration",
+      "files": [],
+      "expectations": [
+        "输出包含 Test-First 步骤（写测试预期 FAIL → 实现 → 部署 → 验证）",
+        "路由到 compilation-dev（pattern 开发）与 ascend-deploy（远端部署）",
+        "提到多卡验证时使用不同 NPU 卡隔离运行"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "多卡跑 MiniMax-H3 推理时 profiling 显示通信暴露 30%，怎么优化？",
+      "expected_output": "路由到 parallelism-strategy（并行策略与通信掩盖）+ profiling-collection/performance-analysis（采集与分析），建议 comm-stream masking",
+      "files": [],
+      "expectations": [
+        "引用 parallelism-strategy",
+        "建议通信掩盖（comm-stream masking / mindiesd.parallel）",
+        "指向 profiling-collection 采集 + performance-analysis 分析"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "完成一个功能阶段后要做复盘归档，流程是什么？",
+      "expected_output": "按 dev-workflow §6 复盘流程：回顾问题点 → 补充 rework-lessons → 交叉检查各模块 skill → 刷新 .agents/README.md",
+      "files": [],
+      "expectations": [
+        "输出 §6 复盘四步流程",
+        "提到 rework-lessons.md 补充",
+        "提到刷新 .agents/README.md 技能总览"
+      ]
+    }
+  ]
+}

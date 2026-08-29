@@ -11,6 +11,7 @@
 # See the Mulan PSL v2 for more details.
 
 import math
+from collections.abc import Mapping, Sequence
 import torch
 from einops import rearrange
 from .. import _custom_ops as ops
@@ -369,14 +370,11 @@ def do_tensor_rearrange_pooling(query, key, value, text_len, pool_size, latent_s
             tensor_t = tensor[:, :, :text_len, :]
             tensor_i = tensor[:, :, text_len:, :]
         tensor_i_2 = rearrange_with_remaining(tensor_i, latent_shape_q, latent_shape_k, input_layout)
-        tensor_i_pool = avgpool(tensor_i_2, pool_size, input_layout)
-        tensor_t_pool = avgpool(tensor_t, pool_size, input_layout)
         if input_layout == "BSND":
             tensor = torch.concat((tensor_i_2, tensor_t), dim=1)
-            tensor_pool = torch.concat((tensor_i_pool, tensor_t_pool), dim=1)
         else:
             tensor = torch.concat((tensor_i_2, tensor_t), dim=2)
-            tensor_pool = torch.concat((tensor_i_pool, tensor_t_pool), dim=2)
+        tensor_pool = avgpool(tensor, pool_size, input_layout)
     else:
         tensor = rearrange_with_remaining(tensor, latent_shape_q, latent_shape_k, input_layout)
         tensor_pool = avgpool(tensor, pool_size, input_layout)
@@ -401,6 +399,162 @@ def do_tensor_inv_rearrange(tensor, text_len, latent_shape_q, latent_shape_k, in
         tensor = inv_rearrange_with_remaining(tensor, latent_shape_q, latent_shape_k, input_layout)
 
     return tensor
+
+
+def _sequence_length(tensor, input_layout):
+    return tensor.shape[1] if input_layout == "BSND" else tensor.shape[2]
+
+
+def _index_sequence(tensor, indices, input_layout):
+    dim = 1 if input_layout == "BSND" else 2
+    return tensor.index_select(dim, indices)
+
+
+def _normalize_video_spans(video_spans, sequence_len):
+    """Validate video slices against the unpadded Q/K/V sequence."""
+    if not isinstance(video_spans, Sequence) or isinstance(video_spans, (str, bytes)):
+        raise ParametersInvalid("video_spans must be a sequence of span descriptors.")
+    spans = []
+    previous_end = 0
+    for index, span in enumerate(video_spans):
+        if not isinstance(span, Mapping):
+            raise ParametersInvalid(f"video_spans[{index}] must be a mapping.")
+        try:
+            start = int(span["start"])
+            shape = tuple(int(dim) for dim in span["latent_shape"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ParametersInvalid(
+                f"video_spans[{index}] requires integer start and latent_shape=[T,H,W]."
+            ) from exc
+        if len(shape) != 3 or any(dim <= 0 for dim in shape):
+            raise ParametersInvalid(
+                f"video_spans[{index}].latent_shape must contain three positive integers."
+            )
+        length = math.prod(shape)
+        if start < previous_end or start + length > sequence_len:
+            raise ParametersInvalid(
+                f"video_spans[{index}] [{start}, {start + length}) overlaps another span "
+                f"or exceeds the input sequence length={sequence_len}."
+            )
+        spans.append((start, shape, length))
+        previous_end = start + length
+    if not spans:
+        raise ParametersInvalid("video_spans must contain at least one video span.")
+    return spans
+
+
+def _span_rearranged_indices(start, shape, input_layout, device):
+    """Return this clip's rf_v2 spatial reordering as source row indices."""
+    length = math.prod(shape)
+    if input_layout == "BSND":
+        indices = torch.arange(start, start + length, device=device).reshape(1, length, 1, 1)
+    else:
+        indices = torch.arange(start, start + length, device=device).reshape(1, 1, length, 1)
+    return rearrange_with_remaining(indices, shape, shape, input_layout).reshape(-1).to(torch.long)
+
+
+def _multi_span_permutation(spans, sequence_len, pool_size, input_layout, device):
+    """Pack individually tiled clips into one block plan without crossing clips.
+
+    Dense rows are used to finish a partial clip block before the next clip.
+    Those mixed blocks are marked dense, which preserves full access for every
+    text/image/audio token. If there are not enough dense rows, a fixed-size
+    block kernel cannot represent the layout safely and the caller must fall
+    back to dense attention.
+    """
+    all_indices = torch.arange(sequence_len, device=device, dtype=torch.long)
+    is_video = torch.zeros(sequence_len, device=device, dtype=torch.bool)
+    for start, _, length in spans:
+        is_video[start : start + length] = True
+    dense_indices = all_indices[~is_video]
+    dense_cursor = 0
+    position = 0
+    parts = []
+    dense_blocks: set[int] = set()
+    first_frame_blocks: set[int] = set()
+
+    for clip_index, (start, shape, length) in enumerate(spans):
+        # Every clip begins on a fresh sparse block. The final clip may share
+        # its tail block with dense context, but never with another clip.
+        if position % pool_size:
+            raise AssertionError("multi-span packing lost block alignment")
+        clip_block = position // pool_size
+        first_frame_blocks.update(
+            range(clip_block, clip_block + math.ceil((shape[1] * shape[2]) / pool_size))
+        )
+        parts.append(_span_rearranged_indices(start, shape, input_layout, device))
+        position += length
+        if clip_index != len(spans) - 1 and position % pool_size:
+            needed = pool_size - position % pool_size
+            if dense_cursor + needed > dense_indices.numel():
+                raise ParametersInvalid(
+                    "rf_v2 multi-video spans need dense rows to isolate clip block boundaries; "
+                    "fall back to dense attention for this layout."
+                )
+            dense_blocks.add(position // pool_size)
+            parts.append(dense_indices[dense_cursor : dense_cursor + needed])
+            dense_cursor += needed
+            position += needed
+
+    if dense_cursor < dense_indices.numel():
+        dense_end = position + dense_indices.numel() - dense_cursor
+        dense_blocks.update(range(position // pool_size, math.ceil(dense_end / pool_size)))
+        parts.append(dense_indices[dense_cursor:])
+        position = dense_end
+    if position != sequence_len:
+        raise AssertionError("multi-span permutation does not cover the input sequence")
+    permutation = torch.cat(parts)
+    inverse = torch.empty_like(permutation)
+    inverse[permutation] = torch.arange(sequence_len, device=device, dtype=torch.long)
+    return permutation, inverse, dense_blocks, first_frame_blocks
+
+
+def get_multi_span_blockwise_mask(
+    qkv_pool, sparsity, scale, dense_blocks, first_frame_blocks, input_layout, return_binary=False
+):
+    """Global multi-video ranking with dense context and first frame per clip retained."""
+    query_pool, key_pool, _ = torch.chunk(qkv_pool, 3, dim=0)
+    if input_layout == "BSND":
+        scores = torch.einsum("blnd,bsnd->bnls", query_pool, key_pool) * scale
+    else:
+        scores = torch.einsum("bnld,bnsd->bnls", query_pool, key_pool) * scale
+    score_matrix = torch.nn.functional.softmax(scores, dim=-1)
+    keep_len = math.ceil(score_matrix.shape[-1] * (1 - sparsity))
+    if keep_len < 1:
+        keep_len = 1
+    threshold = torch.topk(score_matrix, k=keep_len, dim=-1).values[..., -1:]
+    mask = score_matrix >= threshold
+    retained = sorted(dense_blocks | first_frame_blocks)
+    if retained:
+        retained_idx = torch.tensor(retained, device=mask.device, dtype=torch.long)
+        mask[:, :, retained_idx, :] = True
+        mask[:, :, :, retained_idx] = True
+    if return_binary:
+        return mask.to(torch.int8)
+    select_idx = get_mask_index(mask)[0].transpose(0, 1)
+    select_num_idx = mask[0].transpose(0, 1).sum(dim=-1)
+    return select_idx, select_num_idx
+
+
+def do_multi_span_tensor_rearrange_pooling(query, key, value, video_spans, pool_size, input_layout):
+    """Prepare one global rf_v2 call for an unpadded packed video sequence."""
+    sequence_len = _sequence_length(query, input_layout)
+    if (
+        _sequence_length(key, input_layout) != sequence_len
+        or _sequence_length(value, input_layout) != sequence_len
+    ):
+        raise ParametersInvalid(
+            "Q, K, and V must have identical sequence lengths in rf_v2 multi-video mode."
+        )
+    spans = _normalize_video_spans(video_spans, sequence_len)
+    permutation, inverse, dense_blocks, first_frame_blocks = _multi_span_permutation(
+        spans, sequence_len, pool_size, input_layout, query.device
+    )
+    q_rf = _index_sequence(query, permutation, input_layout)
+    k_rf = _index_sequence(key, permutation, input_layout)
+    v_rf = _index_sequence(value, permutation, input_layout)
+    qkv_pool = avgpool(torch.cat((q_rf, k_rf, v_rf), dim=0), pool_size, input_layout)
+    return q_rf, k_rf, v_rf, qkv_pool, inverse, dense_blocks, first_frame_blocks
 
 
 def do_tensor_pooling(tensor, text_len):

@@ -21,11 +21,15 @@
 
 | 模型 | 硬件 | 日期 | 结果 |
 |------|------|------|------|
-| Wan2.2-T2V-14B | 910B × 1 | 2026-05-09 | 已验证 (NC/C/torchair_ge/npugraph_ex 四模式, torchair_ge 消除 Copy) |
-| FLUX.1-dev | 910B × 1 | 2026-05-09 | 已验证 (NC/C/torchair_ge/npugraph_ex 四模式, default(C) 最优) |
+| Wan2.2-T2V-14B | 910B × 1 | 2026-05-09 | 已验证 (NC/C 两模式, C=default/Inductor) |
+| FLUX.1-dev | 910B × 1 | 2026-05-09 | 已验证 (NC/C 两模式, default(C) 最优) |
 | FLUX.1-dev | L20 × 1 | 2024-03-08 | 已验证（见 evaluation_report.md） |
 
 ## 不可支持场景
 
 - **未触发 MindieSDBackend 编译**的 trace：门控中止，先修复编译配置
 - **diffusers 原生 fallback** 的 trace：标注为 baseline，不用于优化分析
+
+## 维护与更新
+
+当验证证据或支持矩阵变化时，按 dev-workflow 的复盘流程更新本文件。

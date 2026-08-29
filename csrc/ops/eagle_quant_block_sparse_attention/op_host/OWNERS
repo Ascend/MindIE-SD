@@ -1,0 +1,59 @@
+approvers:
+- andylhy
+- xiaolong_han
+- huxiaobang
+- startzgf168
+- huangwei791
+- wangjun-qt
+- song-jionghui
+- yang-binrong
+- jarr0d
+- jiang-lirui
+- huangli70
+- fzzach
+- zhangtj0209
+
+reviewers:
+- li-xulong
+- Allan_Yu
+- mabing726
+- miao-fangzheng
+- chengsheng304064
+- wangfei6
+- shawn-hu
+- li-shengxian
+- xig514
+- hilihli
+- chen-vvjob
+- renkyk
+- yang-binrong
+- song-jionghui
+- wang-zhe123456789
+- huangli70
+- huangwei791
+- shunqi
+- wangjun-qt
+- jiang-lirui
+- realmadrid1016
+- monologue815
+- zhangtj0209
+- GodantShen
+- Liexss
+- fzzach
+- zhanglei_hw
+- songkai-huawei
+- yangxu19921206
+- crystalhu
+- yu-xinjie62
+- zhu-yijun-Julius
+
+files:
+  "aclnn_eagle_quant_block_sparse_attention.h":
+    approvers:
+      - yinqiande
+      - miao-fangzheng
+  "eagle_quant_block_sparse_attention_def.cpp":
+    approvers:
+      - yinqiande
+      - miao-fangzheng
+

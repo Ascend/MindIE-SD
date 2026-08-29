@@ -194,6 +194,62 @@ def merge_compile_commands(proj_root, build_dir):
         logging.info("No compile_commands.json entries found to merge")
 
 
+def strip_clang_tidy_unsupported_flags(proj_root):
+    """删除 compile_commands.json 中 clang-tidy 无法识别的编译选项。
+
+    clang-tidy 用 compile_commands.json 里记录的编译选项驱动 clang 前端。
+    CMakeLists 中通过 ``CMAKE_CXX_FLAGS`` 注入的 GCC 专属选项（如
+    ``-fabi-version=11``）clang 无法识别，会导致 clang-tidy 报
+    "unknown argument" 而失败。这里在合并生成 compile_commands.json 之后把
+    这类选项剥离掉，使其可直接用于 clang-tidy。
+    """
+    import json
+    import re
+
+    compile_commands_path = os.path.join(proj_root, "compile_commands.json")
+    if not os.path.isfile(compile_commands_path):
+        logging.info("Skipping clang-tidy flag stripping: %s not found", compile_commands_path)
+        return
+
+    try:
+        with open(compile_commands_path, "r", encoding="utf-8") as f:
+            entries = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logging.warning("Failed to read %s: %s", compile_commands_path, e)
+        return
+
+    if not isinstance(entries, list):
+        logging.warning("Unexpected format in %s, expected list", compile_commands_path)
+        return
+
+    # clang 前端无法识别的 GCC 选项。正则同时吞掉前面的空白，保证清理后命令仍规整。
+    unsupported_flags = [
+        re.compile(r"\s*-fabi-version(?:=\d+|\s+\d+)"),
+    ]
+
+    modified = 0
+    for entry in entries:
+        command = entry.get("command")
+        if not isinstance(command, str):
+            continue
+        cleaned = command
+        for pattern in unsupported_flags:
+            cleaned = pattern.sub("", cleaned)
+        cleaned = cleaned.strip()
+        if cleaned != command:
+            entry["command"] = cleaned
+            modified += 1
+
+    with open(compile_commands_path, "w", encoding="utf-8") as f:
+        json.dump(entries, f, indent=2)
+    logging.info(
+        "Stripped unsupported clang-tidy flags from %s (%s/%s entries modified)",
+        compile_commands_path,
+        modified,
+        len(entries),
+    )
+
+
 class CustomBuildPy(_build_py):
     def run(self):
         proj_root = os.path.abspath(os.getcwd())
@@ -243,6 +299,8 @@ class CustomBuildPy(_build_py):
                 copy_multi_torch_plugin_files(proj_root)
 
             merge_compile_commands(proj_root, build_dir)
+
+            strip_clang_tidy_unsupported_flags(proj_root)
 
             if wheel_mode == FIXED_WHEEL_MODE:
                 source_dir = os.path.join(build_dir, 'plugin_build')

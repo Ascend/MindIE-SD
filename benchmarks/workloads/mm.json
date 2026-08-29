@@ -1,0 +1,13 @@
+{
+  "mm": [
+    {
+      "arg_type": "default",
+      "M": [5120],
+      "K": [3072],
+      "N": [12288],
+      "quant_algo": ["NO_QUANT", "W8A8", "W8A8_MXFP8", "W4A4_MXFP4"],
+      "group_size": [32],
+      "scale_alg": [2]
+    }
+  ]
+}

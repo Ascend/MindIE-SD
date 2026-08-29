@@ -22,7 +22,7 @@ class MoEPrepareInput:
 
     hidden_states: torch.Tensor
     router_logits: torch.Tensor
-    tokens_full: bool
+    inputs_sharded: bool
 
 
 @dataclass(frozen=True)
@@ -97,6 +97,7 @@ class MoETokenDispatchInput:
     top_k: int
     local_num_experts: int
     dynamic_scale: torch.Tensor | None = None
+    use_gmm_finalize_routing: bool = False
 
 
 @dataclass(frozen=True)

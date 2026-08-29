@@ -12,15 +12,105 @@
 # See the Mulan PSL v2 for more details.
 
 import math
+import threading
+
 import torch
+import torch.nn.functional as F
 import torch_npu
+
 from .sparse_flash_attn_rf_v2 import (
     avgpool,
     do_tensor_rearrange_pooling,
+    do_multi_span_tensor_rearrange_pooling,
     rearrange_with_remaining,
     get_blockwise_mask,
+    get_multi_span_blockwise_mask,
     do_tensor_inv_rearrange,
 )
+
+
+_ROT_MATRIX_LOCK = threading.Lock()
+_ROT_MATRIXS: dict = {}
+
+
+def _hadamard_order(n: int) -> torch.Tensor:
+    """Sylvester Hadamard matrix of order ``n`` (power of 2), unscaled."""
+    if n == 1:
+        return torch.ones(1, 1)
+    h = _hadamard_order(n // 2)
+    top = torch.cat([h, h], dim=1)
+    bottom = torch.cat([h, -h], dim=1)
+    return torch.cat([top, bottom], dim=0)
+
+
+def _get_rot_matrices(
+    device: torch.device,
+    dtype: torch.dtype,
+    head_dim: int,
+) -> tuple:
+    """Hadamard rotation matrices for the FP8 path, cached per (device, dtype, head_dim).
+
+    Same construction as vllm-omni kv_quant_npu (QuaRotMode.HADAMARD): a scaled
+    Sylvester Hadamard matrix sliced to ``head_dim``. Q and K share one rotation.
+    """
+    key = (str(device), dtype, head_dim)
+    with _ROT_MATRIX_LOCK:
+        rot = _ROT_MATRIXS.get(key)
+        if rot is None:
+            order = 1 << (head_dim - 1).bit_length()
+            rot = _hadamard_order(order) / math.sqrt(order)
+            rot = rot[:head_dim, :head_dim].to(device=device, dtype=dtype).contiguous()
+            _ROT_MATRIXS[key] = rot
+        return rot, rot
+
+
+@torch.no_grad()
+def _perblock_quant(input_tensor, block_size=64, dst_type=torch.int8, smooth=False):
+    """Quantize Q/K per block along the sequence dimension (1D per-block scales).
+
+    Input must be BNSD [B, N, S, D]. Padding is applied to meet block
+    alignment and sliced off afterwards.
+
+    Returns:
+        int8 [B, N, S, D] quantized tensor and fp32 scales [B, N, ceil(S / block_size)].
+    """
+    assert len(input_tensor.shape) == 4, (
+        f"eagle qbsa per-block quant only supports 4D qkv, got {len(input_tensor.shape)} dims."
+    )
+    b, n, s, d = input_tensor.shape
+
+    if smooth:
+        input_tensor = input_tensor - input_tensor.mean(dim=2, keepdim=True)
+
+    if s % block_size != 0:
+        padding_length = (block_size - (s % block_size)) % block_size
+        input_tensor = F.pad(input_tensor, (0, 0, 0, padding_length))
+
+    input_tensor = input_tensor.reshape(b, n, math.ceil(s / block_size), -1)
+    input_quant, input_scale = torch_npu.npu_dynamic_quant(input_tensor, dst_type=dst_type)
+
+    input_quant = input_quant.reshape(b, n, -1, d)[:, :, :s, :]
+    return input_quant.contiguous(), input_scale.contiguous()
+
+
+@torch.no_grad()
+def _eagle_qbsa_quant_qkv(q, k, v, block_size_q=64, layout="BSND"):
+    """EagleQBSA quantization: Q/K per-block INT8, V per-channel FP8.
+
+    q/k/v are BF16 [B, S, N, D] (BSND) or [B, N, S, D] (BNSD).
+    Returns BNSD int8 Q/K, BNSD FP8 V, and fp32 scales.
+    """
+    if layout == "BSND":
+        q = q.transpose(1, 2).contiguous()
+        k = k.transpose(1, 2).contiguous()
+        v = v.transpose(1, 2).contiguous()
+
+    q_q, q_scales = _perblock_quant(q, block_size=block_size_q, dst_type=torch.int8)
+    k_q, k_scales = _perblock_quant(k, block_size=block_size_q, dst_type=torch.int8)
+    v_q, v_scales = torch_npu.npu_dynamic_quant(v.transpose(-1, -2), dst_type=torch_npu.float8_e4m3fn)
+    v_q = v_q.transpose(-1, -2).contiguous()
+
+    return q_q, k_q, v_q, q_scales, k_scales, v_scales
 
 
 def _fp8_quant_qkv(q, k, v, q_rot, k_rot, block_size_q=128, block_size_kv=256, layout="BSND"):
@@ -367,18 +457,26 @@ def bsa_sparse_attention_v3(
     k_rot=None,
     block_size=128,
     block_size_kv=None,
+    video_spans=None,
+    precision="bf16",
 ):
     """End-to-end rf_v3 sparse attention: rearrange -> mask -> [quant] -> BSA -> inv-rearrange.
 
-    FP8 vs BF16 is controlled by the caller:
-      - Pass q_rot/k_rot → FP8 path (rotation + block quantization before BSA kernel)
-      - No q_rot/k_rot  → BF16 path (no quantization)
+    Kernel precision is selected by ``precision``:
+      - ``'mix'`` → EagleQBSA path: Q/K per-block INT8, V per-channel
+        FP8, dispatched to
+        ``torch.ops.mindiesd.eagle_quant_block_sparse_attention``.
+      - ``'fp8'`` → BSA FP8 path: Hadamard rotation of Q/K plus full FP8 block
+        quantization of Q/K/V before the BSA kernel. Rotation matrices are
+        generated internally and cached per (device, dtype, head_dim) unless
+        q_rot/k_rot are provided by the caller.
+      - ``'bf16'`` (default) → BF16 path (no quantization).
 
     Mask generation always operates on BF16 tensors (before quantization).
 
     Args:
         q / k / v:           BF16 tensors [B, S, N, D] (BSND) or [B, N, S, D] (BNSD)
-        latent_shape_q:      (t, h, w) for query; t*h*w == S
+        latent_shape_q:      (t, h, w) for query; t*h*w == S. Omit in multi-span mode.
         latent_shape_k:      (t, h, w) for key/value, default equals latent_shape_q
         txt_len:             text token length (currently only 0 is supported)
         sparsity:            sparsity ratio [0, 1); 0 means no sparsity
@@ -397,12 +495,23 @@ def bsa_sparse_attention_v3(
         block_size_kv:       KV block size for CANN operator blockShapeY and FP8 KV quant.
                              FP8: must be a multiple of 256, defaults to 256.
                              BF16: defaults to block_size.
+        video_spans:
+                             Multi-video layout over an unpadded input sequence.
+                             The spans use
+                             ``{"start": int, "latent_shape": [T, H, W]}``.
+                             The public ``sparse_attention`` API validates
+                             its compatibility with legacy layout arguments.
+                             The same layout reorders Q, K, and V.
+        precision:           Execution precision for the sparse kernel:
+                             'bf16' (default, no quantization), 'mix' (EagleQBSA),
+                             or 'fp8' (BSA FP8 with Hadamard rotation).
 
     Returns:
         out (Tensor):      BF16 attention output, same layout as input
         new_mask (Tensor): int8 block_sparse_mask for caching
     """
-    if latent_shape_k is None:
+    multi_span = video_spans is not None
+    if not multi_span and latent_shape_k is None:
         latent_shape_k = latent_shape_q
     if head_num is None:
         head_num = q.shape[1] if input_layout == "BNSD" else q.shape[2]
@@ -411,11 +520,19 @@ def bsa_sparse_attention_v3(
     if scale is None:
         scale = float(q.shape[-1]) ** -0.5
 
-    tq, hq, wq = latent_shape_q
+    # Resolve the execution mode from ``precision``. The FP8 path rotates Q/K
+    # with a Hadamard matrix before block quantization. If the caller did not
+    # provide rotation matrices, generate them once per (device, dtype, head_dim)
+    # and reuse across steps.
+    if precision not in ("mix", "fp8", "bf16"):
+        raise ValueError(f"precision must be one of 'bf16', 'fp8', 'mix'; got {precision!r}.")
+    if precision == "fp8" and (q_rot is None or k_rot is None):
+        q_rot, k_rot = _get_rot_matrices(q.device, q.dtype, q.shape[-1])
+
     # S dimension index: dim 2 for BNSD, dim 1 for BSND
     s_dim = 2 if input_layout == "BNSD" else 1
 
-    fp8_mode = q_rot is not None and k_rot is not None
+    fp8_mode = precision == "fp8"
 
     # Resolve effective KV block size for the CANN operator.
     # FP8: blockShapeY must be a multiple of 256 (CANN tiling constraint).
@@ -424,9 +541,31 @@ def bsa_sparse_attention_v3(
         effective_block_size_kv = block_size_kv if block_size_kv is not None else 256
     else:
         effective_block_size_kv = block_size
+    if multi_span and effective_block_size_kv != block_size:
+        raise ValueError(
+            "rf_v3 multi-video spans currently require identical Q and KV block sizes; "
+            "the FP8 KV=256 path is not yet span-aware."
+        )
 
     new_mask = None
-    if cached_mask is None:
+    inverse = None
+    if multi_span:
+        q_, k_, v_, tensor_pool, inverse, dense_blocks, first_frame_blocks = (
+            do_multi_span_tensor_rearrange_pooling(
+                q, k, v, video_spans, block_size, input_layout
+            )
+        )
+        if cached_mask is None:
+            new_mask = get_multi_span_blockwise_mask(
+                tensor_pool,
+                sparsity,
+                scale,
+                dense_blocks,
+                first_frame_blocks,
+                input_layout,
+                return_binary=True,
+            )
+    elif cached_mask is None:
         # --- Mask generation ---
         if effective_block_size_kv == block_size:
             # Same Q/KV granularity — rearrange + pool once, reuse tensor_pool.
@@ -504,48 +643,81 @@ def bsa_sparse_attention_v3(
                 cached_mask, block_size, effective_block_size_kv, pool_size=block_size
             )
 
-    # FP8: rotate Q/K, block-quantize Q/K/V (output BNSD).
-    q_scale = k_scale = v_scale = None
-    if fp8_mode:
-        q_, k_, v_, q_scale, k_scale, v_scale = _fp8_quant_qkv(
+    if precision == "mix":
+        # EagleQBSA: Q/K per-block INT8 + V per-channel FP8 (BNSD inside).
+        q_q, k_q, v_q, q_scales, k_scales, v_scales = _eagle_qbsa_quant_qkv(
+            q_, k_, v_, block_size_q=64, layout=input_layout
+        )
+        out, _ = torch.ops.mindiesd.eagle_quant_block_sparse_attention(
+            query=q_q,
+            key=k_q,
+            value=v_q.view(torch.int8),
+            block_sparse_mask=new_mask.view(torch.int8),
+            block_shape=[block_size, block_size],
+            q_input_layout="BNSD",
+            kv_input_layout="BNSD",
+            num_key_value_heads=num_key_value_heads,
+            scale_value=scale,
+            inner_precise=inner_precise,
+            softmax_lse_flag=0,
+            actual_seq_lengths=actual_seq_lens,
+            actual_seq_lengths_kv=actual_seq_lens,
+            query_scale=q_scales,
+            key_scale=k_scales,
+            value_scale=v_scales,
+            query_dtype=torch.int8,
+            key_dtype=torch.int8,
+            value_dtype=torch_npu.float8_e4m3fn,
+            output_dtype=torch.bfloat16,
+        )
+        if input_layout == "BSND":
+            out = out.permute(0, 2, 1, 3).contiguous()
+    else:
+        # FP8: rotate Q/K, block-quantize Q/K/V (output BNSD).
+        q_scale = k_scale = v_scale = None
+        if fp8_mode:
+            q_, k_, v_, q_scale, k_scale, v_scale = _fp8_quant_qkv(
+                q_,
+                k_,
+                v_,
+                q_rot,
+                k_rot,
+                block_size_q=block_size,
+                block_size_kv=effective_block_size_kv,
+                layout=input_layout,
+            )
+
+        # BSA kernel (V2: BF16 + FP8)
+        bsa_layout = "BNSD" if fp8_mode else input_layout
+        out = rain_fusion_attention_v3(
             q_,
             k_,
             v_,
-            q_rot,
-            k_rot,
+            block_sparse_mask=new_mask,
+            scale=scale,
+            head_num=head_num,
+            num_key_value_heads=num_key_value_heads,
+            input_layout=bsa_layout,
+            actual_seq_lengths=actual_seq_lens,
+            actual_seq_lengths_kv=actual_seq_lens,
             block_size_q=block_size,
             block_size_kv=effective_block_size_kv,
-            layout=input_layout,
+            inner_precise=inner_precise,
+            q_dequant_scale=q_scale,
+            k_dequant_scale=k_scale,
+            v_dequant_scale=v_scale,
         )
 
-    # BSA kernel (V2: BF16 + FP8)
-    bsa_layout = "BNSD" if fp8_mode else input_layout
-    out = rain_fusion_attention_v3(
-        q_,
-        k_,
-        v_,
-        block_sparse_mask=new_mask,
-        scale=scale,
-        head_num=head_num,
-        num_key_value_heads=num_key_value_heads,
-        input_layout=bsa_layout,
-        actual_seq_lengths=actual_seq_lens,
-        actual_seq_lengths_kv=actual_seq_lens,
-        block_size_q=block_size,
-        block_size_kv=effective_block_size_kv,
-        inner_precise=inner_precise,
-        q_dequant_scale=q_scale,
-        k_dequant_scale=k_scale,
-        v_dequant_scale=v_scale,
-    )
-
-    # FP8 output is BNSD; convert back for inv-rearrange.
-    if fp8_mode and input_layout == "BSND":
-        out = out.permute(0, 2, 1, 3).contiguous()
+        # FP8 output is BNSD; convert back for inv-rearrange.
+        if fp8_mode and input_layout == "BSND":
+            out = out.permute(0, 2, 1, 3).contiguous()
 
     # inverse rearrange to restore (t, h, w) order
-    if txt_len > 0:
+    if multi_span:
+        out = out.index_select(1 if input_layout == "BSND" else 2, inverse)
+    elif txt_len > 0:
         out = do_tensor_inv_rearrange(out, txt_len, latent_shape_q, latent_shape_k, input_layout)
     else:
+        tq, hq, wq = latent_shape_q
         out = _bsa_inv_rearrange(out, tq, hq, wq, input_layout)
     return out, new_mask

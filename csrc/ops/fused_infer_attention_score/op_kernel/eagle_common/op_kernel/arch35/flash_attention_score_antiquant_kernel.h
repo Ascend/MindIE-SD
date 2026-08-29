@@ -28,15 +28,9 @@ const int VC_MM2RES_EVENT[2] = {10, 15};
 
 #include "util_regbase.h"
 
-#if __has_include("../../../common/op_kernel/matmul.h")
-#include "../../../common/op_kernel/matmul.h"
-#include "../../../common/op_kernel/FixpipeOut.h"
-#include "../../../common/op_kernel/CopyInL1.h"
-#else
 #include "../matmul.h"
 #include "../FixpipeOut.h"
 #include "../CopyInL1.h"
-#endif
 
 #include "infer_flash_attention_comm.h"
 #include "flash_attention_score_common_regbase.h"

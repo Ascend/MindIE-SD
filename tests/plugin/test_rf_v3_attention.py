@@ -15,6 +15,7 @@ import os
 import sys
 import math
 import unittest
+from unittest import mock
 
 import torch
 import torch_npu
@@ -177,8 +178,34 @@ class TestRfV3Attention(unittest.TestCase):
             input_layout="BSND",
             head_num=self.head_num,
             inner_precise=self.inner_precise,
+            precision="bf16",
         )
         self.assertEqual(out.shape, q.shape, f"output shape {out.shape} != input {q.shape}")
+        self.assertEqual(out.dtype, self.dtype)
+
+    def test_multi_video_sparse_attention_uses_rf_v3(self):
+        """The multi-video sparse_attention path dispatches to rf_v3 on A5."""
+        from mindiesd.layers.flash_attn.sparse_flash_attn import sparse_attention
+
+        q, k, v = self._make_qkv_bsnd()
+        spans = [
+            {"start": 64, "latent_shape": [2, 8, 16]},
+            {"start": 512, "latent_shape": [2, 8, 16]},
+        ]
+        out = sparse_attention(
+            q,
+            k,
+            v,
+            video_spans=spans,
+            block_size=self.pool_size,
+            sparsity=0.5,
+            input_layout="BSND",
+            head_num=self.head_num,
+            inner_precise=self.inner_precise,
+            sparse_type="rf_v2",
+        )
+
+        self.assertEqual(out.shape, q.shape)
         self.assertEqual(out.dtype, self.dtype)
 
     # bsa_sparse_attention_v3 FP8 output shape/dtype tests
@@ -202,9 +229,102 @@ class TestRfV3Attention(unittest.TestCase):
             inner_precise=self.inner_precise,
             q_rot=q_rot,
             k_rot=k_rot,
+            precision="fp8",
         )
         self.assertEqual(out.shape, q.shape, f"FP8 output shape {out.shape} != input {q.shape}")
         self.assertEqual(out.dtype, torch.bfloat16)
+
+    # mix (EagleQBSA) path tests
+
+    def test_bsa_sparse_attention_v3_mix_output_shape(self):
+        """bsa_sparse_attention_v3 mix (EagleQBSA) path: shape and dtype match input."""
+        from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
+
+        q, k, v = self._make_qkv_bsnd()
+        out, _ = bsa_sparse_attention_v3(
+            q,
+            k,
+            v,
+            latent_shape_q=self.latent_shape,
+            block_size=self.pool_size,
+            sparsity=0.5,
+            input_layout="BSND",
+            head_num=self.head_num,
+            inner_precise=self.inner_precise,
+            precision="mix",
+        )
+        self.assertEqual(out.shape, q.shape, f"mix output shape {out.shape} != input {q.shape}")
+        self.assertEqual(out.dtype, self.dtype)
+
+    def test_bsa_sparse_attention_v3_mix_unaligned_seq_len(self):
+        """mix path: unaligned S still produces correct output shape (per-block quant pads)."""
+        from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
+
+        t, h, w = 3, 20, 20
+        latent_shape = (t, h, w)
+        q, k, v = self._make_qkv_bsnd(t=t, h=h, w=w)
+
+        out, _ = bsa_sparse_attention_v3(
+            q,
+            k,
+            v,
+            latent_shape_q=latent_shape,
+            block_size=self.pool_size,
+            sparsity=0.5,
+            input_layout="BSND",
+            head_num=self.head_num,
+            inner_precise=self.inner_precise,
+            precision="mix",
+        )
+        self.assertEqual(out.shape, q.shape, f"mix unaligned: output shape {out.shape} != input {q.shape}")
+
+    def test_mix_with_rotation_matrices_mask_stays_128(self):
+        """mix + caller-provided q_rot/k_rot: mask KV granularity must stay 128.
+
+        Regression for fp8_mode keying off q_rot presence (yjy_ac review 1):
+        the mask block size must follow precision, not the rotation matrices.
+        """
+        from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
+
+        q, k, v = self._make_qkv_bsnd()
+        q_rot, k_rot = _make_rotation_matrices(self.head_dim, self.device)
+        _, new_mask = bsa_sparse_attention_v3(
+            q,
+            k,
+            v,
+            latent_shape_q=self.latent_shape,
+            block_size=self.pool_size,
+            sparsity=0.5,
+            input_layout="BSND",
+            head_num=self.head_num,
+            inner_precise=self.inner_precise,
+            precision="mix",
+            q_rot=q_rot,
+            k_rot=k_rot,
+        )
+        q_blocks = math.ceil(self.seq_len / self.pool_size)
+        kv_blocks = math.ceil(self.seq_len / self.pool_size)
+        self.assertEqual(new_mask.shape[2], q_blocks)
+        self.assertEqual(new_mask.shape[3], kv_blocks)
+
+    def test_invalid_precision_raises(self):
+        """Unsupported precision values must raise ValueError at the entry check."""
+        from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
+
+        q, k, v = self._make_qkv_bsnd()
+        with self.assertRaises(ValueError):
+            bsa_sparse_attention_v3(
+                q,
+                k,
+                v,
+                latent_shape_q=self.latent_shape,
+                block_size=self.pool_size,
+                sparsity=0.5,
+                input_layout="BSND",
+                head_num=self.head_num,
+                inner_precise=self.inner_precise,
+                precision="bogus",
+            )
 
     # unaligned S tests
 
@@ -227,6 +347,7 @@ class TestRfV3Attention(unittest.TestCase):
             input_layout="BSND",
             head_num=self.head_num,
             inner_precise=self.inner_precise,
+            precision="bf16",
         )
         self.assertEqual(out.shape, q.shape, f"unaligned: output shape {out.shape} != input {q.shape}")
 
@@ -252,6 +373,7 @@ class TestRfV3Attention(unittest.TestCase):
             inner_precise=self.inner_precise,
             q_rot=q_rot,
             k_rot=k_rot,
+            precision="fp8",
         )
         self.assertEqual(out.shape, q.shape, f"FP8 unaligned: output shape {out.shape} != input {q.shape}")
         self.assertEqual(out.dtype, torch.bfloat16)
@@ -277,6 +399,7 @@ class TestRfV3Attention(unittest.TestCase):
             input_layout="BSND",
             head_num=self.head_num,
             inner_precise=self.inner_precise,
+            precision="fp8",
         )
         # Second call: reuse mask with FP8
         out2, _ = bsa_sparse_attention_v3(
@@ -292,6 +415,7 @@ class TestRfV3Attention(unittest.TestCase):
             cached_mask=new_mask,
             q_rot=q_rot,
             k_rot=k_rot,
+            precision="fp8",
         )
         self.assertEqual(out2.shape, q.shape)
         self.assertEqual(out2.dtype, torch.bfloat16)
@@ -320,6 +444,7 @@ class TestRfV3Attention(unittest.TestCase):
             inner_precise=self.inner_precise,
             q_rot=q_rot,
             k_rot=k_rot,
+            precision="fp8",
         )
         self.assertEqual(out1.shape, q.shape)
         self.assertEqual(out1.dtype, torch.bfloat16)
@@ -345,6 +470,7 @@ class TestRfV3Attention(unittest.TestCase):
             cached_mask=new_mask,
             q_rot=q_rot,
             k_rot=k_rot,
+            precision="fp8",
         )
         self.assertEqual(out2.shape, q.shape)
         self.assertEqual(out2.dtype, torch.bfloat16)
@@ -395,6 +521,7 @@ class TestRfV3Attention(unittest.TestCase):
             input_layout="BSND",
             head_num=self.head_num,
             inner_precise=self.inner_precise,
+            precision="bf16",
         )
 
         # Token order differs (v3 applies spatial rearrange), so compare statistics.
@@ -408,6 +535,40 @@ class TestRfV3Attention(unittest.TestCase):
 
         self.assertLess(mean_rel_err, 0.1, f"mean rel err too large: dense={dense_mean:.4f}, v3={v3_mean:.4f}")
         self.assertLess(std_rel_err, 0.1, f"std rel err too large: dense={dense_std:.4f}, v3={v3_std:.4f}")
+
+
+class TestResolveSparseTypeForA5(unittest.TestCase):
+    """Pure-Python unit tests for _resolve_sparse_type_for_a5 (no NPU required).
+
+    Guards the A5 inner_precise policy added for yjy_ac review 3: explicit
+    rf_v3 requires inner_precise=4 on A5, while rf_v2 keeps its remap.
+    """
+
+    @mock.patch("mindiesd.layers.flash_attn.sparse_flash_attn.is_a5_device", return_value=True)
+    def test_rf_v3_rejects_wrong_inner_precise_on_a5(self, _mock_is_a5):
+        """Explicit rf_v3 with inner_precise != 4 must raise ParametersInvalid on A5."""
+        from mindiesd.layers.flash_attn.sparse_flash_attn import _resolve_sparse_type_for_a5
+        from mindiesd.utils.exception import ParametersInvalid
+
+        with self.assertRaises(ParametersInvalid):
+            _resolve_sparse_type_for_a5("rf_v3", 0)
+        # inner_precise=4 passes through untouched
+        self.assertEqual(_resolve_sparse_type_for_a5("rf_v3", 4), ("rf_v3", 4))
+
+    @mock.patch("mindiesd.layers.flash_attn.sparse_flash_attn.is_a5_device", return_value=True)
+    def test_rf_v2_still_remaps_to_4_on_a5(self, _mock_is_a5):
+        """rf_v2 remap must still force inner_precise=4 (vllm-omni depends on it)."""
+        from mindiesd.layers.flash_attn.sparse_flash_attn import _resolve_sparse_type_for_a5
+
+        self.assertEqual(_resolve_sparse_type_for_a5("rf_v2", 0), ("rf_v3", 4))
+
+    @mock.patch("mindiesd.layers.flash_attn.sparse_flash_attn.is_a5_device", return_value=False)
+    def test_non_a5_passthrough(self, _mock_is_a5):
+        """Non-A5 devices pass sparse_type/inner_precise through unchanged."""
+        from mindiesd.layers.flash_attn.sparse_flash_attn import _resolve_sparse_type_for_a5
+
+        self.assertEqual(_resolve_sparse_type_for_a5("rf_v3", 0), ("rf_v3", 0))
+        self.assertEqual(_resolve_sparse_type_for_a5("rf_v2", 0), ("rf_v2", 0))
 
 
 if __name__ == "__main__":

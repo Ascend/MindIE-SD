@@ -1,14 +1,19 @@
-# Copy 算子消减全流程
+# Copy 算子消减全流程（default/Inductor 路径）
 
 Pattern 匹配成功后，检查 compile 是否引入额外 Copy 算子并制定消减方案。
+本文件只描述**本仓已实现**的 default（aot_autograd + Inductor）路径；
+批量下发（aclgraph）见 `aclgraph-dev` skill。
 
 ---
 
 ## 1. Copy 引入机制
 
-`default` 后端使用 `aot_autograd` 作为编译包装器，其 functionalization 将所有 in-place view/reshape 转为 `_to_copy` 节点 → Inductor codegen → InplaceCopy NPU kernel。
+`default` 后端使用 `aot_autograd` 作为编译包装器，其 functionalization 将所有
+in-place view/reshape 转为 `_to_copy` 节点 → Inductor codegen → InplaceCopy NPU kernel。
 
-**torchair_ge** 通过 `torch_npu.dynamo.torchair.get_npu_backend()` 获取 GE 模式后端，绕过 aot_autograd，消除此链条。完整链路对比见 `references/backend-comparison.md`。
+> 历史上记录过的 torchair_ge / npugraph_ex "四后端对比"**在本仓未实现**
+> （`mindiesd/compilation/compiliation_config.py` 无 `backend_mode` 及对应常量），
+> 不作为可执行方案。
 
 ---
 
@@ -50,49 +55,33 @@ Copy 膨胀的程度取决于模型结构：
 | **Pattern 命中率** | 4/4 全部命中 | 仅 GELU 命中 |
 | **VAE 结构** | 简单 2D Conv | 复杂 3D Conv + StridedSlice |
 
-**已验证结论** (8-mode 全量数据见 `references/backend-comparison.md`):
-
-- **torchair_ge** 是唯一能绕过 AOT Autograd 消除 Copy 膨胀的后端（Wan2.2 ViewCopy 16→8）
-- **npugraph_ex** 在 torch 2.9.0 上与 default 等价（仍走 aot_autograd，Copy 存在）
-- **default** 在 FLUX.1-dev 上最优（4 pattern 全部命中，-4.0% 加速）
-
 ---
 
 ## 4. 消减方案
 
-**方案 A: 切换 torchair_ge (推荐，适用于 3D attention 模型)**
-
-原理: torchair GE 图模式直接下沉 ACL graph，无 functionalization → 无 Copy 膨胀。
-
-**效果** (Wan2.2, torch 2.9.0 已验证):
-
-- ViewCopy: 16→8 (-569ms)
-- TensorMove: 16→0 (-40ms)
-- StridedSlice: 8→0 (-25ms)
-- Timed 推理: 7632ms→7023ms (-8%, 与 No-Compile 持平)
-
-**方案 B: 修复 Pattern 匹配 (default 路径)**
+### 方案 A: 修复 Pattern 匹配（default 路径，推荐）
 
 条件: 模型使用标准 Norm 层 (LayerNorm/RMSNorm)，非 FP32LayerNorm。
-FLUX.1-dev 已生效：4 pattern 全部命中 → Copy 不增反减 (-81%)。
+提高 pattern 命中率可减少 functionalization 引入的 Copy（FLUX.1-dev 实测 4 pattern
+全部命中时 Copy 不增反减）。
 
-**方案 C: 混合模式**
+### 方案 B: 混合模式
 
 对于 VAE 部分使用 eager 模式（`--skip-vae`），仅 transformer 走 compile。
 
-**方案 D: 试验 npugraph_ex（不推荐）**
+### 方案 C: aclgraph 批量下发
 
-原生 `backend="npugraph_ex"` 在 torch 2.9.0 上与 default 等价。仅用于对比验证或未来 torch 版本升级后重新评估。
+静态 shape / 大 batch 场景改用 `aclgraph` 批量下发（`CompilationConfig.aclgraph_only` /
+`aclgraph_with_compile`），replay 省去 host launch；机制与调优见 `aclgraph-dev` skill。
 
 ---
 
 ## 5. 复验验证
 
 ```bash
-# 四模式采集
+# eager vs compile 双模式采集
 python wan_infer.py --device_id 0 --profile              # No-Compile
 python wan_infer.py --device_id 0 --profile --compile    # default
-python wan_infer.py --device_id 0 --profile --npugraph   # torchair_ge
 
 # Copy 对比
 grep -c "InplaceCopy\|ViewCopy\|TensorMove\|StridedSlice" */kernel_details.csv
@@ -100,12 +89,12 @@ grep -c "InplaceCopy\|ViewCopy\|TensorMove\|StridedSlice" */kernel_details.csv
 
 验证标准:
 
-- torchair_ge (--npugraph) 的 Copy count ≤ No-Compile
-- torchair_ge 的 Copy duration ≤ No-Compile * 1.05
-- 无新增 TensorMove/StridedSlice 算子
+- compile 的 Copy count ≤ No-Compile 或膨胀可解释（新增融合 kernel 带来收益）
+- 无异常新增 TensorMove/StridedSlice 算子
+- 计时遵循 `benchmark-guide.md`（L2-flush 放计时区外、warm/cold 双档）
 
 ---
 
 ## 维护与更新
 
-当发现新的 Copy 膨胀场景或后端支持矩阵变化时更新本文件。
+当发现新的 Copy 膨胀场景或 aot_autograd/Inductor 行为变化时更新本文件。

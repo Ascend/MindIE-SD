@@ -19,6 +19,8 @@ from .sparse_flash_attn_rf_v2 import (
     get_blockwise_mask,
     do_tensor_inv_rearrange,
     do_tensor_rearrange_pooling,
+    do_multi_span_tensor_rearrange_pooling,
+    get_multi_span_blockwise_mask,
 )
 from .sparse_flash_attn_ada_bsa import get_estimate_mask, ada_block_sparse_attention
 from .sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
@@ -72,6 +74,14 @@ def _resolve_sparse_type_for_a5(sparse_type, inner_precise):
             )
         return "rf_v3", A5_V3_INNER_PRECISE
 
+    if sparse_type == "rf_v3" and inner_precise != A5_V3_INNER_PRECISE:
+        raise ParametersInvalid(
+            f"A5 devices require inner_precise={A5_V3_INNER_PRECISE} for "
+            f"sparse_type='rf_v3'; got {inner_precise}. "
+            "Troubleshooting: pass inner_precise=4 explicitly, or use "
+            "sparse_type='rf_v2' which is remapped to rf_v3 automatically."
+        )
+
     return sparse_type, inner_precise
 
 
@@ -91,10 +101,12 @@ def sparse_attention(
     block_size: int = 128,
     latent_shape_q: Optional[list] = None,
     latent_shape_k: Optional[list] = None,
+    video_spans: Optional[list] = None,
     keep_sink: Optional[bool] = True,
     keep_recent: Optional[bool] = True,
     cdf_threshold: float = 1.0,
     sparsity: float = 0.0,
+    precision: str = "bf16",
     **kwargs,
 ):
     """
@@ -135,6 +147,25 @@ def sparse_attention(
             (t, h, w), t**h*w = qseqlen. Only takes effect when sparse_type is 'rf_v2'.
         latent_shape_k (list, default to None):
             (t, h, w), t**h*w = kseqlen. Only takes effect when sparse_type is 'rf_v2'.
+        video_spans (list, default to None):
+            Non-empty ordered video layout for self-attention over one unpadded
+            effective sequence. Each span is ``{"start": int, "latent_shape": [T, H, W]}``.
+            For example, reference and target videos in one packed sequence use::
+
+                video_spans = [
+                    {"start": 5527, "latent_shape": [32, 24, 42]},  # reference
+                    {"start": 38197, "latent_shape": [37, 24, 42]},  # target
+                ]
+
+            ``start`` is the physical token offset in Q/K/V, and a span covers
+            ``[start, start + T * H * W)``. Spans must be ordered by ``start``,
+            non-overlapping, and within the unpadded Q/K/V sequence. Text,
+            images, audio, and other non-video rows may occur before, between,
+            or after spans; they are kept as dense context.
+            When supplied, it is mutually exclusive with ``txt_len`` and
+            ``latent_shape_q``/``latent_shape_k``. Non-video rows remain dense
+            context. On A5, ``sparse_type='rf_v2'`` follows the regular rf_v2
+            to rf_v3 route while preserving this layout.
         keep_sink (bool, default to True):
             Only takes effect when sparse_type ims 'ada_bsa'.
         keep_recent (bool, default to True):
@@ -143,19 +174,39 @@ def sparse_attention(
             Only takes effect when sparse_type is 'ada_bsa'.
         sparsity:
             Sparse ratio, the value range is [0, 1], where 0 represents not using sparse algo.
+        precision (str, default to 'bf16'):
+            Kernel precision mode for sparse_type='rf_v3':
+              - 'mix': EagleQBSA mixed precision (Q/K per-block INT8 + V per-channel FP8).
+              - 'fp8': BSA FP8 path (Hadamard rotation + full FP8 block quantization of Q/K/V).
+              - 'bf16' (default): no quantization, pure BF16 sparse attention.
     """
     check_params(input_layout, sparse_type)
+    if video_spans is not None:
+        if sparse_type not in ("rf_v2", "rf_v3"):
+            raise ParametersInvalid("video_spans requires sparse_type='rf_v2' or sparse_type='rf_v3'.")
+        if txt_len != 0 or latent_shape_q is not None or latent_shape_k is not None:
+            raise ParametersInvalid(
+                "video_spans cannot be combined with txt_len, latent_shape_q, or latent_shape_k."
+            )
     sparse_type, inner_precise = _resolve_sparse_type_for_a5(sparse_type, inner_precise)
     batch, head_dim = q.shape[0], q.shape[-1]
     scale = head_dim**-0.5 if scale is None else scale
 
     if sparse_type == "rf_v2":
-        q_rf, k_rf, v_rf, qkv_pool = do_tensor_rearrange_pooling(
-            q, k, v, txt_len, block_size, latent_shape_q, latent_shape_k, input_layout
-        )
-        select_idx, select_num_idx = get_blockwise_mask(
-            qkv_pool, txt_len, sparsity, scale, block_size, latent_shape_q, latent_shape_k, input_layout
-        )
+        if video_spans is not None:
+            q_rf, k_rf, v_rf, qkv_pool, inverse, dense_blocks, first_frame_blocks = (
+                do_multi_span_tensor_rearrange_pooling(q, k, v, video_spans, block_size, input_layout)
+            )
+            select_idx, select_num_idx = get_multi_span_blockwise_mask(
+                qkv_pool, sparsity, scale, dense_blocks, first_frame_blocks, input_layout
+            )
+        else:
+            q_rf, k_rf, v_rf, qkv_pool = do_tensor_rearrange_pooling(
+                q, k, v, txt_len, block_size, latent_shape_q, latent_shape_k, input_layout
+            )
+            select_idx, select_num_idx = get_blockwise_mask(
+                qkv_pool, txt_len, sparsity, scale, block_size, latent_shape_q, latent_shape_k, input_layout
+            )
 
         if input_layout == "BSND":
             q_seq, kv_seq = q_rf.shape[1], k_rf.shape[1]
@@ -185,7 +236,10 @@ def sparse_attention(
         )
         if layout == "TND":
             out = out.reshape(batch, q_seq, head_num, head_dim)
-        out = do_tensor_inv_rearrange(out, txt_len, latent_shape_q, latent_shape_k, input_layout)
+        if video_spans is not None:
+            out = out.index_select(1 if input_layout == "BSND" else 2, inverse)
+        else:
+            out = do_tensor_inv_rearrange(out, txt_len, latent_shape_q, latent_shape_k, input_layout)
     elif sparse_type == "rf_v3":
         out, _ = bsa_sparse_attention_v3(
             q,
@@ -200,6 +254,8 @@ def sparse_attention(
             head_num=head_num,
             scale=scale,
             inner_precise=inner_precise,
+            video_spans=video_spans,
+            precision=precision,
         )
     elif sparse_type == "ada_bsa":
         smask, sct = get_estimate_mask(

@@ -977,7 +977,7 @@ ge::graphStatus CommonChecker::CheckMultiAttr(const FiaTilingInfo &fiaInfo) {
             fiaInfo.opName, "pseShift", "pseShift must be empty when D of query and key is not equal to D of value"),
         return false);
 
-    if (fiaInfo.inputQType != ge::DT_FLOAT16) {
+    if (fiaInfo.inputQType != ge::DT_FLOAT16 && fiaInfo.fullQuantMode != FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT) {
         OP_LOGW(fiaInfo.opName, "When query input is not fp16,innerPrecise will not take effect");
     }
 

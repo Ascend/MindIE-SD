@@ -10,7 +10,6 @@
 # MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-import os
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -40,19 +39,17 @@ from mindiesd.layers.moe.moe_context import (
     is_moe_quant,
     set_moe_comm_context,
     set_moe_context,
+    should_use_gmm_finalize_routing,
     validate_moe_inputs,
 )
 from mindiesd.quantization.config import QuantConfig
 from mindiesd.quantization.mode import QuantAlgorithm
 from mindiesd.utils import ParametersInvalid
 
-from .common import make_moe_kwargs, make_w8a8_dynamic_quant_config, make_w8a8_mxfp8_quant_config
+from .common import cpu_test, make_moe_kwargs, make_w8a8_dynamic_quant_config, make_w8a8_mxfp8_quant_config
 
 
-@unittest.skipIf(
-    os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
-    "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
-)
+@cpu_test
 class TestMoEContext(unittest.TestCase):
     def setUp(self):
         set_moe_context()
@@ -90,8 +87,9 @@ class TestMoEContext(unittest.TestCase):
 
     def test_validate_moe_inputs_rejects_invalid_parameters(self):
         invalid_cases = (
-            dict(name="reduce_results", kwargs=dict(reduce_results="false")),
-            dict(name="tokens_full", kwargs=dict(tokens_full="true")),
+            dict(name="reduce_routed_out", kwargs=dict(reduce_routed_out="false")),
+            dict(name="return_dispatcher_type", kwargs=dict(return_dispatcher_type="true")),
+            dict(name="inputs_sharded", kwargs=dict(inputs_sharded="true")),
             dict(name="renormalize", kwargs=dict(renormalize="true")),
             dict(name="num_experts", kwargs=dict(num_experts="2")),
             dict(name="top_k", kwargs=dict(top_k=3)),
@@ -235,6 +233,18 @@ class TestMoEContext(unittest.TestCase):
         self.assertFalse(is_moe_int_quant())
         self.assertTrue(is_moe_mxfp_quant())
         self.assertEqual(get_moe_quant_algo(), QuantAlgorithm.W8A8_MXFP8)
+
+    def test_should_use_gmm_finalize_routing(self):
+        cases = (
+            ("static", QuantAlgorithm.W8A8_DYNAMIC, False),
+            ("dynamic", QuantAlgorithm.W8A8_DYNAMIC, False),
+            ("static", QuantAlgorithm.NO_QUANT, False),
+            ("static", QuantAlgorithm.W8A8_MXFP8, True),
+        )
+        for dispatcher_type, quant_algo, expected in cases:
+            with self.subTest(dispatcher_type=dispatcher_type, quant_algo=quant_algo):
+                set_moe_context(quant_algo=quant_algo)
+                self.assertEqual(should_use_gmm_finalize_routing(dispatcher_type), expected)
 
     def test_build_input_wrappers(self):
         hidden_states = torch.randn(3, 4)

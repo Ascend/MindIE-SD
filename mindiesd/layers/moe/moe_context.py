@@ -50,7 +50,7 @@ def validate_moe_inputs(
     tp_group: dist.ProcessGroup | None = None,
     ep_group: dist.ProcessGroup | None = None,
     dispatcher_type: str | None = None,
-    tokens_full: bool = True,
+    inputs_sharded: bool = False,
     k_group: int = 1,
     group_count: int = 1,
     group_select_mode: int = 0,
@@ -58,7 +58,8 @@ def validate_moe_inputs(
     renormalize: bool = False,
     routed_scaling_factor: float = 1.0,
     custom_routing_function: Callable | None = None,
-    reduce_results: bool = True,
+    reduce_routed_out: bool = True,
+    return_dispatcher_type: bool = False,
 ) -> QuantAlgorithm:
     """Validate public MoE inputs and return the normalized quantization algorithm."""
     if not isinstance(hidden_states, torch.Tensor):
@@ -101,12 +102,14 @@ def validate_moe_inputs(
     if not isinstance(routed_scaling_factor, float):
         raise ParametersInvalid(f"routed_scaling_factor must be a float, but got {type(routed_scaling_factor)}.")
 
-    if not isinstance(tokens_full, bool):
-        raise ParametersInvalid(f"tokens_full must be a bool, but got {type(tokens_full)}.")
+    if not isinstance(inputs_sharded, bool):
+        raise ParametersInvalid(f"inputs_sharded must be a bool, but got {type(inputs_sharded)}.")
     if not isinstance(renormalize, bool):
         raise ParametersInvalid(f"renormalize must be a bool, but got {type(renormalize)}.")
-    if not isinstance(reduce_results, bool):
-        raise ParametersInvalid(f"reduce_results must be a bool, but got {type(reduce_results)}.")
+    if not isinstance(reduce_routed_out, bool):
+        raise ParametersInvalid(f"reduce_routed_out must be a bool, but got {type(reduce_routed_out)}.")
+    if not isinstance(return_dispatcher_type, bool):
+        raise ParametersInvalid(f"return_dispatcher_type must be a bool, but got {type(return_dispatcher_type)}.")
     if dispatcher_type not in (None, "static", "dynamic"):
         raise ParametersInvalid(f"dispatcher_type must be None, 'static', or 'dynamic', but got {dispatcher_type}.")
     if group_select_mode not in (0, 1):
@@ -256,6 +259,11 @@ def get_moe_quant_algo() -> QuantAlgorithm:
     return _MOE_QUANT_ALGO
 
 
+def should_use_gmm_finalize_routing(dispatcher_type: str) -> bool:
+    """Return whether the current MoE invocation can use GMM finalize routing."""
+    return dispatcher_type == "static" and get_moe_quant_algo() == QuantAlgorithm.W8A8_MXFP8
+
+
 def dynamic_quant(hidden_states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Apply dynamic quantization according to the current MoE quantization algorithm."""
     if _MOE_QUANT_ALGO == QuantAlgorithm.W8A8_DYNAMIC:
@@ -309,13 +317,13 @@ def get_moe_group():
 def build_prepare_input(
     hidden_states: torch.Tensor,
     router_logits: torch.Tensor,
-    tokens_full: bool = True,
+    inputs_sharded: bool = False,
 ) -> MoEPrepareInput:
     """Build the prepare-stage input wrapper."""
     return MoEPrepareInput(
         hidden_states=hidden_states,
         router_logits=router_logits,
-        tokens_full=tokens_full,
+        inputs_sharded=inputs_sharded,
     )
 
 
@@ -373,6 +381,7 @@ def build_token_dispatch_input(
     top_k: int,
     weights: MoEWeights,
     dynamic_scale: torch.Tensor | None = None,
+    use_gmm_finalize_routing: bool = False,
 ) -> MoETokenDispatchInput:
     """Build the token-dispatch input wrapper."""
     return MoETokenDispatchInput(
@@ -383,6 +392,7 @@ def build_token_dispatch_input(
         top_k=top_k,
         local_num_experts=weights.w13_weight.shape[0],
         dynamic_scale=dynamic_scale,
+        use_gmm_finalize_routing=use_gmm_finalize_routing,
     )
 
 

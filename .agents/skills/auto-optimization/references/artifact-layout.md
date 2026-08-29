@@ -4,7 +4,7 @@
 
 ```text
 runs/YYYYMMDD_<model_slug>_optimization/
-├── manifest.txt                    # 环境版本：CANN / PyTorch / torch_npu / MindIE-SD
+├── manifest.txt                    # 环境版本：CANN / PyTorch / TorchNPU / MindIE-SD
 ├── step1_profile/
 │   ├── profile_l1.tar.gz           # 原始 profiling 数据
 │   └── collect_profile.log         # 采集日志
@@ -31,7 +31,7 @@ runs/YYYYMMDD_<model_slug>_optimization/
 device: ATLAS_800_A2_376T_64G
 cann: 8.0.0
 pytorch: 2.6.0
-torch_npu: 2.6.0
+TorchNPU: 2.6.0
 mindiesd: <git_commit>
 model: Wan2.2-T2V-14B
 framework: Cache DiT + diffusers
@@ -64,3 +64,7 @@ precision: bfloat16
 {通过/部分通过/未通过}
 - 目标达成 / 噪声范围 / 外部瓶颈 / 硬件瓶颈
 ```
+
+## 维护与更新
+
+当优化闭环产出物结构变化时，按 dev-workflow 的复盘流程更新本文件。

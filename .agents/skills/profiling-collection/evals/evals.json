@@ -1,0 +1,27 @@
+{
+  "skill_name": "profiling-collection",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我在远端昇腾设备上采一份 profiling 数据回来分析",
+      "expected_output": "按 profiling-collection 流程：SSH（复用连接）→ 前置验证（1 步推理）→ torch_npu.profiler 开启（warmup ≥5 步）→ 运行推理 → 压缩 profile_l1.tar.gz → 回传本地",
+      "files": [],
+      "expectations": [
+        "给出 collect_profile.py 用法（--host/--user/--container/--script/--warmup-steps）",
+        "提到 warmup 在 profiler 外完成（默认 5 步，编译场景 ≥10）",
+        "提到回传 profile_l1.tar.gz 供 performance-analysis"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "采到的 profile 里第一步耗时异常高，怀疑包含编译开销，怎么处理？",
+      "expected_output": "确认 warmup 未剔除：按 Warmup 配置要求 warmup 在 profiler 外完成（MindieSDBackend 编译场景需覆盖 JIT 编译 ≤8 次）；performance-analysis 会标注 WARMUP_NOT_STRIPPED",
+      "files": [],
+      "expectations": [
+        "提到 warmup 必须在 profiler 外部完成",
+        "提到编译场景 warmup 需覆盖 JIT（建议 ≥10 步）",
+        "提到 WARMUP_NOT_STRIPPED 标注机制"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "skill_name": "mindie-sd-community-governance",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我要提交一个修复 pattern 的 commit，标题应该怎么写？",
+      "expected_output": "按治理规范 5.1：commit 标题用 [Type][Scope]Summary 格式，Type 为 Feature/Bugfix/Docs/CI/Refactor/Test/Chore，如 [Bugfix][pattern] Fix RMSNorm matching for get_attr inputs",
+      "files": [],
+      "expectations": [
+        "输出 [Type][Scope]Summary 格式",
+        "Type 从固定集合中选择",
+        "给出可直接使用的 commit 标题示例"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "准备提一个 PR，正文需要包含哪些内容？",
+      "expected_output": "按 .gitcode/PULL_REQUEST_TEMPLATE.md：覆盖 Which issue(s)、Purpose、Test Plan、Test Report 四块；issue 关联用 Fixes # 或 Fix part of #",
+      "files": [],
+      "expectations": [
+        "列出 4 个必需区块（Which issue(s)/Purpose/Test Plan/Test Report）",
+        "提到 Fixes # 与 Fix part of # 写法",
+        "提到缺少 issue/测试结果时保留占位标注"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "改了 docs/zh/ 下的用户文档，需要做什么配套检查？",
+      "expected_output": "按治理规范：检查 docs/en/ 是否有对应配套页；若改首页/目录检查 docs/index.md 与中英文 menu_user_manual.md；给出文档站点编译验证命令（sphinx-build）",
+      "files": [],
+      "expectations": [
+        "检查英文配套页是否存在",
+        "检查首页/目录入口（index.md / menu_user_manual.md）",
+        "给出 sphinx 编译验证路径"
+      ]
+    }
+  ]
+}

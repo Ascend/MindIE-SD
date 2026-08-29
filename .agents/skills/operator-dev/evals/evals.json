@@ -1,0 +1,27 @@
+{
+  "skill_name": "operator-dev",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我要写一个 triton kernel 并做性能调优，从哪开始？",
+      "expected_output": "路由到 operator-dev → references/operator-optimization-skill-map.md：按 cannbot-skills 链路（triton-task-extractor → triton-op-designer → triton-op-coding → triton-latency-optimizer），本仓只补充 MindIE-SD 特有经验",
+      "files": [],
+      "expectations": [
+        "路由到 operator-dev 的场景映射表",
+        "提到外部 cannbot-skills 完整链路（提取→设计→编码→调优）",
+        "提到外部库不可用时降级到本仓补充经验"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "register_replacement pattern 命中了但性能反而变差，怎么查？",
+      "expected_output": "路由到 compilation-dev/references/benefit-rootcause.md：kernel diff → 逐 pass AB → R1-R5 根因目录（先查 kernel 形态：triton codegen 访存效率 vs aclnn 手调 kernel）",
+      "files": [],
+      "expectations": [
+        "引用 benefit-rootcause.md 的 R1-R5 根因目录",
+        "提到 kernel diff 方法论（L2-flush 放计时区外）",
+        "提到先查 kernel 形态（triton vs aclnn 访存效率）"
+      ]
+    }
+  ]
+}
