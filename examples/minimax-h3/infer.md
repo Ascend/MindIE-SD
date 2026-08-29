@@ -26,6 +26,8 @@ MiniMax-H3/
 
 启动服务时通过 `MODEL` 环境变量指向对应子目录（见[启动服务](#启动服务)）。
 
+4 步 FlashGen 推理使用在线 LoRA 加载，无需合并权重；LoRA 权重见[FlashGen 4 步在线 LoRA（T2VA）](#flashgen-4-步在线-lorat2va)。
+
 ### 部署环境
 
 #### 1）官方 Docker 镜像
@@ -335,13 +337,130 @@ curl -sS -D "$HDR_FILE" -X POST "${API_URL}" \
 | `short_edge` | `int` | 与 `width`/`height` 二选一 | 输出短边长度（像素），FL2VA / Ref2VA 示例采用此方式 |
 | `aspect_ratio` | `str` | 否 | 输出宽高比（如 `16:9`），与 `short_edge` 搭配使用 |
 | `fps` | `int` | 否 | 输出帧率 |
-| `num_inference_steps` | `int` | 否 | 去噪推理步数 |
+| `num_inference_steps` | `int` | 否 | 去噪推理步数；基座默认 50 步；FlashGen 在线 LoRA 须为 `4`，见[FlashGen 4 步在线 LoRA（T2VA）](#flashgen-4-步在线-lorat2va) |
 | `flow_shift` | `float` | 否 | 视频流偏移参数 |
 | `audio_flow_shift` | `float` | 否 | 音频流偏移参数 |
 | `seed` | `int` | 否 | 随机种子 |
 | `extra_params.task` | `str` | 是 | 任务类型：`t2va` / `fl2va` / `ref2va` |
 | `extra_params.duration` | `float` | 否 | 生成音视频时长（秒），最高 15 秒 |
 | `input_references` | `file` | 否 | 参考输入文件：FL2VA 传首帧图像（`image/png` 等），Ref2VA 传参考视频/音频（`video/mp4` 等） |
+| `lora` | `str` (JSON) | 否 | 在线 LoRA 配置；FlashGen 4 步须传 `name` / `path` / `scale`，见[FlashGen 4 步在线 LoRA（T2VA）](#flashgen-4-步在线-lorat2va) |
+
+## FlashGen 4 步在线 LoRA（T2VA）
+
+FlashGen 4 步权重为 native-layout LoRA 单文件（`key_format=minimax-h3-native`），通过 vLLM-Omni **运行时加载**，无需 merge 进基座。`MODEL` 仍指向官方基座 `${MODEL_ROOT}/FL2VA`。
+
+权重发布于 ModelScope：[FlashGen/Minimax-H3-4step-lora-flashgen](https://modelscope.cn/models/FlashGen/Minimax-H3-4step-lora-flashgen)
+
+### 下载 LoRA
+
+```bash
+pip install modelscope
+export FLASHGEN_DIR=/path/to/minimax-h3-flashgen-lora
+export FLASHGEN_FILE=minimax_h3_t2va_flashgen_4step_v1.0_768p_bf16.safetensors
+modelscope download FlashGen/Minimax-H3-4step-lora-flashgen \
+  --local_dir "${FLASHGEN_DIR}" \
+  --include "${FLASHGEN_FILE}"
+export FLASHGEN_LORA="${FLASHGEN_DIR}/${FLASHGEN_FILE}"
+```
+
+### 启动服务（在推荐配置基础上追加）
+
+相对 [推荐配置（Atlas 800I A2 / A3）](#推荐配置atlas-800i-a2--a3)，在 `--trust-remote-code` 之后追加 LoRA 参数，并将推荐配置中的
+
+```bash
+  --diffusion-attention-config '{"default": {"backend": "RAINFUSION_ATTN",
+      "block_sparse": {"sparsity": 0.8, "start_step": 12}}}'
+```
+
+替换成
+
+```bash
+  --diffusion-attention-backend FLASH_ATTN
+```
+
+追加 LoRA 参数：
+
+```bash
+export MODEL="${MODEL_ROOT}/FL2VA"
+
+  --task-type fl2va \
+  --lora-backend peft \
+  --lora-path "${FLASHGEN_LORA}" \
+```
+
+其余参数（USP8、DLO、VAE tile 等）与推荐配置相同。
+
+Atlas 800I A2 / A3 完整示例：
+
+```bash
+export PORT=9098
+export VLLM_WORKER_MULTIPROC_METHOD=spawn
+export VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800
+export PYTHONDONTWRITEBYTECODE=1
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+export MINDIE_SD_FA_TYPE="ascend_laser_attention"
+export HCCL_NPU_SOCKET_PORT_RANGE="auto"
+export MODEL="${MODEL_ROOT}/FL2VA"
+
+vllm serve "${MODEL}" \
+  --omni \
+  --host 0.0.0.0 \
+  --port "${PORT}" \
+  --trust-remote-code \
+  --task-type fl2va \
+  --lora-backend peft \
+  --lora-path "${FLASHGEN_LORA}" \
+  --num-gpus 8 \
+  --usp 8 \
+  --ring 1 \
+  --text-encoder-tp-size 8 \
+  --enable-distributed-layerwise-offload \
+  --vae-parallel-mode tile \
+  --vae-use-tiling \
+  --vae-patch-parallel-size 8 \
+  --enable-diffusion-pipeline-profiler \
+  --diffusion-attention-backend FLASH_ATTN
+```
+
+说明：
+
+- `--lora-backend peft` 启用运行时 LoRA manager；native 布局由 LoRA 文件 metadata 自动识别，无需单独 backend。
+- 仅支持 **T2VA**；不支持 FL2VA / Ref2VA。
+- 不支持 `--enable-cpu-offload` 或 `--enable-layerwise-offload`（普通逐层卸载）。
+
+### 发送 4 步 T2VA 请求
+
+在 [T2VA 文生视频](#t2va-文生视频) 基础上，`num_inference_steps` 改为 `4`，并传入 `lora` 字段：
+
+```bash
+export API_URL="http://127.0.0.1:${PORT}/v1/videos/sync"
+export PROMPT=""
+
+HDR_FILE=$(mktemp)
+curl -sS -D "$HDR_FILE" -X POST "${API_URL}" \
+  -F "prompt=${PROMPT}" \
+  -F 'width=1344' \
+  -F 'height=768' \
+  -F 'aspect_ratio=16:9' \
+  -F 'fps=24' \
+  -F 'num_inference_steps=4' \
+  -F "seed=1101" \
+  -F 'extra_params={"task":"t2va","duration":5.2}' \
+  -F "lora={\"name\":\"h3-flashgen-v1.0\",\"path\":\"${FLASHGEN_LORA}\",\"scale\":1.0}" \
+  -o "t2va_4step.mp4"
+```
+
+参数要点：
+
+| 参数 | 取值 | 说明 |
+|------|------|------|
+| `extra_params.task` | `t2va` | native LoRA 仅支持 T2VA |
+| `num_inference_steps` | `4` | interval 数（4 次 denoise），不是 5 |
+| `lora.scale` | `1.0` | 激活 LoRA；`0.0` 可对比基座输出 |
+| `flow_shift` / `audio_flow_shift` | 可省略 | 调度由 LoRA metadata 中的 `base_schedule` 提供 |
 
 ## 当前已适配的优化点
 
