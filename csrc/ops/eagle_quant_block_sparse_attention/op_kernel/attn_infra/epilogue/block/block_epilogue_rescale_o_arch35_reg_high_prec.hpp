@@ -158,7 +158,7 @@ public:
     }
     
     template <typename T=float, uint32_t colStride=128, bool DEQ=false>
-    __simd_vf__ inline void RescaleFunc(__ubuf__ T *goUb, __ubuf__ T *loUb, __ubuf__ T *dmUb, __ubuf__ T *scaleUb, 
+    static __simd_vf__ inline void RescaleFunc(__ubuf__ T *goUb, __ubuf__ T *loUb, __ubuf__ T *dmUb, __ubuf__ T *scaleUb, 
                                         uint32_t row)
     {
         using namespace AscendC::MicroAPI;
@@ -232,7 +232,7 @@ public:
     }
 
     template <typename T=float, uint32_t colStride=128, bool DEQ=false>
-    __simd_vf__ inline void RescaleFuncLastNotFirst(__ubuf__ T *goUb, __ubuf__ T *loUb,
+    static __simd_vf__ inline void RescaleFuncLastNotFirst(__ubuf__ T *goUb, __ubuf__ T *loUb,
                                                     __ubuf__ T *dmUb, __ubuf__ T *glUb,
                                                     __ubuf__ T *scaleUb, 
                                                     uint32_t row)
@@ -318,7 +318,7 @@ public:
     }
 
     template <typename T=float, uint32_t colStride=128, bool DEQ=false>
-    __simd_vf__ inline void DivFuncLastAndFirst(__ubuf__ T *goUb, __ubuf__ T *loUb, __ubuf__ T *glUb, 
+    static __simd_vf__ inline void DivFuncLastAndFirst(__ubuf__ T *goUb, __ubuf__ T *loUb, __ubuf__ T *glUb, 
                                                 __ubuf__ T *scaleUb, // 保持接口一致性
                                                 uint32_t row)
     {
@@ -376,7 +376,7 @@ public:
     }
 
     template <typename T=float, uint32_t colStride=128, bool DEQ=false>
-    __simd_vf__ inline void DeqLocalO(__ubuf__ T *goUb, __ubuf__ T *loUb,  
+    static __simd_vf__ inline void DeqLocalO(__ubuf__ T *goUb, __ubuf__ T *loUb,  
                                                 __ubuf__ T *scaleUb,  
                                                 uint32_t row)
     {
