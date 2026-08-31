@@ -136,3 +136,12 @@ for audio_chunk in chunks:
 - The troubleshooting methods are consistent with PyTorch's compile. A logging module is defined in [mindie_sd_backend.py](../../../mindiesd/compilation/mindie_sd_backend.py). After enabling it, you can observe graph changes before and after pattern activation. Combined with narrowing the scope via torch.compile, you can identify the cause of pattern failures.
 - Controlling the compile scope can effectively control the troubleshooting scope.
 - For other troubleshooting methods, refer to the [PyTorch official documentation](https://docs.pytorch.org/docs/main/generated/torch.compile.html).
+
+## Reference Examples
+
+- **[FLUX.1-dev Inference Optimization Guide](../../../examples/cache-dit/FLUX.1-dev.md)**: An end-to-end single-card example that combines `MindieSDBackend()` compilation optimization with Cache-DiT DBCache on FLUX.1-dev. A complete, runnable reference covering:
+
+  - Before/after comparison: how to compare runtime between the baseline and compilation-optimized runs of the same inference code, and the expected effect
+  - Practical prerequisites: install dependencies with `pip install cache-dit`; DBCache requires the `PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'` environment variable, otherwise memory overflow may occur
+  - Effect verification: watch the `PatternMatchPass replace` count in the debug log (`MINDIE_LOG_LEVEL=debug`) to confirm fused operators such as RMSNorm and RoPE are replaced, then measure runtime
+  - A complete runnable script: integrates `MindieSDBackend()` compilation optimization with cache parameter configuration for both dual-stream and single-stream transformer blocks

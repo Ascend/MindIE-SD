@@ -136,3 +136,14 @@ for audio_chunk in chunks:
 - 相关的定位手段与PyTorch的compile一致，[mindie_sd_backend.py](../../../mindiesd/compilation/mindie_sd_backend.py)中定义了日志模块，开启后，可以观察到pattern使能前后的图变化情况。配合torch.compile缩小范围，可以识别pattern失效的原因。
 - 通过控制compile的范围，可以有效控制问题定位的范围。
 - 其他定位手段可以参考[PyTorch](https://docs.pytorch.org/docs/main/generated/torch.compile.html)官网。
+
+---
+
+## 参考示例
+
+- **[FLUX.1-dev 模型推理优化指南](../../../examples/cache-dit/FLUX.1-dev.md)**：在 FLUX.1-dev 上组合使用 `MindieSDBackend()` 编译优化与 Cache-DiT DBCache 的单卡端到端案例。可作为落地参考的完整示例，主要内容包括：
+
+  - 优化前后对比：同一推理代码在未使能 / 使能编译优化两种运行下的耗时对比方法与预期效果
+  - 落地要点：`pip install cache-dit` 安装依赖；DB cache 依赖 `PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'` 环境变量，否则可能内存溢出
+  - 效果验证：通过 `MINDIE_LOG_LEVEL=debug` 观察 `PatternMatchPass replace` 匹配数量，确认 RMSNorm、RoPE 等融合算子被替换后再统计耗时
+  - 完整可运行脚本：整合编译优化与 transformer 双流/单流 block 的缓存参数配置
