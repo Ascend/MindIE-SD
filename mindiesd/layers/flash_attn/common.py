@@ -17,24 +17,22 @@ from collections import OrderedDict
 import torch
 
 
-attn_cache = OrderedDict()
-
-
 def lru_cache_by_attn_param(maxsize=None):
     def decorator(func):
+        cache = OrderedDict()
 
         @wraps(func)
         def wrapper(attn_param, *args, **kwargs):
             cache_key = attn_param.to_hash()
-            if cache_key in attn_cache:
-                attn_cache.move_to_end(cache_key)
-                return attn_cache[cache_key]
+            if cache_key in cache:
+                cache.move_to_end(cache_key)
+                return cache[cache_key]
 
             result = func(attn_param, *args, **kwargs)
-            attn_cache[cache_key] = result
+            cache[cache_key] = result
 
-            if maxsize is not None and len(attn_cache) > maxsize:
-                attn_cache.popitem(last=False)
+            if maxsize is not None and len(cache) > maxsize:
+                cache.popitem(last=False)
             return result
 
         return wrapper
