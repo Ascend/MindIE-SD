@@ -19,16 +19,20 @@ drift compare.
 Report artifacts live under the report dir and are named
 `benchmark-report_<YYYYmmdd-HHMMSS>.json` / `.html`. The baselines/*.json files
 remain the single source of truth; the timestamped JSON is a run snapshot that
-also carries the per-series CSV content (no CSV files are written).
+also carries the per-series CSV content. `cmd_baseline` additionally writes
+per-op CSV data tables (`reports/<op>.csv`) that double as an editable data
+source: peaks edited there are re-applied on the next `report` run.
 
 Usage:
     # Export baselines from the latest benchmark reports; write a timestamped
     # report snapshot and render its HTML by default.
     python benchmark_report.py baseline --report_dir ../reports_seqlen_v2 \
-        --baseline_dir ../baselines --env ../xpu-perf-plugin/vendor_ops/NPU/env.json
+        --baseline_dir ../baselines
 
-    # Re-render HTML from an existing snapshot (default: latest snapshot).
-    python benchmark_report.py render --report_dir ../reports_seqlen_v2
+    # Re-render HTML from an existing snapshot (default: latest under reports/).
+    python benchmark_report.py render
+    python benchmark_report.py render --report-json \
+        ../reports/benchmark-report_20260824.json --html out.html
 
     # Compare latest reports against baseline; drift gate (exit 1 on violations).
     python benchmark_report.py compare --report_dir ../reports_seqlen_v2 \
@@ -47,20 +51,18 @@ from datetime import datetime
 
 BASE_DIR = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE_DIR))
-from common.env_util import load_peaks  # noqa: E402
 from common.metrics import util_metrics  # noqa: E402
 from common.schema import (  # noqa: E402
     BASELINE_METRICS,
     COMPARE_METRICS,
+    OP_SEQ_AXIS,
     OP_SERIES_KEY,
     OP_SLOT_ARGS,
-    OP_SEQ_AXIS,
     SLOT_OMIT_WHEN_DEFAULT,
 )
 
 DEFAULT_REPORT_DIR = str(BASE_DIR.joinpath("reports"))
 DEFAULT_BASELINE_DIR = str(BASE_DIR.joinpath("baselines"))
-DEFAULT_ENV = str(BASE_DIR.joinpath("xpu-perf-plugin", "vendor_ops", "NPU", "env.json"))
 
 
 # --- baseline helpers -------------------------------------------------------
@@ -78,7 +80,10 @@ def _slot_for(op_name, arguments):
         value = arguments.get(key)
         if value is None:
             continue
-        if any(key == omit_key and value == arguments.get(default_key) for omit_key, default_key in omit):
+        if any(
+            key == omit_key and value == arguments.get(default_key)
+            for omit_key, default_key in omit
+        ):
             continue
         parts.append(f"{key}={value}")
     return "|".join(parts)
@@ -99,33 +104,52 @@ def load_report_entries(report_dir):
     for jsonl in jsonl_files:
         for line in jsonl.read_text(encoding="utf-8").splitlines():
             line = line.strip()
-            if line:
+            if not line:
+                continue
+            try:
                 entries.append(json.loads(line))
+            except ValueError:
+                # torn line from a run killed mid-write: skip, keep the rest
+                continue
     return entries
 
 
-def recompute_util(entry, peak_flops, peak_bw):
-    """Return (MFU, MBU) recomputed from raw measured values with env peaks."""
+def recompute_util(entry):
+    """Return (MFU, MBU) recomputed from raw measured values.
+
+    CUBE peaks come from the entry's own args (--config {"peak_flops": ...});
+    MFU/MBU are None when the user did not provide them.
+    """
     targets = entry["targets"]
+    args = entry.get("arguments", {})
     return util_metrics(
         targets.get("calc_flops_power(tflops)"),
         targets.get("mem_bw(GB/s)"),
-        peak_flops,
-        peak_bw,
+        args.get("peak_flops"),
+        args.get("peak_bw"),
     )
 
 
-def collect_baseline(entries, peak_flops, peak_bw):
-    """Group by (op, slot) -> baseline metrics, MFU/MBU recomputed with peaks."""
+def collect_baseline(entries):
+    """Group by (op, slot) -> baseline metrics, MFU/MBU recomputed per entry.
+
+    Entries without valid measurements (errored/crashed cases) are dropped so
+    a failed case never shows up as a fake data row.
+    """
     grouped = {}
     for e in entries:
         op = e.get("op_name")
         if op not in OP_SLOT_ARGS:
             continue
-        args = e.get("arguments", {})
         targets = e.get("targets", {})
+        if not targets or not any(
+            k in targets for k in ("latency(us)", "calc_flops_power(tflops)", "MFU", "MBU")
+        ):
+            # errored/skipped case: xpu-perf summary is empty -> no data
+            continue
+        args = e.get("arguments", {})
         slot = _slot_for(op, args)
-        mfu, mbu = recompute_util(e, peak_flops, peak_bw)
+        mfu, mbu = recompute_util(e)
         slot_metrics = {}
         if mfu is not None:
             slot_metrics["MFU"] = mfu
@@ -179,14 +203,15 @@ def compare(current_grouped, baseline_dir, threshold):
                     continue
                 checked += 1
                 if drift > threshold:
-                    violations.append((op, slot, metric, f"drift={drift:.4f} cur={cur} base={base}"))
+                    violations.append(
+                        (op, slot, metric, f"drift={drift:.4f} cur={cur} base={base}")
+                    )
     return checked, violations
 
 
 def cmd_compare(args):
     entries = load_report_entries(args.report_dir)
-    peak_flops, peak_bw = load_peaks(args.env)
-    current = collect_baseline(entries, peak_flops, peak_bw)
+    current = collect_baseline(entries)
     checked, violations = compare(current, args.baseline_dir, args.threshold)
     print(f"Checked {checked} metric(s); violations: {len(violations)}")
     for op, slot, metric, detail in violations:
@@ -206,14 +231,33 @@ def parse_slot(slot):
     return out
 
 
+def _series_label(op_name, parsed, series_key):
+    """Series label: dtype/quant + heads/dim + kernel function (when present)."""
+    label = parsed.get(series_key, "default")
+    if op_name in ("fa", "bsa"):
+        parts = [label]
+        if "num_heads" in parsed:
+            parts.append(f"h{parsed['num_heads']}")
+        if "head_dim" in parsed:
+            parts.append(f"d{parsed['head_dim']}")
+        if "func" in parsed:
+            parts.append(f"fn={parsed['func']}")
+        label = " ".join(parts)
+    return label
+
+
 def _aggregate_cases(op_name, cases):
-    """Aggregate slots into series: label -> x -> metrics (BSA: label -> sparsity -> x)."""
+    """Aggregate slots into series: label -> x -> metrics (BSA: label -> sparsity -> x).
+
+    fa/bsa labels carry head count / dim / kernel function so reports can
+    distinguish configs and show which Python function was tested.
+    """
     series_key = OP_SERIES_KEY[op_name]
     seq_key = OP_SEQ_AXIS[op_name]
     agg = {}
     for slot, metrics in cases.items():
         parsed = parse_slot(slot)
-        label = parsed.get(series_key, "default")
+        label = _series_label(op_name, parsed, series_key)
         x = parsed.get(seq_key)
         if x is None:
             continue
@@ -225,14 +269,18 @@ def _aggregate_cases(op_name, cases):
     return agg
 
 
-def build_csv_section(grouped):
+def build_csv_section(grouped, peaks=None):
     """Per-series CSV content embedded in the report snapshot (no CSV files).
 
     Returns {op: {series_label: [row, ...]}}; BSA rows carry a sparsity column,
-    other ops a seq_len column. Rows include MFU / MBU / latency_us.
+    other ops a seq_len column. Rows include MFU / MBU / latency_us plus the
+    per-op peak values (peak_flops / peak_bw) so the CSV doubles as a data
+    source: editing a peak there and re-running `report` updates the report.
     """
+    peaks = peaks or {}
     csv_data = {}
     for op_name, cases in grouped.items():
+        pk = peaks.get(op_name, {})
         agg = _aggregate_cases(op_name, cases)
         series = {}
         if op_name == "bsa":
@@ -248,6 +296,8 @@ def build_csv_section(grouped):
                                 "MFU": m.get("MFU"),
                                 "MBU": m.get("MBU"),
                                 "latency_us": m.get("latency(us)"),
+                                "peak_flops": pk.get("peak_flops"),
+                                "peak_bw": pk.get("peak_bw"),
                             }
                         )
                 series[label] = rows
@@ -262,6 +312,8 @@ def build_csv_section(grouped):
                             "MFU": m.get("MFU"),
                             "MBU": m.get("MBU"),
                             "latency_us": m.get("latency(us)"),
+                            "peak_flops": pk.get("peak_flops"),
+                            "peak_bw": pk.get("peak_bw"),
                         }
                     )
                 series[label] = rows
@@ -269,15 +321,27 @@ def build_csv_section(grouped):
     return csv_data
 
 
-def build_report_data(grouped, peak_flops, peak_bw, info, generated_at=None):
+def _load_run_command(report_dir):
+    """Latest run_command.txt under the report dir (written by `mindie_bench run`)."""
+    candidates = list(pathlib.Path(report_dir).rglob("run_command.txt"))
+    if not candidates:
+        return None
+    latest = max(candidates, key=lambda p: p.stat().st_mtime)
+    return latest.read_text(encoding="utf-8").strip()
+
+
+def build_report_data(
+    grouped, peak_flops, peak_bw, info, command=None, generated_at=None, peaks=None
+):
     info = info or {}
     return {
         "generated_at": generated_at or datetime.now().astimezone().isoformat(timespec="seconds"),
         "backend": info.get("backend", {}),
         "runtime": info.get("runtime", {}),
         "env": {"peak_flops": peak_flops, "peak_bw": peak_bw},
+        "command": command,
         "ops": grouped,
-        "csv": build_csv_section(grouped),
+        "csv": build_csv_section(grouped, peaks=peaks),
     }
 
 
@@ -306,28 +370,139 @@ def find_latest_report_json(report_dir):
     return str(max(candidates, key=lambda p: p.name)) if candidates else None
 
 
+def _op_peaks(entries):
+    """First non-None peak per op (may differ per op after a CSV peak update)."""
+    seen = set()
+    peaks = {}
+    for e in entries:
+        op = e.get("op_name")
+        if op in seen or op not in OP_SLOT_ARGS:
+            continue
+        args = e.get("arguments", {})
+        flops = args.get("peak_flops")
+        bw = args.get("peak_bw")
+        if flops is not None or bw is not None:
+            peaks[op] = {"peak_flops": flops, "peak_bw": bw}
+            seen.add(op)
+    return peaks
+
+
+def read_peaks_from_csv(out_dir, op_names):
+    """Read user-updated peak values from per-op CSV files (data source).
+
+    Returns {op: {"peak_flops": x, "peak_bw": y}} from the first non-empty
+    value found per column; ops without a peak column / valid value are
+    omitted so the run's own peaks are kept.
+    """
+    import csv
+
+    peaks = {}
+    out_dir = pathlib.Path(out_dir)
+    for op in op_names:
+        path = out_dir / f"{op}.csv"
+        if not path.exists():
+            continue
+        found = {}
+        with open(path, newline="", encoding="utf-8") as fh:
+            for row in csv.DictReader(fh):
+                for key in ("peak_flops", "peak_bw"):
+                    if key in found:
+                        continue
+                    raw = (row.get(key) or "").strip()
+                    if raw:
+                        try:
+                            found[key] = float(raw)
+                        except ValueError:
+                            continue
+        if found:
+            peaks[op] = found
+    return peaks
+
+
+def apply_csv_peak_updates(entries, csv_peaks):
+    """Overwrite entry peak args with user-updated CSV values; return count."""
+    updated = 0
+    for e in entries:
+        pk = csv_peaks.get(e.get("op_name"))
+        if not pk:
+            continue
+        args = e.setdefault("arguments", {})
+        for key in ("peak_flops", "peak_bw"):
+            if pk.get(key) is not None:
+                args[key] = pk[key]
+                updated += 1
+    return updated
+
+
+def write_csv_files(grouped, out_dir, peaks=None):
+    """Per-op CSV data tables (seq_len / latency / MFU / MBU / peaks...) under out_dir.
+
+    The CSV files carry the same series data as the report snapshot and can be
+    used to rebuild the HTML (data source).
+    """
+    import csv
+
+    out_dir = pathlib.Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    csv_data = build_csv_section(grouped, peaks=peaks)
+    for op, series in csv_data.items():
+        path = out_dir / f"{op}.csv"
+        with open(path, "w", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh)
+            for idx, (label, rows) in enumerate(series.items()):
+                if idx == 0:
+                    writer.writerow(["series"] + list(rows[0]))
+                for row in rows:
+                    writer.writerow([label] + [row.get(k) for k in rows[0]])
+    return out_dir
+
+
 def cmd_baseline(args):
     entries = load_report_entries(args.report_dir)
-    peak_flops, peak_bw = load_peaks(args.env)
-    grouped = collect_baseline(entries, peak_flops, peak_bw)
+    info = find_info_json(args.report_dir)
+    grouped = collect_baseline(entries)
+    # CSV is a data source: peaks edited there override the run's own values,
+    # and MFU/MBU are recomputed against the updated peaks.
+    csv_peaks = read_peaks_from_csv(DEFAULT_REPORT_DIR, list(grouped))
+    updated = apply_csv_peak_updates(entries, csv_peaks)
+    if updated:
+        grouped = collect_baseline(entries)
     export_baseline_json(grouped, args.baseline_dir)
     total = sum(len(c) for c in grouped.values())
+
+    def first_peak(key):
+        for e in entries:
+            args_d = e.get("arguments", {})
+            if args_d.get(key) is not None:
+                return args_d.get(key)
+        return None
+
+    peak_flops = first_peak("peak_flops")
+    peak_bw = first_peak("peak_bw")
     print(
         f"Exported baselines for {len(grouped)} ops, {total} cases -> {args.baseline_dir} "
         f"(peak_flops={peak_flops}, peak_bw={peak_bw})"
     )
+    if updated:
+        print(f"Applied peak update from CSV: {updated} value(s) {csv_peaks}")
 
+    per_op_peaks = _op_peaks(entries)
     now = datetime.now()
-    info = find_info_json(args.report_dir)
+    command = _load_run_command(args.report_dir)
     report = build_report_data(
         grouped,
         peak_flops,
         peak_bw,
         info,
+        command=command,
         generated_at=now.astimezone().isoformat(timespec="seconds"),
+        peaks=per_op_peaks,
     )
-    report_path = write_report_json(args.report_dir, report, stamp=now.strftime("%Y%m%d-%H%M%S"))
+    out_dir = DEFAULT_REPORT_DIR
+    report_path = write_report_json(out_dir, report, stamp=now.strftime("%Y%m%d-%H%M%S"))
     print(f"Wrote {report_path}")
+    write_csv_files(grouped, out_dir, peaks=per_op_peaks)
+    print(f"Wrote {out_dir}/<op>.csv")
 
     if not args.no_html:
         html_path = report_path.with_suffix(".html")
@@ -336,11 +511,11 @@ def cmd_baseline(args):
 
 
 def cmd_render(args):
-    report_file = args.report_json or find_latest_report_json(args.report_dir)
+    report_file = args.report_json or find_latest_report_json(DEFAULT_REPORT_DIR)
     if report_file is None:
-        sys.exit(f"No benchmark-report_*.json under {args.report_dir}; run `baseline` first")
+        sys.exit(f"No benchmark-report_*.json under {DEFAULT_REPORT_DIR}; run `baseline` first")
     report = json.loads(pathlib.Path(report_file).read_text(encoding="utf-8"))
-    html_output = args.html_output or str(pathlib.Path(report_file).with_suffix(".html"))
+    html_output = args.html or str(pathlib.Path(report_file).with_suffix(".html"))
     render_html(report, html_output)
 
 
@@ -357,6 +532,13 @@ def _fmt(v):
     if v is None:
         return "n/a"
     return f"{v:.4f}"
+
+
+def _pct(v):
+    """Utilization (MFU/MBU) rendered as a percentage in the HTML report."""
+    if v is None:
+        return "n/a"
+    return f"{v * 100:.2f}%"
 
 
 def _human(v):
@@ -396,7 +578,10 @@ def line_chart_svg(title, series, x_values, series_metric):
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
         f'viewBox="0 0 {W} {H}" font-family="Segoe UI, Arial, sans-serif">'
     ]
-    parts.append(f'<text x="{MARGIN["l"]}" y="16" font-size="15" font-weight="600" fill="#222">{safe_title}</text>')
+    parts.append(
+        f'<text x="{MARGIN["l"]}" y="16" font-size="15" font-weight="600" fill="#222">'
+        f"{safe_title}</text>"
+    )
     for i in range(5):
         gy = y_min + (y_max - y_min) * i / 4
         yy = ys(gy)
@@ -405,7 +590,8 @@ def line_chart_svg(title, series, x_values, series_metric):
             f'stroke="#e8e8e8" stroke-width="1"/>'
         )
         parts.append(
-            f'<text x="{MARGIN["l"] - 6}" y="{yy + 4:.1f}" font-size="11" fill="#666" text-anchor="end">{gy:.2f}</text>'
+            f'<text x="{MARGIN["l"] - 6}" y="{yy + 4:.1f}" font-size="11" fill="#666" '
+            f'text-anchor="end">{gy * 100:.0f}%</text>'
         )
     for v in x_values:
         xx = xs(v)
@@ -422,10 +608,8 @@ def line_chart_svg(title, series, x_values, series_metric):
         f'text-anchor="middle">seq len</text>'
     )
 
-    color_idx = 0
-    for label, s in series.items():
+    for color_idx, (label, s) in enumerate(series.items()):
         color = PALETTE[color_idx % len(PALETTE)]
-        color_idx += 1
         pts = []
         for x in x_values:
             yv = ys(s.get(x))
@@ -440,81 +624,109 @@ def line_chart_svg(title, series, x_values, series_metric):
             parts.append(
                 f'<circle cx="{last[0]}" cy="{last[1]}" r="3.4" fill="{color}">'
                 f'<title>{html.escape(label)} {html.escape(series_metric)}@{_human(x_values[-1])}'
-                f'={_fmt(s.get(x_values[-1]))}</title></circle>'
+                f'={_pct(s.get(x_values[-1]))}</title></circle>'
             )
     parts.append("</svg>")
     return "".join(parts)
 
 
-def _legend_html(series_labels):
-    """Color legend for the two metric charts plus each plotted series line."""
+def _legend_html(series_labels, metrics=("MFU", "MBU")):
+    """Color legend: metric swatches (squares) plus each plotted series (dots).
+
+    Metrics use square swatches and series use round dots so a series colored
+    like the first metric (e.g. gmm's first series vs MFU) is still readable.
+    """
     parts = ['<div class="legend">']
-    parts.append(f'<span class="dot" style="background:{PALETTE[0]}"></span>MFU')
-    parts.append(f'<span class="dot" style="background:{PALETTE[1]}"></span>MBU')
+    for idx, metric in enumerate(metrics):
+        parts.append(f'<span class="sw" style="background:{PALETTE[idx]}"></span>{metric}')
     for idx, label in enumerate(series_labels):
-        parts.append(f'<span class="dot" style="background:{PALETTE[idx % len(PALETTE)]}"></span>{html.escape(label)}')
+        parts.append(
+            f'<span class="dot" style="background:{PALETTE[idx % len(PALETTE)]}">'
+            f"</span>{html.escape(label)}"
+        )
     parts.append("</div>")
     return "".join(parts)
 
 
 def build_op_html(op_name, cases):
-    """Render charts + tables for one op from report snapshot data."""
+    """Render one chart per displayed metric (all series combined) and the
+    per-series performance tables below them.
+
+    Displayed metrics come from schema.OP_DISPLAY_METRICS: fa/bsa/mm are
+    compute-bound and show MFU only; gmm shows MFU+MBU.
+    """
+    from common.schema import OP_DISPLAY_METRICS
+
     axis = OP_SERIES_KEY[op_name]
     agg = _aggregate_cases(op_name, cases)
+    display = OP_DISPLAY_METRICS[op_name]
 
     parts = [f'<h2>{html.escape(op_name.upper())}</h2>', f"<p>{len(cases)} baseline cases</p>"]
+
+    if op_name == "bsa":
+        all_x = sorted({x for label in agg.values() for sp in label.values() for x in sp})
+        series = {metric: {} for metric in display}
+        for label in sorted(agg):
+            for sp in sorted(agg[label], key=float):
+                key = f"{label} sp={sp}"
+                for metric in display:
+                    series[metric][key] = {x: agg[label][sp].get(x, {}).get(metric) for x in all_x}
+    else:
+        all_x = sorted({x for label in agg.values() for x in label})
+        series = {}
+        for metric in display:
+            series[metric] = {
+                label: {x: agg[label].get(x, {}).get(metric) for x in all_x}
+                for label in sorted(agg)
+            }
+
+    if all_x:
+        legend_labels = [label for metric in display for label in series[metric]]
+        parts.append(_legend_html(legend_labels, metrics=display))
+        for metric in display:
+            title = f"{op_name.upper()} · {metric} ({axis})"
+            parts.append(line_chart_svg(title, series[metric], all_x, metric))
+
     for label in sorted(agg):
+        parts.append(f"<h3>Data — {html.escape(label)}</h3>")
         if op_name == "bsa":
             by_sparsity = agg[label]
             xs = sorted({x for m in by_sparsity.values() for x in m})
             if not xs:
                 continue
-            series_mfu = {
-                f"sp={sp}": {x: by_sparsity[sp].get(x, {}).get("MFU") for x in xs}
-                for sp in sorted(by_sparsity, key=float)
-            }
-            series_mbu = {
-                f"sp={sp}": {x: by_sparsity[sp].get(x, {}).get("MBU") for x in xs}
-                for sp in sorted(by_sparsity, key=float)
-            }
+            for metric in display:
+                header = [f"{metric} / sparsity"] + [_human(x) for x in xs]
+                rows = ""
+                for sp in sorted(by_sparsity, key=float):
+                    cells = [html.escape(sp)] + [
+                        _pct(by_sparsity[sp].get(x, {}).get(metric)) for x in xs
+                    ]
+                    rows += "<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
+                parts.append(
+                    "<table><thead><tr>"
+                    + "".join(f"<th>{h}</th>" for h in header)
+                    + "</tr></thead><tbody>"
+                    + rows
+                    + "</tbody></table>"
+                )
         else:
             metrics = agg[label]
             xs = sorted(metrics)
             if not xs:
                 continue
-            series_mfu = {label: {x: metrics[x].get("MFU") for x in xs}}
-            series_mbu = {label: {x: metrics[x].get("MBU") for x in xs}}
-
-        title = f"{op_name.upper()} — {axis}={label} (seq len sweep)"
-        parts.append(_legend_html(list(series_mfu)))
-        parts.append(line_chart_svg(f"{title} · MFU", series_mfu, xs, "MFU"))
-        parts.append(line_chart_svg(f"{title} · MBU", series_mbu, xs, "MBU"))
-
-        parts.append(f"<h3>Data — {html.escape(axis)}={html.escape(label)}</h3>")
-        if op_name == "bsa":
-            header = ["sparsity"] + [_human(x) for x in xs]
+            header = ["seq len", "latency(us)"] + list(display)
             rows = ""
-            for sp in sorted(by_sparsity, key=float):
-                cells = [html.escape(sp)] + [_fmt(by_sparsity[sp].get(x, {}).get("MFU")) for x in xs]
-                rows += "<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
+            for x in xs:
+                mm = metrics[x]
+                cells = [f"<td>{_human(x)}</td>", f"<td>{_fmt(mm.get('latency(us)'))}</td>"]
+                cells += [f"<td>{_pct(mm.get(m))}</td>" for m in display]
+                rows += "<tr>" + "".join(cells) + "</tr>"
             parts.append(
                 "<table><thead><tr>"
                 + "".join(f"<th>{h}</th>" for h in header)
                 + "</tr></thead><tbody>"
                 + rows
                 + "</tbody></table>"
-            )
-        else:
-            rows = ""
-            for x in xs:
-                mm = metrics[x]
-                rows += (
-                    f"<tr><td>{_human(x)}</td><td>{_fmt(mm.get('latency(us)'))}</td>"
-                    f"<td>{_fmt(mm.get('MFU'))}</td><td>{_fmt(mm.get('MBU'))}</td></tr>"
-                )
-            parts.append(
-                "<table><thead><tr><th>seq len</th><th>latency(us)</th><th>MFU</th>"
-                "<th>MBU</th></tr></thead><tbody>" + rows + "</tbody></table>"
             )
     return "\n".join(parts)
 
@@ -526,9 +738,15 @@ def render_html(data, html_output):
     backend = data.get("backend", {})
     runtime = data.get("runtime", {})
     env = data.get("env", {})
+    command = data.get("command")
     generated_at = html.escape(str(data.get("generated_at", "")))
     backend_html = "".join(
-        f"<tr><td>{html.escape(str(k))}</td><td>{html.escape(str(v))}</td></tr>" for k, v in backend.items()
+        f"<tr><td>{html.escape(str(k))}</td><td>{html.escape(str(v))}</td></tr>"
+        for k, v in backend.items()
+    )
+    env_html = "".join(
+        f"<tr><td>{html.escape(str(k))}</td><td>{html.escape(str(v))}</td></tr>"
+        for k, v in env.items()
     )
 
     sections = []
@@ -537,6 +755,14 @@ def render_html(data, html_output):
         if op not in OP_SLOT_ARGS:
             continue
         sections.append(build_op_html(op, ops[op]))
+
+    command_html = ""
+    if command:
+        command_html = (
+            '<h2>Command</h2>'
+            f'<pre style="background:#f4f6fa;border:1px solid #e2e8f0;border-radius:6px;'
+            f'padding:12px;font-size:12px;overflow-x:auto;">{html.escape(command)}</pre>'
+        )
 
     doc = f"""<!DOCTYPE html>
 <html lang="zh">
@@ -561,17 +787,24 @@ def render_html(data, html_output):
         border-radius: 6px; }}
   .legend {{ font-size: 12px; color: #333; margin: 0 0 18px; }}
   .legend span {{ display: inline-block; margin-right: 18px; }}
-  .dot {{ display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; }}
+  .dot {{ display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+         margin-right: 4px; }}
+  .sw {{ display: inline-block; width: 10px; height: 10px; margin-right: 4px; }}
 </style>
 </head>
 <body><div class="wrap">
 <h1>MindIE-SD Core Ops Benchmark Report</h1>
-<p class="meta">Generated: {generated_at} · Device: {html.escape(str(backend.get('device_name', 'n/a')))} ·
-PyTorch {html.escape(str(backend.get('torch_version', 'n/a')))} · torch_npu {html.escape(str(backend.get('torch_npu_version', 'n/a')))} ·
+<p class="meta">Generated: {generated_at} · Device:
+{html.escape(str(backend.get('device_name', 'n/a')))} ·
+PyTorch {html.escape(str(backend.get('torch_version', 'n/a')))} · torch_npu
+{html.escape(str(backend.get('torch_npu_version', 'n/a')))} ·
 device_ids {html.escape(str(runtime.get('device_ids', 'n/a')))} ·
 peak_flops {env.get('peak_flops', 'n/a')} TFLOPS · peak_bw {env.get('peak_bw', 'n/a')} GB/s</p>
 <h2>Environment</h2>
 <table><thead><tr><th>attr</th><th>value</th></tr></thead><tbody>{backend_html}</tbody></table>
+<h3>Peak config (CUBE flops / bandwidth)</h3>
+<table><thead><tr><th>key</th><th>value</th></tr></thead><tbody>{env_html}</tbody></table>
+{command_html}
 {''.join(sections)}
 </div></body></html>"""
 
@@ -581,27 +814,36 @@ peak_flops {env.get('peak_flops', 'n/a')} TFLOPS · peak_bw {env.get('peak_bw', 
 # --- CLI --------------------------------------------------------------------
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="MindIE-SD benchmark report tool (baseline export + report snapshot + HTML + compare)."
+        description="MindIE-SD benchmark report tool "
+        "(baseline export + report snapshot + HTML + compare)."
     )
     sub = parser.add_subparsers(dest="cmd")
 
-    p_b = sub.add_parser("baseline", help="Export baseline JSON + timestamped report snapshot; render HTML by default.")
+    p_b = sub.add_parser(
+        "baseline",
+        help="Export baseline JSON + timestamped report snapshot; render HTML by default.",
+    )
     p_b.add_argument("--report_dir", default=DEFAULT_REPORT_DIR, help="Latest xpu-perf report dir")
-    p_b.add_argument("--baseline_dir", default=DEFAULT_BASELINE_DIR, help="Baseline JSON output dir")
-    p_b.add_argument("--env", default=DEFAULT_ENV, help="env.json with peak_flops/peak_bw")
+    p_b.add_argument(
+        "--baseline_dir", default=DEFAULT_BASELINE_DIR, help="Baseline JSON output dir"
+    )
     p_b.add_argument("--no-html", action="store_true", help="Skip HTML rendering")
     p_b.set_defaults(func=cmd_baseline)
 
     p_r = sub.add_parser("render", help="Render HTML from a report snapshot (default: latest).")
-    p_r.add_argument("--report_dir", default=DEFAULT_REPORT_DIR, help="Report dir holding benchmark-report_*.json")
-    p_r.add_argument("--report-json", default=None, help="Explicit snapshot JSON path")
-    p_r.add_argument("--html-output", default=None, help="HTML output path (default: next to the snapshot)")
+    p_r.add_argument(
+        "--report-json",
+        default=None,
+        help="Snapshot JSON path (default: latest benchmark-report_*.json under reports/)",
+    )
+    p_r.add_argument(
+        "--html", default=None, help="HTML output path (default: next to the snapshot)"
+    )
     p_r.set_defaults(func=cmd_render)
 
     p_c = sub.add_parser("compare", help="Compare latest reports against baseline; drift gate.")
     p_c.add_argument("--report_dir", default=DEFAULT_REPORT_DIR, help="Latest xpu-perf report dir")
     p_c.add_argument("--baseline_dir", default=DEFAULT_BASELINE_DIR, help="Baseline JSON dir")
-    p_c.add_argument("--env", default=DEFAULT_ENV, help="env.json with peak_flops/peak_bw")
     p_c.add_argument("--threshold", type=float, default=0.03, help="Relative drift threshold")
     p_c.set_defaults(func=cmd_compare)
 
