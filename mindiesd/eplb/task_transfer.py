@@ -66,4 +66,14 @@ class UpdateTaskTransfer:
                 moe_layer_idx=self.moe_layer_idx,
                 data=layout_command,
             )
-            self.instruction_queue[rank].put(task_payload)
+            try:
+                self.instruction_queue[rank].put_nowait(task_payload)
+            except queue.Full:
+                logger.warning(
+                    "[MindIE-SD/eplb] EPLB update task enqueue failed. "
+                    "issue=instruction_queue for rank %s is full, moe_layer_idx=%s, expected=queue has free slot. "
+                    "possible_cause=scheduler consumes update tasks slower than workers produce them. "
+                    "Troubleshooting: check scheduler process state, queue consumer thread, and EPLB interval configuration.",
+                    rank,
+                    self.moe_layer_idx,
+                )
