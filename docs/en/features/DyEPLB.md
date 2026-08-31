@@ -79,22 +79,22 @@ This solution dynamically adjusts expert weights on Ranks based on load informat
 
 4. Insert load collection and weight replacement after `npu_moe_init_routing` and before `npu_grouped_matmul_finalize_routing` in the MoE forward pass.
 
-   ```python
-   expanded_tokens, expanded_row_idx, expanded_indices = torch_npu.npu_moe_init_routing(
-       tokens, row_idx, indices, tokens.shape[0])
+    ```python
+    expanded_tokens, expanded_row_idx, expanded_indices = torch_npu.npu_moe_init_routing(
+        tokens, row_idx, indices, tokens.shape[0])
 
-   self.expert_load_collector.collect_expert_load(expanded_indices)
-   self.dispatcher.check_consistency()
+    self.expert_load_collector.collect_expert_load(expanded_indices)
+    self.dispatcher.check_consistency()
 
-   if self.dispatcher.update_flag:
-       weight1, weight2, local_expert_num, device_indices_map, \
-           local_expert_indices_map, local_expert_list = \
-           self.dispatcher.update_module_weight_and_map()
-       self.weight1 = weight1
-       self.weight2 = weight2
-       self.local_expert_num = local_expert_num
+    if self.dispatcher.update_flag:
+        weight1, weight2, local_expert_num, device_indices_map, \
+            local_expert_indices_map, local_expert_list = \
+            self.dispatcher.update_module_weight_and_map()
+        self.weight1 = weight1
+        self.weight2 = weight2
+        self.local_expert_num = local_expert_num
 
-   tokens = torch_npu.npu_grouped_matmul_finalize_routing()
+    tokens = torch_npu.npu_grouped_matmul_finalize_routing()
     ```
 
 ### Class Descriptions

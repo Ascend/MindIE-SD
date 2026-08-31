@@ -13,13 +13,13 @@
 1. 克隆代码仓
 
     ```bash
-    git clone MindIE-SD代码仓地址
+    git clone https://gitcode.com/Ascend/MindIE-SD.git
     cd MindIE-SD
     ```
 
 2. 用VS Code打开项目
 
-    ```Shell
+    ```shell
     code .
     ```
 

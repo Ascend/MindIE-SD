@@ -38,7 +38,7 @@ Wan2.1-T2V-14B/
 └── ...
 ```
 
-> **说明**
+> [!NOTE]说明
 >
 > - 除 HuggingFace 外，也可从 [modelscope](https://modelscope.cn/models) 获取模型权重。
 > - 如需下载其他模型的权重（FLUX.1-dev、HunyuanVideo 等），请参见[模型/框架支持情况](features/supported_matrix.md)中的链接。

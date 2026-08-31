@@ -37,7 +37,7 @@
 pip install mindiesd
 ```
 
-其他安装方式和环依赖详见[安装指导](docs/zh/installation.md)。
+其他安装方式和环境依赖详见[安装指导](docs/zh/installation.md)。
 
 ## 🚀 架构介绍
 
