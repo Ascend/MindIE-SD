@@ -18,10 +18,14 @@ op argument does not require touching two places. These must stay in sync with
 """
 
 # args that together identify one benchmark slot (a baseline key)
+# fa/bsa carry batch_size/num_heads/head_dim/func so reports can show shape
+# params and the tested Python kernel function; func is omitted when unset
+# (default impl). gmm carries hidden_size/moe_inter/experts so varying them
+# across runs cannot collide into one slot.
 OP_SLOT_ARGS = {
-    "fa": ("q_len", "kv_len", "dtype"),
-    "bsa": ("q_len", "kv_len", "sparsity", "dtype"),
-    "gmm": ("num_tokens", "top_k", "quant_algo"),
+    "fa": ("q_len", "kv_len", "batch_size", "num_heads", "head_dim", "dtype", "func"),
+    "bsa": ("q_len", "kv_len", "batch_size", "num_heads", "head_dim", "sparsity", "dtype", "func"),
+    "gmm": ("num_tokens", "hidden_size", "moe_inter", "experts", "top_k", "quant_algo"),
     "mm": ("M", "K", "N", "quant_algo"),
 }
 
@@ -41,8 +45,18 @@ OP_SERIES_KEY = {
     "mm": "quant_algo",
 }
 
+# metrics displayed in the HTML report per op. FA/BSA/MM are compute-bound and
+# show MFU only; GMM additionally shows MBU (its grouped-GEMM read pattern is
+# bandwidth-relevant).
+OP_DISPLAY_METRICS = {
+    "fa": ("MFU",),
+    "bsa": ("MFU",),
+    "gmm": ("MFU", "MBU"),
+    "mm": ("MFU",),
+}
+
 # slot-level metrics carried by baselines and report snapshots
-BASELINE_METRICS = ("MFU", "MBU", "latency(us)")
+BASELINE_METRICS = ("MFU", "MBU", "latency(us)", "executed_path")
 
 # metrics compared by the drift gate
 COMPARE_METRICS = ("MFU", "MBU")

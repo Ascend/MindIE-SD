@@ -16,7 +16,8 @@ Single home for logic consumed by both the runtime plugin
 (xpu-perf-plugin, imported on the NPU box) and the offline report tool
 (scripts/benchmark_report.py), so the two can never drift apart:
 
-- env_util: peak_flops/peak_bw resolution from env.json.
+- env_util: legacy env.json peak resolution (unused compat layer; peaks now
+  come from --config per run).
 - metrics: MFU/MBU accounting formula.
 - schema: op slot / seq-axis / series-key tables.
 """

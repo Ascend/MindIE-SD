@@ -10,48 +10,85 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-"""Shared env.json parsing for peak_flops / peak_bw.
+"""Legacy env.json peak parsing (kept for compatibility, NO production callers).
 
-Single source of truth for MFU/MBU peak resolution, used by both BackendNPU
-(runtime accounting) and benchmark_report.py (offline recompute / compare), so
-the two can never disagree about which device entry is active.
+Peak_flops / peak_bw are now provided per run via --config (each case carries
+them in its arguments); this module's load_peaks / _merged_env helpers are
+retained as an unused compatibility layer (covered by tests) and document the
+old env.json format for reference:
 
-Resolution: start from the "common" entry, then overlay the entry matching
-`device_name` if provided and present; otherwise fall back to the first
-non-common entry. Missing file or empty peak values yield None peaks.
+    --env vendor_ops/NPU/env.json
+    --env '{"peak_flops": 560, "peak_bw": 1275}'
+
+Resolution (file form): start from the "common" entry, then overlay the entry
+matching `device_name` if provided and present; otherwise fall back to the
+first non-common entry. Missing file / unparsable input / empty peak values
+yield None peaks.
 """
 
 import json
+import os
 
 
-def load_peaks(env_file, device_name=None):
-    """Return (peak_flops, peak_bw) floats from env_file, or (None, None).
+def _merged_env(env_spec, device_name=None):
+    """Resolve the active env entry into a merged dict (common + device).
 
-    Args:
-        env_file: path to env.json ({common: {...}, <device>: {...}}).
-        device_name: optional exact device key to prefer.
+    With a ``device_name`` the matching device entry overlays ``common``.
+    Without one, ``common`` acts as the default-device entry when it carries
+    peaks; otherwise the first non-common device entry is used (legacy shape).
     """
-    if not env_file:
-        return None, None
-    try:
-        with open(env_file, encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (OSError, ValueError):
-        return None, None
+    data = _load_env_data(env_spec)
     if not isinstance(data, dict):
-        return None, None
-
+        return {}
     merged = dict(data.get("common", {}) or {})
     device_entry = data.get(device_name) if device_name else None
     if device_entry is not None:
         merged.update(device_entry)
-    else:
+    elif "peak_flops" in data or "peak_bw" in data:
+        # Flat inline JSON: {"peak_flops": 560, "peak_bw": 1275}.
+        merged.update(data)
+    elif "peak_flops" not in merged and "peak_bw" not in merged:
+        # No device match and common carries no peaks: legacy fallback to the
+        # first non-common device entry.
         for key, val in data.items():
             if key == "common":
                 continue
-            merged.update(val)
-            break
+            if isinstance(val, dict):
+                merged.update(val)
+                break
+    return merged
+
+
+def load_peaks(env_spec, device_name=None):
+    """Return (peak_flops, peak_bw) floats from env_spec, or (None, None).
+
+    Args:
+        env_spec: env.json path or inline JSON string
+            ({"peak_flops": <float>, "peak_bw": <float>}).
+        device_name: optional exact device key to prefer (file form only).
+
+    ``peak_flops`` is the CUBE (AI Core matrix) peak flops of the device.
+    """
+    merged = _merged_env(env_spec, device_name)
+    if not merged:
+        return None, None
     return _to_float(merged.get("peak_flops")), _to_float(merged.get("peak_bw"))
+
+
+def _load_env_data(env_spec):
+    """Parse env_spec into a dict: file path first, then inline JSON."""
+    if not env_spec:
+        return None
+    if os.path.isfile(env_spec):
+        try:
+            with open(env_spec, encoding="utf-8") as fh:
+                return json.load(fh)
+        except (OSError, ValueError):
+            return None
+    try:
+        return json.loads(env_spec)
+    except (TypeError, ValueError):
+        return None
 
 
 def _to_float(value):
