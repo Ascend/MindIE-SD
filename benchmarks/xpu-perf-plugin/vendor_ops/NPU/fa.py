@@ -15,9 +15,8 @@
 import logging
 import math
 
-from xpu_perf.micro_perf.core.op import ProviderRegistry
-
 from _quant import is_quant_unsupported
+from xpu_perf.micro_perf.core.op import ProviderRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +44,9 @@ class NPUFlashAttentionOp:
         n = self.num_heads
         d = self.head_dim
         scale = 1.0 / math.sqrt(d)
+        # Record what actually executed so reports can tell real quantized
+        # runs from bf16 fallbacks (see MfuMbuSummaryMixin.executed_path).
+        self.executed_path = self.dtype
 
         if self.dtype in ("fp8", "mxfp8"):
             try:
@@ -56,6 +58,7 @@ class NPUFlashAttentionOp:
                     "DynamicMxQuant unsupported on this platform; %s FA falls back to bf16",
                     self.dtype,
                 )
+                self.executed_path = "bf16_fallback"
                 return self._bf16_fa(q, k, v, n, scale)
 
         if self.dtype == "mxfp4":
@@ -65,6 +68,7 @@ class NPUFlashAttentionOp:
                 if not is_quant_unsupported(exc):
                     raise
                 logger.warning("mxfp4 FA falls back to bf16 (DynamicMxQuant unsupported)")
+                self.executed_path = "bf16_fallback"
                 return self._bf16_fa(q, k, v, n, scale)
 
         return self._bf16_fa(q, k, v, n, scale)
@@ -134,7 +138,9 @@ class NPUFlashAttentionOp:
         key, kv_s, padded_kv_s = _pad_fa_seq_before_quant(k, MXFP4_FA_SEQ_PAD_BASE, "BNSD")
         value, _, _ = _pad_fa_seq_before_quant(v, MXFP4_FA_SEQ_PAD_BASE, "BNSD")
         batch_size = query.shape[0]
-        seq_param = AttentionParam(batch_size, n, d, padded_s, padded_kv_s, torch.int32, str(query.device))
+        seq_param = AttentionParam(
+            batch_size, n, d, padded_s, padded_kv_s, torch.int32, str(query.device)
+        )
         seqused_q, seqused_kv = _get_qfa_seqused(seq_param)
 
         quant_q, q_scale = _dynamic_mx_quant_fa(query, axis=-1)

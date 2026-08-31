@@ -14,9 +14,8 @@
 
 import logging
 
-from xpu_perf.micro_perf.core.op import ProviderRegistry
-
 from _quant import is_quant_unsupported
+from xpu_perf.micro_perf.core.op import ProviderRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +42,9 @@ class NPUMatMulOp:
 
         x = tensor_mapping["x"]
         w = tensor_mapping["w"]
+        # Record what actually executed so reports can tell real quantized
+        # runs from bf16 fallbacks (see MfuMbuSummaryMixin.executed_path).
+        self.executed_path = self.quant_algo
         if self.quant_algo == "NO_QUANT":
             return torch.matmul(x, w)
 
@@ -60,6 +62,7 @@ class NPUMatMulOp:
                 self.quant_algo,
                 exc,
             )
+            self.executed_path = "bf16_fallback"
             return torch.matmul(x, w)
 
     @staticmethod

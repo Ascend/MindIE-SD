@@ -72,7 +72,7 @@ class FlashAttentionOp(MfuMbuSummaryMixin, BasicOp):
     def flops_calc(self):
         # Per batch: QK^T -> B*N*S*S (2 flops/elem) and PV -> B*N*S*S (2 flops/elem).
         valid_parts = attention_valid_parts(self.q_len, self.kv_len, self.causal, self.sparsity)
-        self.calc_flops = 2 * (self.num_heads * self.head_dim * valid_parts * 2)
+        self.calc_flops = 2 * (self.batch_size * self.num_heads * self.head_dim * valid_parts * 2)
         # Quantized paths quantize q/k/v inside the timed region (npu_dynamic_mx_quant
         # / _dynamic_mx_quant_fa); charge their elementwise work so MFU covers the
         # full measured op. Unpadded lengths are used (seqlen-scan configs are 2^k

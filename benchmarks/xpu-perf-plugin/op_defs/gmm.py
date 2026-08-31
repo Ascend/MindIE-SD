@@ -18,6 +18,7 @@ from ._common import (
     SUPPORTED_GMM_QUANT,
     MfuMbuSummaryMixin,
     op_tensor_info,
+    quant_flops,
     tensor_bytes,
 )
 
@@ -62,10 +63,22 @@ class GroupedMatMulOp(MfuMbuSummaryMixin, BasicOp):
             raise ValueError("group_list length must equal num_tokens")
 
     def flops_calc(self):
-        # Dense grouped-shape MLP: gate_up 2*M*C*inter + w2 2*M*C*inter.
-        # top_k is recorded for MoE routing context but the benchmark measures
-        # the dense kernel, so FLOPs stay consistent with the measured op.
-        self.calc_flops = 4 * self.num_tokens * self.hidden_size * self.moe_inter
+        # Dense grouped-shape MLP measured by the vendor kernel:
+        #   gate_up: [M,C] @ [C,2*inter]      -> 2*M*C*(2*inter) = 4*M*C*inter
+        #   w2:      [M,inter] @ [inter,C]     -> 2*M*inter*C     = 2*M*C*inter
+        # total 6*M*C*inter. top_k is recorded for MoE routing context only:
+        # the benchmark measures the dense kernel (all weights read once), so
+        # neither FLOPs nor bytes apply a top_k discount.
+        self.calc_flops = 6 * self.num_tokens * self.hidden_size * self.moe_inter
+        # Quantized paths run npu_weight_quant_batchmatmul (weight quant inside
+        # the timed region); charge the elementwise quantization work so MFU
+        # covers the full measured op (same convention as mm).
+        if self.quant_algo != "NO_QUANT":
+            self.calc_flops += (
+                quant_flops(self.num_tokens * self.hidden_size)
+                + quant_flops(2 * self.moe_inter * self.hidden_size)
+                + quant_flops(self.hidden_size * self.moe_inter)
+            )
 
     def vendor_parser(self):
         pass
@@ -80,7 +93,7 @@ class GroupedMatMulOp(MfuMbuSummaryMixin, BasicOp):
 
     def vendor_impl(self):
         device = self.backend.get_torch_device_name()
-        m, c, inter, top_k = self.num_tokens, self.hidden_size, self.moe_inter, self.top_k
+        m, c, inter = self.num_tokens, self.hidden_size, self.moe_inter
         w_dtype = self.weight_dtype
 
         self.input_tensor_info = {
@@ -92,11 +105,11 @@ class GroupedMatMulOp(MfuMbuSummaryMixin, BasicOp):
             "y": op_tensor_info([m, c], "bf16", device),
         }
 
-        # Effective bytes: only top_k routed experts are touched.
+        # Dense kernel reads all weights once (no top_k routing discount).
         self.input_tensor_size = (
             tensor_bytes(m * c, "bf16")
-            + tensor_bytes(inter * 2 * c, w_dtype) * top_k
-            + tensor_bytes(c * inter, w_dtype) * top_k
+            + tensor_bytes(inter * 2 * c, w_dtype)
+            + tensor_bytes(c * inter, w_dtype)
         )
         self.output_tensor_size = tensor_bytes(m * c, "bf16")
         self.tensor_size = self.input_tensor_size + self.output_tensor_size

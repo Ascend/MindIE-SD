@@ -42,12 +42,26 @@ class NPUGroupedMatMulOp:
         w13 = tensor_mapping["w13"]
         w2 = tensor_mapping["w2"]
 
+        # Record what actually executed so reports can tell real quantized
+        # runs from bf16 fallbacks (see MfuMbuSummaryMixin.executed_path).
+        # W8A8_MXFP8 currently measures the dense bf16 kernel (DynamicMxQuant
+        # grouped matmul unsupported), so it is tagged as a fallback.
+        self.executed_path = self.quant_algo
+        if self.quant_algo == "W8A8_MXFP8":
+            self.executed_path = "bf16_fallback"
+
         if self.quant_algo == "W8A8_DYNAMIC":
             import torch_npu
 
-            gate_up = torch_npu.npu_weight_quant_batchmatmul(x, w13, self._per_col_scale(w13))
+            # npu_weight_quant_batchmatmul expects weight layout [B, K, N];
+            # op_defs builds w13/w2 as [1, N, K] (the dense matmul layout), so
+            # transpose before the call (verified by the x_k_dim/weight_k_dim
+            # shape check this fixes). Per-column scale follows the N dim.
+            w13_t = w13.transpose(-2, -1)
+            gate_up = torch_npu.npu_weight_quant_batchmatmul(x, w13_t, self._per_col_scale(w13_t))
             act = _silu(gate_up)
-            return torch_npu.npu_weight_quant_batchmatmul(act, w2, self._per_col_scale(w2))
+            w2_t = w2.transpose(-2, -1)
+            return torch_npu.npu_weight_quant_batchmatmul(act, w2_t, self._per_col_scale(w2_t))
 
         gate_up = torch.matmul(x, w13.transpose(-2, -1))
         act = _silu(gate_up)
@@ -55,11 +69,15 @@ class NPUGroupedMatMulOp:
 
     def _per_col_scale(self, w):
         # Cache per weight shape; the scale is constant across benchmark iters.
+        # For the [B, K, N] layout used by npu_weight_quant_batchmatmul the
+        # per-column (N) scale is the trailing dim.
         key = tuple(w.shape)
         if key not in self._per_col_scales:
             import torch
 
-            self._per_col_scales[key] = torch.ones(w.shape[-2], dtype=torch.float32, device=w.device)
+            self._per_col_scales[key] = torch.ones(
+                w.shape[-1], dtype=torch.float32, device=w.device
+            )
         return self._per_col_scales[key]
 
 

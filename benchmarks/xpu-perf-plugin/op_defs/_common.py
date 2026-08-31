@@ -128,10 +128,14 @@ def attention_valid_parts(q_len, kv_len, causal, sparsity):
 class MfuMbuSummaryMixin:
     """Add MFU/MBU incremental fields to BasicOp.summary() output.
 
-    peak_flops / peak_bw are read from the backend instance (populated from
-    vendor_ops/NPU/env.json by BackendNPU); CPU simulation backends may set
-    them to None to skip the fields. The MFU/MBU formula is shared with the
-    offline report tool via common.metrics.util_metrics.
+    peak_flops / peak_bw come from the case args (--config {"peak_flops":
+    ...}); CPU simulation backends may leave them unset -> MFU/MBU are None.
+    The MFU/MBU formula is shared with the offline report tool via
+    common.metrics.util_metrics.
+
+    Also injects ``executed_path`` when the vendor implementation records it
+    (e.g. "bf16_fallback" when a quantized path degraded to bf16 on this
+    platform), so reports can tell real quantized runs from fallbacks.
     """
 
     def summary(self, latency_us, kernel_mapping=None):
@@ -139,8 +143,14 @@ class MfuMbuSummaryMixin:
         if not target_dict:
             return target_dict
 
-        peak_flops = getattr(self.backend, "peak_flops", None)
-        peak_bw = getattr(self.backend, "peak_bw", None)
+        executed_path = getattr(self, "executed_path", None)
+        if executed_path:
+            target_dict["executed_path"] = executed_path
+
+        # CUBE peaks come from the case args (--config {"peak_flops": ...});
+        # MFU/MBU are None when the user did not provide them.
+        peak_flops = (self.args_dict or {}).get("peak_flops")
+        peak_bw = (self.args_dict or {}).get("peak_bw")
         mfu, mbu = util_metrics(
             target_dict.get("calc_flops_power(tflops)"),
             target_dict.get("mem_bw(GB/s)"),

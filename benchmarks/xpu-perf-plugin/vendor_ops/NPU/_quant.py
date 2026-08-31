@@ -18,7 +18,15 @@ torch_npu raises RuntimeError with the missing kernel's name in the message
 instead of a silent behavior change across vendor impls.
 """
 
-_QUANT_UNSUPPORTED_SIGNALS = ("DynamicMxQuant", "npu_quant_matmul")
+# Quantized flash-attention on some platforms (e.g. Ascend950PR) fails inside
+# fused_infer_attention_score_v2 with an EagleFusedInferAttentionScore tiling
+# error (EZ1008) rather than a "missing kernel" message; treat it as
+# unsupported so the bf16 FA fallback kicks in.
+_QUANT_UNSUPPORTED_SIGNALS = (
+    "DynamicMxQuant",
+    "npu_quant_matmul",
+    "EagleFusedInferAttentionScore",
+)
 
 
 def is_quant_unsupported(exc):

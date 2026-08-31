@@ -100,7 +100,9 @@ class MatMulOp(MfuMbuSummaryMixin, BasicOp):
             "y": op_tensor_info([self.M, self.N], "bf16", device),
         }
 
-        self.input_tensor_size = tensor_bytes(self.M * self.K, a_dtype) + tensor_bytes(self.K * self.N, w_dtype)
+        self.input_tensor_size = (
+            tensor_bytes(self.M * self.K, a_dtype) + tensor_bytes(self.K * self.N, w_dtype)
+        )
         self.output_tensor_size = tensor_bytes(self.M * self.N, "bf16")
         self.tensor_size = self.input_tensor_size + self.output_tensor_size
 

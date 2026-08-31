@@ -16,7 +16,7 @@ Based on xpu-perf launch.py but injects the local BackendNPU shim since
 xpu-perf only scans its own backends package for --backend choices.
 
 Usage:
-    python npu_launch.py --task_dir ../workloads --task all
+    python npu_launch.py --task_dir ../example --task all
 """
 
 import argparse
@@ -30,6 +30,7 @@ from xpu_perf.micro_perf.core.common_utils import (
     export_reports,
     logger,
     parse_tasks,
+    parse_workload,
     setup_logger,
 )
 from xpu_perf.micro_perf.core.perf_engine import XpuPerfServer
@@ -43,6 +44,13 @@ VENDOR_NPU_DIR = FILE_DIR.joinpath("vendor_ops/NPU")
 # `common` package (env_util/metrics/schema); `spawn` workers re-execute this
 # module top-level, so the path is also present in child processes.
 sys.path.insert(0, str(BENCHMARKS_DIR))
+
+# vendor_ops/NPU must be importable: vendor modules use sibling imports
+# (`from _quant import ...` in fa.py / mm.py), which only resolve when the
+# vendor package dir is on sys.path (xpu-perf loads plugins by file location
+# without package context, so sibling imports would otherwise fail and the
+# NPU vendor impl would silently fall back to the base op).
+sys.path.insert(0, str(VENDOR_NPU_DIR))
 
 mp.set_start_method("spawn", force=True)
 
@@ -61,7 +69,14 @@ def parse_args():
     )
     # Forwarded to BackendNPU via XpuPerfServer as its env_file kwarg (the base
     # launcher contract); it is not consumed directly by this module.
-    parser.add_argument("--env", type=str, default=None)
+    # Deprecated: peak_flops/peak_bw are now passed per run via --config and no
+    # longer read from env.json (mindie_bench passes env=None).
+    parser.add_argument(
+        "--env",
+        type=str,
+        default=None,
+        help="(deprecated) env.json path or inline JSON; peaks now come from --config",
+    )
     parser.add_argument("--numa", type=str, default="-1")
     parser.add_argument("--device", type=str, default=None)
     parser.add_argument("--node_world_size", type=int, default=1)
@@ -70,7 +85,7 @@ def parse_args():
     parser.add_argument("--server_port", type=int, default=49371)
     parser.add_argument("--host_port", type=int, default=49372)
     parser.add_argument("--device_port", type=int, default=49373)
-    parser.add_argument("--task_dir", type=str, default=str(FILE_DIR.parent.joinpath("workloads")))
+    parser.add_argument("--task_dir", type=str, default=str(FILE_DIR.parent.joinpath("example")))
     parser.add_argument("--task", type=str, default="all")
     parser.add_argument("--workload", type=str)
     parser.add_argument("--report_dir", type=str, default=str(FILE_DIR.parent.joinpath("reports")))
@@ -96,11 +111,15 @@ def _npu_backend_module():
 
 
 def load_test_cases(args):
+    if args.workload:
+        # Single workload file (JSON/CSV) takes precedence over --task_dir.
+        return parse_workload(args.workload)
     return parse_tasks(args.task_dir, args.task)
 
 
-def run_bench(args):
-    test_cases = load_test_cases(args)
+def run_bench(args, test_cases=None):
+    if test_cases is None:
+        test_cases = load_test_cases(args)
     if not test_cases:
         logger.error("No valid test cases found. Exiting.")
         raise SystemExit(1)
