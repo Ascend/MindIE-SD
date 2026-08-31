@@ -27,10 +27,18 @@ if os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU":
 
     mock_torch_npu()
 
+# tests/UT/benchmark is a pytest-only suite: its conftest.py bootstraps
+# sys.path for the offline benchmarks/ tooling (`common`, `op_defs`) and the
+# tests rely on pytest fixtures (tmp_path, monkeypatch). The unittest-based
+# coverage pass below targets the mindiesd package, so leave those tests to
+# the pytest invocation in run_UT_test.sh instead of importing them here.
+PYTEST_ONLY_TEST_DIRS = ("benchmark",)
+
 
 def load_tests_from_files(folder_path):
     test_suite = unittest.TestSuite()
-    for foldername, _, filenames in os.walk(folder_path):
+    for foldername, dirnames, filenames in os.walk(folder_path):
+        dirnames[:] = [d for d in dirnames if d not in PYTEST_ONLY_TEST_DIRS]
         for filename in filenames:
             if re.match(r"^test_", filename) and re.search(r"py$", filename):
                 file_path = os.path.join(folder_path, foldername, filename)
