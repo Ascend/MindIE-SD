@@ -10,7 +10,7 @@ and governance rules.
 ## 简体中文
 
 感谢你为 MindIE SD 做出贡献。提交 Issue、代码、测试、文档或评审即表示你同意
-遵守[社区行为准则与贡献规则](CODE_OF_CONDUCT.md)。发现安全漏洞时，请勿提交
+遵守[社区行为准则](CODE_OF_CONDUCT.md)。发现安全漏洞时，请勿提交
 公开 Issue，应按照[安全政策](SECURITY.md)报告。
 
 ### 开始之前
@@ -112,11 +112,19 @@ maintainer。
 
 ### 评审、合入与治理
 
-角色名单以 [OWNERS](OWNERS) 为准：
+角色名单以 Ascend community 中的
+[MindIE-SD SIG 配置](https://gitcode.com/Ascend/community/blob/master/MindIE/sigs/MindIE-SD/sig-info.yaml)
+为准：
 
 - **Reviewer** 提供技术评审、协助问题复现，并审核代码、测试和文档。
-- **Approver** 校验技术质量、测试证据和文档影响，确认变更具备合入条件。
+- **Committer** 校验技术质量、测试证据和文档影响，执行最终批准并确认变更具备
+  合入条件。
 - **Branch keeper** 管理受保护分支策略、发布就绪检查和最终合入授权。
+
+贡献者从 Contributor 成长为 Reviewer、Committer 或 Maintainer 的条件、提名和
+投票流程，以 Ascend community 的
+[角色定义及晋升机制](https://gitcode.com/Ascend/community/blob/master/docs/role-definition-and-promotion-mechanism.md)
+为准。
 
 普通 PR 按以下流程处理：
 
@@ -125,11 +133,11 @@ maintainer。
 3. 需要修改的意见完成修改并请求复审；不采纳的意见说明理由并获得 reviewer
    确认。
 4. 合入前未解决的评审会话数必须为 0；最后一次代码更新后仍须保有有效的
-   Approver 批准。
+   Committer 批准。
 5. 所有适用的必需 CI 在最新提交或预合并结果上通过。
 6. Branch keeper 或授权 maintainer 将变更合入受保护分支。
 
-发布与治理事项由 Branch keepers 协调分支和发布准备，Approvers 确认代码、
+发布与治理事项由 Branch keepers 协调分支和发布准备，Committers 确认代码、
 文档与版本记录状态；发布仅在批准的 Ascend/NPU runner 上执行。
 
 ### Ascend 社区公共规范
@@ -149,7 +157,7 @@ maintainer。
 
 Thank you for contributing to MindIE SD. By submitting Issues, code, tests,
 documentation, or reviews, you agree to follow the
-[Code of Conduct and Contribution Rules](CODE_OF_CONDUCT.md). Do not open a
+[Code of Conduct](CODE_OF_CONDUCT.md). Do not open a
 public Issue for a suspected vulnerability; follow the
 [Security Policy](SECURITY.md) instead.
 
@@ -263,14 +271,19 @@ a maintainer when trigger permission is required.
 
 ### Review, Merge, and Governance
 
-The role roster is maintained in [OWNERS](OWNERS):
+The role roster is maintained in the Ascend community
+[MindIE-SD SIG configuration](https://gitcode.com/Ascend/community/blob/master/MindIE/sigs/MindIE-SD/sig-info.yaml):
 
 - **Reviewers** provide technical review, assist with issue reproduction, and
   review code, tests, and documentation.
-- **Approvers** verify technical quality, test evidence, and documentation
-  impact, and confirm that a change is ready to merge.
+- **Committers** verify technical quality, test evidence, and documentation
+  impact, issue final approval, and confirm that a change is ready to merge.
 - **Branch keepers** manage protected-branch policy, release-readiness checks,
   and final merge authorization.
+
+The eligibility, nomination, and voting process for progressing from Contributor
+to Reviewer, Committer, or Maintainer follows the Ascend community
+[Role Definitions and Promotion Mechanism](https://gitcode.com/Ascend/community/blob/master/docs/role-definition-and-promotion-mechanism.md).
 
 A regular PR follows this process:
 
@@ -281,14 +294,14 @@ A regular PR follows this process:
 3. Requested changes are implemented and sent for re-review. A declined
    suggestion includes a rationale acknowledged by the reviewer.
 4. There are zero unresolved review conversations before merge, and a valid
-   Approver approval remains after the final code update.
+   Committer approval remains after the final code update.
 5. Every applicable required CI check passes on the latest commit or pre-merge
    result.
 6. A Branch keeper or authorized maintainer merges the change into the protected
    branch.
 
 For release and governance matters, Branch keepers coordinate branch strategy
-and release preparation, while Approvers confirm the code, documentation, and
+and release preparation, while Committers confirm the code, documentation, and
 release-note status. Releases run only on approved Ascend/NPU runners.
 
 ### Shared Ascend Community Guidelines

@@ -1,4 +1,25 @@
-# MindIE SD
+<!-- markdownlint-disable-next-line MD041 -->
+<p align="center">
+    <img alt="MindIE SD" src="https://raw.gitcode.com/Ascend/MindIE-SD/raw/2169b12abd36eb7f65498de94dd143df6fcfc63f/docs/figures/MindIE-SD-logo-2k.png">
+</p>
+
+<p align="center">
+    <a href="https://mindie-sd.readthedocs.io/en/latest/zh/">
+        <img alt="Documentation" src="https://img.shields.io/badge/Docs-Read%20the%20Docs-8CA1AF">
+    </a>
+    <a href="https://pypi.org/project/mindiesd/">
+        <img alt="PyPI" src="https://img.shields.io/pypi/v/mindiesd?logo=pypi&logoColor=white">
+    </a>
+    <a href="#wechat-community">
+        <img alt="Community QR Code" src="https://img.shields.io/badge/Community-WeChat-07C160">
+    </a>
+    <a href="./LICENSE.md">
+        <img alt="License" src="https://img.shields.io/badge/License-Mulan-blue">
+    </a>
+    <a href="https://meeting.ascend.osinfra.cn/?sig=sig-MindIE-SD">
+        <img alt="SIG Meetings" src="https://img.shields.io/badge/Meetings-SIG-0A7B83">
+    </a>
+</p>
 
 简体中文 | [English](./README.en.md)
 
@@ -15,7 +36,7 @@
 - 01/2026: 新增内存优化能力与服务化样例
 - 12/31/2025: MindIE SD提供稀疏Attention计算能力
 - 12/25/2025：vLLM Omni x MindIE SD 实现 Qwen-Image-Edit-2511 / Qwen-Image-Layered 昇腾原生高性能推理
-- 11/30/2025：MindIE SD 正式宣布开源并面向公众开放！[会议日历](https://meeting.ascend.osinfra.cn/?sig=sig-MindIE-SD)
+- 11/30/2025：MindIE SD 正式宣布开源并面向公众开放！
 
 ## 🚀 简介
 
@@ -44,13 +65,13 @@ pip install mindiesd
 
 MindIE SD 架构和关键特性详见[架构介绍](docs/zh/architecture.md)。
 
-![MindIE SD架构图](docs/figures/architecture_overview.png)
+![MindIE SD架构图](https://raw.gitcode.com/Ascend/MindIE-SD/raw/dev/docs/figures/architecture_overview.png)
 
 ## ⚡️ 快速入门
 
 [快速开始](docs/zh/quick_start.md): 以wan2.1为例，介绍使用mindiesd后的整体加速效果。
 
-[MiniMax-H3 推理与性能优化](examples/minimax-h3/infer.md): 介绍 MiniMax-H3 在昇腾上的推理部署、适配与性能优化。
+<a id="wechat-community"></a>
 
 ## 💬 联系我们
 
@@ -62,15 +83,15 @@ MindIE SD 架构和关键特性详见[架构介绍](docs/zh/architecture.md)。
 
 | 微信交流群 | 个人微信（群二维码失效时添加） |
 | --- | --- |
-| ![微信群聊二维码](docs/figures/wx_sd.jpg) | ![个人微信二维码](docs/figures/wx_lwl.jpg) |
+| ![微信群聊二维码](https://raw.gitcode.com/Ascend/MindIE-SD/raw/dev/docs/figures/wx_sd.jpg) | ![个人微信二维码](https://raw.gitcode.com/Ascend/MindIE-SD/raw/dev/docs/figures/wx_lwl.jpg) |
 
 </div>
 
 ## 📚 开发文档
 
-[贡献指南](docs/zh/developer_guide/contribution_guide.md):说明如何提交 Issue、Pull Request 以及代码规范。
-[AI Agent支持](.agents/README.md): 介绍仓内默认使用的一些skills及使用agent辅助开发流程
-[测试验证](docs/zh/developer_guide/test.md):介绍单元测试样例运行流程
+- [贡献指南](docs/zh/developer_guide/contribution_guide.md)：说明如何提交 Issue、Pull Request 以及代码规范。
+- [AI Agent 支持](.agents/README.md)：介绍仓内默认使用的一些 skills 及使用 Agent 辅助开发流程。
+- [测试验证](docs/zh/developer_guide/test.md)：介绍单元测试样例运行流程。
 
 ## 🌐 生态支持
 

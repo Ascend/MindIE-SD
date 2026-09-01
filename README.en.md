@@ -1,4 +1,25 @@
-# MindIE SD
+<!-- markdownlint-disable-next-line MD041 -->
+<p align="center">
+    <img alt="MindIE SD" src="https://raw.gitcode.com/Ascend/MindIE-SD/raw/2169b12abd36eb7f65498de94dd143df6fcfc63f/docs/figures/MindIE-SD-logo-2k.png">
+</p>
+
+<p align="center">
+    <a href="https://mindie-sd.readthedocs.io/en/latest/zh/">
+        <img alt="Documentation" src="https://img.shields.io/badge/Docs-Read%20the%20Docs-8CA1AF">
+    </a>
+    <a href="https://pypi.org/project/mindiesd/">
+        <img alt="PyPI" src="https://img.shields.io/pypi/v/mindiesd?logo=pypi&logoColor=white">
+    </a>
+    <a href="#wechat-community">
+        <img alt="Community QR Code" src="https://img.shields.io/badge/Community-WeChat-07C160">
+    </a>
+    <a href="./LICENSE.md">
+        <img alt="License" src="https://img.shields.io/badge/License-Mulan-blue">
+    </a>
+    <a href="https://meeting.ascend.osinfra.cn/?sig=sig-MindIE-SD">
+        <img alt="SIG Meetings" src="https://img.shields.io/badge/Meetings-SIG-0A7B83">
+    </a>
+</p>
 
 English | [简体中文](./README.md)
 
@@ -15,7 +36,7 @@ English | [简体中文](./README.md)
 - 01/2026: Added memory optimization capabilities and serving examples
 - 12/31/2025: MindIE SD provides sparse Attention computation capability
 - 12/25/2025: vLLM Omni x MindIE SD achieves native high-performance Ascend inference for Qwen-Image-Edit-2511 / Qwen-Image-Layered
-- 11/30/2025: MindIE SD officially open-sourced and available to the public! [Meeting Calendar](https://meeting.ascend.osinfra.cn/?sig=sig-MindIE-SD)
+- 11/30/2025: MindIE SD officially open-sourced and available to the public!
 
 ## Introduction
 
@@ -44,19 +65,31 @@ For other installation methods and environment dependencies, see [Installation G
 
 For MindIE SD architecture and key features, see [Architecture Overview](docs/zh/architecture.md).
 
-![MindIE SD Architecture Diagram](docs/figures/architecture_overview.png)
+![MindIE SD Architecture Diagram](https://raw.gitcode.com/Ascend/MindIE-SD/raw/dev/docs/figures/architecture_overview.png)
 
 ## Quick Start
 
 [Quick Start](docs/zh/quick_start.md): Using Wan2.1 as an example, introduces the overall acceleration effect with MindIE SD.
 
-[MiniMax-H3 Inference and Performance Optimization](examples/minimax-h3/infer.md): Introduces MiniMax-H3 inference deployment, adaptation, and performance optimization on Ascend.
+<a id="wechat-community"></a>
+
+## Contact Us
+
+Join the MindIE-SD WeChat community by scanning the group QR code below. If the group QR code has expired, scan the personal WeChat QR code to request an invitation.
+
+<div align="center">
+
+| WeChat Group | Personal WeChat (if the group QR code has expired) |
+| --- | --- |
+| ![WeChat Group QR Code](https://raw.gitcode.com/Ascend/MindIE-SD/raw/dev/docs/figures/wx_sd.jpg) | ![Personal WeChat QR Code](https://raw.gitcode.com/Ascend/MindIE-SD/raw/dev/docs/figures/wx_lwl.jpg) |
+
+</div>
 
 ## Developer Documentation
 
-[Contribution Guide](docs/zh/developer_guide/contribution_guide.md): Explains how to submit Issues, Pull Requests, and coding standards.
-[AI Agent Support](.agents/README.md): Introduces the default skills used in the repository and the agent-assisted development workflow.
-[Test Verification](docs/zh/developer_guide/test.md): Introduces the unit test example execution workflow.
+- [Contribution Guide](docs/zh/developer_guide/contribution_guide.md): Explains how to submit Issues, Pull Requests, and coding standards.
+- [AI Agent Support](.agents/README.md): Introduces the default skills used in the repository and the agent-assisted development workflow.
+- [Test Verification](docs/zh/developer_guide/test.md): Introduces the unit test example execution workflow.
 
 ## Ecosystem Support
 

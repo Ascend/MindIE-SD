@@ -41,7 +41,7 @@ if [ -n "$MINDIE_SD_VERSION_OVERRIDE" ]; then
     MindIESDVersion=$MINDIE_SD_VERSION_OVERRIDE
     echo "Using MINDIE_SD_VERSION_OVERRIDE: $MindIESDVersion"
 else
-    MindIESDVersion="3.0.0"
+    MindIESDVersion="3.1.0"
     echo "Using default version: $MindIESDVersion"
 fi
 MindIESDVersion=$(echo $MindIESDVersion | sed -E 's/([0-9]+)\.([0-9]+)\.RC([0-9]+)\.([0-9]+)/\1.\2rc\3.post\4/')
