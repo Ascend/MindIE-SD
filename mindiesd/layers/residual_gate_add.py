@@ -24,6 +24,50 @@ if _HAS_TRITON:
     from .triton_utils import triton, tl
 
 
+def _normalize_triton_inputs(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    gate: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None:
+    """Return inputs in ``[B,S,D], [B,S,D], [B,1,D]`` order when supported."""
+    if x.dim() != 3 or y.dim() != 3 or gate.dim() != 3:
+        return None
+
+    # Multiplication is commutative, and FX may preserve the source operand order.
+    # FLUX writes ``x + gate * y``, while the original Wan pattern example uses
+    # ``x + y * gate``.  Normalize both bindings before entering the positional
+    # Triton kernel.
+    if y.shape != x.shape and gate.shape == x.shape:
+        y, gate = gate, y
+
+    batch, _, hidden_size = x.shape
+    if y.shape != x.shape:
+        raise ValueError(
+            f"x and y must have the same shape; got x={tuple(x.shape)} y={tuple(y.shape)}"
+        )
+
+    expected_gate_shape = (batch, 1, hidden_size)
+    if gate.shape != expected_gate_shape:
+        raise ValueError(
+            f"gate must have shape {expected_gate_shape}; got gate={tuple(gate.shape)}"
+        )
+    if x.numel() == 0:
+        raise ValueError("x must not be empty")
+    if x.device != y.device or x.device != gate.device:
+        raise ValueError(
+            "x, y, and gate must be on the same device; "
+            f"got x={x.device} y={y.device} gate={gate.device}"
+        )
+    if x.dtype != y.dtype or x.dtype != gate.dtype:
+        raise ValueError(
+            "x, y, and gate must have the same dtype; "
+            f"got x={x.dtype} y={y.dtype} gate={gate.dtype}"
+        )
+    if not x.is_contiguous() or not y.is_contiguous() or not gate.is_contiguous():
+        raise ValueError("x, y, and gate must be contiguous")
+    return x, y, gate
+
+
 if _HAS_TRITON:
 
     @triton.jit
@@ -49,20 +93,13 @@ if _HAS_TRITON:
             out = x + y.to(tl.float32) * g
             tl.store(output_ptr + offs, out, mask=mask)
 
-
     def _residual_gate_add_triton(x: torch.Tensor, y: torch.Tensor, gate: torch.Tensor) -> torch.Tensor:
-        if x.dim() != 3 or y.dim() != 3:
-            print(f"[residual_gate_add] fallback (ndim) x={tuple(x.shape)} y={tuple(y.shape)} gate={tuple(gate.shape)}", flush=True)
+        normalized_inputs = _normalize_triton_inputs(x, y, gate)
+        if normalized_inputs is None:
             return _residual_gate_add_fallback(x, y, gate)
-        if x.shape != y.shape:
-            raise ValueError(f"x and y must have the same shape; got x={tuple(x.shape)} y={tuple(y.shape)}")
-        if gate.dim() < 2 or gate.shape[-1] != x.shape[-1]:
-            raise ValueError(
-                f"gate must be broadcastable [B,1,D] with D == x.shape[-1]; "
-                f"got gate={tuple(gate.shape)} dim={gate.dim()} x={tuple(x.shape)} y={tuple(y.shape)} dtype={gate.dtype}"
-            )
+        x, y, gate = normalized_inputs
 
-        B, S, D = x.shape
+        _, S, D = x.shape
         n_rows = x.numel() // D
         # 必须连续: x 可能是非连续 view(如 transpose 节点),empty_like 会继承其 stride,
         # 导致下游 norm 需要一次额外 transpose
@@ -98,10 +135,11 @@ def _residual_gate_add_fallback(x: torch.Tensor, y: torch.Tensor, gate: torch.Te
 
 @torch.library.custom_op("mindiesd::residual_gate_add", mutates_args=())
 def residual_gate_add(x: torch.Tensor, y: torch.Tensor, gate: torch.Tensor) -> torch.Tensor:
-    """Fused residual + gate: out = x + y.float() * gate (fp32 in/out).
+    """Fused residual + gate: out = x + y.float() * gate.float().
 
     Uses a Triton kernel on Ascend NPU when available, otherwise falls back
-    to native PyTorch operations (which torch.compile can fuse).
+    to native PyTorch operations.  The Triton path accepts either operand
+    order for ``[B,S,D] * [B,1,D]`` and preserves ``x.dtype`` in the output.
     """
     if _TRITON_ON_ASCEND:
         return _residual_gate_add_triton(x, y, gate)
