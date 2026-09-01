@@ -5,6 +5,7 @@ English | [简体中文](./README.md)
 ## Latest News
 
 - 08/03/2026: Completed [high-performance MiniMax-H3 inference adaptation and optimization on Ascend](examples/minimax-h3/infer.md)
+- 07/2026: [RotateAttention](docs/tech_report/RotateAttention.pdf) was accepted to ECCV 2026
 - 06/2026: Enhanced low-precision inference, multimodal MoE, sparse attention, and the deployment ecosystem
 - 05/28/2026: [Cache-DiT completed its MindIE-SD integration](https://github.com/vipshop/cache-dit/pull/1004)
 - 05/2026: Completed multimodal MoE inference capability development and multi-model adaptation validation

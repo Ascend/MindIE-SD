@@ -48,7 +48,7 @@
 | `docs/en/` | 英文文档 |
 | `docs/zh/developer_guide/` | 开发者指南（本文所在目录） |
 | `docs/zh/features/` | 加速特性说明 |
-| `docs/zh/community/` | 社区治理 |
+| `contributing.md` | 贡献流程与治理规则 |
 
 ## 关键配置文件
 

@@ -1,16 +1,20 @@
-# 安全声明
+# MindIE SD 安全声明 / Security Policy
 
-## 安全须知
+[简体中文](#简体中文) | [English](#english)
+
+## 简体中文
+
+### 安全须知
 
 使用MindIE时，为保证安全，用户应根据自身业务，审视整个系统的网络安全加固措施，按照所在组织的安全策略进行相关配置，包括但不局限于软件版本、口令复杂度要求、安全配置（协议、加密套件、秘钥长度等），权限配置、防火墙设置等。关于更多安全声明与建议可参考[昇腾社区MindIE安全管理与加固](https://www.hiascend.com/document/detail/zh/mindie/22RC1/envdeployment/instg/mindie_instg_0041.html)，以社区最新版本为准。
 
-## 运行环境建议
+### 运行环境建议
 
 - 为减少潜在的安全风险，建议使用非root、非管理员类型账户执行系统操作，确保只有root才是系统的最高权限用户，确保系统中各系统账号的UID不同，遵循权限最小化原则。
 - 定期开展对集群的防病毒扫描，防病毒例行检查会帮助集群免受病毒、恶意代码、间谍软件以及程序侵害，降低系统瘫痪、信息泄露等风险。可以使用业界主流防病毒软件进行防病毒检查。
 - 为保证生产环境的安全，降低被攻击的风险，请定期查看[昇腾社区MindIE安全管理与加固](https://www.hiascend.com/document/detail/zh/mindie/22RC1/envdeployment/instg/mindie_instg_0041.html)修复漏洞/功能问题。
 
-## 文件权限控制
+### 文件权限控制
 
 - 建议用户将主机（包括宿主机）和容器中的umask设置为0027及以上，提高安全性。
 - 建议用户对个人隐私数据、商业资产、业务开发相关的各类包含敏感内容的文件做好访问权限控制。例如本项目中安装目录权限管控、数据文件权限管控，设定的权限可参考[A-文件（夹）各场景权限管控推荐最大值](#a-文件夹各场景权限管控推荐最大值)。
@@ -18,18 +22,18 @@
 - 禁止使用高危capability的可执行文件。
 - 系统中不允许存在无属主的文件。
 
-## 构建安全声明
+### 构建安全声明
 
 - 本项目需要自行编译构建出包，编译过程会产生一些中间文件和编译目录，建议用户对这些文件做好权限控制，在构建过程中可根据需要修改构建脚本以避免相关安全风险，并注意构建结果安全。
 - 本项目涉及Python whl包安装，为避免其他用户直接访问和修改Python代码引起代码篡改、伪造等风险，建议用户设置Python为仅安装用户可修改和使用。
 - 使用Linux自带的ASLR（Address Space Layout Randomization）和KASLR（Kernel Address Space Layout Randomization）机制进行安全编译。
-    - ASLR，开启后可以增强漏洞攻击防护能力，开启方式为：
+  - ASLR，开启后可以增强漏洞攻击防护能力，开启方式为：
 
         ```shell
         echo 2 > /proc/sys/kernel/randomize_va_space
         ```
 
-    - KASLR，开启后可以增加针对内核漏洞的攻击难度，开启方式如下所示：
+  - KASLR，开启后可以增加针对内核漏洞的攻击难度，开启方式如下所示：
     1. 使用以下示例命令查看内核配置文件。
 
         ```shell
@@ -68,11 +72,11 @@
         echo 2 >/proc/sys/kernel/randomize_va_space
         ```
 
-## 数据安全声明
+### 数据安全声明
 
 - 本项目会涉及到接收输入、加载模型权重和保存结果数据，部分接口直接或间接使用风险模块pickle，可能存在数据风险，请确保输入数据来源、保存路径地址可信，加载模型权重时，建议使用本地权重。
 
-## 运行安全声明
+### 运行安全声明
 
 - 为避免服务和客户端通信过程信息泄露，建议用户启用HTTPS通信并启用双向认证，如果启用，建议对通信认证涉及的证书、私钥、口令等做好安全访问控制。
 - MindIE仅提供部分流控能力，且不直接对接公网，建议用户对MindIE流控和公网、局域网隔离做好控制。如可以使用开源软件Nginx进行保障，用户可参照[Nginx官方文档](https://nginx.org/en/docs/)和[昇腾社区Server安全加固](https://www.hiascend.com/document/detail/zh/mindie/22RC1/envdeployment/instg/mindie_instg_0068.html)进行Nginx的部署。
@@ -81,23 +85,23 @@
 - 用户可以根据自身业务，按IP地址限制与服务器的连接速率对系统进行防DoS攻击，方法包括但不限于利用Linux系统自带iptables防火墙进行预防、优化sysctl参数等。
 - 本项目默认的Gloo、DataDist和HCCL通信暂不支持TLS认证功能，如有需要，可参考[B-集合通信加固](#b-集合通信加固)。
 
-## 公开接口声明
+### 公开接口声明
 
 本项目提供的对外接口均已在资料中公开，建议直接使用资料说明的公开接口，不建议直接调用未明确公开的接口源码。
 
-## 通信矩阵
+### 通信矩阵
 
 本项目的通信矩阵，包括产品开放的端口、该端口使用的传输层协议、通过该端口与对端通信的通信网元名称、认证方式、用途等信息说明均已在资料中公开，可参考[昇腾社区MindIE通信矩阵](https://www.hiascend.com/document/detail/zh/mindie/22RC1/ref/commumatrix/Communication0000.html)，以社区最新版本为准。
 
-## 公网地址声明
+### 公网地址声明
 
 本项目代码中包含的公网地址声明均已在资料中公开，可参考[昇腾社区MindIE公网URL](https://www.hiascend.com/document/detail/zh/mindie/22RC1/envdeployment/instg/mindie_instg_0089.html)，以社区最新版本为准。
 
-## 漏洞机制说明
+### 漏洞机制说明
 
 [漏洞管理](https://gitcode.com/Ascend/community/blob/master/docs/security.md)
 
-## 免责声明
+### 免责声明
 
 - 本项目仅供调试和开发之用，使用者需自行承担使用风险，并理解以下内容：
 
@@ -108,9 +112,9 @@
 - 免责声明范围：本免责声明适用于所有使用本项目的个人或实体。使用本项目即表示您同意并接受本声明的内容，并愿意承担因使用该功能而产生的风险和责任，如有异议请停止使用本项目。
 - 在使用本项目之前，请**谨慎阅读并理解以上免责声明的内容**。对于使用本项目所产生的任何问题或疑问，请及时联系开发者。
 
-## 附录
+### 附录
 
-### A-文件（夹）各场景权限管控推荐最大值
+#### A-文件（夹）各场景权限管控推荐最大值
 
 | 类型           | Linux权限参考最大值 |
 | -------------- | ---------------  |
@@ -132,7 +136,7 @@
 | 密钥组件、私钥、证书、加密密文        | 600（rw-------）      |
 | 加解密接口、加解密脚本            |   500（r-x------）        |
 
-### B-集合通信加固
+#### B-集合通信加固
 
 编译和支持安装TLS的PyTorch的操作步骤如下。
 
@@ -200,3 +204,269 @@
     export GLOO_DEVICE_TRANSPORT_TCP_TLS_CERT=/path/to/tls_ca/server.pem
     export GLOO_DEVICE_TRANSPORT_TCP_TLS_CA_FILE=/path/to/tls_ca/ca.pem
     ```
+
+## English
+
+### Security Notice
+
+When using MindIE, users must review the cybersecurity hardening measures of
+the entire system according to their business needs and configure the system in
+accordance with their organization's security policies. This includes, but is
+not limited to, software versions, password-complexity requirements, security
+settings such as protocols, cipher suites and key lengths, permission settings,
+and firewall rules. For additional statements and recommendations, see
+[MindIE Security Management and Hardening](https://www.hiascend.com/document/detail/zh/mindie/22RC1/envdeployment/instg/mindie_instg_0041.html).
+The latest community documentation prevails.
+
+### Runtime Environment Recommendations
+
+- To reduce potential security risks, use a non-root, non-administrator account
+  for system operations. Ensure that only `root` has the highest system
+  privileges, that system accounts have distinct UIDs, and that the principle
+  of least privilege is followed.
+- Regularly scan the cluster for viruses. Routine antivirus checks help protect
+  the cluster from viruses, malicious code, spyware, service disruption, and
+  information leakage. Use a reputable antivirus product appropriate for the
+  deployment environment.
+- To protect production environments and reduce exposure, regularly consult
+  [MindIE Security Management and Hardening](https://www.hiascend.com/document/detail/zh/mindie/22RC1/envdeployment/instg/mindie_instg_0041.html)
+  for vulnerability and functional-issue remediation guidance.
+
+### File Permission Control
+
+- Set `umask` to `0027` or a more restrictive value on hosts, including host
+  systems and containers.
+- Apply access controls to files containing personal data, commercial assets,
+  development materials, or other sensitive content. For this project, this
+  includes installation directories and data files. See
+  [Appendix A](#appendix-a-recommended-maximum-file-and-directory-permissions)
+  for recommended maximum permissions.
+- Do not use shell scripts with SetUID or SetGID permissions.
+- Do not use executable files with high-risk capabilities.
+- Do not allow ownerless files to remain in the system.
+
+### Build Security Statement
+
+- This project is built from source. The build process creates intermediate
+  files and build directories. Apply appropriate permissions to those files,
+  adjust build scripts where necessary to avoid security risks, and protect the
+  resulting artifacts.
+- This project installs Python wheel packages. To reduce the risk of code
+  tampering or forgery by other users, configure Python so that only the
+  installing user can modify and use the installation.
+- Use Linux ASLR (Address Space Layout Randomization) and KASLR (Kernel Address
+  Space Layout Randomization) mechanisms for secure builds.
+
+  - To enable ASLR and improve protection against exploit attacks, run:
+
+    ```bash
+    echo 2 > /proc/sys/kernel/randomize_va_space
+    ```
+
+  - To enable KASLR:
+
+    1. Inspect the kernel configuration:
+
+       ```bash
+       vi /boot/config-$(uname -r)
+       ```
+
+       The following line indicates KASLR support:
+
+       ```text
+       CONFIG_RANDOMIZE_BASE=y
+       ```
+
+    2. Add the `kaslr` parameter to the `GRUB_CMDLINE_LINUX_DEFAULT` line in
+       `/etc/default/grub`:
+
+       ```text
+       GRUB_CMDLINE_LINUX_DEFAULT="kaslr"
+       ```
+
+    3. Update the GRUB configuration:
+
+       ```bash
+       sudo update-grub
+       ```
+
+    4. Restart the system:
+
+       ```bash
+       sudo reboot
+       ```
+
+- To mitigate buffer-overflow attacks, enable ASLR to randomize the layout of
+  the heap, stack, shared-library mappings, `mmap` base address, and VDSO pages.
+
+  1. Ensure that the current user can write to
+     `/proc/sys/kernel/randomize_va_space`.
+  2. Enable the protection:
+
+     ```bash
+     echo 2 >/proc/sys/kernel/randomize_va_space
+     ```
+
+### Data Security Statement
+
+This project accepts input, loads model weights, and saves result data. Some
+interfaces directly or indirectly use the high-risk `pickle` module. Ensure
+that input data and output paths are trusted, and prefer local model weights.
+
+### Runtime Security Statement
+
+- To prevent information leakage during server-client communication, enable
+  HTTPS and mutual authentication. Protect the certificates, private keys, and
+  passwords used for communication authentication.
+- MindIE provides limited traffic-control capabilities and must not be exposed
+  directly to the public network. Protect MindIE through traffic controls and
+  network isolation. For example, deploy Nginx according to the
+  [Nginx documentation](https://nginx.org/en/docs/) and
+  [Ascend Server Security Hardening](https://www.hiascend.com/document/detail/zh/mindie/22RC1/envdeployment/instg/mindie_instg_0068.html).
+- Close ports that listen on all network interfaces, and close other ports that
+  are not required.
+- Disable insecure services such as Telnet and FTP.
+- Restrict connection rates by IP address to reduce denial-of-service risks.
+  Possible controls include Linux `iptables` rules and hardened `sysctl`
+  parameters.
+- The default Gloo, DataDist, and HCCL communication mechanisms used by this
+  project do not currently support TLS authentication. If TLS is required, see
+  [Appendix B](#appendix-b-collective-communication-hardening).
+
+### Public API Statement
+
+All supported public interfaces are documented. Use the documented public APIs
+and avoid directly calling source interfaces that are not explicitly public.
+
+### Communication Matrix
+
+The project communication matrix documents exposed ports, transport protocols,
+peer network elements, authentication methods, and intended uses. See the
+[MindIE Communication Matrix](https://www.hiascend.com/document/detail/zh/mindie/22RC1/ref/commumatrix/Communication0000.html).
+The latest community documentation prevails.
+
+### Public Network Address Statement
+
+Public network addresses contained in the project source are documented in
+[MindIE Public URLs](https://www.hiascend.com/document/detail/zh/mindie/22RC1/envdeployment/instg/mindie_instg_0089.html).
+The latest community documentation prevails.
+
+### Vulnerability Management
+
+See the Ascend community
+[Vulnerability Management Policy](https://gitcode.com/Ascend/community/blob/master/docs/security.md).
+Do not disclose suspected vulnerabilities in a public Issue before following
+that policy's reporting and coordination process.
+
+### Disclaimer
+
+- This project is provided for debugging and development. Users assume the
+  risks of use and acknowledge the following:
+
+  - Data handling and deletion: Data generated during use, including inference
+    results and logs, is the user's responsibility. Delete data promptly after
+    use to prevent unintended disclosure.
+  - Data confidentiality and distribution: Do not distribute data generated by
+    this project without appropriate authorization. The project and its
+    developers are not responsible for disclosure or other consequences caused
+    by unauthorized distribution.
+  - Input security: Users are responsible for the safety of command-line input,
+    parameters, and configuration files, and assume risks or losses caused by
+    unsafe input.
+
+- This disclaimer applies to every person or entity using the project. By using
+  the project, you accept these terms and the associated risks. Stop using the
+  project if you do not agree.
+- Read and understand this disclaimer before using the project. Contact the
+  maintainers if you have questions.
+
+### Appendix A: Recommended Maximum File and Directory Permissions
+
+| Type | Recommended maximum Linux permission |
+| --- | --- |
+| User home directory | `750` (`rwxr-x---`) |
+| Program file, including scripts and libraries | `550` (`r-xr-x---`) |
+| Program directory | `550` (`r-xr-x---`) |
+| Configuration file | `640` (`rw-r-----`) |
+| Configuration directory | `750` (`rwxr-x---`) |
+| Completed or archived log file | `440` (`r--r-----`) |
+| Active log file | `640` (`rw-r-----`) |
+| Log directory | `750` (`rwxr-x---`) |
+| Debug file | `640` (`rw-r-----`) |
+| Debug directory | `750` (`rwxr-x---`) |
+| Temporary-file directory | `750` (`rwxr-x---`) |
+| Maintenance and upgrade directory | `770` (`rwxrwx---`) |
+| Business data file | `640` (`rw-r-----`) |
+| Business data directory | `750` (`rwxr-x---`) |
+| Directory containing key components, private keys, certificates, or ciphertext | `700` (`rwx------`) |
+| Key component, private key, certificate, or encrypted file | `600` (`rw-------`) |
+| Encryption/decryption interface or script | `500` (`r-x------`) |
+
+### Appendix B: Collective Communication Hardening
+
+The following procedure builds a PyTorch package with TLS support.
+
+1. Build PyTorch.
+
+   1. Install OpenSSL 1.1:
+
+      ```bash
+      wget https://www.openssl.org/source/openssl-1.1.1w.tar.gz
+      tar -xzf openssl-1.1.1w.tar.gz
+      cd openssl-1.1.1w
+      ./config --prefix=/usr/local/openssl-1.1
+      make -j$(nproc)
+      sudo make install
+      cd ..
+      ```
+
+   2. Clone the PyTorch source and initialize its submodules:
+
+      ```bash
+      git clone https://github.com/pytorch/pytorch.git --depth=1 -b v2.9.0
+      cd pytorch
+      git submodule sync && git submodule update --init --depth=1 --recursive
+      ```
+
+   3. Export the environment variables:
+
+      ```bash
+      export OPENSSL_ROOT_DIR=/usr/local/openssl-1.1
+      export LD_LIBRARY_PATH=$OPENSSL_ROOT_DIR/lib:$LD_LIBRARY_PATH
+      export USE_GLOO=1
+      export USE_GLOO_WITH_OPENSSL=1
+      ```
+
+   4. Build the Python package:
+
+      ```bash
+      python3 setup.py bdist_wheel
+      ```
+
+2. Install PyTorch. TLS support requires `torch 2.1.0a0+git7bcf7da`:
+
+   ```bash
+   cd dist
+   pip install --ignore-installed torch-2.1.0a0+git7bcf7da-cp311-cp311-linux_aarch.whl
+   ```
+
+3. Build and install Gloo:
+
+   ```bash
+   git config --global http.sslVerify false
+   git clone https://github.com/pytorch/gloo.git
+   mkdir build && cd build
+   cmake .. -DUSE_TCP_OPENSSL_LOAD=ON
+   make -j$(nproc)
+   sudo make install
+   export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+   ```
+
+4. Enable Gloo TLS:
+
+   ```bash
+   export GLOO_DEVICE_TRANSPORT=TCP_TLS
+   export GLOO_DEVICE_TRANSPORT_TCP_TLS_PKEY=/path/to/tls_ca/server.key.pem
+   export GLOO_DEVICE_TRANSPORT_TCP_TLS_CERT=/path/to/tls_ca/server.pem
+   export GLOO_DEVICE_TRANSPORT_TCP_TLS_CA_FILE=/path/to/tls_ca/ca.pem
+   ```

@@ -5,6 +5,7 @@
 ## 📢 Latest News
 
 - 08/03/2026: 完成 [MiniMax-H3 昇腾高性能推理适配与优化](examples/minimax-h3/infer.md)
+- 07/2026: [RotateAttention](docs/tech_report/RotateAttention.pdf) 已被 ECCV 2026 录用
 - 06/2026: 完成低精度推理、多模态 MoE、稀疏注意力和部署生态增强
 - 05/28/2026: [Cache-DiT 完成 MindIE-SD 接入](https://github.com/vipshop/cache-dit/pull/1004)
 - 05/2026: 完成多模态 MoE 推理能力建设和多模型适配验证

@@ -48,7 +48,7 @@ Test entry points are documented in [test.md](test.md).
 | `docs/en/` | English documentation |
 | `docs/zh/developer_guide/` | Developer guide (this document's directory) |
 | `docs/zh/features/` | Acceleration feature descriptions |
-| `docs/zh/community/` | Community governance |
+| `contributing.md` | Contribution workflow and governance rules |
 
 ## Key Configuration Files
 
