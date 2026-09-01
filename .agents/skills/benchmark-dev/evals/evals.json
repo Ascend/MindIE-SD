@@ -1,0 +1,49 @@
+{
+  "skill_name": "benchmark-dev",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "给 benchmark 工具链新增一个 layernorm 算子的支持，要能通过 mindie_bench 的 --op/--config 跑起来，并且报告里能看到它的 MFU（和 MBU，它是内存密集型）。",
+      "expected_output": "按五步扩展：op_defs/layernorm.py（记账）→ vendor_ops/NPU/layernorm.py（kernel）→ common/schema.py（OP_SLOT_ARGS/OP_SEQ_AXIS/OP_SERIES_KEY/OP_DISPLAY_METRICS）→ mindie_bench VALID_OPS/OP_DEFAULTS → 记账纯函数单测",
+      "expectations": [
+        "先写 op_defs 基础实现（MfuMbuSummaryMixin + BasicOp，FLOPs/字节记账，vendor_impl_run 抛 NotImplementedError）",
+        "注册 vendor（register_vendor_impl）与 schema 四表（OP_SLOT_ARGS/OP_SEQ_AXIS/OP_SERIES_KEY/OP_DISPLAY_METRICS）",
+        "在 mindie_bench 的 VALID_OPS 与 OP_DEFAULTS 注册 layernorm",
+        "内存密集型算子（layernorm）在 OP_DISPLAY_METRICS 展示 MFU+MBU（参照 GMM）"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "BSA 的 benchmark 数据所有 case 的 latency 都恒定 60us 不变，q_len 从 1k 到 32k 都一样，MFU 全钳位 1，是不是 benchmark 代码有问题？帮我查。",
+      "expected_output": "按调试方法论定位 benchmark 代码问题：先跑算子自身 UT 分流（UT 通过 → benchmark 调用问题）；检查 vendor 调用的 inner_precise（950 设备必须 4）与 mask 构造（per-row uniform 避免全零行）；修复后加数据守卫（全零输出校验）",
+      "expectations": [
+        "第一步跑 tests/plugin/test_block_sparse_attention.py（算子 UT）判断是算子还是 benchmark 调用问题",
+        "定位 benchmark vendor 与 UT 的调用差异：inner_precise 在 950 设备必须为 4（用 0 导致全零输出/恒定 latency）",
+        "检查 mask 构造：front-keep（前 N 块）产生全零行崩溃，应改 per-row uniform",
+        "修复后验证 latency 随 q_len/sparsity 增长、输出非零，并考虑加输出有效性守卫"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "benchmark 现在超时是写死的 5 秒，长序列扫描会跳过大档位。我需要可配置的超时，但命令行参数不能随意加。",
+      "expected_output": "不新增 CLI 参数，在 --config 白名单（CONFIG_ALLOWED_KEYS）加 timeout 键；case 参数透传，backend_npu 的 _op_timeout 从 op_instance.args_dict 读 per-case 超时（默认 5s）；更新 README 与 example/ 说明",
+      "expectations": [
+        "不新增独立 CLI 参数，timeout 作为 --config 键（CONFIG_ALLOWED_KEYS 加 timeout）",
+        "backend 按 case 读取超时（_op_timeout 从 args_dict.get(\"timeout\", 默认)）",
+        "timeout 不进 OP_SLOT_ARGS（不影响 slot 键/报告）",
+        "README/example/ 说明长序列需 --config {timeout: 300}"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "模型调优中，我想用 benchmark 对比一下 FA 的两种实现（torch_npu.npu_fusion_attention 和 mindiesd 的量化 FA）在同样序列下的性能，选出快的那个，还要看不同 head 数的影响。",
+      "expected_output": "用 mindie_bench run 分别以 --op {fa: {func: <实现>}} 跑两种实现（同 seqlen/dtype，--config 带 timeout），再用 --op {fa: {num_heads: N}} 扫不同 head 数；run 放同一 report 父目录下，report 合并为单 HTML 对比 MFU/latency 选型",
+      "expectations": [
+        "用 --op {fa: {func: ...}} 指定不同 Python 内核实现做对比",
+        "同口径对比：相同 seqlen/dtype/peak_flops（与 peak_bw）输入下比较 MFU 与 latency",
+        "用 --op {fa: {num_heads: N}} 或 --config 多档扫描不同 head 数",
+        "多次 run 放同一 report 父目录，report 合并为单 HTML 对比，选出最优实现/参数"
+      ]
+    }
+  ]
+}

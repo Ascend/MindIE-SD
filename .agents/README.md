@@ -48,6 +48,10 @@
                                              parallelism-strategy
                                             [WIP] 并行策略选型参考
 
+                                             benchmark-dev
+                                            [横切] 核心算子性能基准
+                                            （FA/BSA/GMM/MM 微基准）
+
                              mindie-sd-community-governance
                             [横切] 文档/治理/提交/PR/版本规范
 ```
@@ -77,6 +81,7 @@
 
 | 技能 | 描述 | 状态 |
 |------|------|:--:|
+| **[benchmark-dev](skills/benchmark-dev/SKILL.md)** | 核心算子（FA/BSA/GMM/MM）性能基准：开发（架构/CLI/口径/schema 约定、扩展、数据异常排查）+ 使用（模型调优中单算子分析、按 dtype/量化档/参数形态对比选型） | ✅ |
 | **[profiling-collection](skills/profiling-collection/SKILL.md)** | NPU profiling 数据采集：SSH → 开启 Profiler → 运行推理 → 压缩 → 回传本地。Warmup 自动剔除，数据对接 performance-analysis | ✅ |
 | **[performance-analysis](skills/performance-analysis/SKILL.md)** | 5 层递进分析：Warmup 验证 → DiT/VAE 分离 → FA/MatMul/Vector/Comm 分类占比 → Host Bound/通信/融合检测 → 方向级优化建议 | ✅ |
 | **[performance-optimization](skills/performance-optimization/SKILL.md)** | 5 步优化闭环：基线 → 分析 → 选方案（从 mindiesd-features.md 选取具体 API） → 实施 → 复验。唯一真相源驱动 | ✅ |
@@ -186,6 +191,10 @@ multimodal-skills/
     ├── profiling-collection/             # NPU profiling 采集
     │   ├── SKILL.md
     │   └── scripts/                      # collect_profile.py
+    ├── benchmark-dev/                    # 核心算子性能基准工具链开发
+    │   ├── SKILL.md
+    │   ├── references/                   # debugging.md（数据异常排查）
+    │   └── evals/                        # evals.json
     ├── performance-analysis/             # 瓶颈分析（5 层递进）
     │   ├── SKILL.md
     │   ├── scripts/                      # analyze_trace.py / compare_traces.py
@@ -233,7 +242,7 @@ profiling-collection (标准 CANN Profiler 数据) ──┘
 
 ### 当前开发状态
 
-- ✅ 15 个 skill 已填充实际内容（含 evals/evals.json）
+- ✅ 16 个 skill 已填充实际内容（含 evals/evals.json）
 
 ## 参考链接
 
