@@ -31,6 +31,7 @@ VERSION_FILE = os.path.join(os.path.abspath(os.path.dirname(__file__)), "version
 WHEEL_MODE_ENV = "MINDIESD_WHEEL_MODE"
 MULTI_TORCH_PLUGIN_DIR_ENV = "MINDIESD_MULTI_TORCH_PLUGIN_DIR"
 SKIP_OPS_BUILD_ENV = "MINDIESD_SKIP_OPS_BUILD"
+SKIP_ALL_OPS_PLUGIN_BUILD_ENV = "SKIP_ALL_OPS_PLUGIN_BUILD"
 FIXED_WHEEL_MODE = "fixed"
 MULTI_TORCH_WHEEL_MODE = "multi_torch"
 SUPPORTED_TORCH_PLUGIN_VARIANTS = ("torch26", "torch27", "torch28", "torch29", "torch210")
@@ -76,6 +77,37 @@ def get_wheel_mode():
 
 def is_env_enabled(env_name):
     return os.environ.get(env_name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def find_usable_plugin_artifact(build_dir, proj_root):
+    """Return the first cached plugin that can be loaded by the current PyTorch."""
+    candidates = [
+        os.path.join(build_dir, "plugin_build", "libPTAExtensionOPS.so"),
+        os.path.join(proj_root, "mindiesd", "plugin", "libPTAExtensionOPS.so"),
+    ]
+    for candidate in candidates:
+        if not os.path.isfile(candidate):
+            continue
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import sys, torch; torch.ops.load_library(sys.argv[1])",
+                candidate,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            return candidate
+        logging.warning(
+            "Cached plugin artifact %s cannot be loaded by the current PyTorch; "
+            "falling back to plugin rebuild. Loader error: %s",
+            candidate,
+            (result.stderr or result.stdout).strip(),
+        )
+    return None
 
 
 def copy_so_files(src_dir, dest_dir):
@@ -285,11 +317,21 @@ class CustomBuildPy(_build_py):
             if wheel_mode == FIXED_WHEEL_MODE:
                 plugin_dir = os.path.join(proj_root, 'csrc', 'plugin')
                 if os.path.isdir(plugin_dir):
-                    logging.info("%s", "=" * 60)
-                    logging.info("Building PyTorch plugins...")
-                    logging.info("%s", "=" * 60)
-                    build_plugin_script = os.path.join(build_dir, 'build_plugin.sh')
-                    run_script(build_plugin_script, args=[build_dir], cwd=build_dir)
+                    cached_plugin = None
+                    if is_env_enabled(SKIP_ALL_OPS_PLUGIN_BUILD_ENV):
+                        cached_plugin = find_usable_plugin_artifact(build_dir, proj_root)
+                    if cached_plugin:
+                        logging.info(
+                            "%s=1: skip plugin build, reuse loadable plugin artifact %s",
+                            SKIP_ALL_OPS_PLUGIN_BUILD_ENV,
+                            cached_plugin,
+                        )
+                    else:
+                        logging.info("%s", "=" * 60)
+                        logging.info("Building PyTorch plugins...")
+                        logging.info("%s", "=" * 60)
+                        build_plugin_script = os.path.join(build_dir, 'build_plugin.sh')
+                        run_script(build_plugin_script, args=[build_dir], cwd=build_dir)
                 else:
                     logging.warning("The path of op plugins %s does not exist.", plugin_dir)
             else:

@@ -63,6 +63,7 @@ function build_ops(){
     ori_path=${PWD}
     cd ${current_script_dir}
     rm -rf vendors
+    echo "SKIP_ALL_OPS_PLUGIN_BUILD=${SKIP_ALL_OPS_PLUGIN_BUILD:-0}"
     echo "Build AscendC ops: ${ascendc_ops}"
     echo "Build Ascend compute units: ${ascend_compute_unit}"
     source ${current_script_dir}/build_ascendc_ops.sh -n "${ascendc_ops}" -c "${ascend_compute_unit}"

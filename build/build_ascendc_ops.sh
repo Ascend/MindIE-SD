@@ -20,6 +20,9 @@ CHECK_COMPATIBLE="true"
 ASAN="false"
 COV="false"
 VERBOSE="false"
+# SKIP_ALL_OPS_PLUGIN_BUILD: CI 下发（fingerprint 命中时置 1）。=1 且算子编译产物完整时，
+# 走 make 增量路径跳过 kernel 编译（产物由 CI 从 OBS 缓存恢复）；产物缺失时自动降级全量编译。
+SKIP_ALL_OPS_PLUGIN_BUILD=${SKIP_ALL_OPS_PLUGIN_BUILD:-0}
 
 if [ "${USER_ID}" != "0" ]; then
     DEFAULT_TOOLKIT_INSTALL_DIR="${HOME}/Ascend/ascend-toolkit/latest"
@@ -69,6 +72,25 @@ function set_env()
 function clean()
 {
     mkdir -p ${BUILD_DIR} ${OUTPUT_DIR}
+}
+
+# 检查算子编译产物是否完整（每个 compute unit 至少存在 kernel 完成标记 .done）
+function check_ops_artifacts() {
+    if [ ! -d "${BUILD_DIR}/binary" ]; then
+        return 1
+    fi
+    local IFS_OLD=${IFS}
+    IFS=';' read -r -a cu_array <<< "${ascend_compute_unit}"
+    IFS=${IFS_OLD}
+    for cu in "${cu_array[@]}"; do
+        local done_cnt
+        done_cnt=$(ls "${BUILD_DIR}/binary/${cu}/gen/"*.done 2>/dev/null | wc -l)
+        if [ "${done_cnt}" -lt 1 ]; then
+            log "Warn: ops artifacts incomplete for compute unit ${cu} (done markers: ${done_cnt})"
+            return 1
+        fi
+    done
+    return 0
 }
 
 function cmake_config()
@@ -211,6 +233,14 @@ CUSTOM_OPTION="${CUSTOM_OPTION} -DCUSTOM_ASCEND_CANN_PACKAGE_PATH=${ASCEND_CANN_
 
 set_env
 clean
+
+if [ "${SKIP_ALL_OPS_PLUGIN_BUILD}" = "1" ]; then
+    if check_ops_artifacts; then
+        log "Info: SKIP_ALL_OPS_PLUGIN_BUILD=1 and ops artifacts complete, kernel compile will be skipped (make incremental)"
+    else
+        log "Warn: SKIP_ALL_OPS_PLUGIN_BUILD=1 but ops artifacts missing/incomplete, fallback to full compile"
+    fi
+fi
 
 ccache_system=$(which ccache || true)
 if [ -n "${ccache_system}" ];then
