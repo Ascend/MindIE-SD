@@ -240,6 +240,24 @@ vllm serve "${MODEL}" \
 
 以下小节只列出相对 [推荐配置（Ascend 950PR / 950DT）](#推荐配置ascend-950pr--950dt) 的**增量或替换参数**，环境变量与其余启动参数均保持不变。
 
+##### 使能稀疏注意力优化(eagleQBSA)
+
+EQBSA 在块稀疏注意力基础上采用 Q/K INT8 与 V FP8 混合量化。将推荐配置中的 `--diffusion-attention-backend FLASH_ATTN` 替换为：
+
+```bash
+  --diffusion-attention-config '{"default":{"backend":"RAINFUSION_ATTN","block_sparse":{"sparsity":0.8,"start_step":8,"end_step":13,"precision":"mix"}}}'
+```
+
+`precision` 默认值为 `bf16`，启用 EQBSA 必须显式设置为 `mix`。`start_step` 和 `end_step` 分别表示开头和结尾回退到 dense attention 的步数，并非步序号。对于 1344×768、50 步 T2VA，建议按照场景选择：
+
+| 配置定位 | `start_step` | `end_step` | 评价 |
+| --- | ---: | ---: | --- |
+| 质量优先（推荐） | 8 | 13 | 通用及复杂运动场景，画质优先 |
+| 性能均衡 | 0 | 13 | 均衡 |
+| 速度优先 | 0 | 0 | 画面简单、低运动量场景，速度优先 |
+
+出现画面不连续或细节不稳定时，应优先增加 `end_step`，再增加 `start_step`；不建议仅通过降低 `sparsity` 替代 dense 回退。以上配伍仅在 1344×768、50 步条件下完成验证，其它分辨率或采样步数需重新评估。
+
 ##### 使能cache-dit
 
 在启动命令末尾追加以下参数，启用 DiT block 缓存与 TaylorSeer 外推：
