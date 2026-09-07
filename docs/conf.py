@@ -107,11 +107,15 @@ def _copy_shared_assets(app, exc):
     else:
         docs_dir = srcdir
     outdir = app.outdir
-    for asset in ["figures", "tech_report"]:
+    asset_destinations = {
+        "figures": outdir,
+        "tech_report": os.path.dirname(outdir),
+    }
+    for asset, destination in asset_destinations.items():
         src = os.path.join(docs_dir, asset)
-        dst = os.path.join(outdir, asset)
-        if os.path.isdir(src) and not os.path.isdir(dst):
-            shutil.copytree(src, dst)
+        dst = os.path.join(destination, asset)
+        if os.path.isdir(src):
+            shutil.copytree(src, dst, dirs_exist_ok=True)
 
 
 def setup(app):

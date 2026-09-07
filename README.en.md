@@ -1,6 +1,6 @@
 <!-- markdownlint-disable-next-line MD041 -->
 <p align="center">
-    <img alt="MindIE SD" src="https://raw.gitcode.com/Ascend/MindIE-SD/raw/2169b12abd36eb7f65498de94dd143df6fcfc63f/docs/figures/MindIE-SD-logo-2k.png">
+    <img alt="MindIE SD" src="docs/figures/MindIE-SD-logo-2k.png">
 </p>
 
 <p align="center">
@@ -23,20 +23,20 @@
 
 English | [简体中文](./README.md)
 
-## Latest News
+## 📢 Latest News
 
-- 08/03/2026: Completed [high-performance MiniMax-H3 inference adaptation and optimization on Ascend](examples/minimax-h3/infer.md)
-- 07/2026: [RotateAttention](docs/tech_report/RotateAttention.pdf) was accepted to ECCV 2026
-- 06/2026: Enhanced low-precision inference, multimodal MoE, sparse attention, and the deployment ecosystem
-- 05/28/2026: [Cache-DiT completed its MindIE-SD integration](https://github.com/vipshop/cache-dit/pull/1004)
-- 05/2026: Completed multimodal MoE inference capability development and multi-model adaptation validation
-- 04/2026: Enhanced graph compilation, operator fusion, and sparse computation capabilities
-- 03/2026: Extended W4A4 and MXFP4 quantization capabilities
-- 02/2026: Added sparse attention operators and Dynamic EPLB
-- 01/2026: Added memory optimization capabilities and serving examples
-- 12/31/2025: MindIE SD provides sparse Attention computation capability
-- 12/25/2025: vLLM Omni x MindIE SD achieves native high-performance Ascend inference for Qwen-Image-Edit-2511 / Qwen-Image-Layered
-- 11/30/2025: MindIE SD officially open-sourced and available to the public!
+- 08/03/2026: Completed [high-performance MiniMax-H3 inference adaptation and optimization on Ascend](examples/minimax-h3/infer.md) 🚀
+- 07/2026: [RotateAttention](docs/tech_report/RotateAttention.pdf) was accepted to ECCV 2026 🏆
+- 06/2026: Enhanced low-precision inference, multimodal MoE, sparse attention, and the deployment ecosystem ⚡
+- 05/28/2026: [Cache-DiT completed its MindIE-SD integration](https://github.com/vipshop/cache-dit/pull/1004) 🤝
+- 05/2026: Completed multimodal MoE inference capability development and multi-model adaptation validation 🧠
+- 04/2026: Enhanced graph compilation, operator fusion, and sparse computation capabilities ⚙️
+- 03/2026: Extended W4A4 and MXFP4 quantization capabilities ⚡
+- 02/2026: Added sparse attention operators and Dynamic EPLB 🧩
+- 01/2026: Added memory optimization capabilities and serving examples 💾
+- 12/31/2025: MindIE SD provides sparse Attention computation capability ⚡
+- 12/25/2025: vLLM Omni x MindIE SD achieves native high-performance Ascend inference for Qwen-Image-Edit-2511 / Qwen-Image-Layered 🚀
+- 11/30/2025: MindIE SD officially open-sourced and available to the public! 🎉
 
 ## Introduction
 

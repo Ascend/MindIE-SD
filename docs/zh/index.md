@@ -29,6 +29,14 @@ features/share_memory
 features/DyEPLB
 ```
 
+## 技术报告
+
+<ul>
+  <li><a href="../tech_report/RotateAttention.pdf" target="_blank">RotateAttention 论文</a></li>
+  <li><a href="../tech_report/RotateAttention Poster.pdf" target="_blank">RotateAttention ECCV 2026 海报</a></li>
+  <li><a href="../tech_report/RainFusion2.0.pdf" target="_blank">RainFusion2.0 技术报告</a></li>
+</ul>
+
 ```{toctree}
 :maxdepth: 2
 :caption: 开发者指南

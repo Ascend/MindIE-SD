@@ -1,6 +1,6 @@
 <!-- markdownlint-disable-next-line MD041 -->
 <p align="center">
-    <img alt="MindIE SD" src="https://raw.gitcode.com/Ascend/MindIE-SD/raw/2169b12abd36eb7f65498de94dd143df6fcfc63f/docs/figures/MindIE-SD-logo-2k.png">
+    <img alt="MindIE SD" src="docs/figures/MindIE-SD-logo-2k.png">
 </p>
 
 <p align="center">
@@ -25,18 +25,18 @@
 
 ## 📢 Latest News
 
-- 08/03/2026: 完成 [MiniMax-H3 昇腾高性能推理适配与优化](examples/minimax-h3/infer.md)
-- 07/2026: [RotateAttention](docs/tech_report/RotateAttention.pdf) 已被 ECCV 2026 录用
-- 06/2026: 完成低精度推理、多模态 MoE、稀疏注意力和部署生态增强
-- 05/28/2026: [Cache-DiT 完成 MindIE-SD 接入](https://github.com/vipshop/cache-dit/pull/1004)
-- 05/2026: 完成多模态 MoE 推理能力建设和多模型适配验证
-- 04/2026: 完成图编译、算子融合与稀疏计算能力增强
-- 03/2026: 扩展 W4A4 与 MXFP4 量化能力
-- 02/2026: 新增稀疏注意力算子与 Dynamic EPLB
-- 01/2026: 新增内存优化能力与服务化样例
-- 12/31/2025: MindIE SD提供稀疏Attention计算能力
-- 12/25/2025：vLLM Omni x MindIE SD 实现 Qwen-Image-Edit-2511 / Qwen-Image-Layered 昇腾原生高性能推理
-- 11/30/2025：MindIE SD 正式宣布开源并面向公众开放！
+- 08/03/2026: 完成 [MiniMax-H3 昇腾高性能推理适配与优化](examples/minimax-h3/infer.md) 🚀
+- 07/2026: [RotateAttention](docs/tech_report/RotateAttention.pdf) 已被 ECCV 2026 录用 🏆
+- 06/2026: 完成低精度推理、多模态 MoE、稀疏注意力和部署生态增强 ⚡
+- 05/28/2026: [Cache-DiT 完成 MindIE-SD 接入](https://github.com/vipshop/cache-dit/pull/1004) 🤝
+- 05/2026: 完成多模态 MoE 推理能力建设和多模型适配验证 🧠
+- 04/2026: 完成图编译、算子融合与稀疏计算能力增强 ⚙️
+- 03/2026: 扩展 W4A4 与 MXFP4 量化能力 ⚡
+- 02/2026: 新增稀疏注意力算子与 Dynamic EPLB 🧩
+- 01/2026: 新增内存优化能力与服务化样例 💾
+- 12/31/2025: MindIE SD提供稀疏Attention计算能力 ⚡
+- 12/25/2025：vLLM Omni x MindIE SD 实现 Qwen-Image-Edit-2511 / Qwen-Image-Layered 昇腾原生高性能推理 🚀
+- 11/30/2025：MindIE SD 正式宣布开源并面向公众开放！ 🎉
 
 ## 🚀 简介
 
