@@ -22,6 +22,7 @@
 #include "log/error_code.h"
 #include "register/op_def_registry.h"
 #include "fia_checker.h"
+#include "../fused_infer_attention_score_tiling_constants.h"
 
 namespace optiling {
 using std::map;
@@ -56,8 +57,10 @@ ge::graphStatus FIAChecker::Init(const FiaTilingInfo &fiaInfo) {
 }
 
 ge::graphStatus FIAChecker::CheckMindIESDFp8PerblockScope(const FiaTilingInfo &fiaInfo) const {
-    OP_CHECK_IF(fiaInfo.quantMode != FiaQuantMode::FULL_QUANT ||
-            fiaInfo.fullQuantMode != FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT,
+    const bool perBlockModeSupported = fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT ||
+        fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D128_FULL_QUANT ||
+        fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D64_FULL_QUANT;
+    OP_CHECK_IF(fiaInfo.quantMode != FiaQuantMode::FULL_QUANT || !perBlockModeSupported,
         OP_LOGE(fiaInfo.opName, "MindIE-SD FIA only supports FP8 E4M3FN per-block full quantization."),
         return ge::GRAPH_FAILED);
 
@@ -70,13 +73,32 @@ ge::graphStatus FIAChecker::CheckMindIESDFp8PerblockScope(const FiaTilingInfo &f
     OP_CHECK_IF(fiaInfo.outputType != ge::DT_FLOAT16 && fiaInfo.outputType != ge::DT_BF16,
         OP_LOGE(fiaInfo.opName, "MindIE-SD FIA only supports FLOAT16 or BF16 attention_out."), return ge::GRAPH_FAILED);
 
-    const bool quantModeSupported = fiaInfo.opParamInfo.queryQuantMode != nullptr &&
+    const bool quantModePointersValid = fiaInfo.opParamInfo.queryQuantMode != nullptr &&
         fiaInfo.opParamInfo.keyAntiquantMode != nullptr && fiaInfo.opParamInfo.valueAntiquantMode != nullptr &&
-        *fiaInfo.opParamInfo.queryQuantMode == 7 && *fiaInfo.opParamInfo.keyAntiquantMode == 7 &&
-        *fiaInfo.opParamInfo.valueAntiquantMode == 7;
+        *fiaInfo.opParamInfo.queryQuantMode == arch35FIA::PER_BLOCK_MODE &&
+        *fiaInfo.opParamInfo.keyAntiquantMode == arch35FIA::PER_BLOCK_MODE;
+    const bool quantModeSupported = quantModePointersValid &&
+        (*fiaInfo.opParamInfo.valueAntiquantMode == arch35FIA::PER_BLOCK_MODE ||
+            *fiaInfo.opParamInfo.valueAntiquantMode == arch35FIA::PER_BLOCK_V512_D128_MODE ||
+            *fiaInfo.opParamInfo.valueAntiquantMode == arch35FIA::PER_BLOCK_V512_D64_MODE);
     OP_CHECK_IF(!quantModeSupported,
-        OP_LOGE(fiaInfo.opName, "MindIE-SD FIA only supports query/key/value quant mode 7/7/7."),
+        OP_LOGE(fiaInfo.opName, "MindIE-SD FIA only supports query/key/value quant mode 7/7/7, 7/7/11 or 7/7/12."),
         return ge::GRAPH_FAILED);
+
+    if (fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D128_FULL_QUANT) {
+        OP_CHECK_IF(!fiaInfo.enableC8V16, OP_LOGE(fiaInfo.opName, "Quant mode 7/7/11 requires inner_precise=4."),
+            return ge::GRAPH_FAILED);
+        OP_CHECK_IF(fiaInfo.qkHeadDim != 128 || fiaInfo.vHeadDim != 128,
+            OP_LOGE(fiaInfo.opName, "Quant mode 7/7/11 requires QK and V head dimensions to be 128."),
+            return ge::GRAPH_FAILED);
+    }
+    if (fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D64_FULL_QUANT) {
+        OP_CHECK_IF(!fiaInfo.enableC8V16, OP_LOGE(fiaInfo.opName, "Quant mode 7/7/12 requires inner_precise=4."),
+            return ge::GRAPH_FAILED);
+        OP_CHECK_IF(fiaInfo.qkHeadDim != 128 || fiaInfo.vHeadDim != 128,
+            OP_LOGE(fiaInfo.opName, "Quant mode 7/7/12 requires QK and V head dimensions to be 128."),
+            return ge::GRAPH_FAILED);
+    }
 
     const std::string inputLayout(fiaInfo.opParamInfo.layOut == nullptr ? "" : fiaInfo.opParamInfo.layOut);
     const bool layoutSupported =

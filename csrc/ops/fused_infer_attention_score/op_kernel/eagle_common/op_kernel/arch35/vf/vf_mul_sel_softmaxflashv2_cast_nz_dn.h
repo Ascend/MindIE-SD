@@ -27,11 +27,10 @@ using namespace MicroAPI;
 #define DROPOUT false
 
 template <typename T2, bool isUpdate, bool isFinalS2Tile>
-__simd_vf__ inline void ProcessVec1DnFp16SoftmaxVF(__ubuf__ T2 *dstUb, __ubuf__ half *srcUb,
+__simd_vf__ inline void ProcessVec1DnFp16SoftmaxC8V16VF(__ubuf__ T2 *dstUb, __ubuf__ half *srcUb,
     __ubuf__ float *expMaxUb, __ubuf__ float *sumUb, __ubuf__ half *maxUb, __ubuf__ float *vecSumStateUb,
     __ubuf__ half *vecMaxStateUb, const uint16_t n, const half pScale) {
-    static_assert(IsSameType<T2, fp8_e4m3fn_t>::value,
-        "C8V16 online softmax only supports fp8_e4m3fn_t P");
+    static_assert(IsSameType<T2, fp8_e4m3fn_t>::value, "C8V16 online softmax only supports fp8_e4m3fn_t P");
     static constexpr CastTrait castTraitFp16ToFp32Zero = {
         RegLayout::ZERO, SatMode::UNKNOWN, MaskMergeMode::ZEROING, AscendC::RoundMode::UNKNOWN};
 
@@ -156,12 +155,9 @@ __simd_vf__ inline void ProcessVec1DnFp16SoftmaxVF(__ubuf__ T2 *dstUb, __ubuf__ 
         ShiftRights((RegTensor<int16_t> &)src2, (RegTensor<int16_t> &)src2, fp16ToFp8MantissaShift, pregHalf);
         ShiftRights((RegTensor<int16_t> &)src3, (RegTensor<int16_t> &)src3, fp16ToFp8MantissaShift, pregHalf);
         StoreAlign<T2, StoreDist::DIST_PACK_B16>(dstUb + offset, (RegTensor<T2> &)src0, pregHalf);
-        StoreAlign<T2, StoreDist::DIST_PACK_B16>(
-            dstUb + offset + halfRepSize, (RegTensor<T2> &)src1, pregHalf);
-        StoreAlign<T2, StoreDist::DIST_PACK_B16>(
-            dstUb + offset + halfRepSize * 2, (RegTensor<T2> &)src2, pregHalf);
-        StoreAlign<T2, StoreDist::DIST_PACK_B16>(
-            dstUb + offset + halfRepSize * 3, (RegTensor<T2> &)src3, pregHalf);
+        StoreAlign<T2, StoreDist::DIST_PACK_B16>(dstUb + offset + halfRepSize, (RegTensor<T2> &)src1, pregHalf);
+        StoreAlign<T2, StoreDist::DIST_PACK_B16>(dstUb + offset + halfRepSize * 2, (RegTensor<T2> &)src2, pregHalf);
+        StoreAlign<T2, StoreDist::DIST_PACK_B16>(dstUb + offset + halfRepSize * 3, (RegTensor<T2> &)src3, pregHalf);
     }
 
     Add(acc0, acc0, acc1, pregHalf);
@@ -188,7 +184,7 @@ __simd_vf__ inline void ProcessVec1DnFp16SoftmaxVF(__ubuf__ T2 *dstUb, __ubuf__ 
 }
 
 template <typename T2, bool isUpdate = false, bool isFinalS2Tile = false>
-__aicore__ inline void ProcessVec1VfDnFp16Softmax(const LocalTensor<T2> &dstTensor,
+__aicore__ inline void ProcessVec1VfDnFp16SoftmaxC8V16(const LocalTensor<T2> &dstTensor,
     const LocalTensor<float> &sumTensor, const LocalTensor<half> &maxTensor, const LocalTensor<half> &srcTensor,
     const LocalTensor<float> &expMaxTensor, const LocalTensor<float> &vecSumStateTensor,
     const LocalTensor<half> &vecMaxStateTensor, const uint16_t n, const float pScale) {
@@ -199,7 +195,7 @@ __aicore__ inline void ProcessVec1VfDnFp16Softmax(const LocalTensor<T2> &dstTens
     __ubuf__ half *maxUb = (__ubuf__ half *)maxTensor.GetPhyAddr();
     __ubuf__ float *vecSumStateUb = (__ubuf__ float *)vecSumStateTensor.GetPhyAddr();
     __ubuf__ half *vecMaxStateUb = (__ubuf__ half *)vecMaxStateTensor.GetPhyAddr();
-    ProcessVec1DnFp16SoftmaxVF<T2, isUpdate, isFinalS2Tile>(
+    ProcessVec1DnFp16SoftmaxC8V16VF<T2, isUpdate, isFinalS2Tile>(
         dstUb, srcUb, expMaxUb, sumUb, maxUb, vecSumStateUb, vecMaxStateUb, n, static_cast<half>(pScale));
 }
 

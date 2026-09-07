@@ -140,7 +140,8 @@ def cpu_c8v16_fp8_fia_golden(
     q_row_block=Q_BLOCK,
     k_row_block=K_BLOCK,
     v_row_block=V_BLOCK,
-    col_block=COL_BLOCK,
+    qk_col_block=COL_BLOCK,
+    v_col_block=COL_BLOCK,
 ):
     """C8V16 FP8 FullQuant CPU golden (mode 7/7/7, D=128, S2 tile=256).
 
@@ -170,8 +171,8 @@ def cpu_c8v16_fp8_fia_golden(
     d_blocks = query_scale.shape[-1]
     score = None
     for d_block in range(d_blocks):
-        start_d = d_block * col_block
-        end_d = min(start_d + col_block, head_dim)
+        start_d = d_block * qk_col_block
+        end_d = min(start_d + qk_col_block, head_dim)
         block_score = torch.matmul(
             grouped_query[..., start_d:end_d],
             grouped_key[..., start_d:end_d].transpose(-1, -2),
@@ -182,12 +183,8 @@ def cpu_c8v16_fp8_fia_golden(
         score = block_score if score is None else score + block_score
     score = (score * softmax_scale).to(torch.float16)
 
-    output = torch.zeros(
-        batch, num_kv_heads, group_size, query_seq_len, head_dim, dtype=torch.float32
-    )
-    output_sum = torch.zeros(
-        batch, num_kv_heads, group_size, query_seq_len, 1, dtype=torch.float32
-    )
+    output = torch.zeros(batch, num_kv_heads, group_size, query_seq_len, head_dim, dtype=torch.float32)
+    output_sum = torch.zeros(batch, num_kv_heads, group_size, query_seq_len, 1, dtype=torch.float32)
     output_max = torch.full(
         (batch, num_kv_heads, group_size, query_seq_len, 1),
         FP16_SOFTMAX_MIN,
@@ -207,12 +204,11 @@ def cpu_c8v16_fp8_fia_golden(
         tile_sum = _fp16_pairwise_sum(prob)
         prob_fp8 = _fp16_to_fp8_e4m3_rna(prob.float() * p_scale)
         tile_value = grouped_value[:, :, :, start_s2:end_s2, :]
-        tile_out = torch.zeros(
-            batch, num_kv_heads, group_size, query_seq_len, head_dim, dtype=torch.float32
-        )
-        for d_block in range(d_blocks):
-            start_d = d_block * col_block
-            end_d = min(start_d + col_block, head_dim)
+        tile_out = torch.zeros(batch, num_kv_heads, group_size, query_seq_len, head_dim, dtype=torch.float32)
+        value_d_blocks = value_scale.shape[-1]
+        for d_block in range(value_d_blocks):
+            start_d = d_block * v_col_block
+            end_d = min(start_d + v_col_block, head_dim)
             value_scale_tile = value_scale[:, :, start_s2:end_s2, d_block : d_block + 1]
             tile_v = tile_value[..., start_d:end_d] * value_scale_tile[:, :, None, :, :]
             tile_out[..., start_d:end_d] = torch.matmul(prob_fp8, tile_v)

@@ -10,7 +10,7 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-"""Same DiT tiling512 row34 profile as profile_fia_dit_tiling512.py, inner_precise=4.
+"""Same DiT large-shape profile as profile_fia_dit.py, inner_precise=4.
 
 QKV are FP8 E4M3FN per-block (query/key/value_quant_mode=7). Scale S-dim is
 ceil(seq/block) with Q block 128 and KV block 256. Default shapes:

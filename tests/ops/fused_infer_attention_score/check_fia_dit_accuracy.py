@@ -12,8 +12,8 @@
 
 """Large-shape FIA accuracy: FP8 FIA vs BF16 torch_npu.npu_fusion_attention.
 
-Scene matches profile_fia_dit_tiling512.py (DiT eaglefia tiling512 row 34):
-  Q  [1, 32, 2304, 128]   K/V [1, 4, 30757, 128]   BNSD  quant 7/7/7
+Scene matches the FIA V-quant msprof case (DiT eaglefia tiling512 row 34):
+  Q  [1, 32, 2304, 128]   K/V [1, 4, 30757, 128]   BNSD
 Inputs follow intranet data.pt snapshot scalars, enhance_mode default 2.0.
 """
 
@@ -32,13 +32,16 @@ if _TEST_DIR not in sys.path:
 
 from fia_accuracy_common import (  # noqa: E402
     DEFAULT_ENHANCE_MODE,
-    K_BLOCK,
     MAX_TOKENS,
-    Q_BLOCK,
-    QUANT_MODE,
-    V_BLOCK,
     cosine_metrics,
     synthesize_bf16,
+)
+from fia_quant_common import (  # noqa: E402
+    D128_CHANNEL_BLOCK,
+    FIA_QUANT_CASE_BY_NAME,
+    K_TOKEN_BLOCK,
+    Q_TOKEN_BLOCK,
+    parse_case_names,
 )
 
 SCENARIO_NAME = "DiT_0825_eaglefia_tiling512_row34_accuracy"
@@ -51,9 +54,7 @@ DEFAULT_HEAD_DIM = 128
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Compare quantized FIA against unquantized npu_fusion_attention."
-    )
+    parser = argparse.ArgumentParser(description="Compare quantized FIA against unquantized npu_fusion_attention.")
     parser.add_argument(
         "--device-id",
         type=int,
@@ -68,6 +69,11 @@ def parse_args():
     parser.add_argument("--head-dim", type=int, default=DEFAULT_HEAD_DIM)
     parser.add_argument("--seed", type=int, default=20260811)
     parser.add_argument("--enhance-mode", type=float, default=DEFAULT_ENHANCE_MODE)
+    parser.add_argument(
+        "--paths",
+        default=",".join(FIA_QUANT_CASE_BY_NAME),
+        help="Comma-separated paths: original,c8v16,v512,v512_d64.",
+    )
     parser.add_argument(
         "--cosine-min",
         type=float,
@@ -88,10 +94,21 @@ def _validate_args(args):
         raise ValueError("--num-query-heads must be divisible by --num-kv-heads")
     if args.query_seq_len <= 0 or args.kv_seq_len <= 0:
         raise ValueError("sequence lengths must be greater than 0")
-    if args.head_dim not in (64, 128):
-        raise ValueError("--head-dim must be 64 or 128")
+    if args.head_dim != 128:
+        raise ValueError("FIA V-quant accuracy supports --head-dim 128 only")
     if not math.isfinite(args.enhance_mode) or args.enhance_mode <= 0:
         raise ValueError("--enhance-mode must be finite and greater than 0")
+    args.fia_cases = parse_case_names(args.paths)
+
+
+def _quantize(tensor, token_block, channel_block, torch_npu, quantize):
+    return quantize(
+        tensor,
+        block_size=token_block,
+        col_block_size=channel_block,
+        dst_type=torch_npu.float8_e4m3fn,
+        layout="BNSD",
+    )
 
 
 def main():
@@ -145,10 +162,7 @@ def main():
     print(f"scenario={SCENARIO_NAME}")
     print(f"device_id={args.device_id}")
     print(f"enhance_mode={args.enhance_mode}")
-    print(
-        f"BNSD Q={tuple(query.shape)} KV={tuple(key.shape)} "
-        f"quant_mode={QUANT_MODE}/{QUANT_MODE}/{QUANT_MODE} out=bf16"
-    )
+    print(f"BNSD Q={tuple(query.shape)} KV={tuple(key.shape)} paths={[case.name for case in args.fia_cases]} out=bf16")
 
     with torch.inference_mode():
         reference = torch_npu.npu_fusion_attention(
@@ -163,22 +177,22 @@ def main():
         )[0]
         torch_npu.npu.synchronize()
 
-        q, q_scale = fa_block_quant_preprocess(
-            query, block_size=Q_BLOCK, dst_type=torch_npu.float8_e4m3fn, layout="BNSD"
-        )
-        k, k_scale = fa_block_quant_preprocess(
-            key, block_size=K_BLOCK, dst_type=torch_npu.float8_e4m3fn, layout="BNSD"
-        )
-        v, v_scale = fa_block_quant_preprocess(
-            value, block_size=V_BLOCK, dst_type=torch_npu.float8_e4m3fn, layout="BNSD"
-        )
+        q, q_scale = _quantize(query, Q_TOKEN_BLOCK, D128_CHANNEL_BLOCK, torch_npu, fa_block_quant_preprocess)
+        k, k_scale = _quantize(key, K_TOKEN_BLOCK, D128_CHANNEL_BLOCK, torch_npu, fa_block_quant_preprocess)
         torch_npu.npu.synchronize()
 
-        fia_cases = (
-            (None, "inner_precise=0 (default)"),
-            (4, "inner_precise=4"),
-        )
-        for inner_precise, label in fia_cases:
+        value_cache = {}
+        for case in args.fia_cases:
+            value_key = (case.value_token_block, case.value_channel_block)
+            if value_key not in value_cache:
+                value_cache[value_key] = _quantize(
+                    value,
+                    case.value_token_block,
+                    case.value_channel_block,
+                    torch_npu,
+                    fa_block_quant_preprocess,
+                )
+            v, v_scale = value_cache[value_key]
             fia_kwargs = {
                 "num_query_heads": args.num_query_heads,
                 "num_key_value_heads": args.num_kv_heads,
@@ -186,34 +200,34 @@ def main():
                 "pre_tokens": MAX_TOKENS,
                 "next_tokens": MAX_TOKENS,
                 "input_layout": "BNSD",
-                "query_quant_mode": QUANT_MODE,
-                "key_quant_mode": QUANT_MODE,
-                "value_quant_mode": QUANT_MODE,
+                "query_quant_mode": case.quant_modes[0],
+                "key_quant_mode": case.quant_modes[1],
+                "value_quant_mode": case.quant_modes[2],
+                "inner_precise": case.inner_precise,
                 "dequant_scale_query": q_scale,
                 "dequant_scale_key": k_scale,
                 "dequant_scale_value": v_scale,
                 "out_dtype": torch.bfloat16,
             }
-            if inner_precise is not None:
-                fia_kwargs["inner_precise"] = inner_precise
             fia_out, lse = fused_infer_attention_score_v2(q, k, v, **fia_kwargs)
             torch_npu.npu.synchronize()
 
             if not torch.isfinite(reference.float()).all().item():
                 raise SystemExit("ERROR: npu_fusion_attention output contains NaN or Inf")
             if not torch.isfinite(fia_out.float()).all().item():
-                raise SystemExit(f"ERROR: FIA output contains NaN or Inf ({label})")
+                raise SystemExit(f"ERROR: FIA output contains NaN or Inf ({case.name})")
             if lse is not None and lse.numel() != 0:
-                raise SystemExit(f"ERROR: mode-17 path should return an empty softmax_lse ({label})")
+                raise SystemExit(f"ERROR: mode-17 path should return an empty softmax_lse ({case.name})")
             if tuple(fia_out.shape) != tuple(reference.shape):
                 raise SystemExit(
-                    f"ERROR: shape mismatch FIA={tuple(fia_out.shape)} ref={tuple(reference.shape)} ({label})"
+                    f"ERROR: shape mismatch FIA={tuple(fia_out.shape)} ref={tuple(reference.shape)} ({case.name})"
                 )
 
             metrics = cosine_metrics(reference, fia_out)
             print(
                 f"golden=torch_npu.npu_fusion_attention (unquantized BF16)  "
-                f"dut=fused_infer_attention_score_v2 (FP8 7/7/7 {label})"
+                f"dut=fused_infer_attention_score_v2 ({case.description}, "
+                f"qkv={case.quant_modes}, inner_precise={case.inner_precise})"
             )
             print(
                 f"cosine={metrics['cosine']:.8f}  "
@@ -222,13 +236,11 @@ def main():
             )
             if metrics["cosine"] < args.cosine_min:
                 raise SystemExit(
-                    f"ERROR: cosine {metrics['cosine']:.8f} < --cosine-min {args.cosine_min} ({label})"
+                    f"ERROR: cosine {metrics['cosine']:.8f} < --cosine-min {args.cosine_min} ({case.name})"
                 )
             if not (0.9 <= metrics["norm_ratio"] <= 1.1):
-                raise SystemExit(
-                    f"ERROR: norm_ratio {metrics['norm_ratio']:.6f} is outside [0.9, 1.1] ({label})"
-                )
-            print(f"RESULT accuracy check passed ({label})")
+                raise SystemExit(f"ERROR: norm_ratio {metrics['norm_ratio']:.6f} is outside [0.9, 1.1] ({case.name})")
+            print(f"RESULT accuracy check passed ({case.name})")
 
 
 if __name__ == "__main__":

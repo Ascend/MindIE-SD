@@ -111,9 +111,12 @@ class FABlockCubeGqaFullquant {
     static constexpr bool isFp8 = IsSameType<INPUT_T, fp8_e5m2_t>::value || IsSameType<INPUT_T, fp8_e4m3fn_t>::value ||
         IsSameType<INPUT_T, hifloat8_t>::value;
     static constexpr bool isMlaFullQuant = isFp8 && hasRope;
-    static constexpr bool useDn =
-        IsDn(((IsSameType<INPUT_T, float>::value) || isFp8), (isFp8 && (s2BaseSize == 256)), pseMode, hasAtten, hasDrop,
-            s1BaseSize == 64, dTemplateType, hasRope, enableKVPrefix, isInfer, IsSameType<INPUT_T, hifloat8_t>::value);
+    static constexpr bool isV512Perblock =
+        enableC8V16 && isInfer && s2BaseSize == 512 &&
+        IsSameType<INPUT_T, fp8_e4m3fn_t>::value && !hasRope;
+    static constexpr bool useDn = IsDn(((IsSameType<INPUT_T, float>::value) || isFp8),
+        ((isFp8 && s2BaseSize == 256) || isV512Perblock), pseMode, hasAtten, hasDrop, s1BaseSize == 64, dTemplateType,
+        hasRope, enableKVPrefix, isInfer, IsSameType<INPUT_T, hifloat8_t>::value);
     static constexpr bool useNz = IsSameType<INPUT_T, hifloat8_t>::value && !isInfer;
     static constexpr bool useC8V16Score =
         enableC8V16 && isInfer && useDn && IsSameType<INPUT_T, fp8_e4m3fn_t>::value && !hasRope;
@@ -501,8 +504,23 @@ __aicore__ inline void FABlockCubeGqaFullquant<TEMPLATE_ARGS>::IterateBmm2(mm2Re
                     gmOffset = this->valueGm.offsetCalculator.GetOffset(coordInfo[runInfo.taskIdMod3].curBIdx,
                         runInfo.n2oIdx, coordInfo[runInfo.taskIdMod3].s2Coord, 0);
                 }
-                CopyToL1Nd2Nz<INPUT_T>(mm2BTensor, GetValueGm(runInfo, constInfo)[gmOffset], runInfo.s2RealSize,
-                    constInfo.dSizeV, constInfo.mm2Kb);
+                if constexpr (useC8V16Score && s2BaseSize == 512) {
+                    constexpr uint32_t kvSliceSize = 256;
+                    uint32_t firstSliceSize =
+                        static_cast<uint32_t>(Min(static_cast<int64_t>(kvSliceSize), runInfo.s2RealSize));
+                    CopyToL1Nd2Nz<INPUT_T>(mm2BTensor, GetValueGm(runInfo, constInfo)[gmOffset], firstSliceSize,
+                        constInfo.dSizeV, constInfo.mm2Kb);
+                    if (runInfo.s2RealSize > kvSliceSize) {
+                        uint32_t l1Offset = kvSliceSize * constInfo.dSizeV;
+                        uint32_t gmOffsetSecond = kvSliceSize * constInfo.mm2Kb;
+                        CopyToL1Nd2Nz<INPUT_T>(mm2BTensor[l1Offset],
+                            GetValueGm(runInfo, constInfo)[gmOffset + gmOffsetSecond], runInfo.s2RealSize - kvSliceSize,
+                            constInfo.dSizeV, constInfo.mm2Kb);
+                    }
+                } else {
+                    CopyToL1Nd2Nz<INPUT_T>(mm2BTensor, GetValueGm(runInfo, constInfo)[gmOffset], runInfo.s2RealSize,
+                        constInfo.dSizeV, constInfo.mm2Kb);
+                }
             }
         }
         mm2B.Set<HardEvent::MTE2_MTE1>(); // 通知
@@ -520,7 +538,24 @@ __aicore__ inline void FABlockCubeGqaFullquant<TEMPLATE_ARGS>::IterateBmm2(mm2Re
             param.realM = (uint32_t)runInfo.s1RealSize;
         }
         mm2B.Wait<HardEvent::MTE2_MTE1>(); // 等待
-        if constexpr (isFp8) {
+        if constexpr (useC8V16Score && s2BaseSize == 512) {
+            constexpr uint32_t pSliceSize = 256;
+            uint32_t firstK = static_cast<uint32_t>(Min(static_cast<int64_t>(pSliceSize), runInfo.s2RealSize));
+            param.singleK = firstK;
+            param.isOutKFisrt = true;
+            MatmulFull<INPUT_T, INPUT_T, T, 128, (uint32_t)dVTemplateType, 128, ABLayout::MK, ABLayout::KN>(
+                mm2A.GetTensor<INPUT_T>(), mm2BTensor, mmL0ABuffers, mmL0BBuffers, mm2ResL0C.GetTensor<T>(), param);
+            if (runInfo.s2RealSize > pSliceSize) {
+                uint32_t secondK = static_cast<uint32_t>(runInfo.s2RealSize - pSliceSize);
+                uint32_t pL1Offset = s1BaseSize * pSliceSize;
+                uint32_t vL1Offset = pSliceSize * (((uint32_t)constInfo.dSizeV + 31) >> 5 << 5);
+                param.singleK = secondK;
+                param.isOutKFisrt = false;
+                MatmulFull<INPUT_T, INPUT_T, T, 128, (uint32_t)dVTemplateType, 128, ABLayout::MK, ABLayout::KN>(
+                    mm2A.GetTensor<INPUT_T>()[pL1Offset], mm2BTensor[vL1Offset], mmL0ABuffers, mmL0BBuffers,
+                    mm2ResL0C.GetTensor<T>(), param);
+            }
+        } else if constexpr (isFp8) {
             MatmulFull<INPUT_T, INPUT_T, T, 128, (uint32_t)dVTemplateType, 128, ABLayout::MK, ABLayout::KN>(
                 mm2A.GetTensor<INPUT_T>(), mm2BTensor, mmL0ABuffers, mmL0BBuffers, mm2ResL0C.GetTensor<T>(), param);
         } else {
@@ -1084,13 +1119,95 @@ __aicore__ inline void FABlockCubeGqaFullquant<TEMPLATE_ARGS>::IterateBmm1Dn(
     } else {
         runInfo.keyOffset = this->keyGm.offsetCalculator.GetOffset(
             coordInfo[runInfo.taskIdMod3].curBIdx, runInfo.n2oIdx, coordInfo[runInfo.taskIdMod3].s2Coord, 0);
-        CopyToL1Nd2Nz<INPUT_T>(mm1ATensor, GetKeyGm(runInfo, constInfo)[runInfo.keyOffset], runInfo.s2RealSize,
-            constInfo.dSize, constInfo.mm1Kb);
+        if constexpr (useC8V16Score && s2BaseSize == 512) {
+            constexpr uint32_t kvSliceSize = 256;
+            uint32_t firstSliceSize = static_cast<uint32_t>(Min(static_cast<int64_t>(kvSliceSize), runInfo.s2RealSize));
+            CopyToL1Nd2Nz<INPUT_T>(mm1ATensor, GetKeyGm(runInfo, constInfo)[runInfo.keyOffset], firstSliceSize,
+                constInfo.dSize, constInfo.mm1Kb);
+            if (runInfo.s2RealSize > kvSliceSize) {
+                uint32_t l1Offset = kvSliceSize * constInfo.dSize;
+                uint32_t gmOffsetSecond = kvSliceSize * constInfo.mm1Kb;
+                CopyToL1Nd2Nz<INPUT_T>(mm1ATensor[l1Offset],
+                    GetKeyGm(runInfo, constInfo)[runInfo.keyOffset + gmOffsetSecond], runInfo.s2RealSize - kvSliceSize,
+                    constInfo.dSize, constInfo.mm1Kb);
+            }
+        } else {
+            CopyToL1Nd2Nz<INPUT_T>(mm1ATensor, GetKeyGm(runInfo, constInfo)[runInfo.keyOffset], runInfo.s2RealSize,
+                constInfo.dSize, constInfo.mm1Kb);
+        }
     }
     mm1A.Set<HardEvent::MTE2_MTE1>(); // 通知
 
     mm1A.Wait<HardEvent::MTE2_MTE1>(); // 等待L1K
     mm1B.Wait<HardEvent::MTE2_MTE1>(); // 等待L1Q
+
+    if constexpr (useC8V16Score && s2BaseSize == 512) {
+        outputBuf.WaitCrossCore<true>();
+        int64_t s1BlockCnt = CeilDivision(constInfo.s1Size, 128);
+        int64_t kS2BlockCnt = CeilDivision(constInfo.s2Size, 256);
+        int64_t deScaleQOffset = runInfo.boIdx * constInfo.n2G * s1BlockCnt +
+            runInfo.n2oIdx * constInfo.gSize * s1BlockCnt + runInfo.goIdx * s1BlockCnt + runInfo.s1oIdx;
+        int64_t deScaleKBaseOffset = runInfo.boIdx * constInfo.n2Size * kS2BlockCnt +
+            runInfo.n2oIdx * kS2BlockCnt + (runInfo.s2StartIdx >> 8) + runInfo.s2LoopCount * 2;
+        float deScaleQValue = this->deScaleQGm.GetValue(deScaleQOffset);
+        uint32_t scoreS2Round = (runInfo.s2RealSize + 15) >> 4 << 4;
+        uint32_t firstHalfS1RealSize =
+            runInfo.s1RealSize <= 16 ? runInfo.s1RealSize : ((runInfo.s1RealSize + 31) >> 5 << 4);
+        uint32_t secondHalfS1RealSize = runInfo.s1RealSize - firstHalfS1RealSize;
+        int64_t l1AOffset = s2SplitSize * constInfo.dSize;
+        uint32_t nLoop = (runInfo.s2RealSize + s2SplitSize - 1) / s2SplitSize;
+        for (uint32_t n = 0; n < nLoop; n++) {
+            uint32_t s2Offset = n * s2SplitSize;
+            uint32_t s2LoopSize = static_cast<uint32_t>(
+                Min(static_cast<int64_t>(s2SplitSize), runInfo.s2RealSize - static_cast<int64_t>(s2Offset)));
+            float deScaleKValue = this->deScaleKGm.GetValue(deScaleKBaseOffset + n);
+            float fixpipeScale = constInfo.scaleValue * deScaleQValue * deScaleKValue;
+            Buffer<BufferType::L0C> mm1ResL0C = mmL0CBuffers.Get();
+            mm1ResL0C.Wait<HardEvent::FIX_M>();
+            MMParam param = {s2LoopSize, (uint32_t)runInfo.s1RealSize, (uint32_t)(constInfo.dSize), 0, 1};
+            MatmulBase<INPUT_T, INPUT_T, T, 128, 128, dBaseSize, ABLayout::MK, ABLayout::KN>(
+                mm1A.GetTensor<INPUT_T>()[l1AOffset * n], mm1B.GetTensor<INPUT_T>(), mmL0ABuffers, mmL0BBuffers,
+                mm1ResL0C.GetTensor<T>(), param);
+            if (n == (nLoop - 1)) {
+                if (unlikely(runInfo.s2LoopCount == runInfo.s2LoopLimit)) {
+                    mm1B.Set<HardEvent::MTE1_MTE2>();
+                }
+                mm1A.Set<HardEvent::MTE1_MTE2>();
+            }
+            mm1ResL0C.Set<HardEvent::M_FIX>();
+            mm1ResL0C.Wait<HardEvent::M_FIX>();
+
+            FixpipeParamsC310<CO2Layout::ROW_MAJOR> fixpipeParams;
+            fixpipeParams.mSize = s2LoopSize;
+            fixpipeParams.srcStride = ((fixpipeParams.mSize + 15) / 16) * 16;
+            fixpipeParams.nSize = 32;
+            fixpipeParams.dstStride = 32;
+            fixpipeParams.params.srcNdStride = 2 * fixpipeParams.srcStride;
+            fixpipeParams.params.dstNdStride = scoreS2Round * 32;
+            fixpipeParams.dualDstCtl = 0;
+            fixpipeParams.quantPre = QuantMode_t::QF322F16_PRE;
+            fixpipeParams.deqScalar = static_cast<uint64_t>(*reinterpret_cast<int32_t *>(&fixpipeScale));
+            uint32_t dstOffset = s2Offset * 32;
+            if (firstHalfS1RealSize > 0) {
+                uint32_t qNdNum = (firstHalfS1RealSize + 31) >> 5;
+                fixpipeParams.params.ndNum = qNdNum;
+                fixpipeParams.subBlockId = 0;
+                Fixpipe<SCORE_T, T, PFA_CFG_ROW_MAJOR_UB>(
+                    outputBuf.template GetTensor<SCORE_T>()[dstOffset], mm1ResL0C.GetTensor<T>(), fixpipeParams);
+            }
+            if (secondHalfS1RealSize > 0) {
+                uint32_t qNdNum = (secondHalfS1RealSize + 31) >> 5;
+                uint32_t subBlock1L0COffset = (firstHalfS1RealSize >> 4) * fixpipeParams.srcStride * 16;
+                fixpipeParams.params.ndNum = qNdNum;
+                fixpipeParams.subBlockId = 1;
+                Fixpipe<SCORE_T, T, PFA_CFG_ROW_MAJOR_UB>(outputBuf.template GetTensor<SCORE_T>()[dstOffset],
+                    mm1ResL0C.GetTensor<T>()[subBlock1L0COffset], fixpipeParams);
+            }
+            mm1ResL0C.Set<HardEvent::FIX_M>();
+        }
+        outputBuf.SetCrossCore();
+        return;
+    }
 
     Buffer<BufferType::L0C> mm1ResL0C = mmL0CBuffers.Get();
     mm1ResL0C.Wait<HardEvent::FIX_M>(); // 占用
@@ -1189,6 +1306,8 @@ class FABlockCubeGqaFullquantDummy {
     static constexpr bool isFp8 = FABlockCubeGqaFullquant<TEMPLATE_ARGS>::isFp8;
     static constexpr bool useDn = FABlockCubeGqaFullquant<TEMPLATE_ARGS>::useDn;
     static constexpr bool useNz = FABlockCubeGqaFullquant<TEMPLATE_ARGS>::useNz;
+    static constexpr bool useC8V16Score = FABlockCubeGqaFullquant<TEMPLATE_ARGS>::useC8V16Score;
+    using SCORE_T = typename FABlockCubeGqaFullquant<TEMPLATE_ARGS>::SCORE_T;
     static constexpr TPosition bmm2OutPos = FABlockCubeGqaFullquant<TEMPLATE_ARGS>::bmm2OutPos;
     static constexpr bool bmm2Write2Ub = FABlockCubeGqaFullquant<TEMPLATE_ARGS>::bmm2Write2Ub;
     __aicore__ inline FABlockCubeGqaFullquantDummy(){};

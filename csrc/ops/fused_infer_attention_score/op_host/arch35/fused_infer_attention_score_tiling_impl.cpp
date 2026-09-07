@@ -92,8 +92,10 @@ void FusedInferAttentionScoreTilingImpl::SetIsIFA(const FiaTilingInfo &fiaInfo) 
     std::string layoutStr(fiaInfo.opParamInfo.layOut);
     bool isTransposeLayout = layoutStr == "BNSD_BSND" || layoutStr == "BSND_BNSD" || layoutStr == "BSH_BNSD" ||
         layoutStr == "NTD" || layoutStr == "NTD_TND";
-    if (fiaInfo.s1Size == 1 && !fiaInfo.enableAlibiPse && !isTransposeLayout &&
-        fiaInfo.fullQuantMode != FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT) {
+    const bool isPerBlock = fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT ||
+        fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D128_FULL_QUANT ||
+        fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D64_FULL_QUANT;
+    if (fiaInfo.s1Size == 1 && !fiaInfo.enableAlibiPse && !isTransposeLayout && !isPerBlock) {
         isIFAFlag_ = true;
         return;
     }
@@ -302,7 +304,9 @@ bool FusedInferAttentionScoreTilingImpl::CheckSmallHeadOptimization(const FiaTil
     if (fiaInfo.mlaMode == MlaMode::ROPE_SPLIT_D128) {
         return false;
     }
-    if (fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT) {
+    if (fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT ||
+        fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D128_FULL_QUANT ||
+        fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D64_FULL_QUANT) {
         return false;
     }
 
@@ -772,7 +776,10 @@ void FusedInferAttentionScoreTilingImpl::SplitNBSeq(const FiaTilingInfo &fiaInfo
 }
 
 bool FusedInferAttentionScoreTilingImpl::CheckFlashDecode(const FiaTilingInfo &fiaInfo) {
-    if (fiaInfo.s1Size == 1 && fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT) {
+    if (fiaInfo.s1Size == 1 &&
+        (fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT ||
+            fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D128_FULL_QUANT ||
+            fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D64_FULL_QUANT)) {
         return false;
     }
     float flashDecodeBNRatio = 0.4F; // 0.4, 经验值
@@ -1122,7 +1129,9 @@ bool FusedInferAttentionScoreTilingImpl::CheckEnableDN(const FiaTilingInfo &fiaI
         fiaInfo.kvStorageMode != KvStorageMode::PAGE_ATTENTION && fiaInfo.ropeMode == RopeMode::NO_ROPE &&
         fiaInfo.qkHeadDim <= dLimitDN && fiaInfo.vHeadDim <= dLimitDN && !fiaInfo.sysPrefixFlag &&
         (fiaInfo.quantMode == FiaQuantMode::NO_QUANT ||
-            fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT) &&
+            fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT ||
+            fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D128_FULL_QUANT ||
+            fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D64_FULL_QUANT) &&
         sOuterFactor_ * CV_RATIO > sOuterLimitDN;
     return res;
 }
@@ -1163,6 +1172,12 @@ void FusedInferAttentionScoreTilingImpl::ApplySinnerSouterOverrides(const FiaTil
     if (dnFlag_ && fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT &&
         fiaInfo.qkHeadDim == fiaInfo.vHeadDim && fiaInfo.qkHeadDim <= DSIZE_128) {
         sInnerFactor_ = SINNER_256;
+    }
+    if (dnFlag_ &&
+        (fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D128_FULL_QUANT ||
+            fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D64_FULL_QUANT) &&
+        fiaInfo.qkHeadDim == DSIZE_128 && fiaInfo.vHeadDim == DSIZE_128) {
+        sInnerFactor_ = SINNER_512;
     }
     if (fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_MXFP8_FULL_QUANT) {
         sOuterFactor_ = SOUTER_64;
@@ -1353,8 +1368,20 @@ void FusedInferAttentionScoreTilingImpl::UpdateTilingKeyQuantMode(const FiaTilin
     if (fiaInfo.quantMode == FiaQuantMode::FULL_QUANT) {
         if (fiaInfo.ropeMode == RopeMode::ROPE_SPLIT) {
             tilingKeyInfo_.quantMode = FULLQUANT_MODE_Q_PER_TOKEN_HEAD_KV_PER_TENSOR;
-        } else if (*fiaInfo.opParamInfo.keyAntiquantMode == 7 && *fiaInfo.opParamInfo.valueAntiquantMode == 7 &&
-            *fiaInfo.opParamInfo.queryQuantMode == 7) {
+        } else if (*fiaInfo.opParamInfo.keyAntiquantMode == PER_BLOCK_MODE &&
+            *fiaInfo.opParamInfo.valueAntiquantMode == PER_BLOCK_MODE &&
+            *fiaInfo.opParamInfo.queryQuantMode == PER_BLOCK_MODE) {
+            tilingKeyInfo_.quantMode = FULLQUANT_MODE_QKV_PERBLOCK;
+        } else if (*fiaInfo.opParamInfo.keyAntiquantMode == PER_BLOCK_MODE &&
+            *fiaInfo.opParamInfo.valueAntiquantMode == PER_BLOCK_V512_D128_MODE &&
+            *fiaInfo.opParamInfo.queryQuantMode == PER_BLOCK_MODE) {
+            // Public V mode 11 is distinguished by the S2=512 config. Keep the proven
+            // per-block kernel quant mode instead of creating a second kernel family.
+            tilingKeyInfo_.quantMode = FULLQUANT_MODE_QKV_PERBLOCK;
+        } else if (*fiaInfo.opParamInfo.keyAntiquantMode == PER_BLOCK_MODE &&
+            *fiaInfo.opParamInfo.valueAntiquantMode == PER_BLOCK_V512_D64_MODE &&
+            *fiaInfo.opParamInfo.queryQuantMode == PER_BLOCK_MODE) {
+            // Reuse kernel mode 17. The private rsv1 marker selects D64 V dequantization.
             tilingKeyInfo_.quantMode = FULLQUANT_MODE_QKV_PERBLOCK;
         } else if (*fiaInfo.opParamInfo.keyAntiquantMode == 6 && *fiaInfo.opParamInfo.valueAntiquantMode == 8 &&
             *fiaInfo.opParamInfo.queryQuantMode == 6) { // 6: per_token_group, 8: per_channel_group
@@ -1422,16 +1449,25 @@ ge::graphStatus FusedInferAttentionScoreTilingImpl::CheckMindIESDFp8PerblockTili
 
     const bool layoutSupported = tilingKeyInfo_.inputLayout == InOutLayoutType_BNSD_BNSD ||
         tilingKeyInfo_.inputLayout == InOutLayoutType_BSH_BSH || tilingKeyInfo_.inputLayout == InOutLayoutType_NTD_NTD;
-    const bool configSupported = tilingKeyInfo_.config == Config_S1Aligned128_S2Aligned256_DAligned64_DVAligned64 ||
+    const bool perBlockV256Config = tilingKeyInfo_.config == Config_S1Aligned128_S2Aligned256_DAligned64_DVAligned64 ||
         tilingKeyInfo_.config == Config_S1Aligned128_S2Aligned256_DAligned128_DVAligned128;
-    const bool keySupported = layoutSupported && configSupported && tilingKeyInfo_.pseMode == PSE_MODE_PSE_NONE_TYPE &&
-        tilingKeyInfo_.quantMode == FULLQUANT_MODE_QKV_PERBLOCK && !tilingKeyInfo_.hasAttenMask &&
-        !tilingKeyInfo_.hasRope && tilingKeyInfo_.KvLayoutType == KvLayoutType_NO_PA && !tilingKeyInfo_.isFd &&
-        !tilingKeyInfo_.enableKvPrefix && !tilingKeyInfo_.enableS1OutSplit && !tilingKeyInfo_.isReconstructTemp;
+    // V512x128/V512x64 describes the public V quantization block. Both modes use
+    // the proven S2=512, D/DV=128 kernel configuration for an actual D=128 head.
+    const bool perBlockV512Config = tilingKeyInfo_.config == Config_S1Aligned128_S2Aligned512_DAligned128_DVAligned128;
+    const bool modeConfigMatched =
+        tilingKeyInfo_.quantMode == FULLQUANT_MODE_QKV_PERBLOCK && (perBlockV256Config || perBlockV512Config);
+    const bool c8OptionMatched = !perBlockV512Config || tilingKeyInfo_.enableC8V16;
+    const bool layoutConfigMatched =
+        layoutSupported && (!perBlockV512Config || tilingKeyInfo_.inputLayout != InOutLayoutType_NTD_NTD);
+    const bool keySupported = layoutConfigMatched && modeConfigMatched && c8OptionMatched &&
+        tilingKeyInfo_.pseMode == PSE_MODE_PSE_NONE_TYPE && !tilingKeyInfo_.hasAttenMask && !tilingKeyInfo_.hasRope &&
+        tilingKeyInfo_.KvLayoutType == KvLayoutType_NO_PA && !tilingKeyInfo_.isFd && !tilingKeyInfo_.enableKvPrefix &&
+        !tilingKeyInfo_.enableS1OutSplit && !tilingKeyInfo_.isReconstructTemp;
     OP_CHECK_IF(!keySupported,
         OP_LOGE(fiaInfo.opName,
-            "MindIE-SD FIA only compiles FP8 per-block tiling keys with layouts BNSD/BSH/NTD, "
-            "D/DV 64 or 128, no mask/rope/PSE/PA/FD/prefix/S1 split."),
+            "MindIE-SD FIA only compiles FP8 per-block tiling keys with BNSD/BSH/NTD for legacy 7/7/7 at S2=256, "
+            "or BNSD/BSH for 7/7/11 and 7/7/12 at S2=512, with D/DV 64 or 128; "
+            "mask/rope/PSE/PA/FD/prefix/S1 split are unsupported."),
         return ge::GRAPH_FAILED);
     return ge::GRAPH_SUCCESS;
 }
@@ -1911,7 +1947,9 @@ ge::graphStatus FusedInferAttentionScoreTilingImpl::SetFATilingData(const FiaTil
     inputParams.set_dropMaskOuter(0);
     inputParams.set_pseEncodeType(0);
     inputParams.set_remain(0);
-    inputParams.set_rsv1(0);
+    const uint32_t v512D64Dispatch =
+        fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D64_FULL_QUANT ? 12U : 0U;
+    inputParams.set_rsv1(v512D64Dispatch);
     inputParams.set_seed(0);
     inputParams.set_offset(0);
     inputParams.set_keepProbUint8(0);

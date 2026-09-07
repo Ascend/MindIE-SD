@@ -266,8 +266,8 @@ std::tuple<at::Tensor, at::Tensor> fused_infer_attention_score_v2_impl_npu(const
         dequant_offset_key, dequantScaleValueWrapper, dequant_offset_value, keySharedPrefix, valueSharedPrefix,
         actualSharedPrefixLen, queryRopeWrapper, keyRopeWrapper, dequantScaleKeyRopeWrapper, dequantScaleQueryWrapper,
         learnable_sink, qStartIdx, kvStartIdx, num_query_heads, softmax_scale, pre_tokens, next_tokens, inputLayoutPtr,
-        num_key_value_heads, sparse_mode, inner_precise, block_size, antiquantMode, return_softmax_lse,
-        query_quant_mode, key_quant_mode, value_quant_mode, pseType, attentionOut, softmaxLse);
+        num_key_value_heads, sparse_mode, inner_precise, block_size, antiquantMode, return_softmax_lse, key_quant_mode,
+        value_quant_mode, query_quant_mode, pseType, attentionOut, softmaxLse);
 
     (void)key_shared_prefix_dtype;
     (void)value_shared_prefix_dtype;

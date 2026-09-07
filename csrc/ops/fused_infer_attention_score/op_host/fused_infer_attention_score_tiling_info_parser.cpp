@@ -1295,20 +1295,45 @@ ge::graphStatus FiaInfoParser::GetPostQuantInfo() {
 }
 
 ge::graphStatus FiaInfoParser::GetFullQuantMode() {
+    const bool isLegacyPerBlock = *opParamInfo_.queryQuantMode == arch35FIA::PER_BLOCK_MODE &&
+        *opParamInfo_.keyAntiquantMode == arch35FIA::PER_BLOCK_MODE &&
+        *opParamInfo_.valueAntiquantMode == arch35FIA::PER_BLOCK_MODE;
+    const bool isV512D128PerBlock = *opParamInfo_.queryQuantMode == arch35FIA::PER_BLOCK_MODE &&
+        *opParamInfo_.keyAntiquantMode == arch35FIA::PER_BLOCK_MODE &&
+        *opParamInfo_.valueAntiquantMode == arch35FIA::PER_BLOCK_V512_D128_MODE;
+    const bool isV512D64PerBlock = *opParamInfo_.queryQuantMode == arch35FIA::PER_BLOCK_MODE &&
+        *opParamInfo_.keyAntiquantMode == arch35FIA::PER_BLOCK_MODE &&
+        *opParamInfo_.valueAntiquantMode == arch35FIA::PER_BLOCK_V512_D64_MODE;
+    const bool isV512PerBlock = isV512D128PerBlock || isV512D64PerBlock;
+    enableC8V16_ = (*opParamInfo_.innerPrecise == arch35FIA::LOW_HIGH_MIXED);
+    OP_CHECK_IF(enableC8V16_ && !isLegacyPerBlock && !isV512PerBlock,
+        OP_LOGE_FOR_INVALID_VALUE_WITH_REASON(opName_, "inner_precise",
+            std::to_string(*opParamInfo_.innerPrecise).c_str(),
+            "inner_precise=4 can be enabled only for quant modes 7/7/7, 7/7/11 or 7/7/12"),
+        return ge::GRAPH_FAILED);
+    OP_CHECK_IF(isV512PerBlock && !enableC8V16_,
+        OP_LOGE_FOR_INVALID_VALUE_WITH_REASON(opName_, "inner_precise",
+            std::to_string(*opParamInfo_.innerPrecise).c_str(), "quant mode 7/7/11 or 7/7/12 requires inner_precise=4"),
+        return ge::GRAPH_FAILED);
     if (quantMode_ == FiaQuantMode::FULL_QUANT) {
-        if (*opParamInfo_.queryQuantMode == 7 && *opParamInfo_.keyAntiquantMode == 7 &&
-            *opParamInfo_.valueAntiquantMode == 7) {
+        if (isLegacyPerBlock) {
             fullQuantMode_ = FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT;
-            enableC8V16_ = (*opParamInfo_.innerPrecise == arch35FIA::LOW_HIGH_MIXED);
-        } else if (*opParamInfo_.queryQuantMode == 6 && *opParamInfo_.keyAntiquantMode == 6 &&
-            *opParamInfo_.valueAntiquantMode == 8) {
+        } else if (isV512D128PerBlock) {
+            fullQuantMode_ = FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D128_FULL_QUANT;
+        } else if (isV512D64PerBlock) {
+            fullQuantMode_ = FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D64_FULL_QUANT;
+        } else if (*opParamInfo_.queryQuantMode == arch35FIA::PER_TOKEN_GROUP_MODE &&
+            *opParamInfo_.keyAntiquantMode == arch35FIA::PER_TOKEN_GROUP_MODE &&
+            *opParamInfo_.valueAntiquantMode == arch35FIA::PER_CHANNEL_GROUP_MODE) {
             fullQuantMode_ = FiaFullQuantMode::QKV_MXFP8_FULL_QUANT;
-        } else if (*opParamInfo_.queryQuantMode == 3 && *opParamInfo_.keyAntiquantMode == 3 &&
-            *opParamInfo_.valueAntiquantMode == 2) {
+        } else if (*opParamInfo_.queryQuantMode == arch35FIA::PER_TOKEN_HEAD_MODE &&
+            *opParamInfo_.keyAntiquantMode == arch35FIA::PER_TOKEN_HEAD_MODE &&
+            *opParamInfo_.valueAntiquantMode == arch35FIA::PER_TENSOR_HEAD_MODE) {
             fullQuantMode_ = FiaFullQuantMode::QK_PER_TOKEN_HEAD_V_PER_HEAD;
         } else if (ropeMode_ == RopeMode::ROPE_SPLIT &&
-            (*opParamInfo_.queryQuantMode == 3 && *opParamInfo_.keyAntiquantMode == 0 &&
-                *opParamInfo_.valueAntiquantMode == 0)) {
+            (*opParamInfo_.queryQuantMode == arch35FIA::PER_TOKEN_HEAD_MODE &&
+                *opParamInfo_.keyAntiquantMode == arch35FIA::PER_CHANNEL_MODE &&
+                *opParamInfo_.valueAntiquantMode == arch35FIA::PER_CHANNEL_MODE)) {
             fullQuantMode_ = FiaFullQuantMode::Q_PER_TOKEN_HEAD_KV_PER_TENSOR_FULL_QUANT;
         } else {
             fullQuantMode_ = FiaFullQuantMode::QKV_PER_TENSOR_FULL_QUANT;

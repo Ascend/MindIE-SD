@@ -264,17 +264,23 @@ ge::graphStatus DequantChecker::CheckDequantModeGQAPerblock(const FiaTilingInfo 
     if (!enableQKVPerblockQuant_) {
         return ge::GRAPH_SUCCESS;
     }
-    OP_CHECK_IF((*fiaInfo.opParamInfo.keyAntiquantMode != PER_BLOCK_MODE ||
-                    *fiaInfo.opParamInfo.valueAntiquantMode != PER_BLOCK_MODE ||
-                    *fiaInfo.opParamInfo.queryQuantMode != PER_BLOCK_MODE),
+    const bool qkPerBlock = *fiaInfo.opParamInfo.queryQuantMode == PER_BLOCK_MODE &&
+        *fiaInfo.opParamInfo.keyAntiquantMode == PER_BLOCK_MODE;
+    const bool legacyVPerBlock = *fiaInfo.opParamInfo.valueAntiquantMode == PER_BLOCK_MODE &&
+        fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT;
+    const bool v512PerBlock = *fiaInfo.opParamInfo.valueAntiquantMode == PER_BLOCK_V512_D128_MODE &&
+        fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D128_FULL_QUANT && fiaInfo.enableC8V16;
+    const bool v512D64PerBlock = *fiaInfo.opParamInfo.valueAntiquantMode == PER_BLOCK_V512_D64_MODE &&
+        fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D64_FULL_QUANT && fiaInfo.enableC8V16;
+    OP_CHECK_IF(!(qkPerBlock && (legacyVPerBlock || v512PerBlock || v512D64PerBlock)),
         OP_LOGE_FOR_INVALID_VALUES_WITH_REASON(fiaInfo.opName,
             "query_quant_mode, key_antiquant_mode and value_antiquant_mode",
             (std::to_string(*fiaInfo.opParamInfo.queryQuantMode) + ", " +
                 std::to_string(*fiaInfo.opParamInfo.keyAntiquantMode) + " and " +
                 std::to_string(*fiaInfo.opParamInfo.valueAntiquantMode))
                 .c_str(),
-            "In per-block scenario, query_quant_mode, key_antiquant_mode "
-            "and value_antiquant_mode must be per-block(7)"),
+            "In per-block scenario, query/key/value quant modes must be 7/7/7, or 7/7/11 or 7/7/12 with "
+            "inner_precise=4"),
         return ge::GRAPH_FAILED);
 
     return ge::GRAPH_SUCCESS;
@@ -1392,6 +1398,14 @@ ge::graphStatus DequantChecker::CheckDequantScaleShapePerblock(const FiaTilingIn
 
     constexpr uint32_t fp8QBlockSize = 128U; // 128 is SOuterSize
     constexpr uint32_t fp8KVBlockSize = 256U; // 256 is SInnerSize
+    constexpr uint32_t fp8V512TokenBlockSize = 512U;
+    constexpr uint32_t fp8V512ChannelBlockSize = 128U;
+    constexpr uint32_t fp8V512D64ChannelBlockSize = 64U;
+    const bool useV512D128 = fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D128_FULL_QUANT;
+    const bool useV512D64 = fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D64_FULL_QUANT;
+    const uint32_t fp8VTokenBlockSize = (useV512D128 || useV512D64) ? fp8V512TokenBlockSize : fp8KVBlockSize;
+    const uint32_t fp8VChannelBlockSize =
+        useV512D64 ? fp8V512D64ChannelBlockSize : (useV512D128 ? fp8V512ChannelBlockSize : fp8KVBlockSize);
 
     // NTD_TND格式 scale dim = 3
     if (fiaInfo.qLayout == FiaLayout::NTD) {
@@ -1434,13 +1448,12 @@ ge::graphStatus DequantChecker::CheckDequantScaleShapePerblock(const FiaTilingIn
         }
 
         if ((valueAntiquantScaleShape.GetDim(DIM_NUM_0) != fiaInfo.n2Size) ||
-            (valueAntiquantScaleShape.GetDim(DIM_NUM_1) != fiaInfo.kTSize / fp8KVBlockSize + fiaInfo.bSize &&
-                valueAntiquantScaleShape.GetDim(DIM_NUM_1) != fiaInfo.kTSize / 512U + fiaInfo.bSize) ||
-            (valueAntiquantScaleShape.GetDim(DIM_NUM_2) != CeilDivision(fiaInfo.vHeadDim, fp8KVBlockSize))) {
+            (valueAntiquantScaleShape.GetDim(DIM_NUM_1) != fiaInfo.kTSize / fp8VTokenBlockSize + fiaInfo.bSize) ||
+            (valueAntiquantScaleShape.GetDim(DIM_NUM_2) != CeilDivision(fiaInfo.vHeadDim, fp8VChannelBlockSize))) {
             OP_LOGE_FOR_INVALID_SHAPE_WITH_REASON(fiaInfo.opName, "value_antiquant_scale",
                 ToStringRaw(valueAntiquantScaleShape).c_str(),
                 "In per-block quant scenario, when layout is NTD_TND, the shape of valueAntiquantScale "
-                "should be [n2Size, kTSize/256+bSize, vHeadDim/256]");
+                "should match the selected V token/channel block mode");
             return ge::GRAPH_FAILED;
         }
     } else {
@@ -1480,15 +1493,15 @@ ge::graphStatus DequantChecker::CheckDequantScaleShapePerblock(const FiaTilingIn
             return ge::GRAPH_FAILED;
         }
 
+        const int64_t expectedVChannelBlocks = useV512D64 ? CeilDivision(fiaInfo.vHeadDim, fp8VChannelBlockSize) : NUM1;
         if ((valueAntiquantScaleShape.GetDim(DIM_NUM_0) != fiaInfo.bSize) ||
             (valueAntiquantScaleShape.GetDim(DIM_NUM_1) != fiaInfo.n2Size) ||
-            (valueAntiquantScaleShape.GetDim(DIM_NUM_2) != CeilDivision(fiaInfo.s2Size, int64_t(fp8KVBlockSize)) &&
-                valueAntiquantScaleShape.GetDim(DIM_NUM_2) != CeilDivision(fiaInfo.s2Size, int64_t(512))) ||
-            (valueAntiquantScaleShape.GetDim(DIM_NUM_3) != NUM1)) {
+            (valueAntiquantScaleShape.GetDim(DIM_NUM_2) != CeilDivision(fiaInfo.s2Size, int64_t(fp8VTokenBlockSize))) ||
+            (valueAntiquantScaleShape.GetDim(DIM_NUM_3) != expectedVChannelBlocks)) {
             OP_LOGE_FOR_INVALID_SHAPE_WITH_REASON(fiaInfo.opName, "value_antiquant_scale",
                 ToStringRaw(valueAntiquantScaleShape).c_str(),
                 "In per-block quant scenario, when layout is not NTD_TND, the shape of valueAntiquantScale "
-                "should be [bSize, n2Size, s2Size/256, 1]");
+                "should match the selected V token block mode");
             return ge::GRAPH_FAILED;
         }
     }
@@ -3068,7 +3081,9 @@ ge::graphStatus DequantChecker::CheckSinglePara(const FiaTilingInfo &fiaInfo) {
             enableQPerTokenHeadKVPerTensor_ = true;
         } else if (fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_TENSOR_FULL_QUANT) {
             enableQKVPertensorQuant_ = true;
-        } else if (fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT) {
+        } else if (fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT ||
+            fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D128_FULL_QUANT ||
+            fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D64_FULL_QUANT) {
             enableQKVPerblockQuant_ = true;
             OP_LOGW(fiaInfo.opName,
                 "Per-block full quantization scenario will be deprecated in future versions. "

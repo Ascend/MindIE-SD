@@ -24,10 +24,10 @@ namespace FaVectorApi {
 static constexpr MicroAPI::CastTrait castTraitFp16_32_update = {
     MicroAPI::RegLayout::ZERO, MicroAPI::SatMode::UNKNOWN, MicroAPI::MaskMergeMode::ZEROING, RoundMode::UNKNOWN};
 constexpr uint16_t REDUCE_SIZE = 1;
+
 template <typename INPUT_T, uint16_t srcD, bool isUpdatePre>
-__simd_vf__ inline void FlashUpdateFp32StatC8V16VF(__ubuf__ float *dstUb, __ubuf__ float *curUb,
-    __ubuf__ float *preUb, __ubuf__ float *expMaxUb, const uint16_t m, const float deScaleV,
-    const float deScaleVPre) {
+__simd_vf__ inline void FlashUpdateFp32StatC8V16VF(__ubuf__ float *dstUb, __ubuf__ float *curUb, __ubuf__ float *preUb,
+    __ubuf__ float *expMaxUb, const uint16_t m, const float deScaleV, const float deScaleVPre) {
     static_assert(srcD == 128, "C8V16 Vector2 requires D=128");
     constexpr uint16_t floatRepSize = 64;
     constexpr uint16_t rowUnroll = 2;
@@ -113,20 +113,19 @@ __simd_vf__ inline void FlashUpdateFp32StatC8V16VF(__ubuf__ float *dstUb, __ubuf
 
 template <typename INPUT_T, uint16_t srcD, bool isUpdatePre>
 __aicore__ inline void FlashUpdateFp32StatC8V16(const LocalTensor<float> &dstTensor,
-    const LocalTensor<float> &curTensor, const LocalTensor<float> &preTensor,
-    const LocalTensor<float> &expMaxTensor, const uint16_t m, const float deScaleV, const float deScaleVPre) {
+    const LocalTensor<float> &curTensor, const LocalTensor<float> &preTensor, const LocalTensor<float> &expMaxTensor,
+    const uint16_t m, const float deScaleV, const float deScaleVPre) {
     __ubuf__ float *dstUb = (__ubuf__ float *)dstTensor.GetPhyAddr();
     __ubuf__ float *curUb = (__ubuf__ float *)curTensor.GetPhyAddr();
     __ubuf__ float *preUb = (__ubuf__ float *)preTensor.GetPhyAddr();
     __ubuf__ float *expMaxUb = (__ubuf__ float *)expMaxTensor.GetPhyAddr();
-    FlashUpdateFp32StatC8V16VF<INPUT_T, srcD, isUpdatePre>(
-        dstUb, curUb, preUb, expMaxUb, m, deScaleV, deScaleVPre);
+    FlashUpdateFp32StatC8V16VF<INPUT_T, srcD, isUpdatePre>(dstUb, curUb, preUb, expMaxUb, m, deScaleV, deScaleVPre);
 }
 
 template <typename INPUT_T, uint16_t srcD, bool isUpdatePre>
 __simd_vf__ inline void FlashUpdateLastFp32StatC8V16VF(__ubuf__ float *dstUb, __ubuf__ float *curUb,
-    __ubuf__ float *preUb, __ubuf__ float *expMaxUb, __ubuf__ float *expSumUb, const uint16_t m,
-    const float deScaleV, const float deScaleVPre) {
+    __ubuf__ float *preUb, __ubuf__ float *expMaxUb, __ubuf__ float *expSumUb, const uint16_t m, const float deScaleV,
+    const float deScaleVPre) {
     static_assert(srcD == 128, "C8V16 Vector2 requires D=128");
     constexpr uint16_t floatRepSize = 64;
     constexpr uint16_t rowUnroll = 2;
@@ -223,9 +222,8 @@ __simd_vf__ inline void FlashUpdateLastFp32StatC8V16VF(__ubuf__ float *dstUb, __
 
 template <typename INPUT_T, uint16_t srcD, bool isUpdatePre>
 __aicore__ inline void FlashUpdateLastFp32StatC8V16(const LocalTensor<float> &dstTensor,
-    const LocalTensor<float> &curTensor, const LocalTensor<float> &preTensor,
-    const LocalTensor<float> &expMaxTensor, const LocalTensor<float> &expSumTensor, const uint16_t m,
-    const float deScaleV, const float deScaleVPre) {
+    const LocalTensor<float> &curTensor, const LocalTensor<float> &preTensor, const LocalTensor<float> &expMaxTensor,
+    const LocalTensor<float> &expSumTensor, const uint16_t m, const float deScaleV, const float deScaleVPre) {
     __ubuf__ float *dstUb = (__ubuf__ float *)dstTensor.GetPhyAddr();
     __ubuf__ float *curUb = (__ubuf__ float *)curTensor.GetPhyAddr();
     __ubuf__ float *preUb = (__ubuf__ float *)preTensor.GetPhyAddr();
@@ -236,8 +234,8 @@ __aicore__ inline void FlashUpdateLastFp32StatC8V16(const LocalTensor<float> &ds
 }
 
 template <typename INPUT_T, uint16_t srcD>
-__simd_vf__ inline void LastDivFp32StatC8V16VF(__ubuf__ float *dstUb, __ubuf__ float *curUb,
-    __ubuf__ float *expSumUb, const uint16_t m, const float deScaleV) {
+__simd_vf__ inline void LastDivFp32StatC8V16VF(
+    __ubuf__ float *dstUb, __ubuf__ float *curUb, __ubuf__ float *expSumUb, const uint16_t m, const float deScaleV) {
     static_assert(srcD == 128, "C8V16 Vector2 requires D=128");
     constexpr uint16_t floatRepSize = 64;
     constexpr uint16_t rowUnroll = 2;
@@ -298,13 +296,339 @@ __simd_vf__ inline void LastDivFp32StatC8V16VF(__ubuf__ float *dstUb, __ubuf__ f
 }
 
 template <typename INPUT_T, uint16_t srcD>
-__aicore__ inline void LastDivFp32StatC8V16(const LocalTensor<float> &dstTensor,
-    const LocalTensor<float> &curTensor, const LocalTensor<float> &expSumTensor, const uint16_t m,
-    const float deScaleV) {
+__aicore__ inline void LastDivFp32StatC8V16(const LocalTensor<float> &dstTensor, const LocalTensor<float> &curTensor,
+    const LocalTensor<float> &expSumTensor, const uint16_t m, const float deScaleV) {
     __ubuf__ float *dstUb = (__ubuf__ float *)dstTensor.GetPhyAddr();
     __ubuf__ float *curUb = (__ubuf__ float *)curTensor.GetPhyAddr();
     __ubuf__ float *expSumUb = (__ubuf__ float *)expSumTensor.GetPhyAddr();
     LastDivFp32StatC8V16VF<INPUT_T, srcD>(dstUb, curUb, expSumUb, m, deScaleV);
+}
+
+template <typename INPUT_T, uint16_t srcD, bool isUpdatePre>
+__simd_vf__ inline void FlashUpdateFp32StatC8V16D64VF(__ubuf__ float *dstUb, __ubuf__ float *curUb,
+    __ubuf__ float *preUb, __ubuf__ float *expMaxUb, const uint16_t m, const float deScaleV0, const float deScaleV1,
+    const float deScaleVPre0, const float deScaleVPre1) {
+    static_assert(srcD == 128, "C8V16 Vector2 requires D=128");
+    constexpr uint16_t floatRepSize = 64;
+    constexpr uint16_t rowUnroll = 2;
+    MaskReg pregFloat = CreateMask<float, MaskPattern::ALL>();
+    RegTensor<float> expMaxFp32_0;
+    RegTensor<float> expMaxFp32_1;
+    RegTensor<float> inputPreRow0D0;
+    RegTensor<float> inputPreRow0D1;
+    RegTensor<float> inputPreRow1D0;
+    RegTensor<float> inputPreRow1D1;
+    RegTensor<float> inputCurRow0D0;
+    RegTensor<float> inputCurRow0D1;
+    RegTensor<float> inputCurRow1D0;
+    RegTensor<float> inputCurRow1D1;
+
+    for (uint16_t i = 0; i < m / rowUnroll; ++i) {
+        const uint16_t row0 = i * rowUnroll;
+        const uint16_t row1 = row0 + 1;
+        const uint32_t offsetRow0D0 = row0 * srcD;
+        const uint32_t offsetRow0D1 = offsetRow0D0 + floatRepSize;
+        const uint32_t offsetRow1D0 = row1 * srcD;
+        const uint32_t offsetRow1D1 = offsetRow1D0 + floatRepSize;
+
+        LoadAlign<float, MicroAPI::LoadDist::DIST_BRC_B32>(expMaxFp32_0, expMaxUb + row0 * 2);
+        LoadAlign<float, MicroAPI::LoadDist::DIST_BRC_B32>(expMaxFp32_1, expMaxUb + row1 * 2);
+        LoadAlign(inputPreRow0D0, preUb + offsetRow0D0);
+        LoadAlign(inputPreRow0D1, preUb + offsetRow0D1);
+        LoadAlign(inputPreRow1D0, preUb + offsetRow1D0);
+        LoadAlign(inputPreRow1D1, preUb + offsetRow1D1);
+        LoadAlign(inputCurRow0D0, curUb + offsetRow0D0);
+        LoadAlign(inputCurRow0D1, curUb + offsetRow0D1);
+        LoadAlign(inputCurRow1D0, curUb + offsetRow1D0);
+        LoadAlign(inputCurRow1D1, curUb + offsetRow1D1);
+        Mul(inputPreRow0D0, inputPreRow0D0, expMaxFp32_0, pregFloat);
+        Mul(inputPreRow0D1, inputPreRow0D1, expMaxFp32_0, pregFloat);
+        Mul(inputPreRow1D0, inputPreRow1D0, expMaxFp32_1, pregFloat);
+        Mul(inputPreRow1D1, inputPreRow1D1, expMaxFp32_1, pregFloat);
+        if constexpr (IsSameType<INPUT_T, fp8_e5m2_t>::value || IsSameType<INPUT_T, fp8_e4m3fn_t>::value ||
+            IsSameType<INPUT_T, hifloat8_t>::value || IsSameType<INPUT_T, int8_t>::value) {
+            Muls(inputCurRow0D0, inputCurRow0D0, deScaleV0, pregFloat);
+            Muls(inputCurRow0D1, inputCurRow0D1, deScaleV1, pregFloat);
+            Muls(inputCurRow1D0, inputCurRow1D0, deScaleV0, pregFloat);
+            Muls(inputCurRow1D1, inputCurRow1D1, deScaleV1, pregFloat);
+            if constexpr (isUpdatePre) {
+                Muls(inputPreRow0D0, inputPreRow0D0, deScaleVPre0, pregFloat);
+                Muls(inputPreRow0D1, inputPreRow0D1, deScaleVPre1, pregFloat);
+                Muls(inputPreRow1D0, inputPreRow1D0, deScaleVPre0, pregFloat);
+                Muls(inputPreRow1D1, inputPreRow1D1, deScaleVPre1, pregFloat);
+            }
+        }
+        Add(inputPreRow0D0, inputPreRow0D0, inputCurRow0D0, pregFloat);
+        Add(inputPreRow0D1, inputPreRow0D1, inputCurRow0D1, pregFloat);
+        Add(inputPreRow1D0, inputPreRow1D0, inputCurRow1D0, pregFloat);
+        Add(inputPreRow1D1, inputPreRow1D1, inputCurRow1D1, pregFloat);
+        StoreAlign<float, MicroAPI::StoreDist::DIST_NORM_B32>(dstUb + offsetRow0D0, inputPreRow0D0, pregFloat);
+        StoreAlign<float, MicroAPI::StoreDist::DIST_NORM_B32>(dstUb + offsetRow0D1, inputPreRow0D1, pregFloat);
+        StoreAlign<float, MicroAPI::StoreDist::DIST_NORM_B32>(dstUb + offsetRow1D0, inputPreRow1D0, pregFloat);
+        StoreAlign<float, MicroAPI::StoreDist::DIST_NORM_B32>(dstUb + offsetRow1D1, inputPreRow1D1, pregFloat);
+    }
+
+    RegTensor<float> tailExpMaxFp32;
+    RegTensor<float> tailInputPre;
+    RegTensor<float> tailInputCur;
+    for (uint16_t i = m / rowUnroll * rowUnroll; i < m; ++i) {
+        LoadAlign<float, MicroAPI::LoadDist::DIST_BRC_B32>(tailExpMaxFp32, expMaxUb + i * 2);
+        for (uint16_t j = 0; j < 2; ++j) {
+            const uint32_t offset = i * srcD + j * floatRepSize;
+            const float deScaleVCur = j == 0 ? deScaleV0 : deScaleV1;
+            const float deScaleVPre = j == 0 ? deScaleVPre0 : deScaleVPre1;
+            LoadAlign(tailInputPre, preUb + offset);
+            LoadAlign(tailInputCur, curUb + offset);
+            Mul(tailInputPre, tailInputPre, tailExpMaxFp32, pregFloat);
+            if constexpr (IsSameType<INPUT_T, fp8_e5m2_t>::value || IsSameType<INPUT_T, fp8_e4m3fn_t>::value ||
+                IsSameType<INPUT_T, hifloat8_t>::value || IsSameType<INPUT_T, int8_t>::value) {
+                Muls(tailInputCur, tailInputCur, deScaleVCur, pregFloat);
+                if constexpr (isUpdatePre) {
+                    Muls(tailInputPre, tailInputPre, deScaleVPre, pregFloat);
+                }
+            }
+            Add(tailInputPre, tailInputPre, tailInputCur, pregFloat);
+            StoreAlign<float, MicroAPI::StoreDist::DIST_NORM_B32>(dstUb + offset, tailInputPre, pregFloat);
+        }
+    }
+}
+
+template <typename INPUT_T, uint16_t srcD, bool isUpdatePre>
+__aicore__ inline void FlashUpdateFp32StatC8V16D64(const LocalTensor<float> &dstTensor,
+    const LocalTensor<float> &curTensor, const LocalTensor<float> &preTensor, const LocalTensor<float> &expMaxTensor,
+    const uint16_t m, const float deScaleV0, const float deScaleV1, const float deScaleVPre0,
+    const float deScaleVPre1) {
+    __ubuf__ float *dstUb = (__ubuf__ float *)dstTensor.GetPhyAddr();
+    __ubuf__ float *curUb = (__ubuf__ float *)curTensor.GetPhyAddr();
+    __ubuf__ float *preUb = (__ubuf__ float *)preTensor.GetPhyAddr();
+    __ubuf__ float *expMaxUb = (__ubuf__ float *)expMaxTensor.GetPhyAddr();
+    FlashUpdateFp32StatC8V16D64VF<INPUT_T, srcD, isUpdatePre>(
+        dstUb, curUb, preUb, expMaxUb, m, deScaleV0, deScaleV1, deScaleVPre0, deScaleVPre1);
+}
+
+template <typename INPUT_T, uint16_t srcD, bool isUpdatePre>
+__simd_vf__ inline void FlashUpdateLastFp32StatC8V16D64VF(__ubuf__ float *dstUb, __ubuf__ float *curUb,
+    __ubuf__ float *preUb, __ubuf__ float *expMaxUb, __ubuf__ float *expSumUb, const uint16_t m, const float deScaleV0,
+    const float deScaleV1, const float deScaleVPre0, const float deScaleVPre1) {
+    static_assert(srcD == 128, "C8V16 Vector2 requires D=128");
+    constexpr uint16_t floatRepSize = 64;
+    constexpr uint16_t rowUnroll = 2;
+    MaskReg pregFloat = CreateMask<float, MaskPattern::ALL>();
+    RegTensor<float> expMaxFp32_0;
+    RegTensor<float> expMaxFp32_1;
+    RegTensor<float> expSumFp32_0;
+    RegTensor<float> expSumFp32_1;
+    RegTensor<float> inputPreRow0D0;
+    RegTensor<float> inputPreRow0D1;
+    RegTensor<float> inputPreRow1D0;
+    RegTensor<float> inputPreRow1D1;
+    RegTensor<float> inputCurRow0D0;
+    RegTensor<float> inputCurRow0D1;
+    RegTensor<float> inputCurRow1D0;
+    RegTensor<float> inputCurRow1D1;
+
+    for (uint16_t i = 0; i < m / rowUnroll; ++i) {
+        const uint16_t row0 = i * rowUnroll;
+        const uint16_t row1 = row0 + 1;
+        const uint32_t offsetRow0D0 = row0 * srcD;
+        const uint32_t offsetRow0D1 = offsetRow0D0 + floatRepSize;
+        const uint32_t offsetRow1D0 = row1 * srcD;
+        const uint32_t offsetRow1D1 = offsetRow1D0 + floatRepSize;
+
+        LoadAlign<float, MicroAPI::LoadDist::DIST_BRC_B32>(expMaxFp32_0, expMaxUb + row0 * 2);
+        LoadAlign<float, MicroAPI::LoadDist::DIST_BRC_B32>(expMaxFp32_1, expMaxUb + row1 * 2);
+        LoadAlign<float, MicroAPI::LoadDist::DIST_BRC_B32>(expSumFp32_0, expSumUb + row0);
+        LoadAlign<float, MicroAPI::LoadDist::DIST_BRC_B32>(expSumFp32_1, expSumUb + row1);
+        LoadAlign(inputPreRow0D0, preUb + offsetRow0D0);
+        LoadAlign(inputPreRow0D1, preUb + offsetRow0D1);
+        LoadAlign(inputPreRow1D0, preUb + offsetRow1D0);
+        LoadAlign(inputPreRow1D1, preUb + offsetRow1D1);
+        LoadAlign(inputCurRow0D0, curUb + offsetRow0D0);
+        LoadAlign(inputCurRow0D1, curUb + offsetRow0D1);
+        LoadAlign(inputCurRow1D0, curUb + offsetRow1D0);
+        LoadAlign(inputCurRow1D1, curUb + offsetRow1D1);
+        Mul(inputPreRow0D0, inputPreRow0D0, expMaxFp32_0, pregFloat);
+        Mul(inputPreRow0D1, inputPreRow0D1, expMaxFp32_0, pregFloat);
+        Mul(inputPreRow1D0, inputPreRow1D0, expMaxFp32_1, pregFloat);
+        Mul(inputPreRow1D1, inputPreRow1D1, expMaxFp32_1, pregFloat);
+        if constexpr (IsSameType<INPUT_T, fp8_e5m2_t>::value || IsSameType<INPUT_T, fp8_e4m3fn_t>::value ||
+            IsSameType<INPUT_T, hifloat8_t>::value || IsSameType<INPUT_T, int8_t>::value) {
+            Muls(inputCurRow0D0, inputCurRow0D0, deScaleV0, pregFloat);
+            Muls(inputCurRow0D1, inputCurRow0D1, deScaleV1, pregFloat);
+            Muls(inputCurRow1D0, inputCurRow1D0, deScaleV0, pregFloat);
+            Muls(inputCurRow1D1, inputCurRow1D1, deScaleV1, pregFloat);
+            if constexpr (isUpdatePre) {
+                Muls(inputPreRow0D0, inputPreRow0D0, deScaleVPre0, pregFloat);
+                Muls(inputPreRow0D1, inputPreRow0D1, deScaleVPre1, pregFloat);
+                Muls(inputPreRow1D0, inputPreRow1D0, deScaleVPre0, pregFloat);
+                Muls(inputPreRow1D1, inputPreRow1D1, deScaleVPre1, pregFloat);
+            }
+        }
+        Add(inputPreRow0D0, inputPreRow0D0, inputCurRow0D0, pregFloat);
+        Add(inputPreRow0D1, inputPreRow0D1, inputCurRow0D1, pregFloat);
+        Add(inputPreRow1D0, inputPreRow1D0, inputCurRow1D0, pregFloat);
+        Add(inputPreRow1D1, inputPreRow1D1, inputCurRow1D1, pregFloat);
+        Div(inputCurRow0D0, inputPreRow0D0, expSumFp32_0, pregFloat);
+        Div(inputCurRow0D1, inputPreRow0D1, expSumFp32_0, pregFloat);
+        Div(inputCurRow1D0, inputPreRow1D0, expSumFp32_1, pregFloat);
+        Div(inputCurRow1D1, inputPreRow1D1, expSumFp32_1, pregFloat);
+        StoreAlign<float, MicroAPI::StoreDist::DIST_NORM_B32>(dstUb + offsetRow0D0, inputCurRow0D0, pregFloat);
+        StoreAlign<float, MicroAPI::StoreDist::DIST_NORM_B32>(dstUb + offsetRow0D1, inputCurRow0D1, pregFloat);
+        StoreAlign<float, MicroAPI::StoreDist::DIST_NORM_B32>(dstUb + offsetRow1D0, inputCurRow1D0, pregFloat);
+        StoreAlign<float, MicroAPI::StoreDist::DIST_NORM_B32>(dstUb + offsetRow1D1, inputCurRow1D1, pregFloat);
+    }
+
+    RegTensor<float> tailExpMaxFp32;
+    RegTensor<float> tailExpSumFp32;
+    RegTensor<float> tailInputPre;
+    RegTensor<float> tailInputCur;
+    for (uint16_t i = m / rowUnroll * rowUnroll; i < m; ++i) {
+        LoadAlign<float, MicroAPI::LoadDist::DIST_BRC_B32>(tailExpMaxFp32, expMaxUb + i * 2);
+        LoadAlign<float, MicroAPI::LoadDist::DIST_BRC_B32>(tailExpSumFp32, expSumUb + i);
+        for (uint16_t j = 0; j < 2; ++j) {
+            const uint32_t offset = i * srcD + j * floatRepSize;
+            const float deScaleVCur = j == 0 ? deScaleV0 : deScaleV1;
+            const float deScaleVPre = j == 0 ? deScaleVPre0 : deScaleVPre1;
+            LoadAlign(tailInputPre, preUb + offset);
+            LoadAlign(tailInputCur, curUb + offset);
+            Mul(tailInputPre, tailInputPre, tailExpMaxFp32, pregFloat);
+            if constexpr (IsSameType<INPUT_T, fp8_e5m2_t>::value || IsSameType<INPUT_T, fp8_e4m3fn_t>::value ||
+                IsSameType<INPUT_T, hifloat8_t>::value || IsSameType<INPUT_T, int8_t>::value) {
+                Muls(tailInputCur, tailInputCur, deScaleVCur, pregFloat);
+                if constexpr (isUpdatePre) {
+                    Muls(tailInputPre, tailInputPre, deScaleVPre, pregFloat);
+                }
+            }
+            Add(tailInputPre, tailInputPre, tailInputCur, pregFloat);
+            Div(tailInputCur, tailInputPre, tailExpSumFp32, pregFloat);
+            StoreAlign<float, MicroAPI::StoreDist::DIST_NORM_B32>(dstUb + offset, tailInputCur, pregFloat);
+        }
+    }
+}
+
+template <typename INPUT_T, uint16_t srcD, bool isUpdatePre>
+__aicore__ inline void FlashUpdateLastFp32StatC8V16D64(const LocalTensor<float> &dstTensor,
+    const LocalTensor<float> &curTensor, const LocalTensor<float> &preTensor, const LocalTensor<float> &expMaxTensor,
+    const LocalTensor<float> &expSumTensor, const uint16_t m, const float deScaleV0, const float deScaleV1,
+    const float deScaleVPre0, const float deScaleVPre1) {
+    __ubuf__ float *dstUb = (__ubuf__ float *)dstTensor.GetPhyAddr();
+    __ubuf__ float *curUb = (__ubuf__ float *)curTensor.GetPhyAddr();
+    __ubuf__ float *preUb = (__ubuf__ float *)preTensor.GetPhyAddr();
+    __ubuf__ float *expMaxUb = (__ubuf__ float *)expMaxTensor.GetPhyAddr();
+    __ubuf__ float *expSumUb = (__ubuf__ float *)expSumTensor.GetPhyAddr();
+    FlashUpdateLastFp32StatC8V16D64VF<INPUT_T, srcD, isUpdatePre>(
+        dstUb, curUb, preUb, expMaxUb, expSumUb, m, deScaleV0, deScaleV1, deScaleVPre0, deScaleVPre1);
+}
+
+template <typename INPUT_T, uint16_t srcD>
+__simd_vf__ inline void LastDivFp32StatC8V16D64VF(__ubuf__ float *dstUb, __ubuf__ float *curUb,
+    __ubuf__ float *expSumUb, const uint16_t m, const float deScaleV0, const float deScaleV1) {
+    static_assert(srcD == 128, "C8V16 Vector2 requires D=128");
+    constexpr uint16_t floatRepSize = 64;
+    constexpr uint16_t rowUnroll = 2;
+    MaskReg pregFloat = CreateMask<float, MaskPattern::ALL>();
+    RegTensor<float> expSumFp32_0;
+    RegTensor<float> expSumFp32_1;
+    RegTensor<float> inputCurRow0D0;
+    RegTensor<float> inputCurRow0D1;
+    RegTensor<float> inputCurRow1D0;
+    RegTensor<float> inputCurRow1D1;
+
+    for (uint16_t i = 0; i < m / rowUnroll; ++i) {
+        const uint16_t row0 = i * rowUnroll;
+        const uint16_t row1 = row0 + 1;
+        const uint32_t offsetRow0D0 = row0 * srcD;
+        const uint32_t offsetRow0D1 = offsetRow0D0 + floatRepSize;
+        const uint32_t offsetRow1D0 = row1 * srcD;
+        const uint32_t offsetRow1D1 = offsetRow1D0 + floatRepSize;
+
+        LoadAlign<float, MicroAPI::LoadDist::DIST_BRC_B32>(expSumFp32_0, expSumUb + row0);
+        LoadAlign<float, MicroAPI::LoadDist::DIST_BRC_B32>(expSumFp32_1, expSumUb + row1);
+        LoadAlign(inputCurRow0D0, curUb + offsetRow0D0);
+        LoadAlign(inputCurRow0D1, curUb + offsetRow0D1);
+        LoadAlign(inputCurRow1D0, curUb + offsetRow1D0);
+        LoadAlign(inputCurRow1D1, curUb + offsetRow1D1);
+        if constexpr (IsSameType<INPUT_T, fp8_e5m2_t>::value || IsSameType<INPUT_T, fp8_e4m3fn_t>::value ||
+            IsSameType<INPUT_T, hifloat8_t>::value || IsSameType<INPUT_T, int8_t>::value) {
+            Muls(inputCurRow0D0, inputCurRow0D0, deScaleV0, pregFloat);
+            Muls(inputCurRow0D1, inputCurRow0D1, deScaleV1, pregFloat);
+            Muls(inputCurRow1D0, inputCurRow1D0, deScaleV0, pregFloat);
+            Muls(inputCurRow1D1, inputCurRow1D1, deScaleV1, pregFloat);
+        }
+        Div(inputCurRow0D0, inputCurRow0D0, expSumFp32_0, pregFloat);
+        Div(inputCurRow0D1, inputCurRow0D1, expSumFp32_0, pregFloat);
+        Div(inputCurRow1D0, inputCurRow1D0, expSumFp32_1, pregFloat);
+        Div(inputCurRow1D1, inputCurRow1D1, expSumFp32_1, pregFloat);
+        StoreAlign<float, MicroAPI::StoreDist::DIST_NORM_B32>(dstUb + offsetRow0D0, inputCurRow0D0, pregFloat);
+        StoreAlign<float, MicroAPI::StoreDist::DIST_NORM_B32>(dstUb + offsetRow0D1, inputCurRow0D1, pregFloat);
+        StoreAlign<float, MicroAPI::StoreDist::DIST_NORM_B32>(dstUb + offsetRow1D0, inputCurRow1D0, pregFloat);
+        StoreAlign<float, MicroAPI::StoreDist::DIST_NORM_B32>(dstUb + offsetRow1D1, inputCurRow1D1, pregFloat);
+    }
+
+    RegTensor<float> tailExpSumFp32;
+    RegTensor<float> tailInputCur;
+    for (uint16_t i = m / rowUnroll * rowUnroll; i < m; ++i) {
+        LoadAlign<float, MicroAPI::LoadDist::DIST_BRC_B32>(tailExpSumFp32, expSumUb + i);
+        for (uint16_t j = 0; j < 2; ++j) {
+            const uint32_t offset = i * srcD + j * floatRepSize;
+            const float deScaleVCur = j == 0 ? deScaleV0 : deScaleV1;
+            LoadAlign(tailInputCur, curUb + offset);
+            if constexpr (IsSameType<INPUT_T, fp8_e5m2_t>::value || IsSameType<INPUT_T, fp8_e4m3fn_t>::value ||
+                IsSameType<INPUT_T, hifloat8_t>::value || IsSameType<INPUT_T, int8_t>::value) {
+                Muls(tailInputCur, tailInputCur, deScaleVCur, pregFloat);
+            }
+            Div(tailInputCur, tailInputCur, tailExpSumFp32, pregFloat);
+            StoreAlign<float, MicroAPI::StoreDist::DIST_NORM_B32>(dstUb + offset, tailInputCur, pregFloat);
+        }
+    }
+}
+
+template <typename INPUT_T, uint16_t srcD>
+__aicore__ inline void LastDivFp32StatC8V16D64(const LocalTensor<float> &dstTensor, const LocalTensor<float> &curTensor,
+    const LocalTensor<float> &expSumTensor, const uint16_t m, const float deScaleV0, const float deScaleV1) {
+    __ubuf__ float *dstUb = (__ubuf__ float *)dstTensor.GetPhyAddr();
+    __ubuf__ float *curUb = (__ubuf__ float *)curTensor.GetPhyAddr();
+    __ubuf__ float *expSumUb = (__ubuf__ float *)expSumTensor.GetPhyAddr();
+    LastDivFp32StatC8V16D64VF<INPUT_T, srcD>(dstUb, curUb, expSumUb, m, deScaleV0, deScaleV1);
+}
+
+template <typename INPUT_T, uint16_t srcD, bool isUpdatePre, bool v512D64>
+__aicore__ inline void FlashUpdateFp32StatC8V16Select(const LocalTensor<float> &dstTensor,
+    const LocalTensor<float> &curTensor, const LocalTensor<float> &preTensor, const LocalTensor<float> &expMaxTensor,
+    const uint16_t m, const float deScaleV0, const float deScaleV1, const float deScaleVPre0,
+    const float deScaleVPre1) {
+    if constexpr (v512D64) {
+        FlashUpdateFp32StatC8V16D64<INPUT_T, srcD, isUpdatePre>(
+            dstTensor, curTensor, preTensor, expMaxTensor, m, deScaleV0, deScaleV1, deScaleVPre0, deScaleVPre1);
+    } else {
+        FlashUpdateFp32StatC8V16<INPUT_T, srcD, isUpdatePre>(
+            dstTensor, curTensor, preTensor, expMaxTensor, m, deScaleV0, deScaleVPre0);
+    }
+}
+
+template <typename INPUT_T, uint16_t srcD, bool isUpdatePre, bool v512D64>
+__aicore__ inline void FlashUpdateLastFp32StatC8V16Select(const LocalTensor<float> &dstTensor,
+    const LocalTensor<float> &curTensor, const LocalTensor<float> &preTensor, const LocalTensor<float> &expMaxTensor,
+    const LocalTensor<float> &expSumTensor, const uint16_t m, const float deScaleV0, const float deScaleV1,
+    const float deScaleVPre0, const float deScaleVPre1) {
+    if constexpr (v512D64) {
+        FlashUpdateLastFp32StatC8V16D64<INPUT_T, srcD, isUpdatePre>(dstTensor, curTensor, preTensor, expMaxTensor,
+            expSumTensor, m, deScaleV0, deScaleV1, deScaleVPre0, deScaleVPre1);
+    } else {
+        FlashUpdateLastFp32StatC8V16<INPUT_T, srcD, isUpdatePre>(
+            dstTensor, curTensor, preTensor, expMaxTensor, expSumTensor, m, deScaleV0, deScaleVPre0);
+    }
+}
+
+template <typename INPUT_T, uint16_t srcD, bool v512D64>
+__aicore__ inline void LastDivFp32StatC8V16Select(const LocalTensor<float> &dstTensor,
+    const LocalTensor<float> &curTensor, const LocalTensor<float> &expSumTensor, const uint16_t m,
+    const float deScaleV0, const float deScaleV1) {
+    if constexpr (v512D64) {
+        LastDivFp32StatC8V16D64<INPUT_T, srcD>(dstTensor, curTensor, expSumTensor, m, deScaleV0, deScaleV1);
+    } else {
+        LastDivFp32StatC8V16<INPUT_T, srcD>(dstTensor, curTensor, expSumTensor, m, deScaleV0);
+    }
 }
 
 template <typename T, typename INPUT_T, typename OUTPUT_T, uint16_t srcD, uint16_t reduceSize, bool isUpdatePre,
@@ -584,7 +908,6 @@ __simd_vf__ inline void FlashUpdateLastGeneralVF(__ubuf__ float *dstUb, __ubuf__
             }
             Add(vreg_add, vreg_mul, vreg_input_cur, preg_all);
             Div(vreg_div, vreg_add, vreg_exp_sum, preg_all);
-
             StoreAlign<T, MicroAPI::StoreDist::DIST_NORM_B32>(
                 (__ubuf__ T *&)dstUb + i * d + j * floatRepSize, vreg_div, preg_all);
         }
@@ -602,7 +925,6 @@ __simd_vf__ inline void FlashUpdateLastGeneralVF(__ubuf__ float *dstUb, __ubuf__
             }
             Add(vreg_add, vreg_mul, vreg_input_cur, preg_tail_d);
             Div(vreg_div, vreg_add, vreg_exp_sum, preg_tail_d);
-
             StoreAlign<T, MicroAPI::StoreDist::DIST_NORM_B32>(
                 (__ubuf__ T *&)dstUb + i * d + dLoops * floatRepSize, vreg_div, preg_tail_d);
         }

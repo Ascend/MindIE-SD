@@ -314,6 +314,28 @@ using namespace regbaseutil;
     } while (0)
 #endif
 
+// V512/D64 reuses the proven mode-17 tiling key. The value quant mode is
+// carried in tiling data so the vector core can instantiate the exact D64
+// implementation without adding another operator template key. The D64 flag
+// is unused on the cube core, which keeps the original cube path unchanged.
+#ifdef __DAV_C310_CUBE__
+#define INVOKE_GQA_FULLQUANT_V_QUANT_DISPATCH(templateClass, vec1ResultSize, qkvSize, ...) \
+    INVOKE_GQA_FULLQUANT_GENERAL_OP_IMPL_ASCEND950_FA_BASEAPI( \
+        templateClass, vec1ResultSize, qkvSize, __VA_ARGS__, false)
+#else
+#define INVOKE_GQA_FULLQUANT_V_QUANT_DISPATCH(templateClass, vec1ResultSize, qkvSize, ...) \
+    do { \
+        PFA_REGBASE_COPY_TILING_DATA(tiling); \
+        if (tilingData->inputParamsRegbase.rsv1 == 12) { \
+            INVOKE_GQA_FULLQUANT_GENERAL_OP_IMPL_ASCEND950_FA_BASEAPI( \
+                templateClass, vec1ResultSize, qkvSize, __VA_ARGS__, true); \
+        } else { \
+            INVOKE_GQA_FULLQUANT_GENERAL_OP_IMPL_ASCEND950_FA_BASEAPI( \
+                templateClass, vec1ResultSize, qkvSize, __VA_ARGS__, false); \
+        } \
+    } while (0)
+#endif
+
 // kv is empty tensor, return zero output
 #define INVOKE_PFA_ZERO_OP_IMPL_V2(T) \
     TPipe tPipe; \
@@ -723,11 +745,10 @@ inline __aicore__ void prompt_flash_attention_FIAS_regbase(__gm__ uint8_t *query
                         static_cast<uint64_t>(dTemplateType),
                     static_cast<uint64_t>(s2TemplateType) * static_cast<uint64_t>(dTemplateType)) *
                 2;
-            INVOKE_GQA_FULLQUANT_GENERAL_OP_IMPL_ASCEND950_FA_BASEAPI(
-                BaseApi::FlashAttentionScoreKernelInferGqaFullquant, vec1ResultSize, qkvSizeRsv2, fp8_e4m3fn_t, float,
-                half, ImplModeEnum::AA_HIGH_PRECISION, inputLayoutType, s1TemplateType, s2TemplateType, dTemplateType,
-                dVTemplateType, static_cast<PseTypeEnum>(pseMode), hasAttenMask, false, hasRope, true, isPa, isFd,
-                enableKVPrefix, enableS1OutSplit, false, c8v16);
+            INVOKE_GQA_FULLQUANT_V_QUANT_DISPATCH(BaseApi::FlashAttentionScoreKernelInferGqaFullquant, vec1ResultSize,
+                qkvSizeRsv2, fp8_e4m3fn_t, float, half, ImplModeEnum::AA_HIGH_PRECISION, inputLayoutType,
+                s1TemplateType, s2TemplateType, dTemplateType, dVTemplateType, static_cast<PseTypeEnum>(pseMode),
+                hasAttenMask, false, hasRope, true, isPa, isFd, enableKVPrefix, enableS1OutSplit, false, c8v16);
         }
     }
 #endif
@@ -822,11 +843,10 @@ inline __aicore__ void prompt_flash_attention_FIAS_regbase(__gm__ uint8_t *query
                         static_cast<uint64_t>(dTemplateType),
                     static_cast<uint64_t>(s2TemplateType) * static_cast<uint64_t>(dTemplateType)) *
                 2;
-            INVOKE_GQA_FULLQUANT_GENERAL_OP_IMPL_ASCEND950_FA_BASEAPI(
-                BaseApi::FlashAttentionScoreKernelInferGqaFullquant, vec1ResultSize, qkvSizeRsv2, fp8_e4m3fn_t, float,
-                bfloat16_t, ImplModeEnum::AA_HIGH_PRECISION, inputLayoutType, s1TemplateType, s2TemplateType,
-                dTemplateType, dVTemplateType, static_cast<PseTypeEnum>(pseMode), hasAttenMask, false, hasRope, true,
-                isPa, isFd, enableKVPrefix, false, false, c8v16);
+            INVOKE_GQA_FULLQUANT_V_QUANT_DISPATCH(BaseApi::FlashAttentionScoreKernelInferGqaFullquant, vec1ResultSize,
+                qkvSizeRsv2, fp8_e4m3fn_t, float, bfloat16_t, ImplModeEnum::AA_HIGH_PRECISION, inputLayoutType,
+                s1TemplateType, s2TemplateType, dTemplateType, dVTemplateType, static_cast<PseTypeEnum>(pseMode),
+                hasAttenMask, false, hasRope, true, isPa, isFd, enableKVPrefix, false, false, c8v16);
         }
     }
 #endif

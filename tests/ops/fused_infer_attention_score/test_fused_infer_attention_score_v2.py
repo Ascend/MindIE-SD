@@ -30,16 +30,17 @@ if _TEST_DIR not in sys.path:
 
 from fia_accuracy_common import (  # noqa: E402
     DEFAULT_ENHANCE_MODE,
-    K_BLOCK,
-    Q_BLOCK,
-    QUANT_MODE,
-    V_BLOCK,
     check_mixed_tolerance,
     cosine_metrics,
     cpu_c8v16_fp8_fia_golden,
     synthesize_bf16,
 )
-
+from fia_quant_common import (  # noqa: E402
+    D128_CHANNEL_BLOCK,
+    FIA_QUANT_CASES,
+    K_TOKEN_BLOCK,
+    Q_TOKEN_BLOCK,
+)
 
 MINIMUM_FP8_PERBLOCK_BNSD_CASES = (
     {
@@ -207,6 +208,7 @@ def test_normalize_dtype_arg_maps_torch_npu_pseudo_dtypes(monkeypatch):
 )
 def test_fused_infer_attention_score_v2_fp8_perblock_bnsd_cases(case):
     import torch_npu
+
     from mindiesd.layers.quant.block_quant import fa_block_quant_preprocess
 
     if not torch_npu.npu.is_available():
@@ -253,8 +255,9 @@ def test_fused_infer_attention_score_v2_fp8_perblock_bnsd_cases(case):
     assert softmax_lse.numel() == 0
 
 
-def _run_fp8_small_vs_cpu_four_stage(inner_precise=None):
+def _run_fp8_small_vs_cpu_golden(case):
     import torch_npu
+
     from mindiesd.layers.quant.block_quant import fa_block_quant_preprocess
 
     if not torch_npu.npu.is_available():
@@ -266,31 +269,37 @@ def _run_fp8_small_vs_cpu_four_stage(inner_precise=None):
     num_query_heads = 8
     num_kv_heads = 2
     query_seq_len = 128
-    kv_seq_len = 256
+    kv_seq_len = 513
     head_dim = 128
     generator = torch.Generator(device="cpu").manual_seed(20260811)
 
-    query = synthesize_bf16(
-        "query", (batch_size, num_query_heads, query_seq_len, head_dim), generator
-    )
-    key = synthesize_bf16(
-        "key", (batch_size, num_kv_heads, kv_seq_len, head_dim), generator
-    )
-    value = synthesize_bf16(
-        "value", (batch_size, num_kv_heads, kv_seq_len, head_dim), generator
-    )
+    query = synthesize_bf16("query", (batch_size, num_query_heads, query_seq_len, head_dim), generator)
+    key = synthesize_bf16("key", (batch_size, num_kv_heads, kv_seq_len, head_dim), generator)
+    value = synthesize_bf16("value", (batch_size, num_kv_heads, kv_seq_len, head_dim), generator)
     softmax_scale = 1.0 / (head_dim**0.5)
     query_npu = query.to(device)
     key_npu = key.to(device)
     value_npu = value.to(device)
     q, q_scale = fa_block_quant_preprocess(
-        query_npu, block_size=Q_BLOCK, dst_type=torch_npu.float8_e4m3fn, layout="BNSD"
+        query_npu,
+        block_size=Q_TOKEN_BLOCK,
+        col_block_size=D128_CHANNEL_BLOCK,
+        dst_type=torch_npu.float8_e4m3fn,
+        layout="BNSD",
     )
     k, k_scale = fa_block_quant_preprocess(
-        key_npu, block_size=K_BLOCK, dst_type=torch_npu.float8_e4m3fn, layout="BNSD"
+        key_npu,
+        block_size=K_TOKEN_BLOCK,
+        col_block_size=D128_CHANNEL_BLOCK,
+        dst_type=torch_npu.float8_e4m3fn,
+        layout="BNSD",
     )
     v, v_scale = fa_block_quant_preprocess(
-        value_npu, block_size=V_BLOCK, dst_type=torch_npu.float8_e4m3fn, layout="BNSD"
+        value_npu,
+        block_size=case.value_token_block,
+        col_block_size=case.value_channel_block,
+        dst_type=torch_npu.float8_e4m3fn,
+        layout="BNSD",
     )
     cpu_out = cpu_c8v16_fp8_fia_golden(
         q.float().cpu(),
@@ -301,6 +310,12 @@ def _run_fp8_small_vs_cpu_four_stage(inner_precise=None):
         v_scale.cpu(),
         softmax_scale,
         out_dtype=torch.bfloat16,
+        s2_tile=case.value_token_block,
+        q_row_block=Q_TOKEN_BLOCK,
+        k_row_block=K_TOKEN_BLOCK,
+        v_row_block=case.value_token_block,
+        qk_col_block=D128_CHANNEL_BLOCK,
+        v_col_block=case.value_channel_block,
     )
     fia_kwargs = {
         "num_query_heads": num_query_heads,
@@ -309,16 +324,15 @@ def _run_fp8_small_vs_cpu_four_stage(inner_precise=None):
         "pre_tokens": 2147483647,
         "next_tokens": 2147483647,
         "input_layout": "BNSD",
-        "query_quant_mode": QUANT_MODE,
-        "key_quant_mode": QUANT_MODE,
-        "value_quant_mode": QUANT_MODE,
+        "query_quant_mode": case.quant_modes[0],
+        "key_quant_mode": case.quant_modes[1],
+        "value_quant_mode": case.quant_modes[2],
+        "inner_precise": case.inner_precise,
         "dequant_scale_query": q_scale,
         "dequant_scale_key": k_scale,
         "dequant_scale_value": v_scale,
         "out_dtype": torch.bfloat16,
     }
-    if inner_precise is not None:
-        fia_kwargs["inner_precise"] = inner_precise
     fia_out, softmax_lse = fused_infer_attention_score_v2(q, k, v, **fia_kwargs)
 
     assert fia_out.shape == cpu_out.shape
@@ -329,10 +343,10 @@ def _run_fp8_small_vs_cpu_four_stage(inner_precise=None):
 
     metrics = cosine_metrics(cpu_out, fia_out)
     gate = check_mixed_tolerance(fia_out, cpu_out, dtype=torch.float8_e4m3fn)
-    precise_label = "0 (default)" if inner_precise is None else str(inner_precise)
     print(
         f"golden=cpu_c8v16_fp8_fia_golden (C8V16 FP8 FullQuant)  "
-        f"dut=fused_infer_attention_score_v2 (FP8 7/7/7 inner_precise={precise_label})"
+        f"dut=fused_infer_attention_score_v2 ({case.description}, "
+        f"qkv={case.quant_modes}, inner_precise={case.inner_precise})"
     )
     print(
         f"cosine={metrics['cosine']:.8f}  "
@@ -370,13 +384,10 @@ def _run_fp8_small_vs_cpu_four_stage(inner_precise=None):
     importlib.util.find_spec("torch_npu") is None,
     reason="torch_npu is required to run MindIE-SD quantized FIA.",
 )
-def test_fused_infer_attention_score_v2_fp8_small_vs_cpu_four_stage():
-    _run_fp8_small_vs_cpu_four_stage()
-
-
-@pytest.mark.skipif(
-    importlib.util.find_spec("torch_npu") is None,
-    reason="torch_npu is required to run MindIE-SD quantized FIA.",
+@pytest.mark.parametrize(
+    "case",
+    FIA_QUANT_CASES,
+    ids=[case.name for case in FIA_QUANT_CASES],
 )
-def test_fused_infer_attention_score_v2_fp8_small_vs_cpu_four_stage_inner_precise4():
-    _run_fp8_small_vs_cpu_four_stage(inner_precise=4)
+def test_fused_infer_attention_score_v2_fp8_small_vs_cpu_golden(case):
+    _run_fp8_small_vs_cpu_golden(case)

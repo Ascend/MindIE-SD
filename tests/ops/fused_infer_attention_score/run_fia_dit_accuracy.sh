@@ -14,13 +14,13 @@
 # Do NOT set ASCEND_RT_VISIBLE_DEVICES.
 #
 # Usage:
-#   bash tests/ops/fused_infer_attention_score/run_fia_dit_tiling512_accuracy.sh
-#   bash tests/ops/fused_infer_attention_score/run_fia_dit_tiling512_accuracy.sh --device-id 3
+#   bash tests/ops/fused_infer_attention_score/run_fia_dit_accuracy.sh
+#   bash tests/ops/fused_infer_attention_score/run_fia_dit_accuracy.sh --device-id 3
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-BENCH_SCRIPT="${SCRIPT_DIR}/check_fia_dit_tiling512_accuracy.py"
+BENCH_SCRIPT="${SCRIPT_DIR}/check_fia_dit_accuracy.py"
 SELECT_SCRIPT="${REPO_ROOT}/tests/tools/select_npu_device.py"
 DEVICE_ID="${DEVICE_ID:-}"
 
@@ -37,7 +37,7 @@ Environment:
   ASCEND_TOOLKIT_HOME    Ascend toolkit root, used to locate set_env.sh.
   DEVICE_ID              Same as --device-id if the flag is omitted.
 
-Python defaults: --enhance-mode 2.0, DiT tiling512 row34 shapes.
+Python defaults: --enhance-mode 2.0, DiT large-shape (Q 2304 / KV 30757).
 Do not set ASCEND_RT_VISIBLE_DEVICES; this script unsets it.
 EOF
 }
@@ -94,6 +94,8 @@ source_ascend_env() {
     echo "warning=no Ascend set_env.sh found; continuing with current environment"
 }
 
+source_ascend_env
+
 python3 - <<'PY'
 import importlib.util
 import sys
@@ -103,8 +105,6 @@ if importlib.util.find_spec("mindiesd") is None:
     sys.exit("ERROR: mindiesd missing — install the current MindIE-SD tree first")
 print("python", sys.executable)
 PY
-
-source_ascend_env
 
 if [[ -n "${ASCEND_RT_VISIBLE_DEVICES:-}" ]]; then
     echo "warning: unsetting ASCEND_RT_VISIBLE_DEVICES=${ASCEND_RT_VISIBLE_DEVICES}"

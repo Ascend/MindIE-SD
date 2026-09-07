@@ -16,13 +16,14 @@ import torch.nn.functional as F
 from ...utils import ParametersInvalid
 
 
-def fa_block_quant_preprocess(input_tensor, block_size=128, dst_type=torch_npu.float8_e4m3fn, **kwargs):
+def fa_block_quant_preprocess(input_tensor, block_size=128, dst_type=torch_npu.float8_e4m3fn, col_block_size=128, **kwargs):
     """
     Preprocess for FA quant. Input layout must be 'BNSD' or 'BSND'.
     Args:
         input_tensor (torch.Tensor): Input tensor to be quantized.
         block_size (int, optional): Block size for quantization. Support 128/256/512. Default: 128.
         dst_type (torch.dtype, optional): Target quantization data type. Default: torch_npu.float8_e4m3fn.
+        col_block_size (int, optional): D-axis block size for quantization. Default: 128.
         **kwargs:
             layout (str): Tensor layout format, supports 'BNSD' (Batch, Num_heads, Seq_len, Dim)
                          or 'BSND' (Batch, Seq_len, Num_heads, Dim).
@@ -43,6 +44,6 @@ def fa_block_quant_preprocess(input_tensor, block_size=128, dst_type=torch_npu.f
     input_quant, input_scale = torch_npu.npu_dynamic_block_quant(input_tensor.squeeze(0),
                                                                  dst_type=dst_type,
                                                                  row_block_size=block_size,
-                                                                 col_block_size=128)
+                                                                 col_block_size=col_block_size)
 
     return input_quant.unsqueeze(0), input_scale.unsqueeze(0)

@@ -105,13 +105,15 @@ class FlashAttentionScoreKernelBaseFullquant {
     static constexpr uint32_t s1BaseSize = (uint32_t)s1TemplateType;
     static constexpr uint32_t s2BaseSize = (uint32_t)s2TemplateType;
     static constexpr bool isFp8 = CubeBlockType::isFp8;
-    static constexpr bool isMxfp8FullQuant = s1BaseSize == 128 && s2BaseSize == 512;
+    static constexpr bool isV512Perblock =
+        enableC8V16 && isInfer && s2BaseSize == 512 && IsSameType<INPUT_T, fp8_e4m3fn_t>::value && !hasRope;
+    static constexpr bool isMxfp8FullQuant = s1BaseSize == 128 && s2BaseSize == 512 && !isV512Perblock;
     /* 是否使能dn的信息; 没有可选输入并且S2切分的时候使用dn，s2比较小的时候nd效果更好 */
     static constexpr bool useDn = CubeBlockType::useDn;
     /* HIFLOAT8场景 softmax计算使用Nz格式计算，vec1ResBuffer可以和bmm1ResBuffer进行复用*/
     static constexpr bool useNz = CubeBlockType::useNz;
-    static constexpr bool useC8V16Score =
-        enableC8V16 && isInfer && useDn && IsSameType<INPUT_T, fp8_e4m3fn_t>::value && !hasRope && s2BaseSize == 256;
+    static constexpr bool useC8V16Score = enableC8V16 && isInfer && useDn && IsSameType<INPUT_T, fp8_e4m3fn_t>::value &&
+        !hasRope && !isMxfp8FullQuant && (s2BaseSize == 256 || s2BaseSize == 512);
     static constexpr TPosition bmm2OutPos = CubeBlockType::bmm2OutPos;
     static constexpr bool bmm2Write2Ub = CubeBlockType::bmm2Write2Ub;
     static constexpr bool splitD = CubeBlockType::splitD;
@@ -371,7 +373,7 @@ __aicore__ inline void FlashAttentionScoreKernelBaseFullquant<ChildClass, CubeBl
     }
     bmm1Buffers.Init(ubBufferManager, mm1ResultSize);
     if ASCEND_IS_AIV {
-        if constexpr (useNz) {
+        if constexpr (useNz || (useC8V16Score && s2BaseSize == 512)) {
             bmm1Buffers.Get().SetCrossCore<true>();
             bmm1Buffers.Get().SetCrossCore<true>();
         } else {

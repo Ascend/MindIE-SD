@@ -11,7 +11,7 @@
 
 # Capture EagleFusedInferAttentionScore with msprof op.
 # Default case: DiT-Prof.xlsx / 0825-eaglefia-tiling512 / row 34.
-# Runs inner_precise=0 first, then inner_precise=4.
+# Runs original, C8V16, V512x128 and V512x64 in separate msprof processes.
 #
 # Must run inside CANN + torch_npu + NPU.
 # Do NOT set ASCEND_RT_VISIBLE_DEVICES (incompatible with msprof / msprof op).
@@ -23,15 +23,15 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-BENCH_SCRIPT="${SCRIPT_DIR}/profile_fia_dit_tiling512.py"
-BENCH_SCRIPT_INNER4="${SCRIPT_DIR}/profile_fia_dit_tiling512_inner_precise4.py"
+BENCH_SCRIPT="${SCRIPT_DIR}/profile_fia_dit_quant.py"
 SELECT_SCRIPT="${REPO_ROOT}/tests/tools/select_npu_device.py"
 STAMP="$(date +%Y%m%d_%H%M%S)"
-OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/logs/msprof_fia_tiling512_${STAMP}}"
+OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/logs/msprof_fia_dit_${STAMP}}"
 DEVICE_ID="${DEVICE_ID:-}"
 KERNEL_NAME="${KERNEL_NAME:-EagleFusedInferAttentionScore}"
 MSPROF_WARMUP="${MSPROF_WARMUP:-10}"
 MSPROF_LAUNCH_COUNT="${MSPROF_LAUNCH_COUNT:-5}"
+PATHS="${PATHS:-original,c8v16,v512,v512_d64}"
 
 usage() {
     cat <<EOF
@@ -40,6 +40,7 @@ Usage: $0 [options] [-- extra python args]
 Options:
   --output-dir <dir>     msprof op output directory (absolute path recommended).
   --device-id <id>       Physical NPU ID from npu-smi info. Default: auto-pick idle card.
+  --paths <csv>          FIA paths. Default: original,c8v16,v512,v512_d64.
   -h, --help             Show this help.
 
 Environment:
@@ -61,6 +62,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --device-id)
             DEVICE_ID="$2"
+            shift 2
+            ;;
+        --paths)
+            PATHS="$2"
             shift 2
             ;;
         -h|--help)
@@ -108,6 +113,8 @@ source_ascend_env() {
     echo "warning=no Ascend set_env.sh found; continuing with current environment"
 }
 
+source_ascend_env
+
 if ! command -v msprof >/dev/null 2>&1; then
     echo "ERROR: msprof not found; source CANN set_env.sh first" >&2
     exit 1
@@ -125,7 +132,6 @@ PY
 
 mkdir -p "${OUTPUT_DIR}" "${REPO_ROOT}/logs"
 OUTPUT_DIR="$(cd "${OUTPUT_DIR}" && pwd)"
-source_ascend_env
 
 if [[ -n "${ASCEND_RT_VISIBLE_DEVICES:-}" ]]; then
     echo "warning: unsetting ASCEND_RT_VISIBLE_DEVICES=${ASCEND_RT_VISIBLE_DEVICES} (unsupported with msprof / msprof op)"
@@ -152,50 +158,43 @@ else
     echo "=== Using user-specified device_id=${DEVICE_ID} ===" | tee "${OUTPUT_DIR}/npu_select.log"
 fi
 
-echo "=== FIA msprof op (DiT eaglefia tiling512 row34, inner_precise=0 baseline) ==="
+echo "=== FIA V-quant msprof op (DiT eaglefia tiling512 row34) ==="
 echo "REPO_ROOT=${REPO_ROOT}"
 echo "OUTPUT_DIR=${OUTPUT_DIR}"
 echo "KERNEL_NAME=${KERNEL_NAME}"
 echo "ASCEND_RT_VISIBLE_DEVICES=${ASCEND_RT_VISIBLE_DEVICES-}"
 echo "device_id=${DEVICE_ID}"
+echo "paths=${PATHS}"
 
-PY_CMD=(python3 "${BENCH_SCRIPT}" --device-id "${DEVICE_ID}" --msprof-mode)
-if [[ ${#EXTRA_PY_ARGS[@]} -gt 0 ]]; then
-  PY_CMD+=("${EXTRA_PY_ARGS[@]}")
-fi
+IFS=',' read -r -a PATH_LIST <<< "${PATHS}"
+for path_name in "${PATH_LIST[@]}"; do
+    path_name="${path_name//[[:space:]]/}"
+    if [[ -z "${path_name}" ]]; then
+        continue
+    fi
+    PATH_OUTPUT_DIR="${OUTPUT_DIR}/${path_name}"
+    mkdir -p "${PATH_OUTPUT_DIR}"
+    PATH_OUTPUT_DIR="$(cd "${PATH_OUTPUT_DIR}" && pwd)"
+    echo "=== path=${path_name} output=${PATH_OUTPUT_DIR} ==="
 
-msprof op \
-  --kernel-name="${KERNEL_NAME}" \
-  --warm-up="${MSPROF_WARMUP}" \
-  --launch-count="${MSPROF_LAUNCH_COUNT}" \
-  --kill=on \
-  --output="${OUTPUT_DIR}" \
-  "${PY_CMD[@]}"
+    PY_CMD=(
+        python3 "${BENCH_SCRIPT}"
+        --device-id "${DEVICE_ID}"
+        --path "${path_name}"
+        --msprof-mode
+    )
+    if [[ ${#EXTRA_PY_ARGS[@]} -gt 0 ]]; then
+        PY_CMD+=("${EXTRA_PY_ARGS[@]}")
+    fi
+
+    msprof op \
+        --kernel-name="${KERNEL_NAME}" \
+        --warm-up="${MSPROF_WARMUP}" \
+        --launch-count="${MSPROF_LAUNCH_COUNT}" \
+        --kill=on \
+        --output="${PATH_OUTPUT_DIR}" \
+        "${PY_CMD[@]}"
+done
 
 echo "${OUTPUT_DIR}" > "${REPO_ROOT}/logs/last_fia_msprof.path"
-
-INNER4_OUTPUT_DIR="${OUTPUT_DIR}_inner_precise4"
-mkdir -p "${INNER4_OUTPUT_DIR}"
-INNER4_OUTPUT_DIR="$(cd "${INNER4_OUTPUT_DIR}" && pwd)"
-
-echo "=== FIA msprof op (DiT eaglefia tiling512 row34, inner_precise=4) ==="
-echo "REPO_ROOT=${REPO_ROOT}"
-echo "OUTPUT_DIR=${INNER4_OUTPUT_DIR}"
-echo "KERNEL_NAME=${KERNEL_NAME}"
-echo "ASCEND_RT_VISIBLE_DEVICES=${ASCEND_RT_VISIBLE_DEVICES-}"
-echo "device_id=${DEVICE_ID}"
-
-PY_CMD_INNER4=(python3 "${BENCH_SCRIPT_INNER4}" --device-id "${DEVICE_ID}" --msprof-mode)
-if [[ ${#EXTRA_PY_ARGS[@]} -gt 0 ]]; then
-  PY_CMD_INNER4+=("${EXTRA_PY_ARGS[@]}")
-fi
-
-msprof op \
-  --kernel-name="${KERNEL_NAME}" \
-  --warm-up="${MSPROF_WARMUP}" \
-  --launch-count="${MSPROF_LAUNCH_COUNT}" \
-  --kill=on \
-  --output="${INNER4_OUTPUT_DIR}" \
-  "${PY_CMD_INNER4[@]}"
-
-echo "${INNER4_OUTPUT_DIR}" > "${REPO_ROOT}/logs/last_fia_msprof_inner_precise4.path"
+echo "RESULT all selected FIA paths captured; original is the performance baseline"
