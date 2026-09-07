@@ -16,13 +16,16 @@ from torch import nn
 import torch.nn.functional as F
 
 from ...utils.exception import ParametersInvalid
+from ...utils.get_platform import is_a5_device
 from .._custom_ops import block_sparse_attention
 from .sparse_linear_attn_triton import _attention, get_block_map
 
 _SUPPORTED_SPARSE_BACKENDS = ('triton', 'ascendc')
 # aclnnBlockSparseAttention tiling constraints (see block_sparse_attention_tiling.cpp).
 _ASCENDC_SUPPORTED_HEAD_DIMS = (64, 128)
+# A2/A3 require blockShapeY to be 128-aligned; A5 supports 16-aligned blocks.
 _ASCENDC_BLKK_ALIGN = 128
+_ASCENDC_A5_BLKK_ALIGN = 16
 # SparseLinearAttention triton path: get_block_map compress_kernel UB limit on NPU.
 # _attention.apply also asserts {16,32,64,128,256}, but D=256 cannot compile in get_block_map.
 _TRITON_SUPPORTED_HEAD_DIMS = (16, 32, 64, 128)
@@ -30,8 +33,16 @@ _TRITON_SUPPORTED_HEAD_DIMS = (16, 32, 64, 128)
 _TRITON_SUPPORTED_BLOCK_SIZES = (64, 128)
 
 
-def _ascendc_shape_supported(head_dim, blkq, blkk):
-    return blkq > 0 and blkk > 0 and head_dim in _ASCENDC_SUPPORTED_HEAD_DIMS and blkk % _ASCENDC_BLKK_ALIGN == 0
+def _ascendc_shape_supported(head_dim, blkq, blkk, *, is_950=None):
+    if is_950 is None:
+        is_950 = is_a5_device()
+    blkk_align = _ASCENDC_A5_BLKK_ALIGN if is_950 else _ASCENDC_BLKK_ALIGN
+    return (
+        blkq > 0
+        and blkk > 0
+        and head_dim in _ASCENDC_SUPPORTED_HEAD_DIMS
+        and blkk % blkk_align == 0
+    )
 
 
 def _triton_shape_supported(head_dim, blkq, blkk):
@@ -44,16 +55,19 @@ def _triton_shape_supported(head_dim, blkq, blkk):
     )
 
 
-def _resolve_sparse_attn_backend(head_dim, blkq, blkk, *, where=''):
-    if _ascendc_shape_supported(head_dim, blkq, blkk):
+def _resolve_sparse_attn_backend(head_dim, blkq, blkk, *, is_950=None, where=''):
+    if is_950 is None:
+        is_950 = is_a5_device()
+    if _ascendc_shape_supported(head_dim, blkq, blkk, is_950=is_950):
         return 'ascendc'
     if _triton_shape_supported(head_dim, blkq, blkk):
         return 'triton'
     suffix = f' ({where})' if where else ''
+    ascendc_blkk_align = _ASCENDC_A5_BLKK_ALIGN if is_950 else _ASCENDC_BLKK_ALIGN
     raise ParametersInvalid(
         f"No sparse attention backend supports head_dim={head_dim}, BLKQ={blkq}, BLKK={blkk}{suffix}. "
         f"ascendc requires head_dim in {_ASCENDC_SUPPORTED_HEAD_DIMS} and BLKK multiple of "
-        f"{_ASCENDC_BLKK_ALIGN}; triton requires head_dim in {_TRITON_SUPPORTED_HEAD_DIMS} and "
+        f"{ascendc_blkk_align}; triton requires head_dim in {_TRITON_SUPPORTED_HEAD_DIMS} and "
         f"BLKQ/BLKK in {_TRITON_SUPPORTED_BLOCK_SIZES}."
     )
 
@@ -88,7 +102,8 @@ class SparseLinearAttention(nn.Module):
             topk: ratio of keys selected for sparse attention, shared across all queries.
             feature_map: feature map for linear attention, one of ['hedgehog', 'elu', 'relu', 'softmax'].
             BLKQ: block size for query. ascendc: positive; triton fallback: 64 or 128.
-            BLKK: block size for key. ascendc: positive multiple of 128; triton fallback: 64 or 128.
+            BLKK: block size for key. ascendc: positive multiple of 16 on A5, or 128 on A2/A3;
+                triton fallback: 64 or 128.
             use_bf16: whether to use bfloat16 (default) or float16 for computation. The conversion to bf16/fp16 is done inside the module.
             tie_feature_map_qk: whether to use the same feature map for query and key.
             inner_precise: precision mode for ascendc backend only (triton ignores this).
@@ -103,17 +118,13 @@ class SparseLinearAttention(nn.Module):
         super().__init__()
         if BLKQ <= 0 or BLKK <= 0:
             raise ParametersInvalid(f"BLKQ and BLKK must be positive, got BLKQ={BLKQ}, BLKK={BLKK}.")
-        _resolve_sparse_attn_backend(head_dim, BLKQ, BLKK, where='head_dim')
+        self._is_950 = is_a5_device()
+        _resolve_sparse_attn_backend(head_dim, BLKQ, BLKK, is_950=self._is_950, where='head_dim')
         self.dtype = torch.bfloat16 if use_bf16 else torch.float16
         self.topk = topk
         self.BLKQ = BLKQ
         self.BLKK = BLKK
         self.inner_precise = inner_precise
-        try:
-            dev_name = torch.npu.get_device_properties(torch.npu.current_device()).name
-            self._is_950 = '950' in dev_name
-        except Exception:
-            self._is_950 = False
         self.proj_l = nn.Linear(head_dim, head_dim, dtype=torch.float32)
 
         if feature_map == 'elu':
@@ -169,7 +180,14 @@ class SparseLinearAttention(nn.Module):
         if q.device.type != 'npu':
             raise ParametersInvalid(f"SparseLinearAttention requires query/key/value on NPU; got device {q.device}.")
 
-        sparse_attn_backend = _resolve_sparse_attn_backend(head_dim, self.BLKQ, self.BLKK, where='query head dimension')
+        is_950 = is_a5_device()
+        sparse_attn_backend = _resolve_sparse_attn_backend(
+            head_dim,
+            self.BLKQ,
+            self.BLKK,
+            is_950=is_950,
+            where='query head dimension',
+        )
 
         sparse_map, lut, real_topk = get_block_map(q, k, topk_ratio=self.topk, BLKQ=self.BLKQ, BLKK=self.BLKK)
 
@@ -186,8 +204,10 @@ class SparseLinearAttention(nn.Module):
                 q, k, v, sparse_map, lut, real_topk, atten_mask, causal, scale, self.BLKQ, self.BLKK
             )
         else:
-            inner_precise = self.inner_precise if self.inner_precise is not None else (4 if self._is_950 else 0)
-            _validate_inner_precise(inner_precise, self._is_950, self.dtype == torch.bfloat16)
+            inner_precise = (
+                self.inner_precise if self.inner_precise is not None else (4 if is_950 else 0)
+            )
+            _validate_inner_precise(inner_precise, is_950, self.dtype == torch.bfloat16)
             o_s, _ = block_sparse_attention(
                 query=q,
                 key=k,
