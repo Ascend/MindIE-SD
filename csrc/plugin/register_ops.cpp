@@ -69,7 +69,10 @@ TORCH_LIBRARY(mindiesd, m) {
         int[]? actual_seq_lengths=None, int[]? actual_seq_lengths_kv=None, \
         int softmax_lse_flag=0, \
         Tensor? q_dequant_scale=None, Tensor? k_dequant_scale=None, \
-        Tensor? v_dequant_scale=None) -> (Tensor, Tensor)");
+        Tensor? v_dequant_scale=None, \
+        int quant_mode=-1, float dst_type_max=0.0, \
+        int? q_dtype=None, int? k_dtype=None, int? v_dtype=None, \
+        int? q_scale_dtype=None, int? k_scale_dtype=None, int? v_scale_dtype=None) -> (Tensor, Tensor)");
     m.def("eagle_quant_block_sparse_attention(Tensor query, Tensor key, Tensor value, \
         Tensor? block_sparse_mask=None, int[] block_shape=[128,128], \
         str q_input_layout='BNSD', str kv_input_layout='BNSD', \

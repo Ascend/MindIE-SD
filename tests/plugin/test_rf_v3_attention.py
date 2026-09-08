@@ -59,6 +59,47 @@ _SKIP_NO_BSA_V2 = unittest.skipIf(
 )
 
 
+def _is_bsa_v3_available():
+    """Detect whether aclnnBlockSparseAttentionV3 exists in libopapi.so.
+
+    MXFP4 BSA is only provided by the V3 kernel. When V3 is absent the plugin
+    rejects quant_mode >= 2 at the TORCH_CHECK, so MXFP4 test scenarios must be
+    skipped instead of failing.
+    """
+    import ctypes
+
+    try:
+        lib = ctypes.CDLL("libopapi.so")
+    except OSError:
+        return False
+    return hasattr(lib, "aclnnBlockSparseAttentionV3")
+
+
+# MXFP4 BSA relies on aclnnBlockSparseAttentionV3; skip MXFP4 cases on CANN without V3.
+_SKIP_NO_BSA_V3 = unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU" and not _is_bsa_v3_available(),
+    "MXFP4 BSA path requires aclnnBlockSparseAttentionV3 (newest CANN); skipped on CANN without V3.",
+)
+
+
+def _has_mxfp4_dtypes():
+    """Whether torch_npu exposes the FP4 (E2M1) and E8M0 scale dtypes.
+
+    The MXFP4 path threads these dtype codes into the kernel call and evaluates
+    them as dst_type arguments inside _mxfp4_quant_qkv, so even fully mocked
+    tests need the attributes to exist. Skip instead of failing on torch_npu
+    builds without them.
+    """
+    return hasattr(torch_npu, "float4_e2m1fn_x2") and hasattr(torch_npu, "float8_e8m0fnu")
+
+
+# MXFP4 cases reference the FP4/E8M0 dtype codes; skip on torch_npu without them.
+_SKIP_NO_MXFP4_DTYPES = unittest.skipIf(
+    not _has_mxfp4_dtypes(),
+    "MXFP4 tests require torch_npu.float4_e2m1fn_x2 / float8_e8m0fnu (newer torch_npu).",
+)
+
+
 @unittest.skipIf(
     os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
     "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.",
@@ -475,6 +516,210 @@ class TestRfV3Attention(unittest.TestCase):
         self.assertEqual(out2.shape, q.shape)
         self.assertEqual(out2.dtype, torch.bfloat16)
 
+    # bsa_sparse_attention_v3 MXFP4 output shape/dtype tests
+
+    @_SKIP_NO_BSA_V3
+    @_SKIP_NO_MXFP4_DTYPES
+    def test_bsa_sparse_attention_v3_mxfp4_output_shape(self):
+        """MXFP4 path: BF16 output for both CX (dst_type_max>0) and OCP (dst_type_max=0)."""
+        from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
+
+        q, k, v = self._make_qkv_bsnd()
+        q_rot, k_rot = _make_rotation_matrices(self.head_dim, self.device)
+        for dst_type_max in (0.0, 7.25):
+            with self.subTest(dst_type_max=dst_type_max):
+                out, _ = bsa_sparse_attention_v3(
+                    q,
+                    k,
+                    v,
+                    latent_shape_q=self.latent_shape,
+                    block_size=self.pool_size,
+                    sparsity=0.5,
+                    input_layout="BSND",
+                    head_num=self.head_num,
+                    inner_precise=self.inner_precise,
+                    q_rot=q_rot,
+                    k_rot=k_rot,
+                    precision="mxfp4",
+                    mxfp4_dst_type_max=dst_type_max,
+                )
+                self.assertEqual(out.shape, q.shape, f"MXFP4 output shape {out.shape} != input {q.shape}")
+                self.assertEqual(out.dtype, torch.bfloat16)
+
+    @_SKIP_NO_BSA_V3
+    @_SKIP_NO_MXFP4_DTYPES
+    def test_bsa_sparse_attention_v3_mxfp4_unaligned_seq_len(self):
+        """MXFP4 path: S is padded to a 64 base before quant, output cropped back to S."""
+        from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
+
+        # h=20, w=20 -> S = t*400; 400 % 64 = 16, so quant pads and the kernel output is cropped.
+        t, h, w = 3, 20, 20
+        latent_shape = (t, h, w)
+        q, k, v = self._make_qkv_bsnd(t=t, h=h, w=w)
+        q_rot, k_rot = _make_rotation_matrices(self.head_dim, self.device)
+
+        out, _ = bsa_sparse_attention_v3(
+            q,
+            k,
+            v,
+            latent_shape_q=latent_shape,
+            block_size=self.pool_size,
+            sparsity=0.5,
+            input_layout="BSND",
+            head_num=self.head_num,
+            inner_precise=self.inner_precise,
+            q_rot=q_rot,
+            k_rot=k_rot,
+            precision="mxfp4",
+            mxfp4_dst_type_max=7.25,
+        )
+        self.assertEqual(out.shape, q.shape, f"MXFP4 unaligned: output shape {out.shape} != input {q.shape}")
+        self.assertEqual(out.dtype, torch.bfloat16)
+
+    @_SKIP_NO_BSA_V3
+    @_SKIP_NO_MXFP4_DTYPES
+    def test_bsa_sparse_attention_v3_mxfp4_cached_mask(self):
+        """MXFP4 path with cached_mask: mask generated on the first step is reused unchanged."""
+        from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
+
+        q, k, v = self._make_qkv_bsnd()
+        q_rot, k_rot = _make_rotation_matrices(self.head_dim, self.device)
+
+        out1, new_mask = bsa_sparse_attention_v3(
+            q,
+            k,
+            v,
+            latent_shape_q=self.latent_shape,
+            block_size=self.pool_size,
+            sparsity=0.5,
+            input_layout="BSND",
+            head_num=self.head_num,
+            inner_precise=self.inner_precise,
+            q_rot=q_rot,
+            k_rot=k_rot,
+            precision="mxfp4",
+            mxfp4_dst_type_max=7.25,
+        )
+        # Verify mask granularity: q_blocks=ceil(S/128), kv_blocks=ceil(S/256).
+        q_blocks = math.ceil(self.seq_len / self.pool_size)
+        kv_blocks = math.ceil(self.seq_len / 256)
+        self.assertEqual(new_mask.shape[2], q_blocks)
+        self.assertEqual(new_mask.shape[3], kv_blocks)
+
+        out2, _ = bsa_sparse_attention_v3(
+            q,
+            k,
+            v,
+            latent_shape_q=self.latent_shape,
+            block_size=self.pool_size,
+            sparsity=0.5,
+            input_layout="BSND",
+            head_num=self.head_num,
+            inner_precise=self.inner_precise,
+            cached_mask=new_mask,
+            q_rot=q_rot,
+            k_rot=k_rot,
+            precision="mxfp4",
+            mxfp4_dst_type_max=7.25,
+        )
+        self.assertEqual(out2.shape, q.shape)
+        self.assertEqual(out2.dtype, torch.bfloat16)
+
+    @_SKIP_NO_BSA_V3
+    @_SKIP_NO_MXFP4_DTYPES
+    def test_bsa_sparse_attention_v3_mxfp4_vs_bf16(self):
+        """With sparsity=0 and a shared mask, MXFP4 output stays close to the BF16 path."""
+        from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import bsa_sparse_attention_v3
+
+        q, k, v = self._make_qkv_bsnd()
+        q_rot, k_rot = _make_rotation_matrices(self.head_dim, self.device)
+        common = dict(
+            latent_shape_q=self.latent_shape,
+            block_size=self.pool_size,
+            sparsity=0.0,
+            input_layout="BSND",
+            head_num=self.head_num,
+            inner_precise=self.inner_precise,
+            q_rot=q_rot,
+            k_rot=k_rot,
+        )
+
+        out_bf16, _ = bsa_sparse_attention_v3(q.clone(), k.clone(), v.clone(), precision="bf16", **common)
+        out_fp4, _ = bsa_sparse_attention_v3(
+            q.clone(), k.clone(), v.clone(), precision="mxfp4", mxfp4_dst_type_max=7.25, **common
+        )
+
+        # Relative quantization noise: mean abs diff normalized by the BF16 output std.
+        diff = (out_fp4.to(torch.float32) - out_bf16.to(torch.float32)).abs().mean()
+        ref_std = out_bf16.to(torch.float32).std()
+        self.assertLess((diff / ref_std).item(), 0.2, f"MXFP4 vs BF16 noise too large: {diff / ref_std:.4f}")
+
+    @_SKIP_NO_MXFP4_DTYPES
+    def test_mxfp4_quant_mode_and_dtype_threading(self):
+        """MXFP4: quant_mode/dst_type_max/dtype codes must reach the kernel call correctly.
+
+        Mocks the quantizer and the kernel wrapper so the test only asserts the
+        parameter threading inside bsa_sparse_attention_v3 (no V3 kernel needed).
+        """
+        from mindiesd.layers.flash_attn import sparse_flash_attn_rf_v3 as rf_v3_mod
+
+        q, k, v = self._make_qkv_bsnd()
+        q_rot, k_rot = _make_rotation_matrices(self.head_dim, self.device)
+
+        def fake_rain_fusion(q_, k_, v_, **kwargs):
+            captured.update(kwargs)
+            b, s, n, d = q.shape
+            return torch.zeros((b, n, s, d), dtype=self.dtype, device=self.device)
+
+        def fake_quant(q_, k_, v_, q_rot_, k_rot_, **kwargs):
+            return q_, k_, v_, None, None, None
+
+        for dst_type_max, expected_quant_mode in ((7.25, 3), (0.0, 2)):
+            with self.subTest(dst_type_max=dst_type_max):
+                captured = {}
+
+                with (
+                    mock.patch.object(rf_v3_mod, "rain_fusion_attention_v3", side_effect=fake_rain_fusion),
+                    mock.patch.object(rf_v3_mod, "_mxfp4_quant_qkv", side_effect=fake_quant) as quant_mock,
+                ):
+                    out, _ = rf_v3_mod.bsa_sparse_attention_v3(
+                        q,
+                        k,
+                        v,
+                        latent_shape_q=self.latent_shape,
+                        block_size=self.pool_size,
+                        sparsity=0.5,
+                        input_layout="BSND",
+                        head_num=self.head_num,
+                        inner_precise=self.inner_precise,
+                        q_rot=q_rot,
+                        k_rot=k_rot,
+                        precision="mxfp4",
+                        mxfp4_dst_type_max=dst_type_max,
+                        mxfp4_scale_alg=2,
+                    )
+
+                self.assertEqual(out.shape, q.shape)
+                # V3 quant mode: 2 = OCP (dst_type_max<=0), 3 = CX (dst_type_max>0).
+                # dst_type_max threads through unchanged at this (caller) boundary;
+                # rain_fusion_attention_v3 drops it from the op kwargs when it is 0.0.
+                self.assertEqual(captured["quant_mode"], expected_quant_mode)
+                self.assertEqual(captured["dst_type_max"], dst_type_max)
+                # Packed FP4 data / E8M0 scales are UINT8 storage: CANN dtype codes required.
+                self.assertEqual(captured["q_dtype"], torch_npu.float4_e2m1fn_x2)
+                self.assertEqual(captured["k_dtype"], torch_npu.float4_e2m1fn_x2)
+                self.assertEqual(captured["v_dtype"], torch_npu.float4_e2m1fn_x2)
+                self.assertEqual(captured["q_scale_dtype"], torch_npu.float8_e8m0fnu)
+                self.assertEqual(captured["k_scale_dtype"], torch_npu.float8_e8m0fnu)
+                self.assertEqual(captured["v_scale_dtype"], torch_npu.float8_e8m0fnu)
+                # Quantized path feeds the kernel BNSD tensors with the original lengths.
+                self.assertEqual(captured["input_layout"], "BNSD")
+                self.assertEqual(captured["actual_seq_lengths"], [self.seq_len])
+                self.assertEqual(captured["block_size_kv"], 256)
+                # mxfp4_scale_alg is forwarded to the quantizer.
+                self.assertEqual(quant_mock.call_args.kwargs["scale_alg"], 2)
+                self.assertEqual(quant_mock.call_args.kwargs["dst_type_max"], dst_type_max)
+
     # accuracy tests: sparsity=0 vs dense
 
     def test_bsa_sparse_attention_v3_vs_dense(self):
@@ -569,6 +814,86 @@ class TestResolveSparseTypeForA5(unittest.TestCase):
 
         self.assertEqual(_resolve_sparse_type_for_a5("rf_v3", 0), ("rf_v3", 0))
         self.assertEqual(_resolve_sparse_type_for_a5("rf_v2", 0), ("rf_v2", 0))
+
+
+@_SKIP_NO_MXFP4_DTYPES
+class TestMxfp4ScaleReshapeGuards(unittest.TestCase):
+    """CPU-runnable tests for the MXFP4 scale reshapes in _mxfp4_quant_qkv.
+
+    Regression for the EZ1001 6D-scale bug: newer torch_npu returns the
+    byte-grouped 5D scale directly from npu_dynamic_mx_quant, so the q/k scale
+    reshape must be idempotent (dim==4 guard) and the V scale must go through
+    the shared helper. npu_dynamic_mx_quant is mocked, so no NPU op runs.
+    """
+
+    B, S, N, D = 1, 128, 2, 64
+
+    def _fake_dynamic_mx_quant(self, scale_dim5):
+        """Return (data, scale) mimicking npu_dynamic_mx_quant for axis -1 / 2."""
+
+        def _quant(tensor, dst_type, **kwargs):
+            axis = kwargs.get("axis", -1)
+            b, n, s, d = tensor.shape
+            data = torch.zeros(b, n, s, d // 2, dtype=torch.uint8)
+            if axis == -1:
+                scale = torch.ones(b, n, s, d // 32, dtype=torch.uint8)
+                if scale_dim5:
+                    scale = scale.reshape(b, n, s, d // 64, 2)
+            else:
+                scale = torch.ones(b, n, s // 32, d, dtype=torch.uint8)
+                if scale_dim5:
+                    scale = scale.reshape(b, n, s // 64, d, 2)
+            return data, scale
+
+        return _quant
+
+    def _run_quant_qkv(self, scale_dim5, **quant_kwargs):
+        from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import _mxfp4_quant_qkv
+
+        shape_bsnd = (self.B, self.S, self.N, self.D)
+        q = torch.randn(shape_bsnd, dtype=torch.float32)
+        k = torch.randn(shape_bsnd, dtype=torch.float32)
+        v = torch.randn(shape_bsnd, dtype=torch.float32)
+        q_rot = torch.eye(self.D, dtype=torch.float32)
+        k_rot = torch.eye(self.D, dtype=torch.float32)
+
+        with mock.patch(
+            "mindiesd.quantization.layer._dynamic_mx_quant", side_effect=self._fake_dynamic_mx_quant(scale_dim5)
+        ) as quant_mock:
+            result = _mxfp4_quant_qkv(q, k, v, q_rot, k_rot, layout="BSND", **quant_kwargs)
+        return result, quant_mock
+
+    def test_4d_scales_are_regrouped_to_5d(self):
+        """Older torch_npu returns 4D scales: they must be reshaped into the V3 5D layout."""
+        (q_fp4, k_fp4, v_fp4, q_scale, k_scale, v_scale), _ = self._run_quant_qkv(scale_dim5=False)
+
+        # q/k scale: [B,N,S,D/32] -> [B,N,S,D/64,2]; v scale: [B,N,S/32,D] -> [B,N,S/64,D,2].
+        self.assertEqual(tuple(q_scale.shape), (self.B, self.N, self.S, self.D // 64, 2))
+        self.assertEqual(tuple(k_scale.shape), (self.B, self.N, self.S, self.D // 64, 2))
+        self.assertEqual(tuple(v_scale.shape), (self.B, self.N, self.S // 64, self.D, 2))
+
+    def test_5d_scales_pass_through_unchanged(self):
+        """Newer torch_npu returns byte-grouped 5D scales: reshapes must be idempotent."""
+        (q_fp4, k_fp4, v_fp4, q_scale, k_scale, v_scale), _ = self._run_quant_qkv(scale_dim5=True)
+
+        self.assertEqual(tuple(q_scale.shape), (self.B, self.N, self.S, self.D // 64, 2))
+        self.assertEqual(tuple(k_scale.shape), (self.B, self.N, self.S, self.D // 64, 2))
+        self.assertEqual(tuple(v_scale.shape), (self.B, self.N, self.S // 64, self.D, 2))
+
+    def test_quant_kwargs_threading(self):
+        """dst_type_max>0 and scale_alg must be forwarded to the quantizer; absent when unset."""
+        _, quant_mock = self._run_quant_qkv(scale_dim5=False, scale_alg=2, dst_type_max=7.25)
+        forwarded = quant_mock.call_args.kwargs
+        self.assertEqual(forwarded["scale_alg"], 2)
+        self.assertEqual(forwarded["dst_type_max"], 7.25)
+        # Q/K quantize rowwise (axis -1), V columnwise along the sequence dim (axis 2).
+        axes = [call.kwargs["axis"] for call in quant_mock.call_args_list]
+        self.assertEqual(axes, [-1, -1, 2])
+
+        _, quant_mock = self._run_quant_qkv(scale_dim5=False)
+        forwarded = quant_mock.call_args.kwargs
+        self.assertNotIn("scale_alg", forwarded)
+        self.assertNotIn("dst_type_max", forwarded)
 
 
 if __name__ == "__main__":

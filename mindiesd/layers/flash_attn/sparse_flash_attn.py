@@ -107,6 +107,8 @@ def sparse_attention(
     cdf_threshold: float = 1.0,
     sparsity: float = 0.0,
     precision: str = "bf16",
+    mxfp4_dst_type_max: float = 0.0,
+    mxfp4_scale_alg: Optional[int] = None,
     **kwargs,
 ):
     """
@@ -178,7 +180,15 @@ def sparse_attention(
             Kernel precision mode for sparse_type='rf_v3':
               - 'mix': EagleQBSA mixed precision (Q/K per-block INT8 + V per-channel FP8).
               - 'fp8': BSA FP8 path (Hadamard rotation + full FP8 block quantization of Q/K/V).
+              - 'mxfp4': BSA MXFP4 path via aclnnBlockSparseAttentionV3 (Q/K Hadamard
+                rotation retained, then FP4 E2M1 data + E8M0 scales; Q/K rowwise along
+                the head dim, V columnwise along the sequence dim).
               - 'bf16' (default): no quantization, pure BF16 sparse attention.
+        mxfp4_dst_type_max (float, default to 0.0):
+            MXFP4 quantization range (dstTypeMax). 0 selects OCP scaling (quantMode=2);
+            a positive value (typically in [6, 12]) selects CX scaling (quantMode=3).
+        mxfp4_scale_alg (int, *optional*, defaults to `None`):
+            Optional scale_alg forwarded to npu_dynamic_mx_quant on the MXFP4 path.
     """
     check_params(input_layout, sparse_type)
     if video_spans is not None:
@@ -256,6 +266,8 @@ def sparse_attention(
             inner_precise=inner_precise,
             video_spans=video_spans,
             precision=precision,
+            mxfp4_dst_type_max=mxfp4_dst_type_max,
+            mxfp4_scale_alg=mxfp4_scale_alg,
         )
     elif sparse_type == "ada_bsa":
         smask, sct = get_estimate_mask(

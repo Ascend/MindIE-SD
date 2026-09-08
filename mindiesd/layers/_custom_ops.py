@@ -345,6 +345,14 @@ def block_sparse_attention(
     q_dequant_scale: Optional[torch.Tensor] = None,
     k_dequant_scale: Optional[torch.Tensor] = None,
     v_dequant_scale: Optional[torch.Tensor] = None,
+    quant_mode: int = -1,
+    dst_type_max: float = 0.0,
+    q_dtype: Optional[int] = None,
+    k_dtype: Optional[int] = None,
+    v_dtype: Optional[int] = None,
+    q_scale_dtype: Optional[int] = None,
+    k_scale_dtype: Optional[int] = None,
+    v_scale_dtype: Optional[int] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     if block_shape is None:
         block_shape = [128, 128]
@@ -369,6 +377,20 @@ def block_sparse_attention(
         kwargs["q_dequant_scale"] = q_dequant_scale
         kwargs["k_dequant_scale"] = k_dequant_scale
         kwargs["v_dequant_scale"] = v_dequant_scale
+    if quant_mode != -1:
+        kwargs["quant_mode"] = quant_mode
+    if dst_type_max != 0.0:
+        kwargs["dst_type_max"] = dst_type_max
+    for name, dtype in (
+        ("q_dtype", q_dtype),
+        ("k_dtype", k_dtype),
+        ("v_dtype", v_dtype),
+        ("q_scale_dtype", q_scale_dtype),
+        ("k_scale_dtype", k_scale_dtype),
+        ("v_scale_dtype", v_scale_dtype),
+    ):
+        if dtype is not None:
+            kwargs[name] = dtype
     return getattr(torch.ops.mindiesd, "block_sparse_attention")(**kwargs)
 
 
@@ -390,10 +412,22 @@ def block_sparse_attention_fake(
     q_dequant_scale: Optional[torch.Tensor] = None,
     k_dequant_scale: Optional[torch.Tensor] = None,
     v_dequant_scale: Optional[torch.Tensor] = None,
+    quant_mode: int = -1,
+    dst_type_max: float = 0.0,
+    q_dtype: Optional[int] = None,
+    k_dtype: Optional[int] = None,
+    v_dtype: Optional[int] = None,
+    q_scale_dtype: Optional[int] = None,
+    k_scale_dtype: Optional[int] = None,
+    v_scale_dtype: Optional[int] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    # FP8 path: output is BF16; BF16/FP16 path: output matches input dtype.
+    # FP8/MXFP4 path: output is BF16; BF16/FP16 path: output matches input dtype.
+    # MXFP4 query packs 2 elements/byte, so the output head-dim doubles back.
     out_dtype = torch.bfloat16 if q_dequant_scale is not None else query.dtype
-    attention_out = torch.empty(query.shape, device=query.device, dtype=out_dtype)
+    out_shape = list(query.shape)
+    if quant_mode >= 2:
+        out_shape[-1] *= 2
+    attention_out = torch.empty(out_shape, device=query.device, dtype=out_dtype)
     # softmax_lse shape: TND -> [T, N, 1], BNSD -> [B, N, S, 1]
     if q_input_layout == "TND":
         lse_shape = [query.shape[0], query.shape[1], 1]

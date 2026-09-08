@@ -141,6 +141,63 @@ def _fp8_quant_qkv(q, k, v, q_rot, k_rot, block_size_q=128, block_size_kv=256, l
     return q_fp8, k_fp8, v_fp8, q_scale, k_scale, v_scale
 
 
+@torch.no_grad()
+def _mxfp4_quant_qkv(q, k, v, q_rot, k_rot, scale_alg=None, dst_type_max=0.0, layout="BSND"):
+    """Rotate Q/K then MXFP4-quantize Q/K/V (E2M1 data + E8M0 scales).
+
+    Mirrors MXFP4QuantFA._forward_mxfp4: Q/K are quantized rowwise along the
+    head dim (per-32-element groups), V columnwise along the sequence dim. The
+    Hadamard rotation of Q/K is retained from the FP8 path — with a 4-bit
+    mantissa budget, outliers dominate the 32-element group scale, so rotation
+    must break them up before quantization (V is NOT rotated).
+
+    S is padded to a 64 base so the V-scale 32-row blocks pair up for the V3
+    kernel layout. The caller must pass the ORIGINAL sequence lengths to the
+    kernel (so the padded tail is skipped) and crop the output afterwards.
+
+    Returns BNSD packed FP4 tensors (UINT8 storage, last dim D/2) and E8M0
+    scales in the V3 layout: q/k scale [B, N, S, D/64, 2],
+    v scale [B, N, ceil(S/64), D, 2].
+    """
+    from ...quantization.layer import _dynamic_mx_quant, _reshape_mxfp4_v_scale_for_fa
+
+    # Rotation on Q and K (value is NOT rotated)
+    q = torch.matmul(q, q_rot)
+    k = torch.matmul(k, k_rot)
+
+    if layout == "BSND":
+        q = q.transpose(1, 2).contiguous()
+        k = k.transpose(1, 2).contiguous()
+        v = v.transpose(1, 2).contiguous()
+
+    # Pad S to a 64 base: the V scale reshape pairs two consecutive 32-row blocks.
+    pad_len = (64 - q.shape[2] % 64) % 64
+    if pad_len:
+        q = F.pad(q, (0, 0, 0, pad_len))
+        k = F.pad(k, (0, 0, 0, pad_len))
+        v = F.pad(v, (0, 0, 0, pad_len))
+
+    quant_kwargs = {}
+    if scale_alg is not None:
+        quant_kwargs["scale_alg"] = scale_alg
+    if dst_type_max and dst_type_max > 0:
+        quant_kwargs["dst_type_max"] = float(dst_type_max)
+
+    q_fp4, q_scale = _dynamic_mx_quant(q, dst_type=torch_npu.float4_e2m1fn_x2, axis=-1, **quant_kwargs)
+    k_fp4, k_scale = _dynamic_mx_quant(k, dst_type=torch_npu.float4_e2m1fn_x2, axis=-1, **quant_kwargs)
+    v_fp4, v_scale = _dynamic_mx_quant(v, dst_type=torch_npu.float4_e2m1fn_x2, axis=2, **quant_kwargs)
+
+    # q/k scale [B,N,S,D/32] -> [B,N,S,D/64,2]; v scale handled by the shared helper.
+    # Newer torch_npu already returns the byte-grouped 5D scale for float4_e2m1fn_x2,
+    # so guard the reshape for idempotence (same as _reshape_mxfp4_v_scale_for_fa).
+    if q_scale.dim() == 4:
+        q_scale = q_scale.reshape(*q_scale.shape[:-1], q_scale.shape[-1] // 2, 2).contiguous()
+    if k_scale.dim() == 4:
+        k_scale = k_scale.reshape(*k_scale.shape[:-1], k_scale.shape[-1] // 2, 2).contiguous()
+    v_scale = _reshape_mxfp4_v_scale_for_fa(v_scale, "BNSD")
+    return q_fp4, k_fp4, v_fp4, q_scale, k_scale, v_scale
+
+
 def _bsa_inv_rearrange(out, tq, hq, wq, input_layout="BSND"):
     """Inverse of do_tensor_rearrange_pooling (text_len=0).
 
@@ -356,31 +413,49 @@ def rain_fusion_attention_v3(
     q_dequant_scale=None,
     k_dequant_scale=None,
     v_dequant_scale=None,
+    quant_mode=-1,
+    dst_type_max=0.0,
+    q_dtype=None,
+    k_dtype=None,
+    v_dtype=None,
+    q_scale_dtype=None,
+    k_scale_dtype=None,
+    v_scale_dtype=None,
 ):
-    """Sparse attention forward using aclnnBlockSparseAttentionV2.
+    """Sparse attention forward using aclnnBlockSparseAttentionV3/V2.
 
-    Supports both BF16 and FP8 paths via the V2 kernel:
+    Supported precision paths:
       - BF16/FP16: pass dequant scales as None (default).
       - FP8: pass pre-quantized FP8 QKV (must be BNSD) with FLOAT32 dequant scales.
+      - MXFP4: pass packed FP4 QKV (UINT8 storage, must be BNSD) with E8M0
+        dequant scales, quant_mode=2 (OCP) or 3 (CX), the CANN dtype codes
+        (q_dtype etc. = torch_npu.float4_e2m1fn_x2, *_scale_dtype =
+        torch_npu.float8_e8m0fnu) and optional dst_type_max for CX.
 
     Args:
         query / key / value: BNSD [B,N,S,D] or BSND [B,S,N,D].
-                             BF16 when scales=None, FP8 when scales provided.
-                             FP8 tensors must already be in BNSD layout (caller handles conversion).
+                             BF16 when scales=None, quantized when scales provided.
+                             Quantized tensors must already be in BNSD layout (caller handles conversion).
         block_sparse_mask:   int8 [B, N, q_blocks, kv_blocks]
         scale:               attention scale, default head_dim ** -0.5
         head_num:            number of query heads
         num_key_value_heads: number of KV heads (GQA), default equals head_num
         input_layout:        'BNSD' or 'BSND' — only affects BF16 tensors;
-                             FP8 tensors (with scales) must be BNSD
+                             quantized tensors (with scales) must be BNSD
         actual_seq_lengths:  per-batch query sequence lengths
         actual_seq_lengths_kv: per-batch KV sequence lengths
         block_size_q:        block size for Q dimension (blockShapeX), default 128
         block_size_kv:       block size for KV dimension (blockShapeY). BF16: defaults
-                             to block_size_q. FP8: must be a multiple of 256 (per CANN
-                             constraint), defaults to 256.
+                             to block_size_q. FP8/MXFP4: defaults to 256 (FP8 requires
+                             a 256 multiple, MXFP4 a 64 multiple, per CANN constraint).
         inner_precise:       precision mode; 950 chip requires 4
-        q/k/v_dequant_scale: optional FLOAT32 dequant scales for FP8 path (BNSD layout)
+        q/k/v_dequant_scale: dequant scales — FLOAT32 for FP8, E8M0 (UINT8
+                             storage + dtype code) for MXFP4; BNSD layout
+        quant_mode:          V3 quantization mode: -1 auto (default), 0 none,
+                             1 FP8, 2 MXFP4 OCP, 3 MXFP4 CX
+        dst_type_max:        MXFP4 CX quantization range; 0.0 means dtype max
+        q_dtype/k_dtype/v_dtype: CANN dtype code override for packed MXFP4 tensors
+        q/k/v_scale_dtype:   CANN dtype code override for MXFP4 E8M0 scales
 
     Returns:
         out (Tensor): same layout and dtype as input
@@ -392,13 +467,13 @@ def rain_fusion_attention_v3(
 
     fp8_mode = q_dequant_scale is not None
 
-    # FP8: blockShapeY must be a multiple of 256 (CANN tiling constraint).
+    # FP8: blockShapeY must be a multiple of 256; MXFP4: 64 (CANN tiling constraint).
     # BF16: blockShapeY equals block_size_q (no extra constraint).
     if block_size_kv is None:
         block_size_kv = 256 if fp8_mode else block_size_q
 
     # For BF16 path: convert BSND→BNSD if needed.
-    # For FP8 path: tensors are already BNSD (produced by fa_block_quant_preprocess).
+    # For quantized (FP8/MXFP4) path: tensors are already BNSD (produced by the caller).
     permuted = False
     if not fp8_mode and input_layout == "BSND":
         query = query.permute(0, 2, 1, 3).contiguous()
@@ -429,6 +504,20 @@ def rain_fusion_attention_v3(
             k_dequant_scale=k_dequant_scale,
             v_dequant_scale=v_dequant_scale,
         )
+    if quant_mode != -1:
+        kwargs["quant_mode"] = quant_mode
+    if dst_type_max != 0.0:
+        kwargs["dst_type_max"] = dst_type_max
+    for name, dtype in (
+        ("q_dtype", q_dtype),
+        ("k_dtype", k_dtype),
+        ("v_dtype", v_dtype),
+        ("q_scale_dtype", q_scale_dtype),
+        ("k_scale_dtype", k_scale_dtype),
+        ("v_scale_dtype", v_scale_dtype),
+    ):
+        if dtype is not None:
+            kwargs[name] = dtype
 
     attention_out, _ = torch.ops.mindiesd.block_sparse_attention(**kwargs)
 
@@ -459,6 +548,8 @@ def bsa_sparse_attention_v3(
     block_size_kv=None,
     video_spans=None,
     precision="bf16",
+    mxfp4_dst_type_max=0.0,
+    mxfp4_scale_alg=None,
 ):
     """End-to-end rf_v3 sparse attention: rearrange -> mask -> [quant] -> BSA -> inv-rearrange.
 
@@ -470,6 +561,13 @@ def bsa_sparse_attention_v3(
         quantization of Q/K/V before the BSA kernel. Rotation matrices are
         generated internally and cached per (device, dtype, head_dim) unless
         q_rot/k_rot are provided by the caller.
+      - ``'mxfp4'`` → BSA MXFP4 path (aclnnBlockSparseAttentionV3): Hadamard
+        rotation of Q/K (retained from the FP8 path — outliers would otherwise
+        dominate the 32-element group scales at 4-bit precision), then FP4
+        E2M1 data + E8M0 scales: Q/K rowwise along the head dim, V columnwise
+        along the sequence dim. mxfp4_dst_type_max > 0 selects the CX scaling
+        strategy (quantMode=3, ceil truncation with a custom range in [6, 12]);
+        otherwise OCP (quantMode=2, floor truncation).
       - ``'bf16'`` (default) → BF16 path (no quantization).
 
     Mask generation always operates on BF16 tensors (before quantization).
@@ -487,13 +585,14 @@ def bsa_sparse_attention_v3(
         inner_precise:       precision mode; resolved by hardware constraint
         cached_mask:         cached int8 block_sparse_mask from a previous step
         protect_first_frame: protect first frame generation
-        q_rot / k_rot:       rotation matrices for FP8 path.
+        q_rot / k_rot:       rotation matrices for FP8/MXFP4 paths.
                               Generate once per attention instance (e.g. via QR on randn).
-                              When provided, enables FP8 quantization path.
+                              Used by the FP8 and MXFP4 quantization paths.
         block_size:          Block size for Q dimension: used for rearrangement pooling,
                              CANN operator blockShapeX, and FP8 Q quantization. Default 128.
         block_size_kv:       KV block size for CANN operator blockShapeY and FP8 KV quant.
                              FP8: must be a multiple of 256, defaults to 256.
+                             MXFP4: must be a multiple of 64, defaults to 256.
                              BF16: defaults to block_size.
         video_spans:
                              Multi-video layout over an unpadded input sequence.
@@ -504,7 +603,12 @@ def bsa_sparse_attention_v3(
                              The same layout reorders Q, K, and V.
         precision:           Execution precision for the sparse kernel:
                              'bf16' (default, no quantization), 'mix' (EagleQBSA),
-                             or 'fp8' (BSA FP8 with Hadamard rotation).
+                             'fp8' (BSA FP8 with Hadamard rotation), or 'mxfp4'
+                             (BSA MXFP4 via aclnnBlockSparseAttentionV3).
+        mxfp4_dst_type_max:  MXFP4 quantization range (dstTypeMax). 0 (default) selects
+                             OCP scaling (quantMode=2); a positive value (typically in
+                             [6, 12]) selects CX scaling (quantMode=3).
+        mxfp4_scale_alg:     Optional scale_alg forwarded to npu_dynamic_mx_quant.
 
     Returns:
         out (Tensor):      BF16 attention output, same layout as input
@@ -520,24 +624,26 @@ def bsa_sparse_attention_v3(
     if scale is None:
         scale = float(q.shape[-1]) ** -0.5
 
-    # Resolve the execution mode from ``precision``. The FP8 path rotates Q/K
-    # with a Hadamard matrix before block quantization. If the caller did not
-    # provide rotation matrices, generate them once per (device, dtype, head_dim)
-    # and reuse across steps.
-    if precision not in ("mix", "fp8", "bf16"):
-        raise ValueError(f"precision must be one of 'bf16', 'fp8', 'mix'; got {precision!r}.")
-    if precision == "fp8" and (q_rot is None or k_rot is None):
+    # Resolve the execution mode from ``precision``. The FP8 and MXFP4 paths
+    # rotate Q/K with a Hadamard matrix before quantization. If the caller did
+    # not provide rotation matrices, generate them once per (device, dtype,
+    # head_dim) and reuse across steps.
+    if precision not in ("mix", "fp8", "mxfp4", "bf16"):
+        raise ValueError(f"precision must be one of 'bf16', 'fp8', 'mxfp4', 'mix'; got {precision!r}.")
+    if precision in ("fp8", "mxfp4") and (q_rot is None or k_rot is None):
         q_rot, k_rot = _get_rot_matrices(q.device, q.dtype, q.shape[-1])
 
     # S dimension index: dim 2 for BNSD, dim 1 for BSND
     s_dim = 2 if input_layout == "BNSD" else 1
 
     fp8_mode = precision == "fp8"
+    mxfp4_mode = precision == "mxfp4"
 
     # Resolve effective KV block size for the CANN operator.
-    # FP8: blockShapeY must be a multiple of 256 (CANN tiling constraint).
+    # FP8: blockShapeY must be a multiple of 256; MXFP4: a multiple of 64
+    # (CANN tiling constraint; 256 also satisfies MXFP4 and is the default).
     # BF16: blockShapeY = block_size (no extra constraint; block_size_kv is ignored).
-    if fp8_mode:
+    if fp8_mode or mxfp4_mode:
         effective_block_size_kv = block_size_kv if block_size_kv is not None else 256
     else:
         effective_block_size_kv = block_size
@@ -673,9 +779,30 @@ def bsa_sparse_attention_v3(
         if input_layout == "BSND":
             out = out.permute(0, 2, 1, 3).contiguous()
     else:
-        # FP8: rotate Q/K, block-quantize Q/K/V (output BNSD).
+        # FP8/MXFP4: rotate Q/K, quantize Q/K/V (output BNSD).
         q_scale = k_scale = v_scale = None
-        if fp8_mode:
+        quant_mode = -1
+        dst_type_max = 0.0
+        q_dtype = k_dtype = v_dtype = None
+        q_scale_dtype = k_scale_dtype = v_scale_dtype = None
+        if mxfp4_mode:
+            # V3 quant mode: 2 = MXFP4 OCP (floor), 3 = MXFP4 CX (custom range, ceil).
+            quant_mode = 2 if mxfp4_dst_type_max <= 0 else 3
+            dst_type_max = float(mxfp4_dst_type_max) if mxfp4_dst_type_max > 0 else 0.0
+            q_, k_, v_, q_scale, k_scale, v_scale = _mxfp4_quant_qkv(
+                q_,
+                k_,
+                v_,
+                q_rot,
+                k_rot,
+                scale_alg=mxfp4_scale_alg,
+                dst_type_max=mxfp4_dst_type_max,
+                layout=input_layout,
+            )
+            # Packed FP4 data / E8M0 scales are UINT8 storage: carry CANN dtype codes.
+            q_dtype = k_dtype = v_dtype = torch_npu.float4_e2m1fn_x2
+            q_scale_dtype = k_scale_dtype = v_scale_dtype = torch_npu.float8_e8m0fnu
+        elif fp8_mode:
             q_, k_, v_, q_scale, k_scale, v_scale = _fp8_quant_qkv(
                 q_,
                 k_,
@@ -687,8 +814,8 @@ def bsa_sparse_attention_v3(
                 layout=input_layout,
             )
 
-        # BSA kernel (V2: BF16 + FP8)
-        bsa_layout = "BNSD" if fp8_mode else input_layout
+        # BSA kernel (V3: BF16/FP8/MXFP4; V2: BF16/FP8)
+        bsa_layout = "BNSD" if (fp8_mode or mxfp4_mode) else input_layout
         out = rain_fusion_attention_v3(
             q_,
             k_,
@@ -706,11 +833,24 @@ def bsa_sparse_attention_v3(
             q_dequant_scale=q_scale,
             k_dequant_scale=k_scale,
             v_dequant_scale=v_scale,
+            quant_mode=quant_mode,
+            dst_type_max=dst_type_max,
+            q_dtype=q_dtype,
+            k_dtype=k_dtype,
+            v_dtype=v_dtype,
+            q_scale_dtype=q_scale_dtype,
+            k_scale_dtype=k_scale_dtype,
+            v_scale_dtype=v_scale_dtype,
         )
 
-        # FP8 output is BNSD; convert back for inv-rearrange.
-        if fp8_mode and input_layout == "BSND":
+        # FP8/MXFP4 output is BNSD; convert back for inv-rearrange.
+        if (fp8_mode or mxfp4_mode) and input_layout == "BSND":
             out = out.permute(0, 2, 1, 3).contiguous()
+
+        # MXFP4 pads S to a 64 base before quantization (kernel skips the padded
+        # tail via the original actual_seq_lengths); crop the output back.
+        if mxfp4_mode and out.shape[s_dim] != seqlen:
+            out = out.narrow(s_dim, 0, seqlen).contiguous()
 
     # inverse rearrange to restore (t, h, w) order
     if multi_span:
