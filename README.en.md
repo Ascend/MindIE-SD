@@ -1,6 +1,6 @@
 <!-- markdownlint-disable-next-line MD041 -->
 <p align="center">
-    <img alt="MindIE SD" src="docs/figures/MindIE-SD-logo-2k.png">
+    <img alt="MindIE SD" src="docs/figures/MindIE-SD-logo-ascend-red-square-dot-v5.png">
 </p>
 
 <p align="center">
