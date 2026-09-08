@@ -15,7 +15,7 @@ from typing import Dict, List, Optional, Tuple
 
 import torch
 
-from .mode import QuantAlgorithm, QuantMode
+from .mode import FP8FAMode, QuantAlgorithm, QuantMode, normalize_fp8_fa_mode
 from ..utils import ModelInitError, ParametersInvalid
 
 W8A8_STATIC_LINEAR_STRATEGIES = ("dynamic", "static")
@@ -123,11 +123,13 @@ class QuantConfig:
 
     mxfp4_scale_alg: Optional[int] = None
     mxfp4_dst_type_max: float = 7.25
+    fp8_fa_mode: Optional[FP8FAMode] = None
 
     def __post_init__(self):
         self.quant_algo = self._normalize_quant_algo(self.quant_algo)
         self.exclude_layers = self._normalize_exclude_layers(self.exclude_layers)
         self.quantized_layers = self._normalize_quantized_layers(self.quantized_layers)
+        self.fp8_fa_mode = self._normalize_fp8_fa_mode(self.fp8_fa_mode)
 
         if self.quant_des_path is not None and not isinstance(self.quant_des_path, str):
             raise ModelInitError("self.quant_des_path must be a string or None.")
@@ -146,6 +148,17 @@ class QuantConfig:
         if isinstance(self.mxfp4_dst_type_max, bool) or not isinstance(self.mxfp4_dst_type_max, (int, float)):
             raise ModelInitError("mxfp4_dst_type_max must be a float.")
         self.mxfp4_dst_type_max = float(self.mxfp4_dst_type_max)
+        if self.fp8_fa_mode is not None and not isinstance(self.fp8_fa_mode, FP8FAMode):
+            raise ModelInitError(
+                f'self.fp8_fa_mode must be an instance of FP8FAMode, but actually got {type(self.fp8_fa_mode)}.'
+            )
+
+    @staticmethod
+    def _normalize_fp8_fa_mode(mode):
+        try:
+            return normalize_fp8_fa_mode(mode)
+        except ParametersInvalid as exc:
+            raise ModelInitError(str(exc)) from exc
 
     @staticmethod
     def _normalize_quant_algo(quant_algo):
@@ -203,6 +216,7 @@ class QuantConfig:
             'use_nz',
             'mxfp4_scale_alg',
             'mxfp4_dst_type_max',
+            'fp8_fa_mode',
         ):
             if name in kwargs:
                 config_kwargs[name] = kwargs[name]
@@ -230,6 +244,8 @@ class QuantConfig:
             kwargs['use_nz'] = self.use_nz
         if self.timestep_config is not None:
             kwargs['timestep_config'] = self.timestep_config
+        if self.fp8_fa_mode is not None:
+            kwargs['fp8_fa_mode'] = self.fp8_fa_mode
         kwargs['quant_config'] = self
         return kwargs
 
@@ -305,6 +321,7 @@ class OnlineQuantConfig:
     timestep_config: Optional[TimestepPolicyConfig] = None
     mxfp4_scale_alg: Optional[int] = None
     mxfp4_dst_type_max: float = 7.25
+    fp8_fa_mode: Optional[FP8FAMode] = None
     fallback_timesteps: dataclasses.InitVar[Optional[List[int]]] = None
 
     def __post_init__(self, fallback_timesteps):
@@ -344,6 +361,11 @@ class OnlineQuantConfig:
         if isinstance(self.mxfp4_dst_type_max, bool) or not isinstance(self.mxfp4_dst_type_max, (int, float)):
             raise ModelInitError("mxfp4_dst_type_max must be a float.")
         self.mxfp4_dst_type_max = float(self.mxfp4_dst_type_max)
+        self.fp8_fa_mode = QuantConfig._normalize_fp8_fa_mode(self.fp8_fa_mode)
+        if self.fp8_fa_mode is not None and not isinstance(self.fp8_fa_mode, FP8FAMode):
+            raise ModelInitError(
+                f'self.fp8_fa_mode must be an instance of FP8FAMode, but actually got {type(self.fp8_fa_mode)}.'
+            )
 
         if self.fallback_layers is None:
             self.fallback_layers = {}
@@ -401,4 +423,8 @@ class OnlineQuantConfig:
         if self.mxfp4_scale_alg is not None:
             result['mxfp4_scale_alg'] = self.mxfp4_scale_alg
             result['mxfp4_dst_type_max'] = self.mxfp4_dst_type_max
+        if self.fp8_fa_mode is not None:
+            result['fp8_fa_mode'] = (
+                self.fp8_fa_mode.value if isinstance(self.fp8_fa_mode, FP8FAMode) else self.fp8_fa_mode
+            )
         return result

@@ -111,17 +111,24 @@ This repository provides FA quantization via the `FP8_DYNAMIC` algorithm, with a
 
 **Rotate**
 
-Apply pre-trained rotation matrices (`q_rot`, `k_rot`) to Q and K, dispersing outliers across dimensions to mitigate FP8 quantization sensitivity to outliers.
+If the quantized weights contain pre-trained rotation matrices (`q_rot`, `k_rot`), apply them to Q and K so outliers are spread across dimensions and FP8 quantization is less sensitive to those outliers. If the two tensors are absent, rotation is skipped and module initialization still succeeds.
 
 **Block Quantization**
 
-Dynamically quantize rotated Q/K/V into FP8 (`float8_e4m3fn`) block by block. Q uses a block size of 128, K/V use a block size of 256, performed via the `npu_dynamic_block_quant` operator.
+Dynamically quantize Q/K/V into FP8 (`float8_e4m3fn`) block by block via `npu_dynamic_block_quant`. Q uses a 128-token block and K uses a 256-token block; the V token block is selected by `FP8FAMode` below.
 
 **FP8 Attention**
 
 Invoke MindIE-SD's own `torch.ops.mindiesd.fused_infer_attention_score_v2` operator, which routes to the migrated `FusedInferAttentionScore` implementation
 in this repository, to perform attention computation in the FP8 domain with
-outputs dequantized back to original precision.
+outputs dequantized back to original precision. `FP8RotateQuantFA` selects the quantization blocks, `value_quant_mode`, and `inner_precise` together through the `FP8FAMode` enum, so those switches stay aligned.
+
+| Mode | Q/K/V quant mode | `inner_precise` | V quant block |
+| ------ | ------ | ------ | ------ |
+| `HIGH_PRECISION` (default) | `7/7/7` | omitted (original high-precision path) | 256×128 |
+| `C8V16_TILING512` | `7/7/12` | `4` (C8V16) | 512×64 |
+
+Later features should be added as new enum members instead of unbound quant switches.
 
 ### API Reference
 
@@ -146,12 +153,23 @@ model = quantize(model, "path/to/exported/quantization/config")
 model.to("npu")
 ```
 
-`quantize` internally traverses model layers, automatically calling `add_fa_quant` on matching Attention layers, injecting `FP8RotateQuantFA` modules, and replacing the forward computation with the rotate -> block quantize -> FP8 Attention flow.
+`quantize` internally traverses model layers, automatically calling `add_fa_quant` on matching Attention layers, injecting `FP8RotateQuantFA` modules, and replacing the forward computation with the rotate -> block quantize -> FP8 Attention flow. The default mode is `FP8FAMode.HIGH_PRECISION`. To use C8V16 with a 512-token V tile:
 
-FA quantization layers are implemented through the `FP8RotateQuantFA` module. See the rotate -> block quantize -> FP8 Attention flow description in this section.
+```python
+from mindiesd import FP8FAMode, QuantConfig, quantize
+
+model = quantize(
+    model,
+    "path/to/exported/quantization/config",
+    quant_config=QuantConfig(fp8_fa_mode=FP8FAMode.C8V16_TILING512),
+)
+```
+
+FA quantization layers are implemented through the `FP8RotateQuantFA` module. See the rotate -> block quantize -> FP8 Attention flow description in this section. `C8V16_TILING512` requires the FIA C8V16 + V512 path (`inner_precise=4`, `value_quant_mode=12`).
 
 #### Notes
 
 - Hardware requirement: Only Atlas 800I A2 inference servers support this feature.
 - Q/K/V input layout supports both `BNSD` and `BSND`.
-- FA quantization weights (`q_rot`, `k_rot`) must be pre-exported using the msmodelslim model compression tool. See the msmodelslim tool documentation for details.
+- K/V may have fewer heads than Q (GQA, Grouped Query Attention). `FP8RotateQuantFA` passes `num_key_value_heads` from the K head count.
+- Rotation matrices (`q_rot`, `k_rot`) are optional. When used, they must be pre-exported with the msmodelslim model compression tool; see the msmodelslim documentation. If the two tensors are absent, `FP8RotateQuantFA` skips rotation.

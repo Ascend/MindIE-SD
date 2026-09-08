@@ -167,7 +167,7 @@ def add_fa_quant(layer, cfg, prefix, quant_weights, **kwargs):
     if cfg.quant_algo in [QuantAlgorithm.MXFP4_DYNAMIC]:
         layer.fa_quant = MXFP4QuantFA(prefix, quant_weights, **kwargs)
     elif cfg.quant_algo in [QuantAlgorithm.FP8_DYNAMIC]:
-        layer.fa_quant = FP8RotateQuantFA(prefix, quant_weights)
+        layer.fa_quant = FP8RotateQuantFA(prefix, quant_weights, **kwargs)
     elif cfg.quant_algo in [QuantAlgorithm.MXFP8_DYNAMIC]:
         layer.fa_quant = MXFP8RotateQuantFA(prefix, quant_weights)
 
@@ -445,6 +445,7 @@ def _make_online_quant_config(online_config, quant_algo, dtype):
         timestep_config=online_config.timestep_config,
         mxfp4_scale_alg=online_config.mxfp4_scale_alg,
         mxfp4_dst_type_max=online_config.mxfp4_dst_type_max,
+        fp8_fa_mode=online_config.fp8_fa_mode,
     )
 
 

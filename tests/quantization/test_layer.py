@@ -30,7 +30,8 @@ from mindiesd.quantization.layer import (
     W4A4MXFP4DualOnlineQuantLinear,
 )
 from mindiesd.quantization.config import QuantConfig, TimestepPolicyConfig
-from mindiesd.quantization.mode import QuantAlgorithm
+from mindiesd.quantization.mode import FP8FAMode, QuantAlgorithm
+from mindiesd.utils import ParametersInvalid
 from mindiesd.quantization.utils import TimestepManager
 from mindiesd.utils.get_platform import is_a5_device
 
@@ -909,6 +910,116 @@ class TestFP8RotateQuantFA(unittest.TestCase):
         self.assertEqual(len(captured), 3)
         expected_q = 2.0 * torch.ones(self.N, self.S, self.D)
         self.assertTrue(torch.allclose(captured[0], expected_q))
+
+    def test_init_without_rotation_weights_does_not_raise(self):
+        model = FP8RotateQuantFA(prefix="attn", weights=create_mock_handler({}))
+        self.assertIsNone(model.q_rot)
+        self.assertIsNone(model.k_rot)
+        self.assertEqual(model.mode, FP8FAMode.HIGH_PRECISION)
+
+    def test_default_mode_is_high_precision(self):
+        model = self._make_model()
+        self.assertEqual(model.mode, FP8FAMode.HIGH_PRECISION)
+
+    def test_invalid_mode_raises_parameters_invalid(self):
+        with self.assertRaises(ParametersInvalid):
+            FP8RotateQuantFA(prefix="attn", weights=self._make_weights(self.D), mode="low_precision")
+
+    @patch('mindiesd.quantization.layer.fused_infer_attention_score_v2')
+    @patch('torch_npu.npu_dynamic_block_quant', create=True)
+    def test_high_precision_keeps_original_fia_kwargs(self, mock_bq, mock_fa):
+        captured_blocks = []
+
+        def capture_bq(tensor, dst_type=None, row_block_size=128, col_block_size=128):
+            captured_blocks.append(row_block_size)
+            return tensor.to(torch.float16), torch.ones(1)
+
+        mock_bq.side_effect = capture_bq
+        mock_fa.side_effect = self._mock_fa
+
+        model = self._make_model()
+        q = torch.randn(self.B, self.N, self.S, self.D)
+        k = torch.randn(self.B, self.N, self.S, self.D)
+        v = torch.randn(self.B, self.N, self.S, self.D)
+        model(q, k, v, layout="BNSD")
+
+        self.assertEqual(captured_blocks, [128, 256, 256])
+        fa_kwargs = mock_fa.call_args.kwargs
+        self.assertEqual(fa_kwargs["query_quant_mode"], 7)
+        self.assertEqual(fa_kwargs["key_quant_mode"], 7)
+        self.assertEqual(fa_kwargs["value_quant_mode"], 7)
+        self.assertEqual(fa_kwargs["num_query_heads"], self.N)
+        self.assertEqual(fa_kwargs["num_key_value_heads"], self.N)
+        self.assertNotIn("inner_precise", fa_kwargs)
+
+    @patch('mindiesd.quantization.layer.fused_infer_attention_score_v2')
+    @patch('torch_npu.npu_dynamic_block_quant', create=True)
+    def test_c8v16_tiling512_aligns_quant_and_fia_kwargs(self, mock_bq, mock_fa):
+        captured_blocks = []
+
+        def capture_bq(tensor, dst_type=None, row_block_size=128, col_block_size=128):
+            captured_blocks.append((row_block_size, col_block_size))
+            return tensor.to(torch.float16), torch.ones(1)
+
+        mock_bq.side_effect = capture_bq
+        mock_fa.side_effect = self._mock_fa
+
+        model = FP8RotateQuantFA(
+            prefix="attn",
+            weights=self._make_weights(self.D),
+            mode=FP8FAMode.C8V16_TILING512,
+        )
+        q = torch.randn(self.B, self.N, self.S, self.D)
+        k = torch.randn(self.B, self.N, self.S, self.D)
+        v = torch.randn(self.B, self.N, self.S, self.D)
+        model(q, k, v, layout="BNSD")
+
+        self.assertEqual(captured_blocks, [(128, 128), (256, 128), (512, 64)])
+        fa_kwargs = mock_fa.call_args.kwargs
+        self.assertEqual(fa_kwargs["query_quant_mode"], 7)
+        self.assertEqual(fa_kwargs["key_quant_mode"], 7)
+        self.assertEqual(fa_kwargs["value_quant_mode"], 12)
+        self.assertEqual(fa_kwargs["inner_precise"], 4)
+        self.assertEqual(fa_kwargs["num_query_heads"], self.N)
+        self.assertEqual(fa_kwargs["num_key_value_heads"], self.N)
+
+    @patch('mindiesd.quantization.layer.fused_infer_attention_score_v2')
+    @patch('torch_npu.npu_dynamic_block_quant', create=True)
+    def test_gqa_passes_key_head_count_to_fia(self, mock_bq, mock_fa):
+        mock_bq.side_effect = self._mock_block_quant
+        mock_fa.side_effect = self._mock_fa
+
+        kv_heads = 2
+        model = self._make_model()
+        q = torch.randn(self.B, self.N, self.S, self.D)
+        k = torch.randn(self.B, kv_heads, self.S, self.D)
+        v = torch.randn(self.B, kv_heads, self.S, self.D)
+        model(q, k, v, layout="BNSD")
+
+        fa_kwargs = mock_fa.call_args.kwargs
+        self.assertEqual(fa_kwargs["num_query_heads"], self.N)
+        self.assertEqual(fa_kwargs["num_key_value_heads"], kv_heads)
+
+    @patch('mindiesd.quantization.layer.fused_infer_attention_score_v2')
+    @patch('torch_npu.npu_dynamic_block_quant', create=True)
+    def test_forward_without_rotation_skips_matmul(self, mock_bq, mock_fa):
+        captured = []
+
+        def capture_bq(tensor, dst_type=None, row_block_size=128, col_block_size=128):
+            captured.append(tensor.clone())
+            return tensor.to(torch.float16), torch.ones(1)
+
+        mock_bq.side_effect = capture_bq
+        mock_fa.side_effect = self._mock_fa
+
+        model = FP8RotateQuantFA(prefix="attn", weights=create_mock_handler({}))
+        q = torch.ones(self.B, self.N, self.S, self.D)
+        k = torch.ones(self.B, self.N, self.S, self.D)
+        v = torch.ones(self.B, self.N, self.S, self.D)
+        model(q, k, v, layout="BNSD")
+
+        self.assertEqual(len(captured), 3)
+        self.assertTrue(torch.allclose(captured[0], torch.ones(self.N, self.S, self.D)))
 
 
 @unittest.skipIf(

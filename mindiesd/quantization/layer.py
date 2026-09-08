@@ -22,6 +22,7 @@ from torch import nn
 from ..layers.flash_attn.common import AttentionParam, lru_cache_by_attn_param
 from ..layers.flash_attn.fused_infer_attention_score import fused_infer_attention_score_v2
 from .config import QuantConfig, TimestepPolicyConfig
+from .mode import FP8FAMode, normalize_fp8_fa_mode
 from .utils import get_mxfp4_quant_kwargs, get_quant_weight, TimestepManager
 
 
@@ -35,6 +36,31 @@ MXFP4_GROUP_SIZES_W4A4 = [1, 1, 32]
 MXFP4_GROUP_SIZES_W4A8 = [0, 0, 32]
 MXFP4_SCALE_ALG_C7 = 2
 MXFP4_DST_TYPE_MAX_C7 = 7.25
+FA_PER_BLOCK_QUANT_MODE = 7
+FA_V512_D64_QUANT_MODE = 12
+FA_C8V16_INNER_PRECISE = 4
+_FP8_FA_MODE_SPEC = {
+    FP8FAMode.HIGH_PRECISION: {
+        "q_block": 128,
+        "k_block": 256,
+        "v_block": 256,
+        "v_col_block": 128,
+        "query_quant_mode": FA_PER_BLOCK_QUANT_MODE,
+        "key_quant_mode": FA_PER_BLOCK_QUANT_MODE,
+        "value_quant_mode": FA_PER_BLOCK_QUANT_MODE,
+        "inner_precise": None,
+    },
+    FP8FAMode.C8V16_TILING512: {
+        "q_block": 128,
+        "k_block": 256,
+        "v_block": 512,
+        "v_col_block": 64,
+        "query_quant_mode": FA_PER_BLOCK_QUANT_MODE,
+        "key_quant_mode": FA_PER_BLOCK_QUANT_MODE,
+        "value_quant_mode": FA_V512_D64_QUANT_MODE,
+        "inner_precise": FA_C8V16_INNER_PRECISE,
+    },
+}
 
 
 def _prepare_mxfp4_weight(weight, use_nz=False):
@@ -53,6 +79,15 @@ def _get_quant_config(kwargs):
     if quant_config is None:
         quant_config = QuantConfig.from_kwargs(kwargs)
     return quant_config
+
+
+def _resolve_fp8_fa_mode(mode, kwargs):
+    if mode is None:
+        mode = kwargs.get('fp8_fa_mode')
+    if mode is None:
+        mode = getattr(_get_quant_config(kwargs), 'fp8_fa_mode', None)
+    resolved = normalize_fp8_fa_mode(mode)
+    return FP8FAMode.HIGH_PRECISION if resolved is None else resolved
 
 
 def _has_quant_weight(weights, key):
@@ -454,44 +489,70 @@ class W8A8TimeStepQuantLinear(W8A8QuantBaseLinear):
 
 
 class FP8RotateQuantFA(nn.Module):
-    def __init__(self, prefix=None, weights=None):
+    def __init__(self, prefix=None, weights=None, mode=None, **kwargs):
         super().__init__()
 
-        q_rot = get_quant_weight(weights, f'{prefix}.q_rot')
-        self.register_buffer("q_rot", q_rot, persistent=False)
-        k_rot = get_quant_weight(weights, f'{prefix}.k_rot')
-        self.register_buffer("k_rot", k_rot, persistent=False)
+        if _has_quant_weight(weights, f'{prefix}.q_rot'):
+            self.register_buffer("q_rot", get_quant_weight(weights, f'{prefix}.q_rot'), persistent=False)
+        else:
+            self.q_rot = None
+        if _has_quant_weight(weights, f'{prefix}.k_rot'):
+            self.register_buffer("k_rot", get_quant_weight(weights, f'{prefix}.k_rot'), persistent=False)
+        else:
+            self.k_rot = None
+
+        self.mode = _resolve_fp8_fa_mode(mode, kwargs)
+
+    def _apply_rotate(self, query, key):
+        if self.q_rot is not None:
+            query = torch.matmul(query, self.q_rot)
+        if self.k_rot is not None:
+            key = torch.matmul(key, self.k_rot)
+        return query, key
 
     def forward(self, query, key, value, **kwargs):
-        query = torch.matmul(query, self.q_rot)
-        key = torch.matmul(key, self.k_rot)
+        query, key = self._apply_rotate(query, key)
 
         layout = kwargs.get("layout", "BNSD")
         n, s, d = _get_fa_shape(query, layout)
+        n_kv, _, _ = _get_fa_shape(key, layout)
+        spec = _FP8_FA_MODE_SPEC[self.mode]
 
         from ..layers.quant.block_quant import fa_block_quant_preprocess
 
-        q, q_scale = fa_block_quant_preprocess(query, block_size=128, dst_type=torch_npu.float8_e4m3fn, layout=layout)
-        k, k_scale = fa_block_quant_preprocess(key, block_size=256, dst_type=torch_npu.float8_e4m3fn, layout=layout)
-        v, v_scale = fa_block_quant_preprocess(value, block_size=256, dst_type=torch_npu.float8_e4m3fn, layout=layout)
+        q, q_scale = fa_block_quant_preprocess(
+            query, block_size=spec["q_block"], dst_type=torch_npu.float8_e4m3fn, layout=layout
+        )
+        k, k_scale = fa_block_quant_preprocess(
+            key, block_size=spec["k_block"], dst_type=torch_npu.float8_e4m3fn, layout=layout
+        )
+        v, v_scale = fa_block_quant_preprocess(
+            value,
+            block_size=spec["v_block"],
+            col_block_size=spec["v_col_block"],
+            dst_type=torch_npu.float8_e4m3fn,
+            layout=layout,
+        )
 
-        x = fused_infer_attention_score_v2(
-            q,
-            k,
-            v,
-            input_layout="BNSD",
-            num_query_heads=n,
-            softmax_scale=1.0 / math.sqrt(d),
-            pre_tokens=2147483647,
-            next_tokens=2147483647,
-            query_quant_mode=7,
-            key_quant_mode=7,
-            value_quant_mode=7,
-            dequant_scale_query=q_scale,
-            dequant_scale_key=k_scale,
-            dequant_scale_value=v_scale,
-            out_dtype=query.dtype,
-        )[0]
+        fa_kwargs = {
+            "input_layout": "BNSD",
+            "num_query_heads": n,
+            "num_key_value_heads": n_kv,
+            "softmax_scale": 1.0 / math.sqrt(d),
+            "pre_tokens": 2147483647,
+            "next_tokens": 2147483647,
+            "query_quant_mode": spec["query_quant_mode"],
+            "key_quant_mode": spec["key_quant_mode"],
+            "value_quant_mode": spec["value_quant_mode"],
+            "dequant_scale_query": q_scale,
+            "dequant_scale_key": k_scale,
+            "dequant_scale_value": v_scale,
+            "out_dtype": query.dtype,
+        }
+        if spec["inner_precise"] is not None:
+            fa_kwargs["inner_precise"] = spec["inner_precise"]
+
+        x = fused_infer_attention_score_v2(q, k, v, **fa_kwargs)[0]
 
         x = _crop_fa_output(x, s, "BNSD")
         if layout == "BSND":

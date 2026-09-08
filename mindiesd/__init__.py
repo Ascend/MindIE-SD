@@ -24,6 +24,7 @@ __all__ = [
     'QuantConfig',
     'TimestepManager',
     'TimestepPolicyConfig',
+    'FP8FAMode',
     'sparse_attention',
     'fast_layernorm',
     'frequency_regulator',
@@ -54,4 +55,5 @@ from .quantization import (  # noqa: E402
     QuantConfig,
     TimestepManager,
     TimestepPolicyConfig,
+    FP8FAMode,
 )

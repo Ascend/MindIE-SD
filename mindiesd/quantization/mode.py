@@ -52,6 +52,26 @@ class QuantAlgorithm(StrEnum):
     W16A16 = "W16A16"
 
 
+class FP8FAMode(StrEnum):
+    HIGH_PRECISION = "HIGH_PRECISION"
+    C8V16_TILING512 = "C8V16_TILING512"
+
+
+def normalize_fp8_fa_mode(mode):
+    if mode is None:
+        return None
+    if isinstance(mode, FP8FAMode):
+        return mode
+    if isinstance(mode, str):
+        try:
+            return FP8FAMode(mode.upper())
+        except ValueError as exc:
+            raise ParametersInvalid(
+                f"fp8_fa_mode must be one of {[item.value for item in FP8FAMode]}, but got {mode}."
+            ) from exc
+    raise ParametersInvalid(f"fp8_fa_mode must be FP8FAMode or str, but currently got {type(mode)}.")
+
+
 W8A8_LIST = [
     QuantAlgorithm.W8A8,
     QuantAlgorithm.W8A8_TIMESTEP,

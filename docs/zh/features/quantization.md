@@ -150,17 +150,24 @@ FA（Flash Attention）量化针对注意力计算中的 Q/K/V 激活值进行�
 
 **旋转（Rotate）**
 
-对 Q 和 K 施加预训练的旋转矩阵（`q_rot`、`k_rot`），将异常值分散到各维度，缓解 FP8 量化对异常值的敏感性。
+若量化权重中存在预训练旋转矩阵（`q_rot`、`k_rot`），则对 Q 和 K 施加旋转，将异常值分散到各维度，缓解 FP8 量化对异常值的敏感性。权重中没有这两项时跳过旋转，模块初始化不会失败。
 
 **块量化（Block Quant）**
 
-将旋转后的 Q/K/V 按块动态量化为 FP8（`float8_e4m3fn`）。Q 的量化块大小为 128，K/V 的量化块大小为 256，通过 `npu_dynamic_block_quant` 算子完成。
+将 Q/K/V 按块动态量化为 FP8（`float8_e4m3fn`），通过 `npu_dynamic_block_quant` 完成。Q 的 token 块为 128，K 的 token 块为 256；V 的 token 块由下面的 `FP8FAMode` 决定。
 
 **FP8 Attention**
 
 通过 MindIE-SD 自带的 `torch.ops.mindiesd.fused_infer_attention_score_v2`
 算子进入本仓迁移的 `FusedInferAttentionScore` 实现，在 FP8 域内完成注意力计算，
-输出结果反量化为原始精度。
+输出结果反量化为原始精度。`FP8RotateQuantFA` 用枚举 `FP8FAMode` 一次选定量化块、`value_quant_mode` 和 `inner_precise`，避免这三项各自开关、彼此对不齐。
+
+| 模式 | Q/K/V quant mode | `inner_precise` | V 量化块 |
+| ------ | ------ | ------ | ------ |
+| `HIGH_PRECISION`（默认） | `7/7/7` | 不显式传入（原高精度路径） | 256×128 |
+| `C8V16_TILING512` | `7/7/12` | `4`（C8V16） | 512×64 |
+
+后续新特性以新的枚举成员扩展，不要再拆成互不绑定的量化开关。
 
 ### 接口说明
 
@@ -185,9 +192,19 @@ model = quantize(model, "导出的量化配置文件路径")
 model.to("npu")
 ```
 
-`quantize` 内部遍历模型各层，对匹配的 Attention 层自动调用 `add_fa_quant`，注入 `FP8RotateQuantFA` 模块，替换前向计算为旋转→块量化→FP8 Attention 的流程。
+`quantize` 内部遍历模型各层，对匹配的 Attention 层自动调用 `add_fa_quant`，注入 `FP8RotateQuantFA` 模块，替换前向计算为旋转→块量化→FP8 Attention 的流程。默认使用 `FP8FAMode.HIGH_PRECISION`。切换到 C8V16 且 V 按 512 token 分块时：
 
-FA 量化层通过 `FP8RotateQuantFA` 模块实现，见本节的旋转→块量化→FP8 Attention 流程说明。
+```python
+from mindiesd import FP8FAMode, QuantConfig, quantize
+
+model = quantize(
+    model,
+    "导出的量化配置文件路径",
+    quant_config=QuantConfig(fp8_fa_mode=FP8FAMode.C8V16_TILING512),
+)
+```
+
+FA 量化层通过 `FP8RotateQuantFA` 模块实现，见本节的旋转→块量化→FP8 Attention 流程说明。`C8V16_TILING512` 依赖 FIA 的 C8V16 + V512 路径（`inner_precise=4`、`value_quant_mode=12`）。
 
 MXFP4 FA 使用示例：
 
@@ -219,4 +236,5 @@ FA 没有离线权重约束，因此可以在不同时间步选择任意算法�
 
 - 硬件要求：仅 Atlas 800I A2 推理服务器支持此特性。
 - Q/K/V 输入布局支持 `BNSD` 和 `BSND`。
-- FA 量化权重（`q_rot`、`k_rot`）需通过大模型压缩工具 msmodelslim 预先导出，详情请参见 msmodelslim 工具说明。
+- K/V 头数可以少于 Q（GQA, Grouped Query Attention, 分组查询注意力）。`FP8RotateQuantFA` 按 K 的头数向 FIA 传入 `num_key_value_heads`。
+- 旋转矩阵（`q_rot`、`k_rot`）可选。若使用，需通过大模型压缩工具 msmodelslim 预先导出，详情请参见 msmodelslim 工具说明；权重中没有这两项时，`FP8RotateQuantFA` 跳过旋转。

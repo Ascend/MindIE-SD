@@ -27,7 +27,7 @@ from mindiesd.quantization.layer import (
     W4A4QuantLinear,
     W4A4MXFP4QuantLinear,
 )
-from mindiesd.quantization.mode import QuantAlgorithm
+from mindiesd.quantization.mode import FP8FAMode, QuantAlgorithm
 from mindiesd.quantization.quantize import smooth_quantize_w8a8, smooth_quantize, quantize
 from mindiesd.quantization.quantize import weight_quantize, w8a16_quantize, add_fa_quant
 from mindiesd.quantization.quantize import get_cfg_and_weights
@@ -573,6 +573,33 @@ class TestAddFAQuant(unittest.TestCase):
         add_fa_quant(layer, cfg, "test_layer", create_mock_handler(self.weights))
         self.assertTrue(hasattr(layer, 'fa_quant'))
         self.assertIsInstance(layer.fa_quant, FP8RotateQuantFA)
+        self.assertEqual(layer.fa_quant.mode, FP8FAMode.HIGH_PRECISION)
+
+    def test_add_fa_quant_without_rotation_weights(self):
+        class MockLayer(nn.Module):
+            pass
+
+        layer = MockLayer()
+        cfg = QuantConfig(quant_algo=QuantAlgorithm.FP8_DYNAMIC)
+        add_fa_quant(layer, cfg, "test_layer", create_mock_handler({}))
+        self.assertIsInstance(layer.fa_quant, FP8RotateQuantFA)
+        self.assertIsNone(layer.fa_quant.q_rot)
+        self.assertIsNone(layer.fa_quant.k_rot)
+
+    def test_add_fa_quant_passes_c8v16_tiling512_mode(self):
+        class MockLayer(nn.Module):
+            pass
+
+        layer = MockLayer()
+        cfg = QuantConfig(quant_algo=QuantAlgorithm.FP8_DYNAMIC, fp8_fa_mode=FP8FAMode.C8V16_TILING512)
+        add_fa_quant(
+            layer,
+            cfg,
+            "test_layer",
+            create_mock_handler(self.weights),
+            quant_config=cfg,
+        )
+        self.assertEqual(layer.fa_quant.mode, FP8FAMode.C8V16_TILING512)
 
     def test_add_fa_quant_with_invalid_layer(self):
         # 创建一个没有必要属性的层

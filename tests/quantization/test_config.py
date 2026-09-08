@@ -14,7 +14,8 @@ import unittest
 from typing import Dict, List
 
 from mindiesd.quantization.config import QuantConfig, LayerQuantConfig, OnlineQuantConfig, TimestepPolicyConfig
-from mindiesd.quantization.mode import QuantAlgorithm, QuantMode
+from mindiesd.quantization.mode import FP8FAMode, QuantAlgorithm, QuantMode
+from mindiesd.utils import ModelInitError
 
 
 @unittest.skipIf(
@@ -41,6 +42,21 @@ class TestQuantConfig(unittest.TestCase):
         config = QuantConfig(quant_algo=QuantAlgorithm.W8A8)
         config_dict = config.serialize_to_dict()
         self.assertEqual(config_dict['quant_algo'], QuantAlgorithm.W8A8)
+
+    def test_fp8_fa_mode_accepts_enum_and_string(self):
+        config = QuantConfig(fp8_fa_mode=FP8FAMode.C8V16_TILING512)
+        self.assertEqual(config.fp8_fa_mode, FP8FAMode.C8V16_TILING512)
+
+        config = QuantConfig(fp8_fa_mode="c8v16_tiling512")
+        self.assertEqual(config.fp8_fa_mode, FP8FAMode.C8V16_TILING512)
+
+        config = QuantConfig.from_kwargs({"fp8_fa_mode": "HIGH_PRECISION"})
+        self.assertEqual(config.fp8_fa_mode, FP8FAMode.HIGH_PRECISION)
+        self.assertEqual(config.to_kwargs()["fp8_fa_mode"], FP8FAMode.HIGH_PRECISION)
+
+    def test_fp8_fa_mode_rejects_unknown_value(self):
+        with self.assertRaises(ModelInitError):
+            QuantConfig(fp8_fa_mode="low_precision")
 
 
 @unittest.skipIf(
@@ -162,6 +178,7 @@ class TestOnlineQuantConfig(unittest.TestCase):
             {"timestep_config": "invalid"},
             {"mxfp4_scale_alg": "2"},
             {"mxfp4_dst_type_max": True},
+            {"fp8_fa_mode": "low_precision"},
         ]
 
         for config in invalid_configs:
