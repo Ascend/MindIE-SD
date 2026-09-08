@@ -252,31 +252,41 @@ def pattern(x, weight):       # weight → FX placeholder
     return x * rsqrt(...) * weight
 ```
 
-**正确 Pattern** (自定义 Graph Pass):
+**正确 Pattern** (weight 作为 pattern 输入参数 —— register_replacement 即可命中):
 
-无法通过 `register_replacement` 匹配。需在 `PatternMatchPass` 中实现自定义 graph traversal：
+不要为实现 get_attr 匹配而手写自定义 Graph Pass（**该做法已禁止删除**，见 compilation-dev
+SKILL.md Phase 2 ⛔）。torch 2.11 下 `nn.Module` 权重在 freeze 前仍是 placeholder，把 weight
+放进 `inputs()` 与 `pattern()/replacement()` 参数即可让 register_replacement 正常匹配
+（参考 `patterns/rms_norm_pattern.py` / `patterns/minimax_h3_rmsnorm_pattern.py`）：
 
 ```python
-def _rewrite_rmsnorm_to_fused(self, graph):
-    """Graph-level pass: direct node walk for get_attr weight patterns."""
-    for node in list(graph.graph.nodes):
-        # Walk the chain: mul_final → mul_mid → rsqrt → add → mean → pow
-        # Verify x node is shared between pow and mul_mid
-        # weight_node directly from get_attr — no placeholder matching needed
-        ...
-        with graph.graph.inserting_before(mul_final):
-            rms = graph.graph.call_function(torch.ops.npu.npu_rms_norm.default, ...)
-        mul_final.replace_all_uses_with(getitem(rms, 0))
+@staticmethod
+def inputs():
+    hidden_states = torch.empty(2, 2, 2, 2, dtype=dtype, device="meta")
+    weight = torch.empty(2, dtype=dtype, device="meta")
+    return [hidden_states, weight]
+
+@staticmethod
+def pattern(hidden_states, weight):       # weight 是 pattern 输入参数
+    ...
+
+@staticmethod
+def replacement(hidden_states, weight):   # replacement 同样接收 weight
+    return torch_npu.npu_rms_norm(hidden_states, weight, epsilon=epsilon)[0]
 ```
 
-**执行位置**: 必须在 `graph_rewrite_after_freezing` 中调用（freeze 阶段不识别 NPU custom ops）。
+**执行位置**: `register_replacement` 在 `graph_rewrite_before_freezing`（freeze 前）窗口命中，
+无需（也禁止）在 `graph_rewrite_after_freezing` 手写 node 替换。
 
 **判据**:
 
-- 模型 graph dump 中 target 参数来源为 `get_attr(name.weight)` → 类型 7
-- 模型 graph 中无 `get_attr` 节点 → 普通 gateway pattern 可处理
+- 模型 graph dump 中 target 参数来源为 `get_attr(name.weight)` → 检查是否 freeze 前命中；
+  torch 2.11 下权重在 pattern 运行窗口为 placeholder，register_replacement 可处理
+- 模型 graph 中无 `get_attr` 节点 → 普通 pattern 可处理
 
-**修复**: 放弃 `register_replacement` 路径，使用自定义 graph traversal + 手动 node 替换。
+**修复**: 把 weight/bias 收进 `inputs()` + `pattern()/replacement()` 参数（register_replacement
+双参数 pattern）。若 pattern 中间夹动态 shape 节点导致 trace 式永不命中 → 走 GraphPatternEntry
+（见 `graph-pattern-rewrite-guide.md`）。**禁止**手写 FX graph traversal + 手动 node 替换。
 
 ---
 

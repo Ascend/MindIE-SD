@@ -17,7 +17,7 @@
 
 **问题**：`pip install triton` 安装 3.6.0，`import triton` 成功但 `driver.active` 报告 `0 active drivers`，无法在 Ascend NPU 上运行。
 
-**根因**：标准 triton 仅支持 CUDA/ROCm 后端，Ascend 需要 `triton-ascend`（PyPI 包名 `triton-ascend`，import 名 `triton`）。
+**根因**：标准 triton 无昇腾后端，Ascend 需要 `triton-ascend`（PyPI 包名 `triton-ascend`，import 名 `triton`）。
 
 **规则**：
 

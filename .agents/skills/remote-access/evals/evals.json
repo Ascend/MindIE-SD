@@ -1,0 +1,41 @@
+{
+  "skill_name": "remote-access",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "本地需要连远端昇腾容器连续执行多条命令（查 CANN 版本、看卡状态、建工作目录），怎么避免每次单独重连导致被拒绝访问？",
+      "expected_output": "按 remote-access「连接复用原则」：全程复用同一个 SSH 连接执行多条命令（scripts/ssh_helper.py 的 make_ssh/run，或 CLI --host/--user/--container/--cmd），一次 exec 内用 ; 串联多个操作，--container 自动包装 docker exec bash -lc；凭据优先 MINDIE_SSH_PASSWORD 环境变量",
+      "files": [],
+      "expectations": [
+        "提到复用同一 SSH 连接（避免远端 MaxStartups 限制的拒绝访问）",
+        "提到 ssh_helper.py 及 --host/--user/--container/--cmd 参数",
+        "提到 docker exec bash -lc 包装与用 ; 串联命令减少 bash login shell 初始化",
+        "提到凭据安全（优先 MINDIE_SSH_PASSWORD 环境变量或交互输入，而非明文 --password）"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "容器里映射了 8 张 NPU 卡，跑推理前想自动挑一张 HBM 占用最低的空闲卡来跑，怎么选？",
+      "expected_output": "按 remote-access「空闲卡选择」：先 npu-smi info -l / -t health 健康预检并避开 Alarm/Warning/ERROR 状态卡；再在同一卡组内用 scripts/pick_free_device.py 按 HBM 占用率最低选卡（import pick_free_device 复用连接，或 CLI 指定 --container 与 --num-cards 8）",
+      "files": [],
+      "expectations": [
+        "提到健康预检（npu-smi info -l / -t health）并避开 Alarm/Warning/ERROR 卡",
+        "提到 pick_free_device.py 按 HBM 占用率最低选卡",
+        "提到复用已有 SSH 连接（import pick_free_device 传入 ssh 客户端），避免重复握手",
+        "提到占用对比须在同一卡组内（--num-cards 与容器映射的设备数一致）"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "在 Windows 上写的 .sh 脚本上传到远端容器里执行报 $'\\r': command not found，怎么处理？",
+      "expected_output": "定位为 CRLF 换行问题：不在本地改源码换行符；手工场景在远端把文本转 LF（sed -i 's/\\r$//' <file> 或 dos2unix），部署传输场景交给 env-install/scripts/deploy_to_remote.py 自动 CRLF→LF；换行转换仅限文本，二进制文件绝不转换",
+      "files": [],
+      "expectations": [
+        "定位为 Windows CRLF → LF 换行问题",
+        "给出远端转换命令 sed -i 's/\\r$//' <file> 或 dos2unix",
+        "提到不在本地直接改文件换行符（避免 git diff 噪音）",
+        "提到二进制文件（权重等）不做换行转换"
+      ]
+    }
+  ]
+}

@@ -2,12 +2,16 @@
 name: performance-optimization
 compatibility: 已安装 mindiesd, docs/zh/features 文档（refresh_features.py 数据源）, NPU 复验
 description: >
-  针对 performance-analysis 发现的性能瓶颈，从 mindiesd-features.md（唯一真相源）
-  中选取最优 MindIE-SD 解决方案（量化/稀疏/并行/通信掩盖/缓存等）。
+  针对 profiling-analyze 发现的性能瓶颈，从 mindiesd-features.md（唯一真相源）
+  中选取最优 MindIE-SD 解决方案（量化/稀疏/并行/通信掩盖/缓存等）；在多模态解决方案
+  （model-auto-optimization）中承担 S4 有损优化的特性库与开启依据（单特性开启 + 精度校验 +
+  组合试验支撑）。
   5步闭环: baseline→分析→根因→修补→复验。
   即使用户只提到"这个模型怎么加速"而未说 benchmark，也应触发。
   当用户需要将分析结论转化为具体优化操作时使用此 skill。
-  由 dev-workflow 的优化阶段触发。
+  单算子实现级实测选型（mindie_bench）请走 benchmark-dev；monkey-patch 通信掩盖/多卡选型
+  请走 parallelism-strategy；框架侧开关使能请走 framework-feature-enablement。
+  由 model-auto-optimization 的 S4 阶段触发，亦由 dev-workflow 的优化阶段触发。
 ---
 
 # 性能优化
@@ -22,11 +26,11 @@ description: >
 
 ### Step 1: 建立基线
 
-使用 profiling-collection 采集 + performance-analysis 分析建立基线，记录模型 / 分辨率 / 帧数 / 精度 / NPU 数等配置。
+使用 profiling-collect 采集 + profiling-analyze 分析建立基线，记录模型 / 分辨率 / 帧数 / 精度 / NPU 数等配置。
 
 ### Step 2: 获取分析诊断
 
-从 performance-analysis 的 5 层分析报告中获取：
+从 profiling-analyze 的 5 层分析报告中获取：
 
 - Layer 1: 瓶颈阶段（DiT vs VAE）
 - Layer 2: 算子分类占比（FA/MatMul/Vector/Comm）
@@ -52,6 +56,14 @@ description: >
 - 精度 vs 速度权衡
 - 多方案时按优先级：MindIE-SD Pattern > 量化 > 稀疏 > 通信 > 通用
 
+方案划界（避免与相邻能力重叠）：
+
+- features.md 中列为官方特性的并行/通信掩盖类方案 → 按 features 选取（本 skill）
+- monkey-patch comm-stream masking、拓扑/带宽选型、HcclAlltoAllV 绕过等手工实测类方案 → parallelism-strategy
+- 框架侧特性开关/compile 使能与验证 → framework-feature-enablement
+- 多候选实现需要实测对比（同 peak 口径）时 → 用 benchmark-dev / mindie_bench 做单算子实现级选型；
+  本 skill 的「选型」指 features.md 特性级选档，benchmark 实测结果作为 Step 4 实施与复验依据回填
+
 ### Step 4: 实施 + 验证
 
 优化方案从 mindiesd-features.md 中选取，详见 references/optimization-dimensions.md 的决策树。
@@ -63,11 +75,15 @@ description: >
 | 减少不必要的同步/warmup | 仅为单框架/单硬件优化而破坏兼容性 |
 | 添加有证据支撑的启发式配置 | 从单一 trace 数据得出普适结论 |
 
+多特性组合试验（叠加顺序/seam 冲突/层回退）见 `references/combination-search.md`。
+
 ### Step 5: 复验
 
-- 重新运行 profiling-collection + performance-analysis 复验相同配置
-- 重新运行 performance-analysis 确认 5 层分析指标变化
+- 重新运行 profiling-collect + profiling-analyze 复验相同配置
+- 重新运行 profiling-analyze 确认 5 层分析指标变化
 - 差距 < 3% 视为噪声
+- 有损方案另过**端到端质量门禁**（quantitative + visual + off-identity），
+  见 `references/quality-gate.md` 与仓库 `evals/`；只过墙钟不过门禁不得宣称有损加速
 
 ## 优化维度
 
@@ -101,8 +117,12 @@ python scripts/refresh_features.py \
 
 ## Reference Files
 
-- 📋 `references/optimization-dimensions.md` — 加载时机: 选择优化方向和决策逻辑时
-- 🗺️ `references/mindiesd-features.md` — 加载时机: 确定具体 API/算法/硬件约束时（唯一真相源）
+- `references/optimization-dimensions.md` — 加载时机: 选择优化方向和决策逻辑时
+- `references/mindiesd-features.md` — 加载时机: 确定具体 API/算法/硬件约束时（唯一真相源）
+- `references/quality-gate.md` — 加载时机: S4 有损项/闭环端到端质量判定时
+  （定量 + 视觉伪影 + off-identity；判定标准与工具在仓库 `evals/`）
+- `references/combination-search.md` — 加载时机: S4 需同时开启 ≥2 个有损维度时
+  （seam 静态判定 + 单变量叠加 + frontier 保留 + 层回退）
 
 ## Bundled Scripts
 

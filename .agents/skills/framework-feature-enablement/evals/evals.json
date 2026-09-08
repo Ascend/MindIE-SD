@@ -1,0 +1,98 @@
+{
+  "skill_name": "framework-feature-enablement",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "把 MindIE-SD 的 MindieSDBackend 编译接入 DiffSynth-Engine，Qwen-Image 真实权重在远端 <model_weight_dir>/qwen/Qwen/，怎么部署和适配？",
+      "expected_output": "路由到 framework-feature-enablement §3 / references/diffsynth-engine-notes.md：部署（pip install -e . --no-deps + SETUPTOOLS_SCM_PRETEND_VERSION）、compile 适配（compile_backend='mindie' + _compiled_call_impl 原地写入）、Qwen-Image RoPE 实数域改写与 text encoder key 归一化，并说明融合算子使能判断方法",
+      "files": [],
+      "expectations": [
+        "提到 --no-deps 安装与 setuptools-scm 无 .git 的 PRETEND_VERSION 处理",
+        "提到 compile_transformer_blocks 须写入 submodule._compiled_call_impl（直接 torch.compile 不赋值不生效）",
+        "提到 Qwen-Image RoPE 实数域改写命中 qwen_rope_pattern",
+        "提到用 graph_log_url DOT 图 / kernel_details.csv 判断融合算子使能（日志 2048 截断会误判 0 命中）"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "外部框架（diffsynth_engine）里跑 compile 后，怎么确认 qwen_rope 这些 pattern 真的使能了？能直接用 dummy run 的结果判断吗？",
+      "expected_output": "按 diffsynth-engine-notes.md §3：三层证据（DEBUG 日志 → graph_log_url DOT 图 → kernel_details.csv）；使能判断不依赖层数/权重，dummy run 与真实权重的融合 kernel 使能集合一致；只做使能判断不做耗时比较（耗时须真实权重 + kernel diff）",
+      "files": [],
+      "expectations": [
+        "输出三层使能证据（日志 / DOT 图 / kernel_details.csv）并说明以 DOT 图或 kernel csv 为最终依据",
+        "说明使能集合与 dummy run 一致（qwen_rope / qk_norm / 残差 gate / 调制 / GELU），可用于判断",
+        "说明图命中不等于运行期全部生效（residual_gate_add 对 4D 张量 fallback）",
+        "明确不做耗时比较，耗时评估须真实权重 + kernel diff",
+        "提到运行期计数（kernel 实际执行次数等）作为真实性证据与 fail-closed 断言（计数契约）"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "vllm serve --omni 启动 Qwen-Image-2512 时报 hcclCommInitRootInfoConfig error code is 4，怎么排查？",
+      "expected_output": "路由到 framework-feature-enablement §2 / references/troubleshooting-vllm-omni.md E2：容器缺 HCCL ranktable（/usr/local/Ascend/driver/topo/950/atlas_350_*.json）→ docker cp 或挂载",
+      "files": [],
+      "expectations": [
+        "定位为 HCCL ranktable 缺失（/usr/local/Ascend/driver/topo）",
+        "给出 docker cp / 挂载解决方案并说明容器重启后丢失",
+        "引用 troubleshooting-vllm-omni.md"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "已部署的 Qwen-Image 模型想验证 1 步推理是否正确，用 Cache DiT + diffusers 的方式怎么跑？",
+      "expected_output": "按 framework-feature-enablement §1.2：from_pretrained 加载 → 1 步推理 → 验证无异常/OOM、输出 shape 合法",
+      "files": [],
+      "expectations": [
+        "给出 from_pretrained + 1 步推理的验证代码路径",
+        "按 §1.4 通过标准检查（无异常、输出合法、显存正常）"
+      ]
+    },
+    {
+      "prompt": "DiffSynth-Engine 接入 mindiesd 后要验证融合算子实际收益（算子级 profile + kernel diff），找谁？",
+      "expected_output": "正确性/使能判断在本 skill（S1 融合：特性开关 / compile 融入与使能），性能验证/kernel 收益证据由 profiling-collect + profiling-analyze（采集 + kernel diff + 三层证据）承担",
+      "files": [],
+      "expectations": [
+        "提到性能验证证据走 profiling-collect/profiling-analyze",
+        "提到本 skill 支撑 S0/S1（融合）/S4 的阶段定位句",
+        "提到三层证据（图命中/kernel diff/墙钟）以性能侧 skill 为准"
+      ],
+      "id": 5
+    },
+    {
+      "id": 6,
+      "prompt": "LightX2V（已合入 #1471）给 MiniMax-H3 配 MindIE compile，同时想让 Ulysses a2a 避开编译图，配置怎么写？hccl_eager 是什么？",
+      "expected_output": "路由到 framework-feature-enablement §compile 融入 / references/lightx2v-mindiesd-case.md §5：配置 use_compile=true + compile_backend=mindie + parallel.seq_p_a2a_backend=hccl_eager；说明 hccl_eager 是平台注册的 a2a 后端（ops/a2a/ascend_npu/，@torch.compiler.disable，collective 留 eager 防 hcom_alltoallv 退化）；compile_backend 经 COMPILE_BACKEND_REGISTER 解析（compilation/ascend_npu/mindie.py 懒工厂）",
+      "files": [],
+      "expectations": [
+        "给出含 seq_p_a2a_backend=hccl_eager 的 parallel 配置段",
+        "说明 hccl_eager = collective 留 eager 的平台可选后端（防 split_sizes 推断错导致 hcom_alltoallv 退化）",
+        "说明 compile_backend=mindie 走平台注册表懒工厂，common 零改动",
+        "提示代码/配置必须配套（旧代码不认识 hccl_eager）"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "LightX2V 的 a2a 留 eager 和 mindie compile backend 都已经合入上游（#1471）。以后给另一个框架做类似接入时，应该照抄 LightX2V 合入前的写法（全局 @torch._dynamo.disable 改共享类 + core 里 try/except import mindiesd），还是按合入后的形态写？为什么？",
+      "expected_output": "按合入后形态：平台注册表（PLATFORM_A2A_BACKEND_REGISTER / PLATFORM_COMPILE_BACKEND_REGISTER）+ 配置可选键（hccl_eager / mindie）+ common 零改动；说明原因：全局改共享 collective 类影响所有平台所有 Ulysses 用户、评审会要求收敛；core 硬编码第三方包名耦合重、未知名应 raise 而非静默回退；实例仍须缓存单份（BACKEND_MATCH）",
+      "files": [],
+      "expectations": [
+        "推荐平台注册 + 配置可选形态（合入版），不推荐全局改共享类/核心硬编码",
+        "说明评审收敛动机（影响面/耦合）",
+        "提到 backend 实例复用原则不变"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "外部框架（DiffSynth-Engine 这类）本身没有有损特性，但想用 mindiesd 库自带的缓存能力（DiTBlockCache / AttentionCache）验证有损加速，不向框架加代码，怎么做？怎么防假加速？",
+      "expected_output": "路由到 framework-feature-enablement references/cache-enablement-pattern.md：用库现有 CacheAgent（DiTBlockCache/AttentionCache）在 bench 脚本侧 adapter 接入（DSE 源码零改动）；CacheConfig 语义对齐（CFG-off 单调用路径保证 1 transformer 调用 == 1 cache step）；验证三件套 = 墙钟（同窗口冷卡中位数）+ 计数契约（reuse/compute 与理论比对，防 no-op）+ 质量门禁（latent cosine ~0.98 + VAE 像素 mean-abs）",
+      "files": [],
+      "expectations": [
+        "提到用 mindiesd 库现有 CacheAgent/DiTBlockCache/AttentionCache，bench 侧接入不改框架源码",
+        "提到 CacheConfig blocks_count/steps_count 与 CFG-off 单调用路径对齐（CFG-on 会 shape 冲突）",
+        "提到计数契约（reuse/compute 与理论期望比对，no-op 禁止宣称）与质量门禁（cosine/像素）",
+        "提到双缓存（DiT+Attention）互斥、只能二选一（叠加会计数失步质量 FAIL）",
+        "提到量化/稀疏在框架无接口时记录阻塞、不硬接"
+      ]
+    }
+  ]
+}

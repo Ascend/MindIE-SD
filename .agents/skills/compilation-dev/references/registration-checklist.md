@@ -55,7 +55,23 @@ class FusionPatterns:
 
 - [ ] 字段名与 registry key 完全一致
 - [ ] 默认值为 `True`（默认启用新 pattern）
-- [ ] 若 pattern 处于实验阶段或已知有问题，可设为 `False`
+- [ ] 默认值纪律（R3，细则见 `fusion-enablement-notes.md`）：默认 True 需真实命中 + AB 证据；
+      确需默认 False 只作短期回退；**净负/长期搁置的 pattern 直接移除**
+      （norm_rope 教训：不留默认 False 死代码）
+
+---
+
+## 路径 B：GraphPatternEntry（真图改写）接线不同
+
+动态 shape 节点 / 需手动改图的融合（mkldnn_fusion.py 范式，见
+`graph-pattern-rewrite-guide.md`）**不经过** `patterns/__init__.py.__all__` 与
+`passes/__init__.py` 的 `pattern_registry` 字典：
+
+- pattern 文件定义 `register_xxx_graph_entries(pattern_pass)`；
+- `passes/__init__.py` 在对应 flag 开启时 try/except 调用（import 安全，不打断 compile setup）；
+- flag 仍在 `FusionPatterns` 声明（同一命名空间，R1-R7 细则见 `fusion-enablement-notes.md`）；
+- **注册序纪律**：强融合（整链）先注册；该融合开启时其弱单点 pattern（fast_gelu/swiglu）
+  不注册（互斥靠序）。
 
 ---
 
@@ -84,10 +100,10 @@ def fwd_only_with_custom_decomp(..., get_decomp_fn=select_pattern_decomp_table):
 
 | 组件 | 格式 | 示例 |
 |------|------|------|
-| config key | `enable_<model>_<op>` | `enable_wan_rope`, `enable_qwen_rms_norm` |
-| PatternGroup | `<Model><Op>PatternGroup` | `WanRopePatternGroup`, `QwenRmsNormPatternGroup` |
-| Pattern class | `<Model><Op>Pattern` | `WanRopePattern`, `QwenRmsNormPattern` |
-| File name | `<model>_<op>_pattern.py` | `wan_rope_pattern.py`, `qwen_rms_norm_pattern.py` |
+| config key | `enable_{model}_{op}` | `enable_wan_rope`, `enable_qwen_rms_norm` |
+| PatternGroup | `{Model}{Op}PatternGroup` | `WanRopePatternGroup`, `QwenRmsNormPatternGroup` |
+| Pattern class | `{Model}{Op}Pattern` | `WanRopePattern`, `QwenRmsNormPattern` |
+| File name | `{model}_{op}_pattern.py` | `wan_rope_pattern.py`, `qwen_rms_norm_pattern.py` |
 
 **缩写原则**: model 名用小写简称（`wan`, `qwen`, `flux`），op 名用完整小写（`rms_norm`, `adalayernorm`, `rope`），避免歧义。
 

@@ -33,6 +33,29 @@
         "给出 pad + 等分绕过方案",
         "提到 kernel 名从 hcom_alltoallv 变为 hcom_alltoall"
       ]
+    },
+    {
+      "id": 4,
+      "prompt": "换到 SYS 跨岛卡组（如 0,1,5,6，npu-smi topo 显示跨岛）后，USP4 bulk 比历史 UB 岛组慢 ~12%，要不要切 head-parallel？",
+      "expected_output": "先读 ascend-topology-bandwidth-diag.md：拓扑相关选型——单 UB 岛 bulk 最优、SYS 跨岛 head-parallel 更优（实测 clean-window -11.5%，2×2 复现）；用墙钟/clean-window 判据而非 kernel-sum；同窗口同卡组补跑 2 次再定",
+      "files": [],
+      "expectations": [
+        "提到选型依赖拓扑（UB 岛 bulk vs SYS 跨岛 head-parallel 翻转）",
+        "用 clean-window 墙钟判据且同窗口同卡组复现",
+        "不直接照搬历史回退结论"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "容器里跑 4 卡 torchrun 微基准测 alltoall 带宽，一直报 port already been bound，但真实推理能跑；另外想验证 UB 岛与跨岛组的带宽差",
+      "expected_output": "按 ascend-topology-bandwidth-diag.md §3：先给 init 前补 torch_npu.npu.set_device(local_rank)（缺它各 rank 绑同端口）；再用 all_to_all_single/all_reduce/all_gather_into_tensor 多尺寸测；2 卡直连可量化 UB vs SYS（约 132 vs 86GB/s@64MB）；若官方 hccl_test 宿主报 HcclGetRootInfo 失败则用此等价工具并说明",
+      "files": [],
+      "expectations": [
+        "定位为缺 set_device（不是端口泄漏）并给出修复姿势",
+        "给出多尺寸带宽测试与 UB/SYS 对比方法",
+        "提及 hccl_test 宿主不兼容时用等价工具",
+        "涉及卡组可用性时指出：npu-smi Health=OK 不足够，需真实多卡 run 核对每步时长（SIGKILL 损伤残留态可均匀 ~43s/步）"
+      ]
     }
   ]
 }

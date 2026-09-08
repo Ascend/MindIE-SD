@@ -217,14 +217,14 @@ def create(dtype, epsilon=1e-6):
 scale/shift 通过隐式广播与 norm output 相乘。
 pattern 中的 `(1 + scale)` 直接使用隐式广播。
 
-### Qwen RoPE (复杂数路径 — 当前已知问题)
+### Qwen RoPE（实数域等价路径已使能）
 
-Qwen 的 RoPE 使用 `use_real=False`（complex number）路径，
-导致 `torch.compile` 过程中 `torch.view_as_complex` 后的广播失败和 inductor 警告:
-`Torchinductor does not support code generation for complex operators.`
-
-当前状态: **已禁用** (`enable_qwen_rope: bool = False`)。
-修复方向: 提取 `freqs_cis` 的 real/imag 部分 → `repeat_interleave` → 走实数 RoPE 路径。
+Qwen 的 `use_real=False`（complex number）路径在 `torch.compile` 下会触发
+`view_as_complex` 广播失败与 `Torchinductor does not support code generation for complex
+operators.` 警告。**已解决**：pattern 提取 `freqs_cis` 的 real/imag → `repeat_interleave` →
+实数域等价 complex rotary → `npu_rotary_mul`（`enable_qwen_rope` 默认 True，见
+`patterns/qwen_rope_pattern.py` 与 compiliation_config 注释；注册需先于
+`wan_residual_gate`，防其误匹配 rope 子图）。
 
 ---
 
@@ -237,28 +237,8 @@ Qwen 的 RoPE 使用 `use_real=False`（complex number）路径，
 
 ## 4. Pattern 创建规范
 
-### ABCMeta isinstance 陷阱
-
-`PatternBase` 继承自 `ABC`（有 ABCMeta 元类），其 `isinstance` 会对实现抽象方法的子类返回 `True`。
-判断实例 vs 类时必须额外排除 `type`：
-
-```python
-if not isinstance(pat, type) and isinstance(pat, PatternBase):
-    # 实例路径
-else:
-    # 类路径
-```
-
-### 去重注册
-
-使用模块级 `_registered_pattern_names: set[str]` 记录已注册 pattern。
-测试 setUp 须同时清理该集合和 `patterns.pattern_replacements`。
-
-### 外接逻辑融合优先于接口照搬
-
-从外部项目（如 vllm-ascend）引入融合逻辑时，逻辑层直接采用外部项目的 pattern 形状、
-replacement 目标、kernel 调用方式，接口层保持本地 `PatternBase` 的 `@staticmethod` 接口约定。
-外部项目通过构造函数注入的参数用工厂函数 + 闭包桥接。
+注册机制易错细节（ABCMeta isinstance 陷阱、去重注册、外接逻辑工厂桥接）与 `pattern-dev-notes.md`
+§1 重复，本文不复述——见 `pattern-dev-notes.md` §1。
 
 ### 融合 Operator 速查表
 
@@ -268,6 +248,8 @@ replacement 目标、kernel 调用方式，接口层保持本地 `PatternBase` �
 | RoPE | `mindiesd.rotary_position_embedding` | `rotary_position_embedding(x, cos, sin, rotated_mode="rotated_interleaved", head_first=False, fused=True)` |
 | AdaLayerNorm | `mindiesd.layernorm_scale_shift` | `layernorm_scale_shift(layernorm=norm, x=x, scale=scale, shift=shift, fused=True)` |
 | GELU | `torch_npu.npu_fast_gelu` | `torch_npu.npu_fast_gelu(hidden_states)` |
+| FFN 整链 swiglu | `torch.ops.mindiesd.mm_swiglu_mxquant` | **GraphPatternEntry 手动改写**插入（register_replacement 匹配不了动态 reshape）；见 `graph-pattern-rewrite-guide.md`；kernel 侧见 operator-dev `../operator-dev/references/catlass-ffn-fusion-guide.md` |
+| FFN 整链 gelu | `torch.ops.mindiesd.mm_gelu_mxquant` | 同上范式；案例 `../operator-dev/references/mmgelu-flux-wan-qwen-case.md` |
 
 ---
 

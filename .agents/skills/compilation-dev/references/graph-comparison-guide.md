@@ -33,8 +33,8 @@ Phase 5 中对比 pattern 定义图 [A] 与模型 traced 图 [B] 的操作步骤
 在远端 NPU 容器中运行 `--compile --debug-graph`:
 
 ```bash
-docker exec <container> bash -lc "
-cd /home/<user>/workspace/MindIE-SD_pattern/examples/dummy_run &&
+docker exec {container} bash -lc "
+cd /home/{user}/workspace/MindIE-SD_pattern/examples/dummy_run &&
 python wan_infer.py --compile --debug-graph 2>&1 | tee /tmp/model_debug.log
 "
 

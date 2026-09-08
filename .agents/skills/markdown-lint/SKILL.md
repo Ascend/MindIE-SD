@@ -3,7 +3,7 @@ name: markdown-lint
 compatibility: markdownlint-cli v0.44.0, pre-commit
 description: MindIE-SD 仓库 Markdown 格式 lint 规则。当编写、修改或审查 Markdown 文件（README、文档、
               变更日志等）、或 CI 门禁报出 markdownlint 违规时使用此 skill。
-              即使用户只提到"格式问题"或"MD040报错"而未说 markdownlint，也应触发。
+              即使用户只提到"格式问题"或"MD040报错"而未说 markdownlint，也应触发；Python 格式问题见 code-standards。
               通常由 dev-workflow 和 code-standards 在编码/审查阶段指引加载。
 ---
 
@@ -185,7 +185,7 @@ PowerShell 5.1 下用 `Get-Content` / `Set-Content` 读写含中文的 UTF-8 文
 
 ### 5.3 修复后验证
 
-1. 重跑 `markdownlint -c .markdownlint.json <files>` 确认 0 违规
+1. 重跑 `markdownlint -c .markdownlint.json {files}` 确认 0 违规
 2. `git diff` 检查只有预期替换行变化，无编码污染（BOM、乱码）
 3. 确认中文等非 ASCII 字符未损坏
 
@@ -193,3 +193,6 @@ PowerShell 5.1 下用 `Get-Content` / `Set-Content` 读写含中文的 UTF-8 文
 
 当 `markdownlint-cli` 版本升级、`.pre-commit-config.yaml` 中 markdownlint 配置变更、
 或新 MD 规则启用时，按 `dev-workflow` 的复盘流程更新本 skill。
+
+> 绑定提示：本 skill 内容与仓库 `.markdownlint.json` / pre-commit 配置强绑定，
+> 配置变更（含 MD 规则开关）后须同步本文规则描述与修复模板。

@@ -1,0 +1,57 @@
+{
+  "skill_name": "env-install",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "model-auto-optimization 的 S0 阶段要在远端昇腾容器里装 mindiesd（本地开发机改完代码推到远端容器编译安装），环境怎么装？",
+      "expected_output": "按 env-install 安装路径总览走「SSH 推远端容器」路径：部署前确认远端 IP/容器/工作目录 → scripts/deploy_to_remote.py 增量传输（文本文件 CRLF→LF、连接复用）→ 容器内 source set_env.sh + 注释 build_tik_ops.sh + python setup.py build_py + pip install -e . → 验证 import mindiesd 打印版本；上传打包不要排除源码 build/ 目录",
+      "files": [],
+      "expectations": [
+        "提到远端路径用 scripts/deploy_to_remote.py 增量传输并在容器内编译安装",
+        "提到 build_tik_ops.sh 失败需注释 build/build_ops.sh 中的 source 行（或 sed 等效）",
+        "给出容器内编译安装命令序列（source set_env.sh → python setup.py build_py → pip install -e .）",
+        "给出验证命令（import mindiesd 打印版本），并提示上传不要排除源码 build/ 目录"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Ascend 950PR（x86_64）上要用 vLLM-Omni 托管 Qwen-Image-2512，官方预构建镜像不覆盖，全栈怎么从源码构建安装？",
+      "expected_output": "按 env-install 三方框架全栈安装：950PR/950DT 必须源码构建，按版本配套矩阵（torch 2.11.0+cpu / torch_npu 2.11.0 / vllm 0.26.0 / vllm-ascend releases/v0.26.0rc / vllm-omni main / mindiesd dev）依序执行 Step 2.1 容器预检（含 HCCL ranktable 挂载检查）→ 2.2 torch+torch_npu → 2.3 vllm（先升级 setuptools、跳过 rust）→ 2.4 vllm-ascend → 2.5 vllm-omni（设 VLLM_OMNI_VERSION_OVERRIDE、装完重装回 torch 2.11.0）→ 2.6 mindiesd（triton-ascend==3.2.1）；装完转权重确认/下载，服务启动与验证归 framework-feature-enablement",
+      "files": [],
+      "expectations": [
+        "指出 950PR/950DT 官方预构建镜像不覆盖，必须源码构建全栈（VLLM_TARGET_DEVICE=empty）",
+        "给出 vllm 0.26.0 构建前先升级 setuptools（>=77.0.3,<81.0.0）并跳过 rust 的要点",
+        "给出 vllm-ascend / vllm-omni 用 pip install -e . --no-deps --no-build-isolation 安装并设置 VLLM_OMNI_VERSION_OVERRIDE",
+        "提到容器需挂载 HCCL ranktable（/usr/local/Ascend/driver/topo）否则多卡启动报 hcclCommInitRootInfoConfig error code is 4"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "S0 准备阶段：远端要用 vLLM-Omni 跑 MiniMax-H3 真实权重，权重还没下载，怎么准备？",
+      "expected_output": "按 env-install 权重确认与下载：先确认远端环境是否已存在该模型权重或可复用服务，存在则跳过下载直接复用路径；确认缺失后按 references/weights-prep.md 用 modelscope 按分区下载（--local_dir 落盘模型根目录 + --include 只拉 FL2VA 分区 + --max-workers 16）、nohup 后台化（轮询脚本自身也要 nohup），并做完整性校验（.incomplete 为 0、文件总数 81/81、日志 Snapshot ready）",
+      "files": [
+        "references/weights-prep.md"
+      ],
+      "expectations": [
+        "先说先确认远端环境是否已存在权重或可复用服务，存在则跳过下载",
+        "给出 modelscope download 下载命令（--local_dir / --include 分区 / --max-workers 16）",
+        "提到下载完整性校验（.incomplete 为 0、文件总数与进度一致、Snapshot ready at <root>）",
+        "说明目录约定 <model_weight_dir>/<模型名>/ 直接 serve，按 FL2VA/Ref2VA 分区按需下载"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "要复现 LightX2V + MindIE-SD 的 MiniMax-H3 调优环境（远端容器），lightx2v 和 mindiesd 怎么装？import lightx2v 报 ERR99999 是什么问题？MiniMax-H3 权重哪些分区必须下？",
+      "expected_output": "按 env-install 三方框架全栈安装 → LightX2V 部署要点 / references/lightx2v-env.md：lightx2v 与 mindiesd 在同一容器 pip install -e（源码目录，更新代码无需重装）；import lightx2v 前必须 export PLATFORM=ascend_npu（否则设备初始化按默认平台走报 ERR99999，不是代码问题）；版本配套（python 3.12 / torch 2.11 / torch_npu 2.11 / CANN 9.1）；MiniMax-H3 t2av 只需 transformer/text_encoder/vae/audio_* 等分区，FL2VA 135G 不需要",
+      "files": [
+        "references/lightx2v-env.md"
+      ],
+      "expectations": [
+        "给出 lightx2v 与 mindiesd 的 editable 安装（pip install -e）并说明更新代码无需重装",
+        "说明 import lightx2v 前必须 export PLATFORM=ascend_npu，ERR99999 是设备初始化路径问题",
+        "提到版本配套实测矩阵（torch/torch_npu 2.11、CANN 9.1）与就绪验证命令",
+        "说明 LightX2V t2av 权重分区口径（FL2VA 不需要）"
+      ]
+    }
+  ]
+}

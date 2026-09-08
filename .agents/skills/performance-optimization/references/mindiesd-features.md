@@ -126,6 +126,6 @@ Attention 本身不可通过算子融合加速。优化手段为 FA 量化（FP8
 
 - **更新触发**: MindIE-SD 发版新增/废弃算法时
 
-- **更新方式**: 运行 `python scripts/refresh_features.py --docs-dir <path>`
+- **更新方式**: 运行 `python scripts/refresh_features.py --docs-dir {path}`
 
 - **手动更新**: 运行脚本后可在输出文件中手动补充表格行

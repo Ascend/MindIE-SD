@@ -4,23 +4,23 @@
     {
       "id": 1,
       "prompt": "帮我给 MiniMax-H3 新增一个 fusion pattern，走完整开发流程：先写测试再实现，最后推到远端昇腾环境验证",
-      "expected_output": "遵循 Test-First 闭环（先写预期 FAIL 的测试 → 实现 → 远端部署 → pytest 验证），并正确路由：pattern 开发到 compilation-dev、部署到 ascend-deploy、验证到 dummy-run-dev/framework-integration",
+      "expected_output": "遵循 Test-First 闭环（先写预期 FAIL 的测试 → 实现 → 远端部署 → pytest 验证），并正确路由：pattern 开发到 compilation-dev、部署到 env-install、验证到 dummy-run/framework-feature-enablement",
       "files": [],
       "expectations": [
         "输出包含 Test-First 步骤（写测试预期 FAIL → 实现 → 部署 → 验证）",
-        "路由到 compilation-dev（pattern 开发）与 ascend-deploy（远端部署）",
+        "路由到 compilation-dev（pattern 开发）与 env-install（远端部署）",
         "提到多卡验证时使用不同 NPU 卡隔离运行"
       ]
     },
     {
       "id": 2,
       "prompt": "多卡跑 MiniMax-H3 推理时 profiling 显示通信暴露 30%，怎么优化？",
-      "expected_output": "路由到 parallelism-strategy（并行策略与通信掩盖）+ profiling-collection/performance-analysis（采集与分析），建议 comm-stream masking",
+      "expected_output": "路由到 parallelism-strategy（并行策略与通信掩盖）+ profiling-collect/profiling-analyze（采集与分析），建议 comm-stream masking",
       "files": [],
       "expectations": [
         "引用 parallelism-strategy",
         "建议通信掩盖（comm-stream masking / mindiesd.parallel）",
-        "指向 profiling-collection 采集 + performance-analysis 分析"
+        "指向 profiling-collect 采集 + profiling-analyze 分析"
       ]
     },
     {

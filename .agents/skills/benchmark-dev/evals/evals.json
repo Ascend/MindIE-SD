@@ -44,6 +44,17 @@
         "用 --op {fa: {num_heads: N}} 或 --config 多档扫描不同 head 数",
         "多次 run 放同一 report 父目录，report 合并为单 HTML 对比，选出最优实现/参数"
       ]
+    },
+    {
+      "prompt": "模型调优中想对比几个 FA 实现（bf16 vs mxfp4）哪个快，给 S4 量化选型做依据，怎么用 benchmark？",
+      "expected_output": "使用侧（主轴 S1/S4 选型）：mindie_bench 对单算子按 --config {dtype: [...]} 一次对比 bf16/mxfp4 内核，产出算子选型证据；工具链本身的新增/修改（op_defs/schema/报表）属侧轨开发侧",
+      "files": [],
+      "expectations": [
+        "提到使用侧由 model-auto-optimization 的 S1/S4 选型场景触发",
+        "提到用 --config {dtype: [...]} 对比真实内核分发而非 func 标签",
+        "区分工具链开发（侧轨）与选型使用（主轴）双入口"
+      ],
+      "id": 5
     }
   ]
 }

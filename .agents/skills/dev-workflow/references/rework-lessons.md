@@ -1,6 +1,6 @@
 # 返工教训
 
-> **目录** · 1. 拒绝未实现功能的前置配置 · 2. 最小必要改动原则 · 3. 独立任务必须实际并行执行 · 4. 非代码仓内容不入库 · 5. PLAN.md 未随任务变更同步更新 · 6. triton vs triton-ascend 包名混淆 · 7. pip install -e . 新增文件未被索引 · 8. SSH 连接重复创建 · 9. dummy_run 门禁违规综合教训 · 10. Markdown 代码块未指定语言触发 MD040 · 11. 嵌套 Shell 引号转义失败 · 12. Profiling 结果回传与 GBK 编码 · 13. 通用分析脚本纳入 Skills · 14. meta→to_empty 构造后未注册 buffer · 15. CRLF→LF 转换破坏二进制文件 · 16. 远端 model 模块名冲突 · 17. Gated Model 配置下载 · 18. expandable_segments 池锁定误判 OOM · 19. 多模型 CLI 参数不一致 · 20. 首次部署未检查远端文件完整性 · 21. 过度抽象 · 22. 未请求的额外功能 · 23. Pattern 单元测试通过但全模型不命中 · 24. register_replacement 无法处理 get_attr · 25. Inductor freeze 不识别自定义 NPU ops · 26. 编译开销定位方法 · 27. 打包排除 build 目录误删源码脚本 · 28. 权重分片缺失未对照 index.json 预检 · 29. vllm-omni 源码包缺 .git 导致版本非法 · 30. pip 依赖解析降级 torch 后未复原 · 31. 容器缺 HCCL ranktable 导致多卡失败 · 32. 第三方 wheel 文件名重命名破坏 pip 解析 · 33. 量化层 forward 内就地修改模块状态 → compile 每次重编译 · 34. 先诊断再下结论：性能劣化勿直接归因 kernel
+> **目录** · 1. 拒绝未实现功能的前置配置 · 2. 最小必要改动原则 · 3. 独立任务必须实际并行执行 · 4. 非代码仓内容不入库 · 5. PLAN.md 未随任务变更同步更新 · 6. triton vs triton-ascend 包名混淆 · 7. pip install -e . 新增文件未被索引 · 8. SSH 连接重复创建 · 9. dummy_run 门禁违规综合教训 · 10. Markdown 代码块未指定语言触发 MD040 · 11. 嵌套 Shell 引号转义失败 · 12. Profiling 结果回传与 GBK 编码 · 13. 通用分析脚本纳入 Skills · 14. meta→to_empty 构造后未注册 buffer · 15. CRLF→LF 转换破坏二进制文件 · 16. 远端 model 模块名冲突 · 17. Gated Model 配置下载 · 18. expandable_segments 池锁定误判 OOM · 19. 多模型 CLI 参数不一致 · 20. 首次部署未检查远端文件完整性 · 21. 过度抽象 · 22. 未请求的额外功能 · 23. Pattern 单元测试通过但全模型不命中 · 24. register_replacement 无法处理 get_attr · 25. Inductor freeze 不识别自定义 NPU ops · 26. 编译开销定位方法 · 27. 打包排除 build 目录误删源码脚本 · 28. 权重分片缺失未对照 index.json 预检 · 29. vllm-omni 源码包缺 .git 导致版本非法 · 30. pip 依赖解析降级 torch 后未复原 · 31. 容器缺 HCCL ranktable 导致多卡失败 · 32. 第三方 wheel 文件名重命名破坏 pip 解析 · 33. 量化层 forward 内就地修改模块状态 → compile 每次重编译 · 34. 先诊断再下结论：性能劣化勿直接归因 kernel · 35. 远程实验脚本与多卡工具纪律（2026-09 实测） · 36. npu-smi Health=OK ≠ 卡组功能可用：组验证必须实测每步时长（2026-09 实测） · 37. 质量门禁口径混淆 → 误判特性「质量平台」数月（2026-09 实证纠错）
 
 以下问题均在 MindIE-SD 开发中实际发生并导致返工。
 
@@ -127,7 +127,7 @@ ssh.close()
 
 - 所有围栏代码块必须指定语言或内容类型（`text`/`bash`/`python`/`shell`/`yaml`/`json`/`markdown` 等）
 - 目录树、终端输出、日志等非可执行内容使用 `text`
-- 提交前自检：`pre-commit run markdownlint --files <changed_file>.md`
+- 提交前自检：`pre-commit run markdownlint --files {changed_file}.md`
 - 详细规范见 `markdown-lint` skill
 
 ````markdown
@@ -214,49 +214,44 @@ ssh.close()
 - 如果 pattern 涉及 `nn.Module` 的参数（weight/bias），必须用全模型 profiling + kernel diff 做最终验证
 - 全模型验证方法：采集 eager + compile profiling → `kernel_details.csv` diff → 确认融合 kernel 出现
 
-## 24. `register_replacement` 无法处理 `get_attr` 参数
+## 24. `nn.Module` 权重（get_attr 形态）的 pattern 表达（历史：曾误判为需自定义 Graph Pass）
 
-**问题**：`torch._inductor.pattern_matcher.register_replacement` 要求 pattern 所有参数在 traced graph
-中为 `placeholder` 节点。全模型中 `nn.Module` 的 weight/bias 是 `get_attr` 节点，
-两者 node 类型不同 → pattern matcher 静默跳过（无错误日志，match count 不变）。
+**问题**（历史教训，2026-09 前）：曾认为 `torch._inductor.pattern_matcher.register_replacement`
+要求 pattern 所有参数在 traced graph 中为 `placeholder` 节点，而全模型中 `nn.Module` 的
+weight/bias 是 `get_attr` 节点，两者 node 类型不同 → 静默跳过（无错误日志，match count 不变），
+于是走了"手写自定义 graph traversal pass"方案（已废弃）。
+
+**现状更正（torch 2.11）**：`nn.Module` 权重在 freeze 前仍是 placeholder，**把 weight 收进
+`inputs()` + `pattern()/replacement()` 参数即可用 register_replacement 命中**（参考
+`compilation-dev` skill 与 `patterns/rms_norm_pattern.py`），**不需要也不允许自定义 Graph Pass**。
 
 **规则**：
 
 - 创建 pattern 前先判断目标算子是否使用了 `nn.Module` 的参数
-- 若 weight 来自模块参数（`get_attr`），`register_replacement` 的 placeholder-based pattern 无法匹配
-- Fallback 方案：在 `PatternMatchPass` 中实现自定义 graph traversal pass，直接遍历 FX graph 节点
-  并手动重写子图（见 `compilation-dev` skill §5 自定义 Graph Pass）
+- 若 weight 来自模块参数，把 weight 作为 pattern/replacement 的输入参数（meta tensor）表达，
+  freeze 前窗口命中——**禁止手写 FX graph traversal pass（该方案已废弃删除）**
+- pattern 中间夹动态 shape 节点 → 走 GraphPatternEntry（`compilation-dev` skill
+  `references/graph-pattern-rewrite-guide.md`）
 
 **判据**（kernel diff 中确认）：
 
-- 全模型中 RMSNorm 的 weight 是 `get_attr(self.norm_q.weight)` → `register_replacement` 匹配失败
+- 全模型中 RMSNorm 的 weight 收进 pattern 输入后融合 kernel 出现 → register_replacement 命中
 - 全模型中 GELU 无 learnable parameters → `register_replacement` 匹配成功
 - 全模型中 RoPE 的 `apply_rotary_emb` 使用 `slice_scatter` 两阶段复制 → 与现有 `chunk/stack/flatten` 模式不匹配
 
-## 25. Inductor freeze 阶段不识别自定义 NPU ops
+## 25. （已废弃）自定义 Graph Pass 的 freeze 时序坑 —— 方案已禁止，仅留档
 
-**问题**：自定义 graph pass 插入的 `npu_rms_norm` 等非 aten op 节点，
+> ⛔ 自定义 FX graph traversal pass 已在 compilation-dev 明令禁止并删除
+> （`custom-graph-pass-guide.md`），本条仅作为"为什么禁止"的历史留档，**不得再按此实现**。
+
+**历史问题**：曾用自定义 graph pass 插入 `npu_rms_norm` 等非 aten op 节点，
 在 `torch._inductor.freezing.freeze()` 的 `node_copy` 过程中 Crash（`KeyError: npu_rms_norm`）。
 
 **根因**：`freeze()` 内部的图拷贝期望所有目标函数都在 Inductor 的 env dict 中注册。
 NPU 自定义 op（`torch.ops.npu.*`）不在该 dict 中 → `node_copy` 失败。
 
-**规则**：
-
-- 涉及自定义 NPU op 的 graph pass 必须在 `graph_rewrite_after_freezing` 中执行，
-  而非 `graph_rewrite_before_freezing`
-- 即在 `MindieSDBackend.compile()` 中，调用 `patterns._rewrite_*_to_fused(fx_graph)` 的位置
-  应在 `apply_decompose_auto_functionalized_pass` 之后
-
-**代码示例**：
-
-```python
-def graph_rewrite_after_freezing(fx_graph, inputs):
-    self.__class__.apply_redundant_node_elimination_pass(fx_graph, inputs)
-    patterns._rewrite_rmsnorm_to_fused(fx_graph)  # ← 在 freeze 之后
-    self.__class__.apply_decompose_auto_functionalized_pass(fx_graph)
-    return fx_graph
-```
+**结论**：该路径已废弃——正确做法是把 weight 收进 register_replacement 双参数 pattern
+（freeze 前命中），或走 GraphPatternEntry；不要再写 `_rewrite_*_to_fused` 手写遍历方法。
 
 ## 26. 编译开销定位方法
 
@@ -305,7 +300,7 @@ mindiesd 报 `No such file or directory: .../MindIE-SD/build`。
 **规则**：
 
 - 不能只看目录里有多少个分片，必须对照 `*.safetensors.index.json` 的 `weight_map` 逐分片核对
-- 缺失分片补下载：`https://hf-mirror.com/<org>/<model>/resolve/main/transformer/<缺失分片名>`
+- 缺失分片补下载：`https://hf-mirror.com/{org}/{model}/resolve/main/transformer/{缺失分片名}`
 
 ## 29. vllm-omni 源码包缺 .git 导致版本非法
 
@@ -338,7 +333,7 @@ pip 报 `packaging.version.InvalidVersion`，metadata 生成失败。
 
 **规则**：
 
-- 已运行容器可用 `docker cp /usr/local/Ascend/driver/topo <容器>:/usr/local/Ascend/driver/topo`
+- 已运行容器可用 `docker cp /usr/local/Ascend/driver/topo {容器}:/usr/local/Ascend/driver/topo`
 - 注意：docker cp 在容器重启后丢失，需重建或持久化挂载
 
 ## 32. 第三方 wheel 文件名重命名破坏 pip 解析
@@ -382,6 +377,56 @@ bias dtype（bf16），执行后变成 fp32 → 每次调用 guard 失败 → �
 - 用 kernel_details 区分 kernel-bound 与 host-bound：`wall_ms / kernel_sum_ms > 10` + Wait Time
   高 → host-bound，先查 host 侧（重编译、launch、sync），再优化 kernel
 - 结论必须基于 profiling 数据（kernel 时间占比、间隙位置、recompile 日志），不凭直觉
+
+## 35. 远程实验脚本与多卡工具纪律（2026-09 实测）
+
+**问题**：多轮远程多卡实验反复踩同一批脚本/环境坑，浪费整轮窗口。
+
+**规则**：
+
+- **卡组硬编码在本地脚本**：远程执行器（上传+运行型）会先用本地文件覆盖远端，再执行——
+  `sed` 在远端改卡组/端口会在下一次启动时被覆盖；要改就改本地脚本再上传
+- **不要在命令行里让模式匹配自杀**：`pkill -9 -f '{pattern}'` 会匹配到承载命令的 shell
+  自身（命令行含该串）→ 用 `[x]` 断字符或先 `pgrep` 复核
+- **SSH 批量命令用 JSON 文件**（`{"commands": [...]}`）：PowerShell 会把裸 `$(seq ...)`、
+  heredoc 换行、反引号提前展开/报错；JSON 内避免 `\` 转义与双引号嵌套，脚本逻辑落文件
+- **后台长任务先落盘再轮询**：nohup + 日志文件 + 轮询（marker 匹配）；前台同步执行会因
+  SSH 会话超时被杀；轮询的 grep 模式别用 `\[`（JSON 非法转义）
+- **多卡环境劣化优先换卡组/换端口段**，再怀疑代码：整组 ~10× 慢、HCCL「端口 already
+  bound」等环境问题处理见 parallelism-strategy `ascend-topology-bandwidth-diag.md`；
+  避免 SIGKILL 运行中的多卡任务（可伤驱动状态）
+- 实验结论以**同窗口同卡组 + 多次复现**为准；先 4 步 smoke 再 30 步墙钟
+
+## 36. npu-smi Health=OK ≠ 卡组功能可用：组验证必须实测每步时长（2026-09 实测）
+
+**问题**：某受损组（SIGKILL 后遗）npu-smi 全列 OK、4 步 smoke「跑通出视频」，但真实 run
+每步**均匀 ~43.6s**（无热降频斜率）≈ 正常步长 10 倍——若只按「smoke 通过 + npu-smi OK」就上
+30 步墙钟对比，整轮数据作废。
+
+**规则**：
+
+- **组可用性用真实多卡 run 验证并核对 per-step cost**（日志 `Run Dit every step cost X` 行）：
+  4 步 smoke 的总时长也能暴露（每步 43s → 4 步 ~3min+ vs 正常 ~30s），别只看 mp4 是否生成
+- 均匀 ~43-44s/步（无降频斜率）+ 单算子 GEMM 正常 + npu-smi OK = SIGKILL 驱动损伤**残留态**，
+  跨天不自动恢复；需驱动级复位（管理员），换健康组验证是标准处理
+- 共享机跑前查**物理卡**占用（不只 ASCEND_RT_VISIBLE_DEVICES 所选组）：租户任务可能正占组内
+  某卡 ~122GB → 载权重时 NPU OOM（错误特征：`NPU out of memory ... 250MB free` on a card
+  your group claims）→ 等租户释放或换组重试
+- 多卡墙钟结论的有效组必须在**同一次实验窗口内**复核健康，跨天数字不迁移
+
+## 37. 质量门禁口径混淆 → 误判特性「质量平台」数月（2026-09 实证纠错）
+
+**问题**：LightX2V rf3 稀疏曾因「sp0.3-0.6 帧 SSIM 平坦 0.82-0.84 平台」被暂缓数月；后用
+同 seed/同配置（仅稀疏度变化）/同窗 21 帧门禁重扫，得到**平滑梯度**（sp0.3=0.975 近无损、
+sp0.5=0.960、sp0.8=0.81）——历史平台系与 dense 基线**不同配置/seed/口径**混淆所致，证据作废。
+
+**规则**：
+
+- 特性质量门禁 = 与 dense 基线**同 seed/同 prompt/同步数/同分辨率，仅该特性单变量**，帧采样同窗；
+  跨配置/跨 seed 的 SSIM 不可比，也不得把历史不同口径数字当「平台」
+- 遇到「质量随强度异常平坦」先复核口径（基线配置/seed/帧对齐），再怀疑算子/几何；
+  怀疑算子侧结论须附「口径一致的对照实验」证据
+- 纠错后旧结论要显式作废并注明原因（本仓库 case §10/§11 已按此更正），避免新会话沿用错误「平台」
 
 ## 维护与更新
 

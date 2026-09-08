@@ -18,9 +18,10 @@
       "expected_output": "按 Step 4/5 复验：重新跑相同 benchmark 与 5 层分析；正确性用 cosine similarity 不下降验证；差距 <3% 视为噪声",
       "files": [],
       "expectations": [
-        "提到复验相同配置（profiling-collection + performance-analysis）",
+        "提到复验相同配置（profiling-collect + profiling-analyze）",
         "提到 cosine similarity 正确性门槛",
-        "提到 3% 噪声阈值"
+        "提到 3% 噪声阈值",
+        "有损场景另过端到端质量门禁（定量指标 + 视觉伪影 + off-identity，见 quality-gate.md 与仓库 evals/）"
       ]
     },
     {

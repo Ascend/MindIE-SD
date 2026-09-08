@@ -1,0 +1,31 @@
+{
+  "skill_name": "framework-extension-dev",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "vLLM-Omni 0.28 里 MiniMax-H3 想压通算暴露但框架没有 comm-stream 掩盖机制，用户已确认要我补齐，从哪下手",
+      "expected_output": "判定为框架自身缺口（非 mindiesd 仓内、非现成特性接线）→ 走 framework-extension-dev：最小复现缺口（step_trace 未重叠通信证据）→ 形态选择（优先平台注册 + 合入上游，参照 #1471 收敛姿势；fork/monkey-patch 备选，按 §0 用户确认）→ 按 vLLM-Omni 注入点（diffusion_model_runner 平台分发/interface 默认方法）实现 → 验证（输出一致 + 计数契约 + 墙钟，防 no-op）→ 回填 framework-support-matrix 与 case",
+      "files": [
+        "SKILL.md"
+      ],
+      "expectations": [
+        "先做缺口归属判定（框架自身 vs enablement vs mindiesd 仓内）",
+        "给最小复现 + 形态选择（平台注册合入上游优先）",
+        "指向目标框架的开发范式/注入点（vllm-omni 平台分发等）",
+        "验证含计数契约/三层证据并回填 framework-support-matrix"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "LightX2V 上想给 H3 加缓存特性但 feature_caching NotImplemented，是先自己开发还是绕道？",
+      "expected_output": "先查 framework-support-matrix（LightX2V 缓存 ❌）与组合纪律：评估结构性补齐成本（缓存框架开发 vs 替代路径）→ 时间步优化等替代若已够用则绕道（不回填假支持）；确要补齐则回 model-auto-optimization §0 与用户确认策略后再按 framework-extension-dev 流程开发；不静默把 monkey-patch 当上游能力宣称",
+      "files": [],
+      "expectations": [
+        "先查 support-matrix 与替代路径（时间步优化），避免盲目开发",
+        "补策略需经 §0 用户确认",
+        "开发流程引 framework-extension-dev 步骤",
+        "不把本地补丁当框架上游能力宣称"
+      ]
+    }
+  ]
+}

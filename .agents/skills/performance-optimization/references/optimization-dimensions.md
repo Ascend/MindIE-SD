@@ -79,7 +79,7 @@ MatMul 本身的性能瓶颈通过低比特量化解决。
 ## 选择决策树
 
 ```text
-瓶颈定位（来自 performance-analysis 三表）
+瓶颈定位（来自 profiling-analyze 三表）
 ├─ 算力瓶颈 (MatMul+Attention > 60%)
 │   ├─ MatMul 为主 → mindiesd-features.md §MatMul 量化
 │   └─ Attention 为主 → mindiesd-features.md §Attention 优化

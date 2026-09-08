@@ -6,8 +6,10 @@ description: NPU 图批量下发能力（aclgraph / aclgraph_ex 家族）的开�
              lazy capture、专用 copy stream + event 管线、shape/dtype 校验、max_entries 驱逐。
              当用户需要减少 host launch 开销、静态 shape 大 batch 场景加速、
              或排查 NPUGraph replay 输入不匹配问题时使用此 skill。
-             即使用户只提到"批量下发"或"graph capture"而未说 aclgraph，也应触发。
-             Inductor/default 后端（aot_autograd + codegen + Copy 消减）见 compilation-dev。
+             即使用户只提"批量下发""graph capture""图捕获"而未说 aclgraph，也应触发；
+             pattern/Inductor 融合（default 后端）见 compilation-dev，算子本体见 operator-dev，
+             本技能只覆盖图批量下发。由 dev-workflow 的编译开发阶段与 model-auto-optimization 的
+             图下发场景指引加载。
 ---
 
 # ACLGraph 批量下发
@@ -100,3 +102,6 @@ else                                       → default（aot_autograd + Inductor
 
 当 `aclgraph_backend.py` / `compiliation_config.py` 的 capture 行为、开关或校验逻辑变化，
 或 torch_npu NPUGraph API 升级时，按 dev-workflow 的复盘流程更新本 skill。
+
+> 绑定提示：本 skill 内容与 mindiesd 代码（aclgraph_backend 等）与 torch_npu 生态强绑定，
+> 代码行为/API 变化后须同步本文，避免与远端实测不一致。

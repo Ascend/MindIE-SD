@@ -13,7 +13,8 @@
 
 - 先识别任务类型：实现、修复、文档、治理、模板、流程、版本策略。
 - 当请求包含 `commit`、`提交`、`rebase`、`squash`、`cherry-pick`、`PR`、`MR`、模板、发布、版本策略等关键词时，优先判定是否属于治理/流程类任务。
-- 当请求包含 `docs`、`文档`、`README`、`中英文`、`Sphinx`、`Read the Docs`、`文档网站`、`编译`、`index.md`、`menu_user_manual.md` 等关键词时，优先判定是否属于文档类任务，并继续检查是否需要加载本仓库治理 skill。
+- 当请求围绕「某个三方框架托管的模型」做接入、加速、量化/稀疏/缓存、多卡并行或性能收益确认，
+  且目标不是修改本仓代码时，优先判定为模型优化类任务（按 §5 的模型优化路由加载 skill）。
 - 先确认目标文件和目标行为，再决定读取范围。
 - 不因为用户提到一个概念就默认读取整仓。
 
@@ -89,6 +90,8 @@
   - `tests/*`
   - `tests/README.md`
   - `docs/*`
+  - `benchmarks/*`（算子级性能基准，mindie_bench）
+  - `evals/*`（有损优化端到端质量门禁：契约/判定标准/基线 profile/定量工具，见 `evals/README.md`）
 
 ### 3.5 读取原则
 
@@ -113,6 +116,11 @@
 - 本仓库没有合适 skill，或本地 skill 缺少必要规范时，再参考 `https://gitcode.com/Ascend/agent-skills` 或 `https://gitcode.com/cann/cannbot-skills`（算子级开发/优化场景）。
 - 只选择最小、最贴合当前任务的 skill，不做全量加载。
 - 对高风险流程类任务，`AGENTS.md` 允许显式指定必须优先加载的本地 skill。
+- 模型/三方框架自动优化类任务（接入、无损/有损加速、量化/稀疏/缓存、并行调优、性能收益确认，
+  且非本仓代码改动）：优先读取 `.agents/skills/model-auto-optimization/SKILL.md`，由其 S0–S4
+  阶段路由表定位能力技能（env-install / remote-access / framework-feature-enablement /
+  profiling-collect / profiling-analyze / performance-optimization / parallelism-strategy /
+  benchmark-dev / dummy-run）。MindIE-SD 代码开发类任务继续走 dev-workflow。
 - 以下请求必须先读取 `.agents/skills/mindie-sd-community-governance/SKILL.md`：
 - commit message 格式调整
 - 提交拆分、压缩、rebase、cherry-pick 或历史整理

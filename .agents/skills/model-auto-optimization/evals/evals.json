@@ -1,0 +1,183 @@
+{
+  "skill_name": "model-auto-optimization",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "把 Qwen-Image 在 vllm-omni 里跑起来并做无损加速，环境还没装",
+      "expected_output": "判定为主轴任务 → 路由 S0：env-install（安装）+ 权重就绪 + dummy-run 基线 → 验收（import mindiesd 成功、权重无 .incomplete、dummy run 出结果）→ 进入 S1 kernel 融合优化（接入+融合统一链）；不落入 dev-workflow 仓库开发路径",
+      "files": [
+        "SKILL.md"
+      ],
+      "expectations": [
+        "先做任务判定区分主轴与侧轨",
+        "路由到 S0 准备阶段并列出支撑技能（env-install / framework-feature-enablement / dummy-run）",
+        "给出 S0 验收点（import mindiesd / 权重完整 / dummy run 出结果）",
+        "按阶段顺序推进，每阶段核对产物与验收点"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "LightX2V 上 MiniMax-H3 想无损优化到只剩融合算子，怎么走",
+      "expected_output": "路由 S1（有 rms_type/rope_type 抽象接口 → 运行时接入 mindiesd 单算子，kernel diff 验收）→ S1 融合链内 profiling 采集 profiling-collect → profiling-analyze 识别融合机会 → 核查 mindiesd kernel 接口/pattern，无 pattern 时经 compilation-dev 新增并在 dummy run 快验）→ 三层证据（图命中/kernel diff/墙钟 rank0）确认收益，无收益回退",
+      "files": [
+        "SKILL.md"
+      ],
+      "expectations": [
+        "S1 覆盖有抽象接口算子的运行时接入路径（rope/norm）",
+        "S1 融合链覆盖 profiling → 融合识别 → pattern 核查/新增 的链路",
+        "提到 compile 模块需在三方框架中开启与 dummy run 快速验证融合可行性",
+        "验收用三层证据且无收益改动回退"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "4 卡跑扩散模型要多卡并行，怎么选 USP 还是 CP",
+      "expected_output": "路由 S3：parallelism-strategy 优先 USP，结合拓扑带宽差异评估 CP/其他；少量 step 执行后分析多 rank 数据确认特性正确开启且通信掩盖充分；固定 rank 口径比较通信耗时占比与墙钟后选定策略",
+      "files": [],
+      "expectations": [
+        "提到 USP 优先与拓扑带宽差异下 CP 的取舍",
+        "提到少量 step + 多 rank 数据验证（特性正确开启 + 掩盖充分）",
+        "验收口径固定 rank，禁止 head -1 混 rank"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "量化+稀疏+缓存怎么组合才稳，目标 8bit 和 80% 稀疏",
+      "expected_output": "路由 S4：performance-optimization（mindiesd-features.md 特性真相源）+ framework-feature-enablement（三方框架特性开关）逐个开启并做精度校验（单特性影响）→ 组合试验矩阵 → 目标档 8bit + 80% 稀疏 + 缓存；精度不达标的层做层回退并记录名单",
+      "files": [],
+      "expectations": [
+        "单特性先开并做精度校验，再组合试验",
+        "给出经验默认目标档（8bit + 80% 稀疏 + 缓存）",
+        "允许部分层回退并记录",
+        "有损验收含端到端质量门禁结论（quantitative/visual/off-identity，quality-gate.md + 仓库 evals/）与声明边界（无匹配基线不宣称加速）"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "上版本报告说某模型无损加速 3.2x，但报告里没写对比基线和计时口径，帮我复核这个数字能不能用、该怎么补证据",
+      "expected_output": "按「声明纪律与真实性核验」复核：检查对比分母（vs-naive / 同拓扑同卡组 baseline / 上一版本）与计时口径（起止边界、排除项、样本数/中位数）；无匹配基线的数字只作绝对值、不得宣称加速；区分证据分级（CPU 检查 / smoke / formal，smoke≠formal≠质量门）；按 artifact-layout 补证据（manifest 口径字段 / final_report「口径与声明」/ evidence.json claim_limits）后决定重测或降级宣称",
+      "files": [],
+      "expectations": [
+        "收益声明必带分母，禁止静默混用对比口径",
+        "计时口径显式化（排除 model_load/compile_prime/warmup，中位数配样本数）",
+        "无匹配基线只报绝对值、不宣称加速（claim limits）",
+        "指出按 artifact-layout 补证据（manifest / final_report 口径与声明 / evidence.json）"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "量化+缓存两个特性单开都有效果，叠在一起后之前加的融合/编译项收益好像被稀释了，怎么继续调",
+      "expected_output": "走 S4 组合纪律：先单变量归因确认稀释（关缓存或量化之一对照，off-identity）→ 复核无损项（融合/编译）在有损叠加后是否仍有效 → 按 combination-search.md 做 seam 静态判定（量化×缓存跨 seam 可叠加，但与融合 kernel 的 precision/step_decision 交互先查支持矩阵）→ frontier 保留（质量不降且墙钟提升才留）→ 层回退（先降档 → 错开 step 窗口 → 整维回退并记名单）；**cache/稀疏/量化回退后的最终档必须全量步数实测 e2e 识别性能加速**（回退档=潜在采纳锚点，禁止少步/估算宣称，见 combination-search「层回退策略」）；每步过端到端质量门禁（quality-gate.md + 仓库 evals/）",
+      "files": [],
+      "expectations": [
+        "先做无损项叠加复核与单变量归因（确认被稀释项）",
+        "引用 combination-search（seam 静态判定 / 单变量叠加 / frontier 保留 / 层回退）",
+        "引用质量门禁（端到端质量判定 + off-identity，quality-gate.md + 仓库 evals/）",
+        "给出层回退顺序（降档 → 错开窗口 → 整维回退）并记回退名单",
+        "回退后的最终档必须全量步数实测 e2e（禁止少步/估算宣称回退后性能）"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "帮我把模型 X 在框架 Y 上做接入和优化，但我不知道框架缺不缺关键路径（比如有没有通信掩盖、缓存、量化 kernel），怎么开始",
+      "expected_output": "任务判定为主轴 → 先做启动确认（§0）：按 framework-support-matrix 预扫该框架关键路径支持面与缺口清单 → 与用户确认目标/验收与缺口补齐策略（开关使能 / framework-extension-dev 框架侧补齐 / fork-monkey-patch / 绕过 / 仅记录）+ 实现边界（mindiesd 仓内走 dev-workflow 子任务，编排层不直接改代码）→ 记录进 manifest scope 节后再进 S0",
+      "files": [
+        "SKILL.md"
+      ],
+      "expectations": [
+        "先查 framework-support-matrix 预扫支持面与缺口清单",
+        "启动时与用户确认补齐策略（5 选）与验收口径",
+        "框架自身缺口指向 framework-extension-dev，mindiesd 仓内改动走 dev-workflow 子任务",
+        "确认记录进产物（manifest scope 节）后才开始 S0"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "模型优化全部做完了，给我出一份完整的结果报表",
+      "expected_output": "输出优化总览报表（overview-report.md 模板）：基线行 = TP 多卡未优化（加速比 1.00×），后续所有加速比相对该基线；性能主口径 = e2e 完整请求墙钟——base/最终推荐/三元组合行 e2e 必须实测，中间行可估算并标 [估算]（§1.1 DiT 比例法 + VAE/其他），首步耗时（warmup 后第 1 步）作辅助口径；行组与特性名只按 §2.1 固定名词表——无损优化（并行 / kernel融合）/ 免训练有损优化（Cache / 量化(<修饰符>) / 稀疏 / 时间步优化）/ 训练感知优化（少步蒸馏 / 可训练稀疏 / QAT）/ 其他；固定列=优化类型/特性名/e2e耗时/首步耗时/步数/加速比(相对基线)/质量数据/说明(特性组合)——步数=该行实测 denoise step、每行必填（性能识别行可少步如 1，锚点/质量/最终叠加行全量实测，见 §1/§1.1）；单元格纪律按 §7 + §7.1 字段取值类型（枚举 vs 数值 vs 自由文本）；总览表下方附每个特性内部组合搜索数据子表（参数档/步数/e2e(实测或[估算])/首步耗时/加速比/质量/采纳回退，引用 combination-search 与 quality-gate 结论）",
+      "files": [
+        "SKILL.md"
+      ],
+      "expectations": [
+        "基线明确为 TP 多卡未优化且所有加速比相对该基线（无 TP 时说明列标注）",
+        "性能主口径 = e2e 完整请求墙钟（base/最终推荐/三元组合实测，中间行 [估算]，首步耗时辅助）",
+        "覆盖三层级行组 + 其他行，固定八列（e2e + 首步耗时 + 步数）",
+        "量化区分 FA 量化与线性层量化（PTQ）",
+        "单元格区分枚举/数值/自由文本（§7.1）",
+        "附分特性内部组合搜索数据子表（含步数与 e2e 实测/估算）"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "环境已就绪（S0 验收已过），S1 融合链走到机会点识别但没登记，现在让我直接开始 profiling 采集（S1 融合分析段），我应该先做什么？",
+      "expected_output": "按流程门禁：先把 S1 结果回写 run-state 推进表（status=done + 验收证据路径）→ 跑 stage_gate.py --stage S1 确认 error=0 → 再按 workflows/optimization-flow.md 的 S1 融合链（profiling 采集段）进入采集（profiling-collect）→ 分析（profiling-analyze）→ 三层证据验收；未过门禁不得直接宣称进入下一阶段",
+      "files": [
+        "SKILL.md",
+        "workflows/optimization-flow.md"
+      ],
+      "expectations": [
+        "阶段推进前先回写 run-state 推进表并跑 stage_gate.py 门禁",
+        "S1 融合链内走采集→分析链路（profiling-collect / profiling-analyze）",
+        "验收用三层证据（图命中 / kernel diff / 墙钟 rank0）",
+        "未过门禁不得宣称进入下一阶段或闭环"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "S4 的量化档使能做完了，implementer 汇报有墙钟收益但没附 post-enable-review 复核记录、也没给质量门禁结论，我该怎么处理这个回执？",
+      "expected_output": "按拒收语义拒绝接受：列出缺失项（post-enable-review 六面复核记录、端到端质量门禁 pass/fail 结论、计数契约证据）要求补齐重交；编排者不自行审查替代验证；补齐并核验通过后才回写 run-state 推进表并跑 stage_gate.py --stage S4，再进入闭环",
+      "files": [
+        "SKILL.md"
+      ],
+      "expectations": [
+        "缺 post-enable-review / 质量门禁结论时拒收并列出缺失项",
+        "编排者不自行审查替代验证（拒收语义）",
+        "补完并核验通过后才回写 run-state 并通过 stage_gate 门禁",
+        "收益声明需带计数契约与质量门禁结论（防 no-op 假加速）"
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "S4 想试 5 个组合（量化×稀疏×缓存不同档），怎么安排才算合规？",
+      "expected_output": "假说先行、一次一候选：每个组合先写 run-state「候选与迭代表」一行（假说+预期）→ 单变量实施 + gate（质量门禁/计数契约）→ retain/reject 带签名（no-gain/dominated/退化等）；structured negative 是候选素材不终止；预算（max_rounds/已用）内循环，到点带 frontier 收尾，未尝试候选保留清单交用户选档（terminal_pending_review）",
+      "files": [
+        "SKILL.md",
+        "references/run-state.md"
+      ],
+      "expectations": [
+        "候选先入迭代表再实施（假说先行、一次一候选、单变量）",
+        "拒绝需带签名（crash/dominated/no-gain/out-of-scope 等），structured negative 不终止迭代",
+        "预算到点带 frontier 收尾，未尝试候选留清单不静默丢弃",
+        "有损组合逐个过质量门禁（quality-gate + 计数契约）"
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "闭环报表里只有采纳项的收益表，没有试过但没采纳的记录，这样交付完整吗？",
+      "expected_output": "不完整。按候选治理（过程交付）：detail-report §C 必须含已否决假设表（round/假说/否决签名/证据/是否派生新候选）与未尝试候选清单（预期价值/未试原因/建议），过程证据单一来源为 run-state 迭代表；只报采纳项、静默吞掉否决视为交付缺失",
+      "files": [
+        "SKILL.md",
+        "references/detail-report.md"
+      ],
+      "expectations": [
+        "报表须含已否决假设（带签名）与未尝试候选清单",
+        "过程证据来自 run-state 候选与迭代表",
+        "只报采纳项、静默吞掉否决视为交付缺失"
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "任务刚启动（S0 前），框架是 LightX2V + MiniMax-H3，怎么保证不遗漏该试的特性方向？",
+      "expected_output": "启动确认（§0）时预扫 framework-support-matrix 支持面与缺口 → 与用户确认目标/验收/补齐策略 → 登记 run-state「特性覆盖清单」：对固定特性全集（kernel融合/并行/Cache/量化/稀疏/时间步优化等）逐项给触发判定（做-目标/经验档 / 分析后做 / 不做+理由：无瓶颈/框架不支持/预期收益小<0.5%），如 LightX2V 的 Cache=框架未接线（❌ matrix）记 mindiesd cache_agent P0 待验而非静默略过；分析中按证据更新（记 round），闭环前复核无未裁决项",
+      "files": [
+        "SKILL.md",
+        "references/run-state.md"
+      ],
+      "expectations": [
+        "启动时建特性覆盖清单：固定特性全集逐项给触发判定（做/分析后做/不做+理由）",
+        "框架不支持项引用 support-matrix 三态并记录替代通道（如 cache_agent P0），不静默跳过",
+        "闭环前复核清单无未裁决项，未裁决视为交付缺失"
+      ]
+    }
+  ]
+}

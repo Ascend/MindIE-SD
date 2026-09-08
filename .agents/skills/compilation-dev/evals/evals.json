@@ -4,11 +4,11 @@
     {
       "id": 1,
       "prompt": "给 Wan2.2 写一个 RMSNorm 融合 pattern，怎么开始？",
-      "expected_output": "按 Phase 1-3 推进：从 diffusers 源码提取 RMSNorm 完整实现并判断参数来源（placeholder vs get_attr）→ 选择 register_replacement 或自定义 Graph Pass → 三段注册（patterns/__init__.py + passes/__init__.py + compiliation_config.py）",
+      "expected_output": "按 Phase 1-3 推进：从 diffusers 源码提取 RMSNorm 完整实现并判断参数来源（placeholder vs get_attr）→ 用 register_replacement（weight 收进 pattern 输入参数，freeze 前命中；禁止自定义 Graph Pass）→ 三段注册（patterns/__init__.py + passes/__init__.py + compiliation_config.py）",
       "files": [],
       "expectations": [
         "输出 Phase 1 要求（提取完整代码片段、判断参数来源）",
-        "按参数来源区分 register_replacement 与自定义 Graph Pass 两条路径",
+        "把 nn.Module 权重收进 pattern 输入参数（register_replacement，禁止自定义 Graph Pass）",
         "提到三段注册的 3 个文件"
       ]
     },
@@ -33,6 +33,56 @@
         "提到修复 pattern 或混合模式方案",
         "提到 aclgraph 批量下发作为静态 shape 场景方案"
       ]
+    },
+    {
+      "prompt": "三方框架（LightX2V）里 swiglu 因图形态差异（双 split 节点）融合不命中，需要新增 pattern 变体，怎么走？",
+      "expected_output": "由 model-auto-optimization 的 S1 kernel 融合（接入/compile）替换场景指向本 skill；按生命周期新增 split_twice 变体 pattern → 三段注册 → 单元验证 → 图 dump 对比实际图形态确认命中，再到框架中做 kernel diff/墙钟确认",
+      "files": [],
+      "expectations": [
+        "提到 S1 kernel 融合（接入/compile）替换场景路由到 compilation-dev",
+        "提到按实际图形态加 pattern 变体（双 split）并用 graph dump 诊断",
+        "提到命中后需 kernel diff/墙钟确认（图命中不等于运行期生效）"
+      ],
+      "id": 4
+    },
+    {
+      "prompt": "给 diffusers 系模型加 FFN 融合（mm+gelu+输出 MX 量化）：register_replacement 注册后全模型不命中（链中间夹随 batch 变化的 reshape），怎么推进？",
+      "expected_output": "真实图 probe 确认形态（monkey-patch apply_pattern_match_passes 前置注入测试 pass，勿用 symbolic/make_fx 构图命中代替）→ 改用 GraphPatternEntry + 手动改写 handler（全 Arg 叶子 / Ignored 通配 view / 共享节点 MULTIPLE / 反向 producer 链改图）→ passes/__init__.py 在 compiliation_config.py 的 fusion_patterns flag 开启时注册（收敛单一 flag，默认开启需命中+AB 证据）→ 计数契约（融合 kernel 实例数 == 站点数）与 off/on AB 验证",
+      "files": [],
+      "expectations": [
+        "提到真实图 probe（勿以 symbolic/make_fx 构图命中代替）",
+        "提到 GraphPatternEntry + handler 手动改图（全 Arg / Ignored / MULTIPLE 任一硬规则）",
+        "提到开关收敛到 compiliation_config.py 的 fusion_patterns 单一 flag、默认开启纪律",
+        "提到计数契约验证（融合 kernel 实例数 == FFN 站点数）"
+      ],
+      "id": 5
+    },
+    {
+      "prompt": "pattern 三段注册完、单元测试也过了，我能不能就说融合做完了？",
+      "expected_output": "不能。按验收与推进纪律：Phase 6 三层顺序不可跳——命中（PatternMatchPass replace N / check_fusion_hit 计数）→ kernel diff（融合 kernel 出现且原始 kernel 消失）→ 全模型回归；三层全过 + 同 seed eager vs compile 数值核验后才允许宣称完成/收益；单测通过不等于全模型命中",
+      "files": [
+        "SKILL.md"
+      ],
+      "expectations": [
+        "单测通过不等于全模型命中（命中留待 Phase 6 kernel diff 确认）",
+        "Phase 6 三层顺序不可跳（命中 / kernel diff / 全模型回归）",
+        "宣称完成前需同 seed eager vs compile 数值核验（位级或量化级标注）"
+      ],
+      "id": 6
+    },
+    {
+      "prompt": "收益数字我有了（墙钟少了 5%），但没跑数值核验也没计数证据，能对外报吗？",
+      "expected_output": "不能宣称。按验收与声明纪律：先同 seed eager vs compile 数值核验（位级 / fp8 量化级标注）→ 计数契约（check_fusion_hit / 融合 kernel 实例数 == 站点数，compile 图真实命中）→ 无命中或计数不符按 fail-closed 处理，不得宣称收益；缺证据时只报测量值并注明未核验",
+      "files": [
+        "SKILL.md"
+      ],
+      "expectations": [
+        "数值核验先行（eager vs compile 同 seed，标注位级/量化级）",
+        "计数契约（融合 kernel 实例数 == 站点数 / check_fusion_hit）",
+        "无证据不得宣称收益（fail-closed）",
+        "验证口径是 compile 图真实命中，禁止前端绕开"
+      ],
+      "id": 7
     }
   ]
 }

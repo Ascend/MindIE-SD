@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "description": "MindIE-SD 特性声明（跨模型）：每特性声明作用的 seam / 互斥 / 依赖模型能力 / 激活窗口 / 验证计数。命名对齐 docs/zh/features；模型只提供能力子集适配（见 models），不按模型重复维护。证据码：V1=vllm-omni-minimax-h3-case、V2=diffsynth-engine-case、L1=lightx2v-mindiesd-case、G=framework-feature-enablement、DOC=docs/zh/features。",
+  "exclusive_seams": ["precision", "attention_backend", "attention_precision", "step_decision", "token_semantics"],
+  "window_conflict_warning_seams": ["step_decision", "token_semantics"],
+  "features": [
+    {"id": "quant_w8a8_dynamic", "family": "quant", "seams": ["precision"], "window": "any",
+     "requires_model_capabilities": ["has_linear_layers"], "conflicts_with": [],
+     "notes": "W8A8_DYNAMIC（INT8 online），DOC quantization.md；V1 实证"},
+    {"id": "quant_w8a8_mxfp8", "family": "quant", "seams": ["precision"], "window": "any",
+     "requires_model_capabilities": ["has_linear_layers"], "conflicts_with": [],
+     "notes": "W8A8_MXFP8，DOC quantization.md；V1 为 Qwen 默认档"},
+    {"id": "quant_w8a16", "family": "quant", "seams": ["precision"], "window": "any",
+     "requires_model_capabilities": ["has_linear_layers"], "conflicts_with": [],
+     "notes": "仅权重量化档，DOC quantization.md"},
+    {"id": "fa_quant_fp8", "family": "quant", "seams": ["attention_precision"], "window": "any",
+     "requires_model_capabilities": ["has_attention_layers"], "conflicts_with": [],
+     "notes": "FA 量化（FP8RotateQuantFA），DOC quantization.md；与线性层量化属不同 seam 可叠加"},
+    {"id": "fa_flash", "family": "attention", "seams": ["attention_backend"], "window": "any",
+     "requires_model_capabilities": ["has_attention_layers"], "conflicts_with": [],
+     "notes": "mindiesd FA 后端，DOC；G 平台注册"},
+    {"id": "sparse_rf_v2", "family": "sparse", "seams": ["attention_backend", "step_decision"], "window": "step",
+     "requires_model_capabilities": ["has_attention_layers", "has_spatiotemporal_layout"], "conflicts_with": [],
+     "notes": "稀疏 rf_v2（RainFusion2.0），DOC sparse.md；V1 视频 0.8 档实证"},
+    {"id": "sparse_ada_bsa", "family": "sparse", "seams": ["attention_backend", "step_decision"], "window": "step",
+     "requires_model_capabilities": ["has_attention_layers"], "conflicts_with": [],
+     "notes": "稀疏 ada_bsa，DOC sparse.md"},
+    {"id": "sparse_rf_v3", "family": "sparse", "seams": ["attention_backend", "step_decision"], "window": "step",
+     "requires_model_capabilities": ["has_attention_layers", "has_spatiotemporal_layout"], "conflicts_with": [],
+     "notes": "平台扩展 rf_v3/video_spans，非 DOC 主表；L1 质量受限暂缓（block128 帧空间错位）"},
+    {"id": "compile_backend", "family": "compile", "seams": [], "window": "any",
+     "requires_model_capabilities": ["has_torch_module"], "conflicts_with": [],
+     "notes": "MindieSDBackend 编译入口，DOC compilation.md；框架侧形态各异（V1 负面/L2 采纳/L1 采纳）"},
+    {"id": "fusion_rmsnorm", "family": "compile", "seams": [], "window": "any",
+     "requires_model_capabilities": ["has_norm_layers"], "conflicts_with": [],
+     "notes": "RMSNorm 融合，DOC；eager 已覆盖时勿叠 compile（V1）"},
+    {"id": "fusion_rope", "family": "compile", "seams": [], "window": "any",
+     "requires_model_capabilities": ["has_rope"], "conflicts_with": [], "notes": "RoPE 融合，DOC"},
+    {"id": "fusion_gate_gelu", "family": "compile", "seams": [], "window": "any",
+     "requires_model_capabilities": ["has_ffn_gate"], "conflicts_with": [], "notes": "fastGELU/SiLU 融合，DOC"},
+    {"id": "offload", "family": "memory", "seams": [], "window": "any",
+     "requires_model_capabilities": ["has_transformer_blocks"], "conflicts_with": [],
+     "notes": "异步 CPU Offload（enable_offload/DLO 等框架姿势），DOC cpu_offload.md；V1 DLO 解锁并行"},
+    {"id": "cache_dit", "family": "cache", "seams": ["step_decision"], "window": "step",
+     "requires_model_capabilities": ["has_transformer_blocks"], "conflicts_with": ["cache_attention"],
+     "notes": "DiTCache（CacheConfig dit_block_cache），DOC cache.md；别名 DiTBlockCache/Cache-DiT；V1/V2 实证"},
+    {"id": "cache_attention", "family": "cache", "seams": ["step_decision"], "window": "step",
+     "requires_model_capabilities": ["has_attention_layers"], "conflicts_with": ["cache_dit"],
+     "notes": "AttentionCache（DOC cache.md）；V2 与 DiTCache 互斥"},
+    {"id": "timestep_opt", "family": "cache", "seams": ["step_decision"], "window": "step",
+     "requires_model_capabilities": ["has_denoise_steps"], "conflicts_with": [],
+     "notes": "时间步优化（docs cache 章/Timestep Optimization；少步/蒸馏步数），DOC cache.md；L1 infer_steps=24 采纳"}
+  ],
+  "models": {
+    "minimax-h3-vllm-omni": {
+      "capabilities": ["has_linear_layers", "has_attention_layers", "has_rope", "has_norm_layers",
+                       "has_ffn_gate", "has_transformer_blocks", "has_spatiotemporal_layout", "video"],
+      "notes": "能力子集示例；适配层细节在 case，不在此重复维护"
+    },
+    "minimax-h3-lightx2v": {
+      "capabilities": ["has_linear_layers", "has_attention_layers", "has_rope", "has_norm_layers",
+                       "has_ffn_gate", "has_transformer_blocks", "has_spatiotemporal_layout", "video"],
+      "notes": "LightX2V（L1，H3-FL2VA）能力与 vllm-omni H3 相同，别名登记供 seam_check 直接引用；接线姿势差异在 lightx2v-mindiesd-case"
+    },
+    "qwen-image-diffsynth": {
+      "capabilities": ["has_linear_layers", "has_attention_layers", "has_rope", "has_norm_layers", "image"],
+      "notes": "能力子集示例（RoPE 实数域改写为接入侧适配，记 case）"
+    }
+  }
+}
