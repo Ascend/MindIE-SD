@@ -20,6 +20,7 @@
 #include "sparse_block_estimate.h"
 #include "layernorm.h"
 #include "block_sparse_attention.h"
+#include "eagle_block_sparse_attention.h"
 #include "eagle_quant_block_sparse_attention.h"
 #include "quant_flash_attn.h"
 #include "quant_flash_attn_metadata.h"
@@ -73,6 +74,12 @@ TORCH_LIBRARY(mindiesd, m) {
         int quant_mode=-1, float dst_type_max=0.0, \
         int? q_dtype=None, int? k_dtype=None, int? v_dtype=None, \
         int? q_scale_dtype=None, int? k_scale_dtype=None, int? v_scale_dtype=None) -> (Tensor, Tensor)");
+    m.def("eagle_block_sparse_attention(Tensor query, Tensor key, Tensor value, \
+        Tensor? block_sparse_mask=None, int[] block_shape=[128,128], \
+        str q_input_layout='BNSD', str kv_input_layout='BNSD', \
+        int num_key_value_heads=1, float scale_value=1.0, int inner_precise=0, \
+        int[]? actual_seq_lengths=None, int[]? actual_seq_lengths_kv=None, \
+        int softmax_lse_flag=0) -> (Tensor, Tensor)");
     m.def("eagle_quant_block_sparse_attention(Tensor query, Tensor key, Tensor value, \
         Tensor? block_sparse_mask=None, int[] block_shape=[128,128], \
         str q_input_layout='BNSD', str kv_input_layout='BNSD', \
@@ -143,6 +150,7 @@ TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m) {
     m.impl("sparse_block_estimate", &sparse_block_estimate_mindie_sd_impl_npu);
     m.impl("layernorm", &layernorm_mindie_sd_impl_npu);
     m.impl("block_sparse_attention", &block_sparse_attention_impl_npu);
+    m.impl("eagle_block_sparse_attention", &eagle_block_sparse_attention_impl_npu);
     m.impl("eagle_quant_block_sparse_attention", &eagle_quant_block_sparse_attention_impl_npu);
     m.impl("quant_flash_attn", &quant_flash_attn_impl_npu);
     m.impl("quant_flash_attn_metadata", &quant_flash_attn_metadata_impl_npu);
