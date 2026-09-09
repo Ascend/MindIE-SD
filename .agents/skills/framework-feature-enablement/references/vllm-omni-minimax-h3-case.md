@@ -74,7 +74,7 @@
   framework-extension-dev，不静默改三方框架。
 
 - 质量门禁（evals）：同卡组同 seed 冻结 lossless60 基线；定量 psnr/ssim + 锐度 lapvar；视觉判卷 inconclusive（无 VLM）→ 并排产物存证；off-identity 成立。
-- 质量阈值首个案例已回填 `MindIE-SD/evals/profiles/minimax-h3.toml`。
+- 质量阈值首个案例已校准（语义见 quality-gate.md；运行时 profile 由 `evals/scripts/gen_profile.py` 生成到 `runs/{task_id}/profiles/`，不入库）。
 
 ## 5. 使能回修（fork 改动，均验证）
 

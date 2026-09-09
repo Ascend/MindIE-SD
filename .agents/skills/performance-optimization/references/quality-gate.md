@@ -17,8 +17,11 @@
 
 ## 流程（五步）
 
-1. **冻结 baseline 产物**：官方/同设置 baseline 的采样帧（同 seed/提示词/分辨率/帧数/步数），
-   登记为 `evals/profiles/{model}.toml`；基线帧冻结后不再改动。
+1. **冻结 baseline 产物 + 生成 profile**：官方/同设置 baseline 的采样帧（同 seed/提示词/分辨率/
+   帧数/步数）冻结后，用 `evals/scripts/gen_profile.py` 生成该模型的 profile 到
+   `runs/{task_id}/profiles/{model}.toml`（**不入库**；仓库只维护 `evals/profiles/_template.toml`
+   契约模板）；基线帧冻结后不再改动，close 前由 `evals/scripts/check_profile.py` 强校验
+   （仓库无具体 profile / 生成物完整 / 与 evidence 一致）。
 2. **定量门**：`evals/scripts/quality_compare.py`（psnr/ssim 内置，lpips 可选）→ quality.json；
    分辨率/帧索引不一致即失败（fail-closed），不允许混比。
 3. **视觉门**：按 `evals/rubrics/visual-artifact-gate.md` 判卷——VLM 有则用，无则人工并排，
@@ -39,11 +42,12 @@
 - **校准经验（图像第二案例 qwen-image-2512，2026-09-05/06，V3）**：图像无帧轴 → 取样 = **固定
   21-seed 同 seed 像素对**（生成确定性 → 每 seed 单图；21 seed 均化，文件名 sNNNN.png 对齐）；
   图像同 seed 像素质量域显著高于视频（同量化为 w8a8：图像 PSNR 37.5/SSIM 0.986 vs 视频 19.6/0.679
-  ——无轨迹混沌）→ **数值域与阈值不可跨任务类型迁移**；方法/校准值见 evals/profiles/README.md 与
-  `profiles/qwen-image-2512.toml`。
+  ——无轨迹混沌）→ **数值域与阈值不可跨任务类型迁移**；方法/校准值见 evals/profiles/README.md
+  （运行 profile 由 gen_profile.py 生成到 runs/{task_id}/profiles/，不入库）。
 - 组合试验中单特性先过门、再组合过门（与 model-auto-optimization S4 纪律一致）；
   换分辨率/步数 = 新对照。
-- 阈值以真实案例校准后固化进 `evals/profiles/{model}.toml`（首个校准：`profiles/minimax-h3.toml`）；
+- 阈值以真实案例校准后固化进运行时 profile（gen_profile.py 生成到
+  `runs/{task_id}/profiles/{model}.toml`，不入库；首个校准：MiniMax-H3 × vllm-omni）；
   **阈值未校准前不得宣称「质量通过」**。
 - **绝对口径**：所有有损/组合档的质量数值 = vs 同构 lossless 基线（psnr/ssim）；「有损 × 并行」等
   两有损档间的交叉对比只作次级参考，不得替代绝对值（首个案例：USP4 档曾以 vs USP2-int8 交叉

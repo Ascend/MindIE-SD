@@ -1,4 +1,4 @@
-# 派发模板与自验证回执（编排执行模式）
+﻿# 派发模板与自验证回执（编排执行模式）
 
 > 与 `workflows/optimization-flow.md` 配套。两种执行模式：自执行（默认，编排者按模板自检）与
 > subagent 模式（运行环境支持 subagent 时，如 DSH / Claude Code；编排者按模板派发角色 subagent）。
@@ -17,10 +17,10 @@
 
 | 角色 | 职责 | 写权限 | 边界 |
 |------|------|--------|------|
-| 采集者 collector | profiling 采集（profiling-collect） | evidence/{stage}/ | 不改模型代码/配置 |
-| 分析者 analyzer | profiling 分析 / 候选清单（profiling-analyze） | evidence/{stage}/ | 不改模型代码/配置 |
+| 采集者 collector | profiling 采集（profiling-collect） | evidence/{task_id}/{stage}/ | 不改模型代码/配置 |
+| 分析者 analyzer | profiling 分析 / 候选清单（profiling-analyze） | evidence/{task_id}/{stage}/ | 不改模型代码/配置 |
 | 实施者 implementer | 按已确认方案实施（framework-feature-enablement 等） | evidence/ + 工作区；代码改动按归属子任务 | 唯一可改代码方；不自改已确认方案 |
-| 复核者 reviewer | 验收复核（只读） | evidence/{stage}/review.md | 禁改模型代码/配置，不做自行修复 |
+| 复核者 reviewer | 验收复核（只读） | evidence/{task_id}/{stage}/review.md | 禁改模型代码/配置，不做自行修复 |
 
 ## 派发模板
 
@@ -32,7 +32,7 @@
 必须使用 skill: {profiling-collect | profiling-analyze}
 任务: {采集 baseline/重采 profiling | 分析 {dir} 产出报告与候选清单}
 口径: {从 run-state「任务与口径」读取，不另起口径}
-产物: 写入 evidence/{stage}/，回执只回摘要 + 产物路径
+产物: 写入 evidence/{task_id}/{stage}/，回执只回摘要 + 产物路径
 ```
 
 ### implementer（实施角色）
@@ -43,7 +43,7 @@
 必须使用 skill: {framework-feature-enablement | performance-optimization | …（按 run-state 决策）}
 任务: {阶段 {Sn} 实施：…}
 方案要点: 见 run-state「决策与轮次」{记录 id}，不自改方案；发现问题停止并报告
-自验证: 按下方「自验证回执格式」写入 evidence/{stage}/selfcheck.md 与 run-state 工作区
+自验证: 按下方「自验证回执格式」写入 evidence/{task_id}/{stage}/selfcheck.md 与 run-state 工作区
 ```
 
 ### reviewer（复核角色，只读）
@@ -53,14 +53,14 @@
 角色: reviewer（只读：禁改模型代码/配置，不做自行修复）
 任务: 复核 {阶段 {Sn}} 实施结果
 检查项: {验收 gate 清单（见 optimization-flow.md 对应阶段）}
-产物: 结论（通过/FAIL + 证据与诊断）写入 evidence/{stage}/review.md
+产物: 结论（通过/FAIL + 证据与诊断）写入 evidence/{task_id}/{stage}/review.md
 ```
 
 ## 单点特性独立子 agent 与并行执行（无损 ∥ 有损）
 
 - **一特性一 agent**：每个单点特性（`kernel融合` 的融合内容 / `并行` / `Cache` / `量化` /
   `稀疏` / `时间步优化`）可派发独立 implementer 子 agent 承担，各自：专属
-  `evidence/{stage}/{feature}/` 目录 + run-state 迭代表一行（特性/实现 id 列）+ 自验证回执。
+  `evidence/{task_id}/{stage}/{feature}/` 目录 + run-state 迭代表一行（特性/实现 id 列）+ 自验证回执。
 - **可并行关系**：在共享基线/口径/run-state 前提下，**无损组（S1 融合/S3 并行）与有损组（S4 各特性）
   本身即可并行**；组内不同有损特性（Cache×量化×稀疏×时间步）亦可在 seam 裁定后并行试验。
 - **禁止并行**：同 seam 互斥组合（seam_check 判定，如 cache_dit×cache_attention、同
@@ -113,5 +113,5 @@
 - OFF/默认路径保持可用（off-identity 可验）；单候选失败不结束，换假说继续；
   结构性缺口补齐先经用户确认（§0），不静默改三方框架
 ## deliverable spec（必交文件）
-- evidence/{stage}/ 证据 + run-state 推进表/迭代表更新 + （闭环）overview/detail 报表节
+- evidence/{task_id}/{stage}/ 证据 + run-state 推进表/迭代表更新 + （闭环）overview/detail 报表节
 ```

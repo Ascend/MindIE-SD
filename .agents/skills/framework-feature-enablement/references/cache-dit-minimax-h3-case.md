@@ -217,3 +217,41 @@ CRLF（上传后 `sed -i 's/\r$//'`）；嵌套引号吞参数（上传脚本执
   cache_summary 属三方仓改动，需确认后做。
 - 报表/证据为会话产物（overview/detail/final/evidence + consolidated_summary + 帧/mp4 + kprof csv +
   graphdump，不入库）。
+
+## 8. USP2 全链路通信分布（2026-09-09 补测；DiT 减步 12）
+
+> 负载：T2VA 1024×576/5s，seed1101，`--num-gpus 2 --usp 2 --text-encoder-tp-size 2
+> --vae-parallel-mode tile --vae-use-tiling --vae-patch-parallel-size 2 --diffusion-attention-backend FLASH_ATTN`；
+> 请求 wA(10步)+pB/pC(12步)（**每请求不同 prompt**，令 text encoder 每请求都执行）。12 步 e2e ≈44.9–46.2s。
+> 完整明细见会话报表 `comm_analysis_usp2.md`（runs 目录）。
+
+### 8.1 采集方法（运行时 shim，零仓库改动；可复用）
+
+- 包装 `torch.distributed` 6 个 collective（all_reduce/all_gather/all_to_all_single/all_to_all/broadcast/
+  reduce_scatter），逐 op 记录 stage/op/shape/dtype/tensor_bytes/world/step。
+- **阶段打标锚点**：DiT = `MiniMaxH3DiTModel.forward` + `MiniMaxH3TokenRefiner.forward`（denoise 步）；
+  VAE = `MiniMaxH3VideoVAE.decode_latent`/`MiniMaxH3AudioVAE.decode_latent`；
+  ⚠️ text encoder 实际入口是 **`encode_ids`/`encode_prompt`（不是 `forward`）**——锚错方法会把 TE 通信
+  落入 other（本案例按 hidden `(1,*,5120)` all_reduce/broadcast 归位，重跑时应锚 encode_ids）。
+- **钩子时机**：`torch.distributed` 在 `torch` 包导入期间就被加载 → 独立 meta-finder 拦截不稳；
+  可靠做法=meta-finder 拦 **`torch` 根导入**，加载完成后强制 `import torch.distributed` 再 wrap；
+  阶段锚可在首个 collective 内**懒安装**（届时 vllm 模型模块已导入）。
+- 同 prompt 时 encoder 输出被缓存（仅首请求通信）→ 要测 encoder 通信须每请求不同 prompt。
+
+### 8.2 结果（per rank，rank0=rank1 对称；3 请求累计）
+
+| 阶段 | 通信 | 次数 | 载荷 GB | moved~GB | 单步/单请求口径 |
+|---|---|---|---|---|---|
+| DiT 步（含 token_refiner） | all_to_all_single（Ulysses） | 6200 | 967.0 | 483.5 | **182 次/步、~28.4 GB/步**（例 shape (2,10880,1,28,128) bf16≈156MB/次） |
+| text encoder（TP=2） | all_reduce(+bcast) | 303+3 | 0.143 | 0.142 | ~101 次/encode、~47MB/encode（hidden5120、seq=prompt 长） |
+| VAE video decode | all_gather | 42 | 3.70 | 3.70 | 14 次/请求、~1.23 GB/请求（例 (44040192,) fp32≈176MB/次） |
+| VAE audio decode | — | 0 | 0 | 0 | **AudioVAE 无 DistributedVaeMixin → 无并行通信**（单 rank 解码） |
+| pipeline/其他 | broadcast(元数据) | 18 | ~0 | ~0 | 阶段切换/形状广播 |
+| **整体** | | 6566 | **970.9** | **487.4** | DiT 通信占载荷 **99.6%** |
+
+- **结论**：通信绝对主体 = DiT Ulysses a2a（每步 ~182 次、~28.4 GB/步 rank 载荷）；
+  TE TP all_reduce 量小但频率高（~101 次/encode，同 prompt 可缓存省）；VAE video all_gather ~1.2GB/请求；
+  audio 无并行通信。优化指向 = DiT a2a 通信掩盖（现状 Overlapped=0）+ HCCL 带宽/拓扑核验（方法见
+  parallelism-strategy `ascend-topology-bandwidth-diag.md`）。
+- 口径注：tensor_bytes=op 本 rank 载荷；moved~ 估算（a2a/allreduce/broadcast ≈×(w-1)/w、all_reduce≈×2(w-1)/w、
+  all_gather≈×(w-1)，w=2），非 HCCL 硬件计数器；跨卡移动≈2×per-rank moved（双方各半已按 ×(w-1)/w 计）。

@@ -1,4 +1,4 @@
-# 产物目录规范
+﻿# 产物目录规范
 
 每次模型自动优化闭环（采集→分析→方案→复验）的产物目录结构：
 
@@ -32,7 +32,7 @@ runs/YYYYMMDD_{model_slug}_optimization/
 ## 运行状态文件（run-state.md，阶段推进锚点）
 
 上面是**终态产物**结构；流程**进行中**的推进状态（当前阶段/验收记录/决策与轮次）不放在上树，
-由 `references/run-state.md` 规范管理，默认 `{工作目录}/agentic/run-state.md` + `evidence/{stage}/`
+由 `references/run-state.md` 规范管理，默认 `{工作目录}/agentic/run-state.md` + `evidence/{task_id}/{stage}/`
 （不入 git）。与终态文件的分工：
 
 | 文件 | 管什么 | 何时写 |
@@ -111,7 +111,7 @@ final_report 面向人读；需要机器可读伴生块时（跨会话交接/归
   "validation": {"technique_counters": {"cache_reuse": 0, "sparse_kernel_calls": 0}},
   "source_binding": {"mindiesd_commit": "{git}", "framework_repo": "{repo}",
                      "framework_commit": "{hash}", "framework_version": "{ver}",
-                     "manifest_file": "<manifest.toml 指针>", "profile": "evals/profiles/{model}.toml",
+                     "manifest_file": "<manifest.toml 指针>", "profile": "runs/{task_id}/profiles/{model}.toml",  # gen_profile.py 生成，不入库
                      "run_dir": "{远端产物目录指针}"},
   "claim_limits": {"matched_baseline": true, "speedup_claim": null,
                    "quality_gate_run": true, "quality_gate_result": "pass"}

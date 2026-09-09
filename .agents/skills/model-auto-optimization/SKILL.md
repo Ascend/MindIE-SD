@@ -189,7 +189,11 @@ description: >
 - `references/search-orchestration.md` — 加载时机: 需要自动推进组合搜索或并发多 agent 编排时
   （默认人工节奏，护栏必读）
 - `performance-optimization/references/quality-gate.md` + 仓库 `evals/` — 加载时机: S4/闭环
-  有损质量判定时
+  有损质量判定时（质量工具：`evals/scripts/quality_compare.py` 现算 quality.json、
+  `evals/scripts/gen_profile.py` S0 冻结后生成 profile 到 runs/{task}/profiles/、
+  `evals/scripts/check_profile.py` close 前强校验——**具体模型 profile 不入库**）
+- `scripts/report_lint.py` — 加载时机: 闭环收尾（总览表 8 列/枚举/锚点禁估算机器校验，
+  stage_gate close 自动联动；自测 `scripts/report_lint_cases.md`）
 - `references/lossless-methodology-notes.md` — 加载时机: S1 融合候选工作流 / S3 内存受限并行
   解锁与量化后复查（§D 量化后融合重审 / §E 量化后通信重审）时
 - `references/post-enable-review.md` — 加载时机: S4 每档特性落地后 / 任何改变 kernel 序列/

@@ -207,7 +207,7 @@
 - 无损行：输出一致性口径（逐字节一致 / 与 baseline 数值差异），写「输出一致（逐字节）」或按
   S1–S3 验收口径。
 - 免训练有损 / 训练感知行：用质量门禁结论与数值——PSNR/SSIM（或 LPIPS）对比基线帧 +
-  视觉判卷（pass/fail/inconclusive）+ off-identity 结论；指标与阈值引用 `evals/profiles/{model}.toml`
+  视觉判卷（pass/fail/inconclusive）+ off-identity 结论；指标与阈值引用 `runs/{task_id}/profiles/{model}.toml`（gen_profile.py 生成不入库）
   与 `quality-gate.md`（未校准/无 VLM 的按该文件规则写 inconclusive + 并排存证）。
 - 训练感知行额外给「相对全步数/原始模型」的质量基线说明（少步蒸馏本身即质量-速度权衡）。
 - 所有有损/组合行的质量列一律 = **vs 同构 lossless 基线的绝对口径**（PSNR/SSIM 等）；「有损 × 并行」
@@ -216,7 +216,7 @@
 - 补测/回填优先盘点存量产物：已跑档的远端 mp4/帧仍在时，可抽帧（select every Nth 帧）+ quality_compare
   后处理补算质量，不必重跑占卡；确需新跑才占用卡资源。
 - **每运行标杆质量信息（强制，随报表逐行登记）**：主表每个有损/叠加行的质量列 = 与
-  `evals/profiles/{model}.toml` 冻结 baseline 的**同 seed 标杆对照**（按 profile `[domain]`
+  `runs/{task_id}/profiles/{model}.toml`（gen_profile.py 生成）冻结 baseline 的**同 seed 标杆对照**（按 profile `[domain]`
   套取样协议：视频 21 采样帧 / 图像 21-seed 像素对）；数值由 `evals/scripts/quality_compare.py`
   对 `runs/` 冻结产物**现算**（不入 git），报表与细分 detail-report §E **逐行登记证据引用**
   （runs/{id}/quality.json + 帧或 profile 指针 + visual/off-identity 结论）；缺对照基线或未跑
@@ -329,3 +329,9 @@
 `artifact-layout.md` final_report 模板与 `model-auto-optimization/SKILL.md` 的闭环验收点。
 单元格纪律（§7）变更同理：任何列语义/枚举/名词/占位符扩展都需先确认并同步本文件与
 `detail-report.md`。
+
+**机器校验（2026-09-08 起）**：主表结构由 `model-auto-optimization/scripts/report_lint.py`
+在 close 门禁强制校验（8 列表头 / 优化类型枚举 / 特性名非空 / e2e·首步·步数·加速比单值 /
+锚点行禁 [估算] / 质量列非空）；报表交付前必须 lint error=0——**禁止凭人肉对照交付**。
+质量对照用的具体模型 profile 不入库（由流程 gen_profile.py 生成到 runs/{task_id}/profiles/，
+check_profile.py close 前强校验），本文件只引用 quality.json 数值指针。

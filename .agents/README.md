@@ -154,7 +154,7 @@ run-state（推进表/迭代表/覆盖清单）→ 逐阶段回写并跑 `stage_
 | S2-1 | S2 | mindiesd 融合 kernel 能力清单（接口 → pattern → 验证过框架，唯一真相源） | 分散于各 case（H3×vllm-omni 已回填：`framework-feature-enablement/references/vllm-omni-minimax-h3-case.md` §6 —— 融合候选工作流「执行序→候选列表→mindiesd/CANN 能力对照→独立验证」+ eager 已融合热路径判定 + 单步 kernel 采集 hook；**2026-09-06 图像第二案例**：`vllm-omni-qwen-image-case.md` —— FA/AdaLN/RoPE/GELU eager 覆盖核验 + kprof 目标扩展 + compile 输出非无损否决） |
 | S3-1 | S3 | NPU 拓扑/带宽矩阵与并行选型决策 | 910B 单点 + 2026-09 增 950PR×4：并行矩阵/ring 不可用/offload 解锁并行与通算掩盖 step_trace 评估（见同 case §7 与 parallelism-strategy「内存受限时的并行解锁」）；2026-09 实测增补：UB/HCCS 岛 vs SYS/PCIe 拓扑、bulk vs head-parallel 翻转、HCCL 带宽 bench 姿势与 set_device 陷阱、端口泄漏/卡组诊断 → 单源参考 `parallelism-strategy/references/ascend-topology-bandwidth-diag.md` + evals 4/5；**2026-09-06 图像案例（vllm-omni-qwen-image-case.md §3/§6）**：UB 岛 0-3/4-7（跨岛 SYS）同岛选卡 + 同岛亦受他户干扰（探活前置）、**并行候选矩阵勿漏 2 卡 USP（TP1×USP2 图像 20 步 > TP2 -12%）**、短任务 4-rank 病态回退 |
 | S3-2 | S3 | few-step 多 rank 验证协议（脚本 + 判据） | 空 |
-| S4-1 | S4 | 精度校验与单特性影响评估方法（端到端质量门禁：定量 + 视觉伪影 + off-identity） | 部分回填：方法见 performance-optimization `references/quality-gate.md`，工具与判定标准在仓库 `evals/`（契约/rubric/profiles/quality_compare.py）；单特性影响矩阵首个真实案例已回填（H3×vllm-omni case §4/§5 + `evals/profiles/minimax-h3.toml` 阈值校准）；**2026-09-06 图像第二案例**：`vllm-omni-qwen-image-case.md` §4/§6 + `evals/profiles/qwen-image-2512.toml`（21-seed 同 seed 像素对口径；图像质量域 >> 视频 → 阈值不跨域迁移） |
+| S4-1 | S4 | 精度校验与单特性影响评估方法（端到端质量门禁：定量 + 视觉伪影 + off-identity） | 部分回填：方法见 performance-optimization `references/quality-gate.md`，工具与判定标准在仓库 `evals/`（契约/rubric/_template/quality_compare.py + gen_profile/check_profile）；单特性影响矩阵首个真实案例已回填（H3×vllm-omni case §4/§5，阈值校准见 quality-gate.md；运行时 profile 由 `evals/scripts/gen_profile.py` 生成到 `runs/{task_id}/profiles/`，不入库）；**2026-09-06 图像第二案例**：`vllm-omni-qwen-image-case.md` §4/§6（21-seed 同 seed 像素对口径；图像质量域 >> 视频 → 阈值不跨域迁移） |
 | S4-2 | S4 | 组合试验设计与层回退策略 | 已回填协议 + **seam 表首案例已校准**（2026-09-05 H3×vllm-omni V1：precision×attention 跨 seam 可叠、attention 同 seam 取最强档、cache×稀疏同 step 窗口可叠、稀疏档质量非线性、frontier 以同窗相邻对为准；见 combination-search.md 校准节与 vllm-omni-minimax-h3-case.md §4） |
 | S5-1 | S5 | 训练感知案例（少步蒸馏 4/8 步 + SLA/QAT 叠加；蒸馏权重 modelscope 下载；质量-速度权衡口径） | 空（预留分支，案例待回填） |
 
@@ -241,7 +241,8 @@ python skills/profiling-analyze/scripts/compare_traces.py \
    - 标题：`模型 × 框架 × 主题（阶段/特性）`；首行引用块写 日期/仓库基线/环境/硬件/对比口径；
    - 正文按「环境要点 → 使能面速查 → 结果表（含口径）→ 回修与坑 → 方法论 → 结论与证据」组织；
    - 一次只归因一个变量；数字带口径（同拓扑/同 seed/steady 次数）；单次结论不迁移；
-   - 端到端案例附质量门禁结论与阈值回填（`evals/profiles/{model}.toml`）。
+   - 端到端案例附质量门禁结论与阈值回填（运行 profile 由 `evals/scripts/gen_profile.py` 生成到
+     `runs/{task_id}/profiles/{model}.toml`，不入库；close 前 `check_profile.py` 强校验）。
    - **文件命名规则（统一）**：kebab-case；案例统一 `{framework}[-{model}]-case.md`（框架前置，
      如 `vllm-omni-minimax-h3-case.md`）；`-case`=事实案例、`-notes`=方法论沉淀、`-pattern`=接入姿势、
      `-gate`=判定标准、`-guide/-checklist/-catalog`=流程/清单；故障排查类统一
@@ -568,6 +569,15 @@ freeze 前窗口命中；`GraphPatternEntry` 为手动改图唯一正解）：
   禁止少步识别或 `[估算]` 宣称回退后性能；同步 combination-search「层回退策略」/Step 3、
   optimization-flow S4 试验记录、overview-report §1.1 锚点行与 §2.3、detail-report B.4、
   SKILL 有损纪律、evals（eval 6 回退全量）
+
+### USP2 通信分布补测回填（2026-09-09，仅涉 cache-dit）
+
+- `framework-feature-enablement/references/cache-dit-minimax-h3-case.md` 增 **§8**：USP2（2 卡，DiT 减步 12）
+  全链路通信分布实测——DiT Ulysses a2a **~182 次/步、~28.4 GB/步载荷（占比 99.6%）**、text encoder TP
+  all_reduce ~101 次/encode、VAE video all_gather ~1.2 GB/请求、audio VAE 无并行通信；含采集 shim 姿势
+  （**encode_ids 锚**、torch 根导入 hook 时机、懒装锚、同 prompt 缓存陷阱）与 moved 口径
+- `parallelism-strategy/references/ascend-topology-bandwidth-diag.md` 增 **§6**：运行时通信分布采集
+  shim 法（通用可复用，跨框架）；报表 `comm_analysis_usp2.md`（会话产物，不入库）
 
 ### 遗留待办（人工项）
 

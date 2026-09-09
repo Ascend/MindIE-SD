@@ -108,4 +108,4 @@
   基底复核重采；TP1×USP2 step_trace/带宽。
 - 证据：runs/20260906_qwen-image-2512_optimization/（overview/detail/final/evidence/manifest +
   s0-s4_evidence.md + frames/ + kernel csv）；远端 `{run_results_dir}`；
-  profile 回填 `evals/profiles/qwen-image-2512.toml`（V3 校准）；support-matrix 证据码 V3。
+  profile 校准（V3；运行时 profile 由 gen_profile.py 生成到 runs/{task_id}/profiles/，不入库）；support-matrix 证据码 V3。

@@ -41,7 +41,7 @@
 ### ④ 质量与口径（回 S4/质量门禁）
 
 - 有损档质量 = **vs 同构 lossless 绝对口径**（有损×并行交叉值只作次级参考）；
-- 视觉判卷 + off-identity；阈值引用 `evals/profiles/{model}.toml`（未校准不宣称通过）；
+- 视觉判卷 + off-identity；阈值引用 `runs/{task_id}/profiles/{model}.toml`（gen_profile.py 生成不入库；未校准不宣称通过）；
 - 报表命名与说明列：量化修饰符 token（w8a8/f8/w8a8f8）语义与**覆盖范围**、稀疏度数值、数据类型必写。
 
 ### ⑤ 组合 seam（回 S4-2 组合协议）

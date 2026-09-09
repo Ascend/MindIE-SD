@@ -30,13 +30,30 @@ python manifest_dryrun.py --manifest {plan}.toml
 ## stage_gate.py —— 编排层阶段推进门禁
 
 ```bash
-python stage_gate.py --stage S0 --run-dir {工作目录}/agentic
-python stage_gate.py --stage close --run-dir {工作目录}/agentic
+# 证据按任务隔离（task_id = runs 目录名）；校验 evidence/{task_id}/ 前缀（防旧残留冒充）
+python stage_gate.py --stage S3 --task-id 20260908_minimax-h3_optimization --run-dir {工作目录}/agentic
+# close 自动联动：report_lint.py（总览表结构）+ evals/scripts/check_profile.py（profile 强校验）
+python stage_gate.py --stage close --task-id 20260908_minimax-h3_optimization --run-dir {工作目录}/agentic
 ```
 
 做：解析 run-state.md（`references/run-state.md`）「阶段推进表」→ 校验目标阶段 status=done 且
-声明的验收证据路径存在；close 额外强制声明 overview_report.md / detail_report.md（缺任一视为
-未闭环）。退出码 0=通过（可推进/可宣称闭环），1=存在 error（不得推进）。零 NPU、零数据。
+声明的验收证据路径存在；提供 `--task-id` 时校验证据落 `evidence/{task_id}/`（任务隔离，2026-09-08
+起强制——防旧任务残留文件充当本轮证据）；close 额外强制声明 overview_report.md / detail_report.md
+（缺任一视为未闭环）并自动跑报表 lint 与 profile 校验（`_run_close_tools`）。
+退出码 0=通过（可推进/可宣称闭环），1=存在 error（不得推进）。零 NPU、零数据。
+
+## report_lint.py —— 总览表结构校验（close 前置 · 机器校验）
+
+```bash
+python report_lint.py {overview_report.md}
+python report_lint.py ../runs/20260908_minimax-h3_optimization/overview_report.md
+```
+
+校验 overview_report.md 主表：8 列表头（优化类型|特性名|e2e 耗时|首步耗时|步数|加速比|质量数据|
+说明）精确匹配；每行优化类型枚举/特性名非空/e2e·首步·步数·加速比单值；锚点行（基线/三元/最强/
+最终推荐）e2e 禁 [估算]；质量列无损=输出一致、有损=数值非空。自测样例 `report_lint_cases.md`。
+背景：2026-09-08 报表曾以旧 6 列经验交付（列不符缺口）——本 lint 强制报表结构与
+`references/overview-report.md` §2/§7 契约一致，禁止凭人肉对照交付。
 
 ## 维护
 

@@ -100,3 +100,18 @@ per-call 载荷（seq-parallel a2a ≈ local_tokens × heads × head_dim × 2B�
 - 同窗口同卡组、多跑取中位；单次结果不迁移。
 - 并行形态切换先 4 步 smoke + CANN profile 核验 a2a 形态未退化（`hcom_alltoall` 等分而非
   `hcom_alltoallv` 变长），再 30 步墙钟。
+
+## 6. 运行时通信分布采集（shim 法，无仓库改动；H3 USP2 实测案例 2026-09-09）
+
+- **做法**：包装 `torch.distributed` 6 个 collective（all_reduce/all_gather/all_to_all_single/
+  all_to_all/broadcast/reduce_scatter），逐 op 记 stage/op/shape/dtype/字节/world；阶段锚 = 各阶段
+  模型入口 forward（DiT/VAE 的 `forward`/`decode_latent`；⚠️ text encoder 走 **`encode_ids`** 非 forward）；
+  钩子时机 = meta-finder 拦 **`torch` 根导入**（torch.distributed 在 torch 包内被提前加载，独立拦截不稳），
+  加载后强制 import 再 wrap；锚在首个 collective 懒安装；**同 prompt 输出被缓存 → 测 encoder 通信须每
+  请求不同 prompt**。
+- **字节口径**：tensor_bytes=op 本 rank 载荷；moved~ 估算（a2a/broadcast≈×(w-1)/w、all_reduce≈×2(w-1)/w、
+  all_gather≈×(w-1)），非 HCCL 硬件计数；rank 对称则整簇移动≈2×per-rank（a2a 双方各半已计入）。
+- **实测参考（H3 T2VA USP2，12 步裁剪）**：DiT Ulysses a2a ≈182 次/步、~28.4 GB/步（载荷占比 99.6%，
+  通信主体）；text encoder TP all_reduce ~101 次/encode、~47MB；VAE video all_gather 14 次/请求、
+  ~1.2GB/请求；audio VAE 无并行（无 DistributedVaeMixin）→ 0 通信。方法与明细见
+  framework-feature-enablement `cache-dit-minimax-h3-case.md` §8。

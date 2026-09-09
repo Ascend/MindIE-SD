@@ -1,4 +1,4 @@
-# 模型自动优化执行流程（workflow）
+﻿# 模型自动优化执行流程（workflow）
 
 > 由 `model-auto-optimization/SKILL.md` 入口分流后 Read 本文件，按阶段模板与门禁严格执行；
 > 本文件只承载「流程怎么推进」，各阶段支撑技能的知识点仍在对应 SKILL.md / references 单点维护。
@@ -33,7 +33,7 @@
   预算/排序跳入"未尝试"。
 - **条件触发**：S0 `env-install`+`dummy-run`（环境未就绪）；S1 融合 `framework-feature-enablement`
   与 profiling 回路、compilation/operator（使能/融合/开发）；S3 `parallelism-strategy`（多卡）；S4 `combination-search` /
-  `seam_check` / `post-enable-review` / 质量门禁（quality-gate + `evals/profiles/{model}.toml` +
+  `seam_check` / `post-enable-review` / 质量门禁（quality-gate + `runs/{task_id}/profiles/{model}.toml`（gen_profile.py 生成不入库） +
   quality_compare 现算）。
 - **既有 case 文件非必触发**：framework×model 专属 case（vllm-omni-*/lightx2v-*）仅在同
   框架×同模型时命中；必触发的是上表机制与模板（机制在 L1/L2，判据在 L3）。
@@ -42,7 +42,7 @@
 
 - **波次 1 · 单特性并行**：覆盖清单判「做」的每个单特性（`kernel融合` 内容 / `并行` / `Cache` /
   `量化` / `稀疏` / `时间步优化`…）作为**独立特性任务，可多 agent 并行**（资源允许：同卡组互斥
-  调度、`evidence/{stage}/{feature}/` 隔离、迭代表 round 全局唯一、编排者单写——见
+  调度、`evidence/{task_id}/{stage}/{feature}/` 隔离、迭代表 round 全局唯一、编排者单写——见
   dispatch-templates「单点特性并行执行」）；每个特性走「特性候选选择链」收敛到采纳档
   （迭代表 retain/签名），产出**特性级过程记录**（迭代表 + detail 分节 + §E 该特性质量证据）。
 - **波次 2 · 组合后置**：组合（含 [MUST] 必测两两 + 三元 `Cache+量化+稀疏`）**在单特性采纳档
@@ -162,19 +162,27 @@
 ## 阶段 S3：无损 · 并行通信
 
 - 支撑技能：`parallelism-strategy`、`profiling-collect`、`profiling-analyze`（带宽/掩盖测量）。
+- **卡组前提（强制）**：选卡必须先满足 parallelism-strategy「卡组拓扑规则」（2 卡 ∈ {0-1,2-3,4-5,6-7} /
+  4 卡 ∈ {0-3,4-7} / 8 卡 = 0-7）；非法卡组不采纳；卡组变更 = 契约变更，锚点行须新卡组重测。
 - 执行逻辑（按序推进）：
-  1. **带宽探针**：先测**不同卡数**下的通信带宽（如 4 / 8 / 16 卡；hccl/集合通信带宽基准，
-     同拓扑同窗、固定 rank 口径）；
-  2. **拓扑决策**：若明显发现 **4 卡带宽高于 8 卡** → **仅在 4 卡内做 USP**、两个 4 卡之间做
+  1. **卡组健康与拓扑核验**：`npu-smi -t topo` + `npu-smi info`（Health/Alarm/占用）；多卡
+     4 步 smoke 验证 per-step 时长（43s/步 = SIGKILL 残留态，须驱动复位/换组）；
+  2. **带宽探针**：先测**不同卡数**下的通信带宽（如 4 / 8 / 16 卡；hccl/集合通信带宽基准，
+     同拓扑同窗、固定 rank 口径；等价工具 torchrun + torch_npu 姿势见
+     parallelism-strategy ascend-topology-bandwidth-diag §3）；
+  3. **拓扑决策**：若明显发现 **4 卡带宽高于 8 卡** → **仅在 4 卡内做 USP**、两个 4 卡之间做
      **CP**（USP4CP2 场景；该场景的**稀疏须依赖并行稀疏**）——候选与理由入迭代表/说明列；
-  3. **默认序**：优先 **USP** → 再看是否有 **CFG** → 然后 **CP**（allgather KV、Q 切分）；
-  4. **通算掩盖**：通信方案选定后**同步做 compute/comm 掩盖**（step_trace 拆分：
+  4. **默认序**：优先 **USP** → 再看是否有 **CFG** → 然后 **CP**（allgather KV、Q 切分）；
+  5. **通算掩盖**：通信方案选定后**同步做 compute/comm 掩盖**（step_trace 拆分：
      compute / comm(未重叠) / free，Overlapped 可用性），**识别掩盖率**并记录。
-- 方案确认点：带宽探针结论与并行候选（USP/CFG/CP、拓扑、USP4CP2 等）向用户确认。
+- 方案确认点：卡组拓扑结论 + 带宽探针结论 + 并行候选（USP/CFG/CP、拓扑、USP4CP2 等）向用户确认。
 - 执行：few-step + 多 rank 验证特性正确开启与掩盖率（少量 step 快测；采纳项回真实 serve 同窗
   复验，并行拓扑/通信不在快测覆盖内）。
-- 验收证据：固定 rank 口径通信下降 + 掩盖率识别 + 输出一致 + 墙钟。
-- 门禁：`stage_gate.py --stage S3`。
+- **资源受限诚实标注**：合法卡组/多卡不可用导致带宽探针或掩盖率未测 → evidence 显式记 ❓ +
+  原因 + 复用历史证据的显式引用（`../runs/{旧task}/evidence/...` + 「复用历史非本轮实测」），
+  **禁止缺省 S3 分析即标 done**（2026-09-08 教训：S3 曾用旧 evidence 残留蒙混通过门禁）。
+- 验收证据：卡组拓扑核验 + 固定 rank 口径通信下降 + 掩盖率识别（或 ❓ 说明）+ 输出一致 + 墙钟。
+- 门禁：`stage_gate.py --stage S3 --task-id {task_id}`（证据须在本任务 evidence/{task_id}/S3/）。
 
 ## 阶段 S4：有损优化
 
@@ -268,16 +276,23 @@
 - **特性覆盖清单复核（前置）**：run-state「特性覆盖清单」无未裁决项（每特性有 做/不做 结论
   与理由可查），未裁决先补判再进 close gate。
 - **组合覆盖清单复核（前置，S4-2）**：凡触发必测集的任务，run-state 迭代表 [MUST] 行无
-  「未裁决」——每行有 已测（retain/reject + 证据）或 豁免（原因 + 证据）；缺失即视为组合
-  覆盖缺口，先补齐（补测或显式豁免）再进 close gate。
+  「未裁决」——每行有 已测（retain/reject + 证据）或 豁免（**形态穷尽清单** + 原因 + 证据，
+  缺清单视为豁免无效）；缺失即视为组合覆盖缺口，先补齐（补测或合规豁免）再进 close gate。
+- **报表结构 lint（前置，机器校验）**：`scripts/report_lint.py {overview_report.md}` error=0
+  （总览表 8 列/枚举/锚点禁估算/质量列非空——防「列要求不符」类缺口，2026-09-08 起强制）。
+- **profile 强校验（前置，机器校验）**：`evals/scripts/check_profile.py --model {model}
+  --task-dir runs/{task_id}_{model}_optimization` error=0——profile 必须由 gen_profile.py 在
+  S0 冻结基线后生成到 runs/{task_id}/profiles/（**仓库不存具体模型 profile**）；缺 profile /
+  字段占位 / 仓库内现具体 profile → 不得 close。
 - **强制交付**：优化总览报表 `overview_report.md`（基线 = TP×N 多卡未优化的单个完整推理请求
   墙钟；三层级行组 + 每特性组合搜索子表；模板与规则见 references/overview-report.md）+
   优化细分报表 `detail_report.md`（references/detail-report.md）——缺任一视为未闭环；框架未提供
   特性必须明确标注「未提供」并给证据。
 - 执行：同窗口同卡组复现 → 收益口径一致核对 → 双报表 + final_report + evidence.json 归档
   （references/artifact-layout.md）→ 槽位/经验回填（.agents/README.md §7 回填规范）。
-- 门禁：`stage_gate.py --stage close`（推进表该行声明路径必须包含 overview_report.md 与
-  detail_report.md）。
+- 门禁：`stage_gate.py --stage close --task-id {task_id}`（推进表该行声明路径必须包含
+  overview_report.md 与 detail_report.md；close 自动跑 report_lint + check_profile，见 stage_gate
+  `_run_close_tools`）。
 
 ## 阶段反馈与收尾
 

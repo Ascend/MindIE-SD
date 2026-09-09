@@ -1,0 +1,61 @@
+# Baseline 对照 Profile 模板（仓库唯一 profile 形态 · 具体模型 profile 不入库）
+
+> ⚠️ **本文件是字段契约/语义文档（含 markdown 说明，非纯 toml，勿用 tomllib 解析）**。
+> 具体模型 profile 的**生成骨架以 `evals/scripts/gen_profile.py` 内嵌定义为实现源**；改字段时
+> 三者同步：脚本骨架 + 本文件 + check_profile.py 的 REQUIRED_* 校验。
+> 具体模型 profile（`profiles/{model}.toml`）**不提交仓库**，
+> 由 model-auto-optimization 流程在 **S0 冻结基线后强制生成**到 `runs/{task_id}/profiles/{model}.toml`
+> （脚本 `evals/scripts/gen_profile.py`），并由 `evals/scripts/check_profile.py` 在 close 前强校验。
+> 原则（继承 profiles/README.md）：仓库存「契约 + 判定结论 + 指针」；**可推导数值不入库**，
+> 由 quality_compare.py 对 runs/ 冻结产物现算存 quality.json。
+
+## 字段语义
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| [profile] model/entry/precision | ✅ | 模型/入口（敏感字段占位）/精度 |
+| [profile] official_config | ✅ | 使用官方可比设置 |
+| [profile] domain | ✅ | `video_chaos`（视频：定量仅登记回归）\| `image_seed_deterministic`（图像：可设绝对门槛）——取样协议由此自动决定（视频 21 采样帧 / 图像 21-seed 同 seed 对） |
+| [prompts] file/seed | ✅ | 提示词集文件指针（文本可入库 runs 或引用官方）+ seed |
+| [geometry] resolution/frames/steps | ✅ | 与 baseline 对齐；少步档须显式声明 |
+| [baseline] topology/run_ref/frozen_hash | ✅ | 同拓扑同卡组 + 冻结产物目录指针 + 帧集 md5（一致性锚） |
+| [decisions] visual_artifact/off_identity/threshold_semantics | ✅ | 一次性判定结论（不可推导） |
+| [last_verified] date/run_ref/quality_json | ✅ | 指针（数值以 quality.json 为准） |
+| 可推导数值字段（psnr/ssim/md5 帧等） | ❌ | 一律不预填/不入库——现算存 runs/{id}/quality.json |
+
+## 模板骨架（gen_profile.py 生成产物以此填充）
+
+```toml
+[profile]
+model = "<model>"
+entry = "<推理脚本或服务端点占位>"
+precision = "bfloat16"
+official_config = true
+domain = "video_chaos"          # 或 image_seed_deterministic
+
+[prompts]
+file = "<提示词集文件或官方引用>"
+seed = 0
+
+[geometry]
+resolution = "1024x576"
+frames = 124
+steps = 60
+
+[baseline]
+topology = "<同拓扑同卡组>"
+lossless_e2e_seconds = 0.0
+run_ref = "runs/<task_id>_<model>_optimization/"
+frozen_hash = "<baseline 帧集 md5>"
+
+[decisions]
+visual_artifact = "inconclusive（无 VLM，并排存证）"
+off_identity = "<pass/数值差说明>"
+threshold_semantics = "video_chaos 域：定量仅登记回归不设绝对门槛；主判据 visual+off_identity"
+
+[last_verified]
+date = "<YYYY-MM-DD>"
+run_ref = "runs/<task_id>_<model>_optimization/"
+quality_json = "runs/<task_id>_<model>_optimization/quality.json"
+note = "profile 只保证契约/判定/指针与 runs 产物一致；数值以 quality.json 为准"
+```

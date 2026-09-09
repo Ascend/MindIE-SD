@@ -95,7 +95,9 @@
   交用户选档），不静默丢弃；预算记录（max_rounds/已用）随附。
 - **C.2 禁区（组合覆盖 [MUST] 行不得入表）**：S4-2 必测组合（量化×稀疏 / 稀疏×Cache /
   量化×Cache / 三元 `Cache+量化+稀疏`）不因"预算耗尽/排序靠后"进 C.2——每行必须已测
-  （C.1 带签名）或登记豁免（原因 + 证据，见 combination-search.md「必测组合覆盖集」）；
+  （C.1 带签名）或登记豁免；**豁免行必须附「形态穷尽清单」**（本环境各可测形态 × 尝试结果 ×
+  证据；只有所有形态均不可测/无意义才允许豁免——「某形态不可行」≠「组合不可测」，存在任一
+  可测形态即须实测并注明形态约束；见 combination-search「裁决三态」2026-09-08 收紧）；
   否则视为组合覆盖缺口，先补测或补豁免再闭环。
 - 边界：C.1/C.2 只做治理汇总，收益数值不进 overview 主表；C.2 中「框架不支持」类须按
   `overview-report.md` §2.5 三态标注并与 support-matrix 一致。
@@ -118,13 +120,21 @@
   表 `[档/组合(命名按 §2.1) | 对照标杆(profile 冻结 baseline) | 质量数值(psnr/ssim 或 视觉域-仅登记) |
   visual_artifact(pass/fail/inconclusive+存证) | off_identity(逐字节/数值差/md5) | 证据引用
   (runs/{id}/quality.json + 帧或 profile 指针)]`；
-  数值口径 = 与 `evals/profiles/{model}.toml` 冻结 baseline 的**同 seed 对照**（视频 21 采样帧 /
+  数值口径 = 与 `runs/{task_id}/profiles/{model}.toml`（gen_profile.py 生成）冻结 baseline 的**同 seed 对照**（视频 21 采样帧 /
   图像 21-seed 像素对，按 profile `[domain]` 套用协议）；
   弱视觉域（video_chaos）数值只登记回归、主判据 visual+off-identity；强视觉域（图像）可设
   绝对门槛——域规则来自 profile `[domain]`，报表不另起。
-- **E.2 强制关联**：overview 质量数据列每行数值/结论 ↔ 本表对应行（profile + run 引用）；
-  缺对照基线或未跑质量门禁的档位 → 只登记不得写 pass；质量证据缺失视为交付缺失（close
-  门禁复核项）。
+- **E.2 强制产物与关联（2026-09-08 收紧）**：
+  - **quality.json 必须由契约工具现算**：`evals/scripts/quality_compare.py --baseline <帧目录>
+    --config <帧目录> --metric ssim --metric psnr --output runs/{id}/quality.json`；
+    自造脚本 / 手工填数值 / 临时计算不落 quality.json = 交付缺失（fail-closed）；
+  - **具体模型 profile 由流程生成（不入库）**：S0 冻结基线后跑 `evals/scripts/gen_profile.py`
+    生成 `runs/{task_id}/profiles/{model}.toml`（契约+domain+指针，数值不预填）；仓库
+    `evals/profiles/` 只允许 `_template.toml`——发现具体模型 profile 入库 = 违规（check_profile
+    拦截）；close 前 `check_profile.py --model {model} --task-dir runs/{task_id}_...` error=0；
+  - **强制关联**：overview 质量数据列每行数值/结论 ↔ 本表对应行（profile + quality.json 引用）；
+    缺对照基线或未跑质量门禁的档位 → 只登记不得写 pass；质量证据缺失视为交付缺失（close
+    门禁复核项）。
 
 ## 维护与更新
 

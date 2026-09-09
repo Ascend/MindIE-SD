@@ -20,10 +20,19 @@
 ```text
 {工作目录}/agentic/
 ├── run-state.md          # 本文件：阶段推进单一真相源
-└── evidence/{stage}/     # 验收证据（kernel diff / 墙钟日志 / 复核记录等，一阶段一目录）
-    └── {feature}/        # 并行执行时按特性/实现 id 再隔离（一子 agent 一目录，见
-                          #   workflows/references/dispatch-templates.md「单点特性并行执行」）
+└── evidence/{task_id}/{stage}/   # 验收证据按任务隔离（task_id = runs 目录名，如 20260908_minimax-h3_optimization）
+    ├── {stage}/                  # kernel diff / 墙钟日志 / 复核记录 / 质量证据等
+    │   └── {feature}/            # 并行执行时按特性/实现 id 再隔离（一子 agent 一目录）
+    └── README.md                 # 本任务证据索引（可选）
 ```
+
+- **证据按任务隔离（强制）**：每个任务的验收证据落 `evidence/{task_id}/{stage}/`，task_id 与
+  产物目录 `runs/{task_id}_{model}_optimization/` 同名——**不同任务的 evidence 物理隔离**，
+  杜绝旧任务残留文件被当作当前任务验收证据（stage_gate 校验证据路径必须含当前 task_id 前缀，
+  见「推进门禁」）。任务开始（建 run-state）时先建 `evidence/{task_id}/` 目录。
+- **复用历史结论的显式引用**：确需引用旧任务数据（方法迁移/跨卡组参考）时，在证据文件与推进表
+  备注中显式写 `../runs/{旧task_id}_.../evidence/...` 或 `../runs/{旧task_id}_.../xxx.log`，并标注
+  「复用历史非本轮实测」——禁止把旧文件复制进本任务 evidence/ 充当本轮验收证据。
 
 ## 特性覆盖清单（任务级触发判定 · 前置交付件）
 
@@ -87,8 +96,8 @@ method-baseline catalog / search_space 状态与 cannbot 探索 dashboard 的候
 ```text
 | 阶段 | 状态 | 验收证据 | 备注 |
 |------|------|----------|------|
-| S0 | done | evidence/S0/import_check.log, evidence/S0/weights_check.log, evidence/S0/dummy_run.log | 基线跑通 |
-| S1 | done | evidence/S1/kernel_diff.csv, evidence/S1/fusion_hit.txt | kernel 融合（含接入）收敛 |
+| S0 | done | evidence/{task_id}/S0/import_check.log, evidence/{task_id}/S0/weights_check.log, evidence/{task_id}/S0/dummy_run.log | 基线跑通 |
+| S1 | done | evidence/{task_id}/S1/kernel_diff.csv, evidence/{task_id}/S1/fusion_hit.txt | kernel 融合（含接入）收敛 |
 | S3 | in_progress |  | 并行采集中 |
 ```
 
@@ -96,7 +105,7 @@ method-baseline catalog / search_space 状态与 cannbot 探索 dashboard 的候
 
 - **推进表只有编排者（主 agent）写**：subagent / 执行者不直接改推进表；自己的产出先落
   evidence/ 或工作区，由编排者核验后镜像进表。
-- **并行执行时**：多个单点特性子 agent 各自写入 `evidence/{stage}/{feature}/`（互不覆盖），
+- **并行执行时**：多个单点特性子 agent 各自写入 `evidence/{task_id}/{stage}/{feature}/`（互不覆盖），
   迭代表/推进表仍编排者单写；共享文件与卡组互斥调度（护栏见
   `workflows/references/dispatch-templates.md`「单点特性独立子 agent 与并行执行」）。
 - 工作区与 evidence/ 由执行者**先读后追加**：只追加不清空，不覆盖他人记录。
@@ -106,10 +115,16 @@ method-baseline catalog / search_space 状态与 cannbot 探索 dashboard 的候
 ## 推进门禁
 
 - 每阶段收尾：编排者更新推进表（status=done + 验收证据路径）→ 跑
-  `python scripts/stage_gate.py --stage {Sn} --run-dir {工作目录}/agentic`
+  `python scripts/stage_gate.py --stage {Sn} --task-id {task_id} --run-dir {工作目录}/agentic`
   → error=0 才进入下一阶段或宣称闭环；未过不得推进、不得宣称完成。
 - 验收证据路径相对 run-state.md 所在目录解析；`<…>` 占位路径跳过存在性校验（仅提示）。
-- 闭环（close）行声明路径必须包含 `overview_report.md` 与 `detail_report.md`（强制交付双报表）。
+- **证据须属本任务（task_id 校验，强制）**：`evidence/` 下声明的证据路径必须含当前 task_id
+  前缀（`evidence/{task_id}/...`）；stage_gate 校验——证据落 `evidence/` 但缺 task_id 前缀或
+  mtime 早于本任务开始 → error「证据非本任务产物」（防旧任务残留文件冒充；复用历史须显式
+  `../runs/{旧task_id}/...` 引用并标注）。
+- 闭环（close）行声明路径必须包含 `overview_report.md` 与 `detail_report.md`（强制交付双报表）；
+  close 前置 = 双报表存在 + **报表结构 lint**（`report_lint.py` error=0）+ **profile 强校验**
+  （`evals/scripts/check_profile.py` error=0，profile 由流程生成于 runs/{task_id}/profiles/）。
 
 ### 跨目录证据与 manifest 拆分（实测用法，env A 2026-09-07）
 
@@ -139,8 +154,8 @@ S5 训练感知候选等
 <!-- 每候选/每档/每次尝试一行；round 全局递增不复用；特性/实现 id = declarations id 或 docs/矩阵特性名 -->
 | round | 特性/实现 id | 假说(一行,含预期) | 步数 | 状态 | gate 证据(含计数契约路径) | 拒绝签名/备注 |
 |-------|--------------|-------------------|------|------|---------------------------|----------------|
-| r1 | kernel融合·mm_swiglu_mxquant(API 接入) | 后端 FFN 三合一，命中后 FFN 执行序收益预期 >0.5% | 1（识别步数） | retain | evidence/S1/r1_kernel_diff.csv | 最终叠加全量核验 |
-| r2 | 并行·TP1×USP2 | 图像 20 步短任务比 TP2 快（通信掩盖充分） | 20 | reject | evidence/S3/r2.log | dominated：r1 形态更优 |
+| r1 | kernel融合·mm_swiglu_mxquant(API 接入) | 后端 FFN 三合一，命中后 FFN 执行序收益预期 >0.5% | 1（识别步数） | retain | evidence/{task_id}/S1/r1_kernel_diff.csv | 最终叠加全量核验 |
+| r2 | 并行·TP1×USP2 | 图像 20 步短任务比 TP2 快（通信掩盖充分） | 20 | reject | evidence/{task_id}/S3/r2.log | dominated：r1 形态更优 |
 ```
 
 - **状态枚举**：`retain`（进 frontier）/ `discard`（不采信但无签名价值）/ `reject`（必须有签名）/
