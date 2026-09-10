@@ -1,5 +1,7 @@
 # MindIE SD
 
+简体中文 | [English](./README_EN.md)
+
 ## 📢 Latest News
 
 - 12/31/2025: MindIE SD提供稀疏Attention计算能力

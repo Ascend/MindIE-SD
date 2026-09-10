@@ -38,7 +38,7 @@ Wan2.1-T2V-14B/
 └── ...
 ```
 
-> **Note**
+> [!NOTE]NOTE
 >
 > - In addition to HuggingFace, model weights can also be obtained from [modelscope](https://modelscope.cn/models).
 > - For weights of other models (FLUX.1-dev, HunyuanVideo, etc.), see the links in [Model/Framework Support Matrix](features/supported_matrix.md).
@@ -56,7 +56,7 @@ bash infer_t2v.sh
 
 ## Acceleration Results
 
-Below, using Wan2.1 as an example, we show the acceleration effects of different features on Atlas 800I A2 inference servers (1*64G) for single-card and multi-card configurations.
+Below, using Wan2.1 as an example, we show the acceleration effects of different features on Atlas 800I A2 inference servers (1*64GB) for single-card and multi-card configurations.
 
 Where:
 

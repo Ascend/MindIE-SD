@@ -15,7 +15,7 @@ By design, modules are independently decoupled and can be used individually or i
 - FA_Power_Cap technology: Splits FA execution and reorders FA with communication for long-sequence video generation, reducing average power consumption and improving end-to-end performance. For details, see [FA_Power_Cap Technology](./features/fa_power_cap.md).
 - Automatic affinity acceleration: Based on the torch.compile inductor mechanism, custom fusion passes are implemented to achieve Ascend-native operator substitution.
 
->[!NOTE] Note
+>[!NOTE]NOTE
 >
 >- diffusers models accelerated on Ascend using MindIE SD are published on [Modelers](https://modelers.cn/models?name=MindIE&page=1&size=16) and [ModelZoo](https://www.hiascend.com/software/modelzoo).
 >For features related but not core to this repository, samples are provided in the examples directory for reference. For example, see [Service Deployment](../../examples/service) for servitization deployment samples, and [Cache](../../examples/cache) for multimodal inference acceleration samples.

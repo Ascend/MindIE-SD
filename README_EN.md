@@ -1,12 +1,14 @@
 # MindIE SD
 
-## Latest News
+English | [简体中文](./README.md)
+
+## 📢 Latest News
 
 - 12/31/2025: MindIE SD provides sparse Attention computation capability
 - 12/25/2025: vLLM Omni x MindIE SD achieves native high-performance Ascend inference for Qwen-Image-Edit-2511 / Qwen-Image-Layered
 - 11/30/2025: MindIE SD officially open-sourced and available to the public! [Meeting Calendar](https://meeting.ascend.osinfra.cn/?sig=sig-MindIE-SD)
 
-## Introduction
+## 🚀 Introduction
 
 **MindIE SD** (Mind Inference Engine Stable Diffusion) is the visual generation inference model suite of MindIE. Its goal is to provide an end-to-end inference solution for Stable Diffusion (SD) series large models on Ascend hardware and its software stack. The software system internally integrates various functional modules and provides a unified programming interface externally.
 
@@ -19,7 +21,7 @@ Below are two **AI Agents** for the MindIE-SD code repositories. Simply click th
 
 </div>
 
-## Installation Guide
+## 📦 Installation Guide
 
 **Quick Start**:
 
@@ -27,32 +29,32 @@ Below are two **AI Agents** for the MindIE-SD code repositories. Simply click th
 pip install mindiesd
 ```
 
-For other installation methods and environment dependencies, see [Installation Guide](docs/zh/installation.md).
+For other installation methods and environment dependencies, see [Installation Guide](docs/en/installation.md).
 
-## Architecture Overview
+## 🚀 Architecture Overview
 
-For MindIE SD architecture and key features, see [Architecture Overview](docs/zh/architecture.md).
+For MindIE SD architecture and key features, see [Architecture Overview](docs/en/architecture.md).
 
 ![MindIE SD Architecture Diagram](docs/figures/architecture_overview.png)
 
-## Quick Start
+## ⚡️ Quick Start
 
-[Quick Start](docs/zh/quick_start.md): Using Wan2.1 as an example, introduces the overall acceleration effect with MindIE SD.
+[Quick Start](docs/en/quick_start.md): Using Wan2.1 as an example, introduces the overall acceleration effect with MindIE SD.
 
-## Developer Documentation
+## 📚 Developer Documentation
 
-[Contribution Guide](docs/zh/developer_guide/contribution_guide.md): Explains how to submit Issues, Pull Requests, and coding standards.
+[Contribution Guide](docs/en/developer_guide/contribution_guide.md): Explains how to submit Issues, Pull Requests, and coding standards.
 [AI Agent Support](.agents/README.md): Introduces the default skills used in the repository and the agent-assisted development workflow.
-[Test Verification](docs/zh/developer_guide/test.md): Introduces the unit test example execution workflow.
+[Test Verification](docs/en/developer_guide/test.md): Introduces the unit test example execution workflow.
 
-## Ecosystem Support
+## 🌐 Ecosystem Support
 
 The following projects have integrated MindIE SD as a multimodal inference backend:
 
-+ [vLLM Omni](https://github.com/vllm-project/vllm-omni):
-+ [Cache Dit](https://github.com/vipshop/cache-dit):
++ [vLLM Omni](https://github.com/vllm-project/vllm-omni)
++ [Cache Dit](https://github.com/vipshop/cache-dit)
 
-## Paper Citations
+## 📝 Paper Citations
 
 ```text
 @misc{RainFusion2.0@2025,

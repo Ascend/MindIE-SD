@@ -18,7 +18,7 @@ Tests are divided into two categories:
 `run_UT_test.sh` always runs in CPU mode, suitable for development environments without NPU hardware.
 
 ```bash
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt --extra-index-url https://triton-ascend.osinfra.cn/pypi/simple --trusted-host triton-ascend.osinfra.cn
 python -m pip install -r requirements-test.txt
 bash tests/run_UT_test.sh
 ```

@@ -65,7 +65,10 @@ from mindiesd import quantize
 | Parameter | Type | Required | Default | Description |
 | ------ | ------ | ------ | -------- | ------ |
 | `model` | `nn.Module` | Yes | - | Initialized floating-point model |
-| `quant_json_path` | `str` | Yes | - | Path to quantization descriptor JSON containing algorithm, layer configuration, etc. |
+| `quant_des_path` | `str` | No | `None` | Path to the quantization descriptor JSON file. If not provided as a positional argument, configure `QuantConfig.quant_des_path`. |
+| `quant_config` | `QuantConfig` | No | `None` | Unified quantization configuration. Supports `quant_des_path`, `dtype`, `use_nz`, time-step strategy, and `mxfp4_scale_alg`. |
+
+`quantize` first parses the quantization descriptor JSON into a `QuantConfig`, then merges it with the user-provided `quant_config`. If the same field exists in both, the user-provided value takes precedence. Legacy parameters—`timestep_config`, `timestep_policy`, `dtype`, and `use_nz`—are still supported and are internally mapped to `QuantConfig`. The quantization descriptor path can be passed either as the second argument to `quantize` or via `QuantConfig(quant_des_path=...)`.
 
 #### Usage Examples
 
@@ -77,18 +80,54 @@ model = quantize(model, "quant_model_description_w8a16_0.json")
 model.to("npu")
 ```
 
+Equivalent configuration syntax:
+
+```python
+from mindiesd import QuantConfig, quantize
+
+quant_config = QuantConfig(quant_des_path="quant_model_description_w8a16_0.json")
+model = quantize(model, quant_config=quant_config)
+model.to("npu")
+```
+
 Timestep quantization:
 
 ```python
-from mindiesd import TimestepManager
+from mindiesd import QuantConfig, TimestepManager, TimestepPolicyConfig
 
-model = quantize(model, "quant_model_description_w8a8_timestep_0.json",
-                 timestep_policy=TimestepPolicyConfig(...))
+timestep_policy = TimestepPolicyConfig()
+timestep_policy.register(range(0, 10), "static", target="w8a8_static_linear")
+
+quant_config = QuantConfig(timestep_config=timestep_policy)
+model = quantize(model, "quant_model_description_w8a8_timestep_0.json", quant_config=quant_config)
 
 for i, t in enumerate(timesteps):
     TimestepManager.set_timestep_idx(i)
     ...
 ```
+
+MXFP4 time-step rollback.
+
+```python
+from mindiesd import QuantConfig, TimestepManager, TimestepPolicyConfig, quantize
+
+timestep_policy = TimestepPolicyConfig()
+timestep_policy.register(range(0, 4), "W4A8", target="w4a4_linear")
+timestep_policy.register(range(4, 50), "W4A4", target="w4a4_linear")
+
+quant_config = QuantConfig(
+    timestep_config=timestep_policy,
+    mxfp4_scale_alg=2,
+)
+
+model = quantize(model, "quant_model_description_w4a4_mxfp4_0.json", quant_config=quant_config)
+
+for i, timestep in enumerate(timesteps):
+    TimestepManager.set_timestep_idx(i)
+    noise_pred = model(latents, timestep, encoder_hidden_states)
+```
+
+On the model side, `TimestepManager.set_timestep_idx(i)` must be set before each denoising step. This is consistent with the step‑by‑step iteration over `timesteps` used in Wan2.2 `wan/text2video.py`, but the policy semantics differ in this repository: here, the Linear policy toggles between `W4A4` and `W4A8`, rather than switching between dynamic and static quantization. The Linear/MM fallback only changes the activation quantization precision; weights remain in MXFP4.
 
 #### Quantized Weight File Naming
 
@@ -149,6 +188,32 @@ model.to("npu")
 `quantize` internally traverses model layers, automatically calling `add_fa_quant` on matching Attention layers, injecting `FP8RotateQuantFA` modules, and replacing the forward computation with the rotate -> block quantize -> FP8 Attention flow.
 
 FA quantization layers are implemented through the `FP8RotateQuantFA` module. See the rotate -> block quantize -> FP8 Attention flow description in this section.
+
+MXFP4 FA usage example:
+
+```python
+from mindiesd import QuantConfig, TimestepManager, TimestepPolicyConfig, quantize
+
+timestep_policy = TimestepPolicyConfig()
+timestep_policy.register(range(0, 2), "FLOAT", target="fa")
+timestep_policy.register(range(2, 8), "FP8", target="fa")
+timestep_policy.register(range(8, 50), "MXFP4", target="fa")
+
+quant_config = QuantConfig(
+    timestep_config=timestep_policy,
+    mxfp4_scale_alg=2,
+)
+
+model = quantize(model, "quant_model_description_mxfp4_dynamic_0.json", quant_config=quant_config)
+
+for i, timestep in enumerate(timesteps):
+    TimestepManager.set_timestep_idx(i)
+    noise_pred = model(latents, timestep, encoder_hidden_states)
+```
+
+FA has no offline weight constraints, so any algorithm can be selected across different time steps. In contrast, Linear/MM can only switch activation precision under the same MXFP4 weight.
+
+The `mxfp4_scale_alg` field in `QuantConfig` is passed through to the dynamic MX quantization path to align with the C7 inference parameters of the CANN `aclnnDynamicQuantV2` operator. If not set, the legacy interface default behavior is preserved. For details, refer to the [CANN `aclnnDynamicQuantV2` documentation](https://gitcode.com/cann/ops-nn/blob/master/quant/dynamic_quant_v2/docs/aclnnDynamicQuantV2.md). For an example of setting timesteps on the model side, see the [Wan2.2 text-to-video inference loop](https://modelers.cn/models/MindIE/Wan2.2/blob/main/wan/text2video.py).
 
 #### Notes
 

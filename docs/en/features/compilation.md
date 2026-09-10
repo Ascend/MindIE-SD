@@ -7,7 +7,7 @@ MindIE SD provides a custom backend `MindieSDBackend()` based on PyTorch's `torc
 
 Both capabilities are uniformly controlled through `CompilationConfig`.
 
->[!NOTE] Note
+>[!NOTE]NOTE
 >When this feature is enabled, there is a certain compilation overhead during initial model execution (up to 8 attempts by default), but generally no recompilation occurs in subsequent runs. During actual benchmark testing, the warm-up phase overhead should be excluded.
 
 ## Basic Usage

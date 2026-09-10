@@ -13,7 +13,7 @@ This document describes how to build MindIE-SD from source. For installing the c
     python -m build --wheel --no-isolation
     ```
 
-    > [!NOTE] Note
+    > [!NOTE]NOTE
     > If dependencies such as wheel are not available in the environment, install them manually:
     >
     > ```bash

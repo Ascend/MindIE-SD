@@ -25,7 +25,7 @@ This solution dynamically adjusts expert weights on Ranks based on load informat
 
 ### Integration Process
 
-> [!NOTE] Note
+> [!NOTE]NOTE
 > To minimize the impact on the main inference flow, the algorithm and expert weight concatenation are processed using additional threads and processes.
 
 1. Start the EPLB algorithm process. Startup parameters are as follows:
