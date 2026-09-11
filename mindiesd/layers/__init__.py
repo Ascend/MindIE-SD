@@ -21,6 +21,7 @@ from .muls_add import muls_add
 from .residual_gate_add import residual_gate_add
 from .rope import rotary_position_embedding
 from .fused_moe import fused_moe
+from .eagle_ffn_linear import eagle_ffn_linear
 from .flash_attn import SparseLinearAttention
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "attention_forward",
     "attention_forward_varlen",
     "fast_layernorm",
+    "eagle_ffn_linear",
     "frequency_regulator",
     "fused_moe",
     "get_activation_layer",

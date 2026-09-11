@@ -696,3 +696,53 @@ def adaln_v2_fake(
     mean_out = torch.empty((b, s, 1), dtype=x.dtype, device=x.device)
     rstd_out = torch.empty((b, s, 1), dtype=x.dtype, device=x.device)
     return torch.empty_like(x), mean_out, rstd_out
+
+
+def eagle_ffn_linear(
+    x: torch.Tensor,
+    weight1: torch.Tensor,
+    weight2: torch.Tensor,
+    bias1: torch.Tensor | None = None,
+    bias2: torch.Tensor | None = None,
+    activation: str = "gelu",
+    inner_precise: int = 0,
+) -> torch.Tensor:
+    """FFN 融合算子：y = act(x @ W1^T + b1) @ W2^T + b2（ascend950）。
+
+    weight1/weight2 支持 linear [N,K]/[N,H] 与 canonical [K,N]/[H,N] 双布局（自动检测，
+    方阵歧义默认 linear）；swiglu 使用单 matmul 形式 weight1=[2H,K]。
+    """
+    return getattr(torch.ops.mindiesd, "eagle_ffn_linear")(
+        x, weight1, weight2, bias1, bias2, activation, inner_precise
+    )
+
+
+@register_ops.register_mindie_fake_op("eagle_ffn_linear")
+def eagle_ffn_linear_fake(
+    x: torch.Tensor,
+    weight1: torch.Tensor,
+    weight2: torch.Tensor,
+    bias1: torch.Tensor | None = None,
+    bias2: torch.Tensor | None = None,
+    activation: str = "gelu",
+    inner_precise: int = 0,
+) -> torch.Tensor:
+    # 形状推导与 plugin 侧布局检测一致：方阵歧义默认 linear
+    x_k = x.shape[-1]
+    w1d0, w1d1 = weight1.shape[-2], weight1.shape[-1]
+    w2d0, w2d1 = weight2.shape[-2], weight2.shape[-1]
+    swiglu = activation.lower() == "swiglu"
+    hidden_w = w1d0 // 2 if swiglu else w1d0
+    hidden_w2 = w1d1 // 2 if swiglu else w1d1
+    if w1d1 == x_k and w1d0 != x_k:
+        is_linear = True
+    elif w1d0 == x_k and w1d1 != x_k:
+        is_linear = False
+    elif w1d0 == x_k and w1d1 == x_k:
+        is_linear = not (w2d0 == hidden_w2 and w2d1 != hidden_w)
+    else:
+        raise RuntimeError(
+            f"eagle_ffn_linear: weight1 shape [{w1d0}, {w1d1}] does not match x K={x_k}"
+        )
+    out_last = w2d0 if is_linear else w2d1
+    return torch.empty(x.shape[:-1] + (out_last,), dtype=x.dtype, device=x.device)
