@@ -9,6 +9,10 @@ on:
 env:
   pr_id: ${{ atomgit.event.pull_request.number }}
 
+permissions:
+  repository: read
+  id-token: write
+
 stages:
   stage1:
     name: CodeCheck
@@ -81,6 +85,36 @@ stages:
               else
                 echo "need_build=no" >> "$ATOMGIT_OUTPUT"
               fi
+
+      sca-pr:
+        name: sca-pr
+        runs-on: [ dedicate-hosted, x64, 2xlarge ]
+        container:
+          image: swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_x86:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311
+          options: --user root
+        steps:
+          - name: checkout
+            uses: checkout
+          - name: Run SCA PR scan
+            uses: openlibing/sca-action/sca-pr-action@v1.0.0
+            with:
+              project-name: MindIE
+      malicious-scan:
+        name: antipoison
+        runs-on: [ dedicate-hosted, x64, 2xlarge ]
+        container:
+          image: swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_x86:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311
+          options: --user root
+        steps:
+          - name: checkout
+            uses: checkout
+          - name: Run malicious code scan
+            uses: openlibing/malicious-code-scan-action/malicious-code-pr-scan-action@v1.0.0
+            with:
+              repository-name: "${{ atomgit.event.repository.name }}"
+              pr-id: "${{ atomgit.event.pull_request.number }}"
+              project-name: MindIE
+              # rule、debug、platform-domain 等为可选项
 
   stage2:
     name: Build
