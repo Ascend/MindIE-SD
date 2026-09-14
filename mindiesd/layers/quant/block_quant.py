@@ -10,13 +10,11 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-import math
 import torch_npu
-import torch.nn.functional as F
 from ...utils import ParametersInvalid
 
 
-def fa_block_quant_preprocess(input_tensor, block_size=128, col_block_size=128, dst_type=torch_npu.float8_e4m3fn, **kwargs):
+def fa_block_quant_preprocess(input_tensor, block_size=128, col_block_size=128, dst_type=None, **kwargs):
     """
     Preprocess for FA quant. Input layout must be 'BNSD' or 'BSND'.
     Args:
@@ -32,11 +30,24 @@ def fa_block_quant_preprocess(input_tensor, block_size=128, col_block_size=128, 
         torch.Tensor: Preprocessed tensor ready for FA block quantization.
     """
 
+    # Resolve the optional dtype at execution time, not during package import.
+    if dst_type is None:
+        dst_type = getattr(torch_npu, "float8_e4m3fn", None)
+        if dst_type is None:
+            raise RuntimeError("Block-FP8 quantization requires torch_npu.float8_e4m3fn.")
+
     if len(input_tensor.shape) != 4:
         raise ParametersInvalid(f"fa block quant preprocess only support qkv quant, dim = 4, \
                                 but got {len(input_tensor.shape)}.")
 
-    layout = kwargs.get("layout", "BNSD")
+    return _fa_block_quant_preprocess(
+        input_tensor, block_size=block_size, col_block_size=col_block_size,
+        dst_type=dst_type, layout=kwargs.get("layout", "BNSD"),
+    )
+
+
+def _fa_block_quant_preprocess(input_tensor, *, block_size, dst_type, layout, col_block_size=128):
+    """Quantize a validated four-dimensional input and restore the batch axis."""
     if layout == "BSND":
         input_tensor = input_tensor.transpose(1, 2)
 

@@ -817,7 +817,7 @@ class TestFP8RotateQuantFA(unittest.TestCase):
     def _make_model(self):
         return FP8RotateQuantFA(prefix="attn", weights=self._make_weights(self.D))
 
-    @patch('torch_npu.npu_fused_infer_attention_score_v2', create=True)
+    @patch('torch.ops.mindiesd.fused_infer_attention_score_v2', create=True)
     @patch('torch_npu.npu_dynamic_block_quant', create=True)
     def test_forward_bnsd_output_shape(self, mock_bq, mock_fa):
         mock_bq.side_effect = self._mock_block_quant
@@ -832,7 +832,7 @@ class TestFP8RotateQuantFA(unittest.TestCase):
 
         self.assertEqual(out.shape, (self.B, self.N, self.S, self.D))
 
-    @patch('torch_npu.npu_fused_infer_attention_score_v2', create=True)
+    @patch('torch.ops.mindiesd.fused_infer_attention_score_v2', create=True)
     @patch('torch_npu.npu_dynamic_block_quant', create=True)
     def test_forward_bsnd_output_shape(self, mock_bq, mock_fa):
         mock_bq.side_effect = self._mock_block_quant
@@ -847,7 +847,7 @@ class TestFP8RotateQuantFA(unittest.TestCase):
 
         self.assertEqual(out.shape, (self.B, self.S, self.N, self.D))
 
-    @patch('torch_npu.npu_fused_infer_attention_score_v2', create=True)
+    @patch('torch.ops.mindiesd.fused_infer_attention_score_v2', create=True)
     @patch('torch_npu.npu_dynamic_block_quant', create=True)
     def test_forward_invalid_layout_raises_value_error(self, mock_bq, mock_fa):
         mock_bq.side_effect = self._mock_block_quant
@@ -861,7 +861,7 @@ class TestFP8RotateQuantFA(unittest.TestCase):
         with self.assertRaises(ValueError):
             model(q, k, v, layout="NHWC")
 
-    @patch('torch_npu.npu_fused_infer_attention_score_v2', create=True)
+    @patch('torch.ops.mindiesd.fused_infer_attention_score_v2', create=True)
     @patch('torch_npu.npu_dynamic_block_quant', create=True)
     def test_forward_bnsd_output_trimmed_when_fa_returns_padded(self, mock_bq, mock_fa):
         """Verify the slice x[:, :, :s, :] when FA returns a sequence longer than s."""
@@ -885,7 +885,7 @@ class TestFP8RotateQuantFA(unittest.TestCase):
 
         self.assertEqual(out.shape, (self.B, self.N, self.S, self.D))
 
-    @patch('torch_npu.npu_fused_infer_attention_score_v2', create=True)
+    @patch('torch.ops.mindiesd.fused_infer_attention_score_v2', create=True)
     @patch('torch_npu.npu_dynamic_block_quant', create=True)
     def test_forward_bsnd_rotation_applied_to_query(self, mock_bq, mock_fa):
         """Verify that q_rot is applied to query in BSND layout before block_quant."""
@@ -925,7 +925,7 @@ class TestFP8RotateQuantFA(unittest.TestCase):
         with self.assertRaises(ParametersInvalid):
             FP8RotateQuantFA(prefix="attn", weights=self._make_weights(self.D), mode="low_precision")
 
-    @patch('mindiesd.quantization.layer.fused_infer_attention_score_v2')
+    @patch('torch.ops.mindiesd.fused_infer_attention_score_v2', create=True)
     @patch('torch_npu.npu_dynamic_block_quant', create=True)
     def test_high_precision_keeps_original_fia_kwargs(self, mock_bq, mock_fa):
         captured_blocks = []
@@ -952,7 +952,7 @@ class TestFP8RotateQuantFA(unittest.TestCase):
         self.assertEqual(fa_kwargs["num_key_value_heads"], self.N)
         self.assertNotIn("inner_precise", fa_kwargs)
 
-    @patch('mindiesd.quantization.layer.fused_infer_attention_score_v2')
+    @patch('torch.ops.mindiesd.fused_infer_attention_score_v2', create=True)
     @patch('torch_npu.npu_dynamic_block_quant', create=True)
     def test_c8v16_tiling512_aligns_quant_and_fia_kwargs(self, mock_bq, mock_fa):
         captured_blocks = []
@@ -983,7 +983,7 @@ class TestFP8RotateQuantFA(unittest.TestCase):
         self.assertEqual(fa_kwargs["num_query_heads"], self.N)
         self.assertEqual(fa_kwargs["num_key_value_heads"], self.N)
 
-    @patch('mindiesd.quantization.layer.fused_infer_attention_score_v2')
+    @patch('torch.ops.mindiesd.fused_infer_attention_score_v2', create=True)
     @patch('torch_npu.npu_dynamic_block_quant', create=True)
     def test_gqa_passes_key_head_count_to_fia(self, mock_bq, mock_fa):
         mock_bq.side_effect = self._mock_block_quant
@@ -1000,7 +1000,7 @@ class TestFP8RotateQuantFA(unittest.TestCase):
         self.assertEqual(fa_kwargs["num_query_heads"], self.N)
         self.assertEqual(fa_kwargs["num_key_value_heads"], kv_heads)
 
-    @patch('mindiesd.quantization.layer.fused_infer_attention_score_v2')
+    @patch('torch.ops.mindiesd.fused_infer_attention_score_v2', create=True)
     @patch('torch_npu.npu_dynamic_block_quant', create=True)
     def test_forward_without_rotation_skips_matmul(self, mock_bq, mock_fa):
         captured = []

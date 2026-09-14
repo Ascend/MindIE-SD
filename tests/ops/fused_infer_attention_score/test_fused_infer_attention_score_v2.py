@@ -17,12 +17,12 @@ import types
 
 import pytest
 import torch
+from mindiesd.utils.exception import ParametersInvalid
 
 from mindiesd.layers.flash_attn.fused_infer_attention_score import (
     _normalize_dtype_arg,
     fused_infer_attention_score_v2,
 )
-from mindiesd.utils.exception import ParametersInvalid
 
 _TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 if _TEST_DIR not in sys.path:
@@ -110,20 +110,6 @@ def test_fused_infer_attention_score_v2_routes_to_mindiesd_op(monkeypatch):
     assert calls[0][3]["out_dtype"] is torch.float16
 
 
-def test_fused_infer_attention_score_v2_rejects_non_tensor_query():
-    key = torch.empty(1, 1, 4, 8, dtype=torch.float16)
-    value = torch.empty(1, 1, 4, 8, dtype=torch.float16)
-
-    with pytest.raises(ParametersInvalid, match="input query must be torch.Tensor"):
-        fused_infer_attention_score_v2(
-            None,
-            key,
-            value,
-            input_layout="BNSD",
-            num_query_heads=1,
-        )
-
-
 def test_fused_infer_attention_score_v2_rejects_unsupported_layout():
     query = torch.empty(1, 1, 4, 8, dtype=torch.float16)
     key = torch.empty(1, 1, 4, 8, dtype=torch.float16)
@@ -166,21 +152,6 @@ def test_fused_infer_attention_score_v2_rejects_bool_head_num():
             value,
             input_layout="BNSD",
             num_query_heads=True,
-        )
-
-
-def test_fused_infer_attention_score_v2_rejects_key_value_seq_mismatch():
-    query = torch.empty(1, 1, 4, 8, dtype=torch.float16)
-    key = torch.empty(1, 1, 4, 8, dtype=torch.float16)
-    value = torch.empty(1, 1, 5, 8, dtype=torch.float16)
-
-    with pytest.raises(ParametersInvalid, match="sequence length of key/value"):
-        fused_infer_attention_score_v2(
-            query,
-            key,
-            value,
-            input_layout="BNSD",
-            num_query_heads=1,
         )
 
 

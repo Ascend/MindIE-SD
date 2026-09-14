@@ -11,6 +11,7 @@
 # See the Mulan PSL v2 for more details.
 # pylint: disable=too-many-lines,duplicate-code
 
+from ..layers.flash_attn.quant_flash_attn import quant_attention
 from abc import ABC, abstractmethod
 import functools
 import math
@@ -503,62 +504,12 @@ class FP8RotateQuantFA(nn.Module):
 
         self.mode = _resolve_fp8_fa_mode(mode, kwargs)
 
-    def _apply_rotate(self, query, key):
-        if self.q_rot is not None:
-            query = torch.matmul(query, self.q_rot)
-        if self.k_rot is not None:
-            key = torch.matmul(key, self.k_rot)
-        return query, key
-
     def forward(self, query, key, value, **kwargs):
-        query, key = self._apply_rotate(query, key)
-
-        layout = kwargs.get("layout", "BNSD")
-        n, s, d = _get_fa_shape(query, layout)
-        n_kv, _, _ = _get_fa_shape(key, layout)
-        spec = _FP8_FA_MODE_SPEC[self.mode]
-
-        from ..layers.quant.block_quant import fa_block_quant_preprocess
-
-        q, q_scale = fa_block_quant_preprocess(
-            query, block_size=spec["q_block"], dst_type=torch_npu.float8_e4m3fn, layout=layout
+        return quant_attention(
+            query, key, value, precision="fp8",
+            q_rot=self.q_rot, k_rot=self.k_rot, fp8_fa_mode=self.mode,
+            layout=kwargs.get("layout", "BNSD"),
         )
-        k, k_scale = fa_block_quant_preprocess(
-            key, block_size=spec["k_block"], dst_type=torch_npu.float8_e4m3fn, layout=layout
-        )
-        v, v_scale = fa_block_quant_preprocess(
-            value,
-            block_size=spec["v_block"],
-            col_block_size=spec["v_col_block"],
-            dst_type=torch_npu.float8_e4m3fn,
-            layout=layout,
-        )
-
-        fa_kwargs = {
-            "input_layout": "BNSD",
-            "num_query_heads": n,
-            "num_key_value_heads": n_kv,
-            "softmax_scale": 1.0 / math.sqrt(d),
-            "pre_tokens": 2147483647,
-            "next_tokens": 2147483647,
-            "query_quant_mode": spec["query_quant_mode"],
-            "key_quant_mode": spec["key_quant_mode"],
-            "value_quant_mode": spec["value_quant_mode"],
-            "dequant_scale_query": q_scale,
-            "dequant_scale_key": k_scale,
-            "dequant_scale_value": v_scale,
-            "out_dtype": query.dtype,
-        }
-        if spec["inner_precise"] is not None:
-            fa_kwargs["inner_precise"] = spec["inner_precise"]
-
-        x = fused_infer_attention_score_v2(q, k, v, **fa_kwargs)[0]
-
-        x = _crop_fa_output(x, s, "BNSD")
-        if layout == "BSND":
-            x = x.transpose(1, 2)
-
-        return x
 
 
 class MXFP8RotateQuantFA(nn.Module):

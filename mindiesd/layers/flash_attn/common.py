@@ -57,3 +57,18 @@ class AttentionParam:
     def to_hash(self):
         return hash((
             self.batch_size, self.head_num, self.head_dim, self.q_seqlen, self.kv_seqlen, self.dtype, self.head_first))
+
+
+def _get_bnsd_shape(tensor, layout) -> tuple[int, int, int, int]:
+    """Return dimensions in BNSD order for BNSD/BSND input, without transposing it."""
+    if not isinstance(tensor, torch.Tensor) or tensor.dim() != 4:
+        raise ValueError("Q/K/V must be four-dimensional tensors.")
+    if layout == "BNSD":
+        batch, heads, sequence, dim = tensor.shape
+    elif layout == "BSND":
+        batch, sequence, heads, dim = tensor.shape
+    else:
+        raise ValueError(f"Unsupported layout: {layout}, expected 'BNSD' or 'BSND'.")
+    if min(batch, heads, sequence, dim) <= 0:
+        raise ValueError("Attention requires non-empty batch, head, sequence and head-dimension axes.")
+    return batch, heads, sequence, dim

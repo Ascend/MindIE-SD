@@ -15,6 +15,7 @@ __all__ = [
     'CacheAgent',
     'layernorm_scale_shift',
     'attention_forward',
+    'quant_attention',
     'attention_forward_varlen',
     'rotary_position_embedding',
     'get_activation_layer',
@@ -40,6 +41,7 @@ from .cache_agent import CacheConfig, CacheAgent  # noqa: E402
 from .layers import (  # noqa: E402
     layernorm_scale_shift,
     attention_forward,
+    quant_attention,
     attention_forward_varlen,
     rotary_position_embedding,
     get_activation_layer,

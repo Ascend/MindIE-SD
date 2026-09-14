@@ -11,6 +11,7 @@
 # See the Mulan PSL v2 for more details.
 
 from .flash_attn.attention_forward import attention_forward
+from .flash_attn.quant_flash_attn import quant_attention
 from .flash_attn.attention_forward_varlen import attention_forward_varlen
 from .flash_attn.sparse_flash_attn import sparse_attention
 from ._custom_ops import frequency_regulator
@@ -27,6 +28,7 @@ from .flash_attn import SparseLinearAttention
 __all__ = [
     "RMSNorm",
     "attention_forward",
+    "quant_attention",
     "attention_forward_varlen",
     "fast_layernorm",
     "eagle_ffn_linear",
