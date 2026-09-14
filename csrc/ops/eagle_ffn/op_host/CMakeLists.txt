@@ -59,7 +59,9 @@ target_include_directories(ffn_3rd_tiling PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/3rd
         ${CMAKE_CURRENT_SOURCE_DIR}/3rd/op_host
         ${CMAKE_CURRENT_SOURCE_DIR}/3rd/common/inc
+        # math_util.h 引用 CANN op_common 私有模板头路径在 pkg_inc/include，两条并存兼容
         ${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/pkg_inc/op_common/op_host
+        ${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/include/op_common/op_host
         ${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/pkg_inc/base
         ${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/include/base
         ${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/asc/include/tiling
