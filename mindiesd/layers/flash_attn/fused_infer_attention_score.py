@@ -204,3 +204,56 @@ def _fp8_attention_forward(query, key, value, *, layout, scale, pre_tokens, next
     output = fused_infer_attention_score_v2(q, k, v, **fa_kwargs)[0]
     output = output[:, :, :sequence_length, :]
     return output.transpose(1, 2) if layout == "BSND" else output
+
+
+def _mxfp8_attention_forward(query, key, value, *, layout, scale, pre_tokens, next_tokens, q_rot=None, k_rot=None):
+    """MX-quantize packed TND inputs and restore their original batch/layout."""
+    # Common tensor and rotation validation belongs to quant_attention.
+    if q_rot is not None:
+        query = torch.matmul(query, q_rot)
+    if k_rot is not None:
+        key = torch.matmul(key, k_rot)
+    if layout == "BNSD":
+        query, key, value = (tensor.transpose(1, 2) for tensor in (query, key, value))
+    batch, q_len, q_heads, head_dim = query.shape
+    _, kv_len, kv_heads, _ = key.shape
+    query = query.reshape(batch * q_len, q_heads, head_dim)
+    key = key.reshape(batch * kv_len, kv_heads, head_dim)
+    value = value.reshape(batch * kv_len, kv_heads, head_dim)
+    # FIA accepts host cumulative lengths; avoid a device-to-host read during capture.
+    q_seq_lens = [q_len * (i + 1) for i in range(batch)]
+    kv_seq_lens = [kv_len * (i + 1) for i in range(batch)]
+
+    q, q_scale = torch_npu.npu_dynamic_mx_quant(query, dst_type=torch.float8_e4m3fn, axis=-1)
+    k, k_scale = torch_npu.npu_dynamic_mx_quant(key, dst_type=torch.float8_e4m3fn, axis=-1)
+    v, v_scale = torch_npu.npu_dynamic_mx_quant(value, dst_type=torch.float8_e4m3fn, axis=0)
+
+    # MXFP8 full quantization (modes 6/6/8) requires TND in the CANN FIA contract.
+    fa_kwargs = {
+        "input_layout": "TND",
+        "num_query_heads": q_heads,
+        "num_key_value_heads": kv_heads,
+        "softmax_scale": scale,
+        "actual_seq_qlen": q_seq_lens,
+        "actual_seq_kvlen": kv_seq_lens,
+        "sparse_mode": 0,
+        "pre_tokens": pre_tokens,
+        "next_tokens": next_tokens,
+        "query_quant_mode": 6,
+        "key_quant_mode": 6,
+        "value_quant_mode": 8,
+        "dequant_scale_query": q_scale,
+        "dequant_scale_key": k_scale,
+        "dequant_scale_value": v_scale,
+        "query_dtype": torch.float8_e4m3fn,
+        "key_dtype": torch.float8_e4m3fn,
+        "value_dtype": torch.float8_e4m3fn,
+        "dequant_scale_query_dtype": torch_npu.float8_e8m0fnu,
+        "dequant_scale_key_dtype": torch_npu.float8_e8m0fnu,
+        "dequant_scale_value_dtype": torch_npu.float8_e8m0fnu,
+        "out_dtype": query.dtype,
+    }
+    # The MindIE FIA wrapper does not accept TND; retain the TorchNPU entry point.
+    output = torch_npu.npu_fused_infer_attention_score_v2(q, k, v, **fa_kwargs)[0]
+    output = output.reshape(batch, q_len, q_heads, head_dim)
+    return output.permute(0, 2, 1, 3) if layout == "BNSD" else output

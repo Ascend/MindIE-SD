@@ -15,10 +15,10 @@
 
 import torch
 from .common import _get_bnsd_shape
-from .fused_infer_attention_score import _fp8_attention_forward
+from .fused_infer_attention_score import _fp8_attention_forward, _mxfp8_attention_forward
 
 
-_SUPPORTED_PRECISIONS = ("fp8",)
+_SUPPORTED_PRECISIONS = ("fp8", "mxfp8")
 
 
 def quant_attention(
@@ -35,23 +35,24 @@ def quant_attention(
     next_tokens: int = 2147483647,
     **kwargs,
 ) -> torch.Tensor:
-    """Compute block-FP8 attention from floating-point Q/K/V on NPU.
+    """Compute quantized attention from floating-point Q/K/V on NPU.
 
     Args:
         query (torch.Tensor):
             Unquantized query, shaped [B, Nq, Sq, D] for BNSD or
             [B, Sq, Nq, D] for BSND. All dimensions must be non-empty and
-            B must be 1. Nq must be divisible by the number of KV heads.
+            B must be 1 for FP8. Nq must be divisible by the number of KV heads.
             Accepted input dtypes are float16, bfloat16 and float32; execution
             requires an NPU/operator version supporting the input dtype.
         key (torch.Tensor):
             Unquantized key, shaped [B, Nkv, Skv, D] for BNSD or
             [B, Skv, Nkv, D] for BSND. Must share query's batch size,
-            head dimension, device and dtype. Skv may differ from Sq.
+            head dimension, device and dtype. FP8 and MXFP8 permit Skv to
+            differ from Sq.
         value (torch.Tensor):
             Unquantized value with the same shape, device and dtype as key.
         precision (str, optional, defaults to "fp8"):
-            Quantization precision. Only "fp8" is supported by this version.
+            Quantization precision. Supported values are "fp8" and "mxfp8".
             Other values, including "float", raise ValueError. For
             non-quantized attention use mindiesd.attention_forward instead.
         layout (str, optional, defaults to "BNSD"):
@@ -104,13 +105,25 @@ def quant_attention(
             f"Unsupported quantized attention precision: {precision!r}; supported precisions: {_SUPPORTED_PRECISIONS}. "
             "Use mindiesd.attention_forward for non-quantized attention."
         )
-    fp8_fa_mode = kwargs.pop("fp8_fa_mode", None)
+    fp8_fa_mode = kwargs.pop("fp8_fa_mode", None) if precision == "fp8" else None
     if kwargs:
         raise TypeError(f"Unexpected options for {precision} quantized attention: {', '.join(sorted(kwargs))}.")
     _, _, _, head_dim = _validate_quant_attention_inputs(query, key, value, layout=layout)
     _validate_rotation(query, q_rot, "q_rot")
     _validate_rotation(key, k_rot, "k_rot")
     scale = head_dim**-0.5 if scale is None else scale
+    if precision == "mxfp8":
+        return _mxfp8_attention_forward(
+            query,
+            key,
+            value,
+            layout=layout,
+            scale=scale,
+            pre_tokens=pre_tokens,
+            next_tokens=next_tokens,
+            q_rot=q_rot,
+            k_rot=k_rot,
+        )
     return _fp8_attention_forward(
         query,
         key,

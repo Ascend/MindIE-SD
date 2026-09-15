@@ -13,7 +13,6 @@
 
 from ..layers.flash_attn.quant_flash_attn import quant_attention
 from abc import ABC, abstractmethod
-import functools
 import math
 import torch
 import torch.nn.functional as F
@@ -32,7 +31,6 @@ MXFP4_K_QUANT_MODE = 3
 MXFP4_V_QUANT_MODE = 3
 MXFP4_FA_SEQ_PAD_BASE = 512
 MXFP4_FA_SEQ_CACHE_MAX_SIZE = 512
-FA_ACTUAL_SEQ_LENS_CACHE_MAX_SIZE = 512
 MXFP4_GROUP_SIZES_W4A4 = [1, 1, 32]
 MXFP4_GROUP_SIZES_W4A8 = [0, 0, 32]
 MXFP4_SCALE_ALG_C7 = 2
@@ -193,16 +191,6 @@ def _get_qfa_seqused(param):
     seqused_q = torch.full((param.batch_size,), param.q_seqlen, dtype=torch.int32, device=device)
     seqused_kv = torch.full((param.batch_size,), param.kv_seqlen, dtype=torch.int32, device=device)
     return seqused_q, seqused_kv
-
-
-@functools.lru_cache(maxsize=FA_ACTUAL_SEQ_LENS_CACHE_MAX_SIZE)
-def _get_fa_actual_seq_lens(batch, seq_len):
-    # Returns [seq_len, 2*seq_len, ..., batch*seq_len] as host ints for the SymInt[] op attr.
-    # stdlib lru_cache is dynamo-safe: the tracer skips the cache wrapper and traces the
-    # wrapped fn, so aclgraph capture stays graph-break free (unlike the global OrderedDict
-    # mutations in lru_cache_by_attn_param). Entries are tiny host-side int lists capped by
-    # maxsize; no device memory is held, so the cache cannot grow unboundedly.
-    return [seq_len * (i + 1) for i in range(batch)]
 
 
 def _crop_fa_output(output, seq_len, layout):
@@ -522,68 +510,10 @@ class MXFP8RotateQuantFA(nn.Module):
         self.register_buffer("k_rot", k_rot, persistent=False)
 
     def forward(self, query, key, value, **kwargs):
-        query = torch.matmul(query, self.q_rot)
-        key = torch.matmul(key, self.k_rot)
-
-        layout = kwargs.get("layout", "BNSD")
-        if layout == "BNSD":
-            b, n, s, d = query.shape
-            query = query.permute(0, 2, 1, 3).reshape(b * s, n, d)
-            key = key.permute(0, 2, 1, 3).reshape(b * s, n, d)
-            value = value.permute(0, 2, 1, 3).reshape(b * s, n, d)
-        elif layout == "BSND":
-            b, s, n, d = query.shape
-            query = query.reshape(b * s, n, d)
-            key = key.reshape(b * s, n, d)
-            value = value.reshape(b * s, n, d)
-        else:
-            raise ValueError(f"Unsupported layout: {layout}, expected 'BNSD' or 'BSND'.")
-
-        # Pass seq lengths as a python list (host ints), not a device tensor.
-        # A device torch.arange forces aclnn to read it back via aten._local_scalar_dense,
-        # which dynamo cannot guard, breaking the graph at every attn layer.
-        # The op signature accepts SymInt[], and s/b here are plain python ints from query.shape.
-        # The lru_cache benefits eager mode only; qlen and kvlen are identical here.
-        seq_lens = _get_fa_actual_seq_lens(b, s)
-
-        q, q_scale = torch_npu.npu_dynamic_mx_quant(query, dst_type=torch.float8_e4m3fn, axis=-1)
-        k, k_scale = torch_npu.npu_dynamic_mx_quant(key, dst_type=torch.float8_e4m3fn, axis=-1)
-        v, v_scale = torch_npu.npu_dynamic_mx_quant(value, dst_type=torch.float8_e4m3fn, axis=0)
-
-        x = torch_npu.npu_fused_infer_attention_score_v2(
-            q,
-            k,
-            v,
-            input_layout="TND",
-            num_query_heads=n,
-            num_key_value_heads=n,
-            softmax_scale=1.0 / math.sqrt(d),
-            dequant_scale_query=q_scale,
-            dequant_scale_key=k_scale,
-            dequant_scale_value=v_scale,
-            actual_seq_qlen=seq_lens,
-            actual_seq_kvlen=seq_lens,
-            sparse_mode=0,  # could be 0/3, atten_mask is needed if set 3
-            query_quant_mode=6,
-            key_quant_mode=6,
-            value_quant_mode=8,
-            query_dtype=torch.float8_e4m3fn,
-            key_dtype=torch.float8_e4m3fn,
-            value_dtype=torch.float8_e4m3fn,
-            dequant_scale_query_dtype=torch_npu.float8_e8m0fnu,
-            dequant_scale_key_dtype=torch_npu.float8_e8m0fnu,
-            dequant_scale_value_dtype=torch_npu.float8_e8m0fnu,
-            out_dtype=query.dtype,
-        )[0]
-
-        if layout == "BNSD":
-            # [B*S, N, D] -> [B, S, N, D] -> [B, N, S, D]
-            x = x.reshape(b, s, n, d).permute(0, 2, 1, 3)
-        elif layout == "BSND":
-            # [B*S, N, D] -> [B, S, N, D]
-            x = x.reshape(b, s, n, d)
-
-        return x
+        return quant_attention(
+            query, key, value, precision="mxfp8", q_rot=self.q_rot, k_rot=self.k_rot,
+            layout=kwargs.get("layout", "BNSD"),
+        )
 
 
 class MXFP4QuantFA(nn.Module):
