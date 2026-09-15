@@ -55,7 +55,7 @@ description: "Handle MindIE-SD documentation, governance, contributor workflow, 
 - `中英文`、`英文版`、`中文版`、`双语`
 - `Sphinx`、`Read the Docs`、`RTD`、`docs/conf.py`
 - `文档网站`、`编译`、`构建`、`sphinx-build`
-- `index.md`、`menu_user_manual.md`、目录、导航、首页
+- `index.md`、`{toctree}`、目录、导航、首页
 - `commit`、`提交`、`commit message`
 - `rebase`、`squash`、`cherry-pick`
 - 提交历史整理、提交拆分、历史重写
@@ -86,8 +86,9 @@ description: "Handle MindIE-SD documentation, governance, contributor workflow, 
 - `AGENTS.md`
 - 当前被修改的文档文件
 - 对应语言的配套文档
-- `docs/index.md`，如果修改影响首页入口
-- `docs/zh/menu_user_manual.md` 或 `docs/en/menu_user_manual.md`，如果修改影响导航
+- `docs/zh/index.md` 与 `docs/en/index.md`，如果修改影响首页入口
+- 导航入口 = 对应语言 `index.md` 内的 `{toctree}` 块；**本仓无 `docs/index.md`、也无任何
+  `menu_user_manual.md`**（2026-09 核实：旧文本按这两个名字检查，实际文件不存在）
 - `docs/conf.py`
 - `.readthedocs.yaml`
 - `docs/requirements-docs.txt`
@@ -109,9 +110,8 @@ description: "Handle MindIE-SD documentation, governance, contributor workflow, 
 ### 3.6 Version / release policy 变更
 
 - `AGENTS.md`
-- `CHANGELOG.md`
-- `RELEASE.md`
-- `mindiesd/_version.py`
+- `version.py`（**根目录**，`__version__` 唯一版本源；**本仓无 `mindiesd/_version.py`**，2026-09 核实）
+- `docs/zh/release_note.md` 与 `docs/en/release_note.md`（对外发布说明；**本仓无 `CHANGELOG.md` / `RELEASE.md`**）
 - `pyproject.toml`
 - 相关流程文件
 
@@ -203,7 +203,11 @@ description: "Handle MindIE-SD documentation, governance, contributor workflow, 
 
 - 修改 `docs/zh/` 下对外文档时，默认检查 `docs/en/` 是否存在对应配套页
 - 修改 `docs/en/` 下对外文档时，默认检查 `docs/zh/` 是否存在对应配套页
-- 修改首页、目录、用户手册入口时，检查 `docs/index.md`、`docs/zh/menu_user_manual.md`、`docs/en/menu_user_manual.md`
+- 修改首页、目录、导航时，检查 `docs/zh/index.md` 与 `docs/en/index.md` 的 `{toctree}`
+  （**导航无独立手册文件**：本仓不存在 `docs/index.md` 与 `menu_user_manual.md`）
+- 双语配套实测基线（2026-09 全量比对）：`docs/{zh,en}/` 的 `*.md` 一一对应，**唯一差异**为
+  `docs/zh/appendix/error_code.md` 与 `docs/zh/appendix/log.md` 在 `docs/en/appendix/` 下**无对应页**
+  ——改 `docs/` 前复核这两处是「有意不翻译」还是「漏配套」，不要默认全量对齐
 - 修改 developer guide 结构时，检查中英文 developer guide 入口是否同步
 - 涉及文档文件、导航或文档配置修改时，默认给出最小站点验证路径：
 - `python -m pip install -r docs/requirements-docs.txt`
@@ -216,7 +220,8 @@ description: "Handle MindIE-SD documentation, governance, contributor workflow, 
 - 是否误改了非目标流程或非目标模板
 - 是否需要中英文同步
 - 是否需要 `OWNERS` 或角色信息联动
-- 是否影响 `CHANGELOG.md`、`RELEASE.md`、`mindiesd/_version.py`、`pyproject.toml`
+- 是否影响版本源与发布说明——`version.py`（根）、`pyproject.toml`、
+  `docs/{zh,en}/release_note.md`（**本仓无 `CHANGELOG.md`/`RELEASE.md`/`mindiesd/_version.py`**）
 - 是否引入新的流程入口、模板字段或版本来源
 - 是否引入新的 commit / PR 格式分歧
 - 是否正确使用 `.gitcode/PULL_REQUEST_TEMPLATE.md`
@@ -248,3 +253,19 @@ description: "Handle MindIE-SD documentation, governance, contributor workflow, 
 - `PR title proposal`
 - `PR body draft`
 - 如果没有联动项或风险，明确写“无”
+
+## 8. 维护与更新
+
+出现以下情况时更新本 skill：
+
+- **仓库结构变化**：`docs/` 的入口文件、目录层级或导航机制变化（本 skill §3.3/§5.6 记录的
+  路径是**核实过的事实**，不是约定——文件增删/改名后必须同步，否则会重演「检查不存在的文件」）；
+- **提交 / MR 规范变化**：`.gitcode/PULL_REQUEST_TEMPLATE.md`、`AGENTS.md`、
+  `assets/mr_ruleset_*.xlsx` 的定位或字段变化；
+- **中英文配套基线变化**：`docs/{zh,en}/` 的页面对应关系变化（§5.6 的实测基线随之失效）；
+- **版本策略 / 发布规则变化**：`version.py`（根）、`pyproject.toml`、
+  `docs/{zh,en}/release_note.md` 的版本源或流程变化。
+
+**复核方法（用于判定旧记录是否仍成立）**：改 `docs/` 前跑一次最小核对——
+`docs/zh/index.md`、`docs/en/index.md` 是否存在，以及本 skill 提到的每个路径是否真实存在
+（一条 `Test-Path` / `ls` 即可）；不存在的路径按事实修正，不要沿用过时名字。

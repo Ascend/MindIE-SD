@@ -128,7 +128,8 @@ Benchmark 计时方法论（warmup / 同步 / 编译预热排除 / **L2-flush �
 1. 回顾本阶段问题点和改进点
 2. 检查是否需要补充 references/rework-lessons.md
 3. 交叉检查各模块 skill 需不需要更新
-4. 同步刷新 `.agents/README.md` 技能总览与各 skill 状态
+4. 同步刷新 `.agents/README.md` 的技能清单（§1/§2 表）与目录树（§6）——**不写状态/进度**：
+   过程记录与待办不入该文件（P1-4 已整段删除约 500 行变更日志；历史查 `git log`）。
 
 ### 识别更新信号
 

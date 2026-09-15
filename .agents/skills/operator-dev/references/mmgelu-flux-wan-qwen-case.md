@@ -54,3 +54,15 @@
 - 共享远端 .so 可能被他方构建（不同 torch ABI）覆盖 → 复现前 `check_mindie_operator_exists`。
 - qwen-image diffusers 0.40 `QwenEmbedRope` str-device bug → 用 0.38。
 - profile 并行必须 `--profile-dir` 隔离。
+
+## 6. 维护与更新
+
+- **触发条件**：本件声明的数据/报告真源 `tmp/wanflux_ffn/`（`ge_hit`、
+  `compilation_ffn_fusion_report.md`、`phase1_3_delivery_report.md`）更新，或按数字纪律迁往
+  `{run_results_dir}/archive/`；§4 结果表的 off→on / fused / gelu(残) / Qmm 计数在 FLUX.1-dev /
+  Wan2.2 / Qwen-Image 任一新跑中变化；§1 站点链、§2 kernel 要点、§3 pattern 树随
+  `catlass-ffn-fusion-guide.md` 与 `mindiesd-fusion-notes.md` §7 更新。
+- **复核方法**：逐条比对 `mindiesd-fusion-notes.md` §7 与本文 §1–§5（operator-dev SKILL 已记录本件
+  "并入该节并删除"），并核对本文 §4 计数契约（off: fused 0/gelu 6；on: fused 4/gelu 2）与 §3 的
+  `enable_flux_wan_ffn_gelu_fusion` 注册路径；同时按 `.agents/README.md` §7 的 `-case.md` 政策核对
+  本件在 SKILL.md 的登记状态与实测数字出库情况。

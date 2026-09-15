@@ -149,6 +149,13 @@ vllm serve --omni 启动即失败
 > `framework-integration`（`../../framework-integration/references/run-entry-and-request-tiers.md`
 > 与 `../../framework-integration/SKILL.md` §1）。
 
+## 失效信号与复核
+
+- **§A / §D 的绕行条目（注释掉 `build_ops.sh` 里的 `source build_tik_ops.sh` 行、`triton` 换 `triton-ascend`、补装 `build wheel cmake`、`pip install -e .` 认领新增 `.py`）都是某一版工具链下的补丁**：换 CANN / torch_npu 后在干净容器里按原样重跑一次编译安装，某条报错不再出现即该条已失效，删除本项而不是继续照抄绕行。
+- **§H 的四类缺口分别绑基础镜像、权重目录与设备型号**：`ImportError: libxcb.so.1` 用 `dnf list installed libxcb` 复核；`weights were not initialized from checkpoint` 按本文件既有方法对照 `{model_dir}/*.safetensors.index.json` 的 `weight_map` 重数一遍分片；`MINDIE_SD_FA_TYPE` 那条要用 `npu-smi info -l` 确认目标仍是 950PR / 950DT 才成立；`Invalid wheel filename` 那条看 pip 当前版本是否已接受被重命名的 wheel。
+- **§F / §G 的运行期条目（ranktable 挂载 `/usr/local/Ascend/driver/topo`、必须先 import mindiesd 再初始化 NPU、gloo `ss1.ss_family == ss2.ss_family (10 vs 2)`）属容器挂载与网络栈状态**：重跑一次多卡最小启动即可判定——`hcclCommInitRootInfoConfig error` 复现即 ranktable 仍缺；gloo 报错不再出现即该条转为历史记录（IPv4/IPv6 已统一）。
+- **§E 的 `deploy_to_remote.py` 路径语义与排除列表是脚本实现的事实，不是稳定结论**：以 `SKILL.md`「部署脚本」节的当前实现重新核对一次（读脚本排除规则 + 比对该次同步实际传过去的文件集合），脚本一改本条的绕行描述即过期。
+
 ## 维护与更新
 
 当部署 / 编译 / 安装故障模式变化或新增高危问题时，按 dev-workflow 的复盘流程更新本文件；

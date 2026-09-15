@@ -264,3 +264,10 @@ key_mapping = {
   —— 只在原环境成立，**不可跨模型 / 框架 / 规模 / 窗口引用**，也不得读作该组合的预期值。
 - 支持矩阵证据码 **V2** 的**能力面**留在 `framework-support-matrix.md`，**开启方式**指回本文件。
 - 逐步耗时 / 显存 / kernel 明细属内部测量记录，不入库（见 `.agents` 治理与隐私约定）。
+
+## 7. 维护与更新
+
+- 触发（框架 / 依赖）：DiffSynth-Engine 或其 pyproject 锁定的 transformers / diffusers 版本、容器内 vllm-omni / mindiesd 所需版本变化时，§1.2 的依赖锁冲突与 §2.2 的 `pip install -e . --no-deps` + `SETUPTOOLS_SCM_PRETEND_VERSION_FOR_DIFFSYNTH_ENGINE` 前置须重核；若 `PipelineConfig.compile_backend` 的上游默认值不再是 `inductor`（§5 的探针合入），§3.1 接入点与 §5 的探针标注须改写。
+- 触发（使能集合 / 模型层前置）：`qwen_rope_pattern`、`residual_gate_add`、`AdaLayerNormV2`、`FastGelu` 等 pattern 的注册或命中形态变化，或 §3.2 的 RoPE 实数域改写 / text encoder key_mapping 所依赖的 transformers 布局（`visual.*` → `model.visual.*` 一类迁移）变化时，§3.3 三层证据与 §3.4 使能集合表、`framework-support-matrix.md` 的 V2 行须重测。
+- 触发（有损接线）：§3.5 的档位来自 mindiesd 库现有 CacheAgent（`DiTBlockCache` / `AttentionCache`）在 bench 脚本侧的接入（DSE 源码零改动）——库侧 cache 接口、计数契约（reuse / compute）或双缓存互斥语义变化时，该节档位方向与「CFG-on 生产路径 shape 冲突」结论须重跑。
+- 复核：最小核对 = dummy run（随机权重 2 层）复现 §3.3 的使能集合（pattern 匹配基于图结构、不依赖层数 / 权重），再在真实权重（60 层 / 1024²）上确认 `kernel_details.csv` 里 `residual_gate_add_kernel` / `RotaryPositionEmbeddingV2` / `AdaLayerNormV2` / `FastGelu` 实际执行、且对应原始算子（`GeluV2`、逐元素 `Mul`/`Stack` 链）消失——日志 2048 截断会误判 0 命中，须以 DOT 图或 kernel csv 为准。

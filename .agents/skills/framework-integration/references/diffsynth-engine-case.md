@@ -164,3 +164,10 @@ DiTBlockCache 参数矩阵（CFG-off 单调用路径，compile 基线；绝对�
 
 > 过程细节与完整数据不外泄：本文只给方向性结论与相对量级；详细逐步耗时 /
 > 显存 / kernel 明细属内部测量记录，不入库（见 .agents 治理与隐私约定）。
+
+## 7. 维护与更新
+
+- 触发（框架 / 环境）：DiffSynth-Engine 版本或其 pyproject 锁定的 transformers / diffusers 版本、Qwen-Image 权重层数或容器环境变化时，开篇「结论仅在该框架 + Qwen-Image + 该容器环境成立」失效——§1 画像速答与 §2 的三处改动（`_compiled_call_impl` 原地写入、RoPE 实数域改写、text encoder key 归一化）须重验。
+- 触发（pattern 使能集合）：`qwen_rope`、`wan_residual_gate`、`fast_gelu`、`rms_norm`、`adaln` 等融合 pattern 的注册集合或命中形态变化（含 §6.4 的 text-rope 4D 误匹配被补变体吃掉）时，§3.1 使能集合表、§6.2 逐 pass AB 排序与 §6.4 的 fallback 结论须重测。
+- 触发（有损接线）：§6.5 的档位全部来自 mindiesd 库现有 CacheAgent（DiTBlockCache / AttentionCache）在 bench 脚本侧的接入（DSE 源码零改动）——库侧 cache 接口、计数契约（reuse / compute）或双缓存互斥语义变化时，该节档位与质量门禁结论须重跑。
+- 复核：最小核对 = 用 dummy run（2 层）确认 §3.1 的融合 kernel 是否仍使能（pattern 匹配基于图结构、不依赖层数/权重），再在真实权重（60 层）上确认 `kernel_details.csv` 中 `RotaryPositionEmbeddingV2` / `RmsNorm` / `residual_gate_add_kernel` / `AdaLayerNormV2` / `FastGelu` 的实际执行次数且逐元素 `Mul`/`Stack`/`Cat` 仍大幅减少——日志 2048 截断会误判 0 命中，须以 `graph_log_url` 落盘 DOT 或 kernel csv 为准。

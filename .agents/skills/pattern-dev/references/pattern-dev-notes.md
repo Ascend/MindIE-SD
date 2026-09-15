@@ -228,6 +228,14 @@ latents 位级一致（mean_rel=0.0）；transformer 步长显著下降（本组
 `../scripts/probe_real_graph_pattern.py`、`../scripts/isolate_pattern_prefix.py`、
 `../scripts/check_fusion_hit.py`、`../scripts/numeric_check_eager_compile.py`。
 
+## 6. 失效信号与复核
+
+- **§1 的 ABCMeta `isinstance` 陷阱与去重注册规则（`_registered_pattern_names`、`patterns.pattern_replacements` 的 setUp 清理）绑 `PatternBase` 与注册框架实现**：跑一次 `tests/compilation/test_pattern_registration.py` 与新增 pattern 的注册用例——若注册表已能自行区分实例与类、或去重集合已被框架内建机制取代，这两条描述即过期。
+- **§4 的就地修改模块状态反模式（`mindiesd/quantization/layer.py` 的 W8A8/W4A4 量化 Linear、被 trace 的包装读写模块级 dict）绑 `torch.compile` 的 guard 行为**：对该路径重跑 `TORCH_LOGS=recompiles ... 2>&1 | grep -E "Recompiling|guard failure"`——不再出现重编译即该反模式已不成立或实现已改写；模块级 dict 那条另看是否仍报 `___dict_contains(...)` guard 失败。
+- **§5 的 fake op 与二次注册规则（`register_mindie_fake_op` 的 `x1.new_empty(...)` 设备跟随、`Unhandled FakeTensor Device Propagation ... meta, npu:0`、`torch.library.Library("mindiesd", "FRAGMENT")`）绑 torch / torch_npu 版本**：按最小接入用例重跑一次；报错文案或注册方式变了就以新报错为准重新核对，不照搬本文的报错字符串。
+- **§5.2 的「动态 shape 节点让 trace 式 pattern 永不命中」结论绑注册机制与图形态**：按该方法在原 site 上重跑 `scripts/check_fusion_hit.py`（compile kernel csv 的 fused 计数是否仍为 0）——若 `PatternBase`/`register_replacement` 已支持动态 view 尺寸而命中转正，本案例降级为历史记录；判定仍须以真实 compile 图为准（`scripts/probe_real_graph_pattern.py`），probe 侧 `symbolic_trace`/`make_fx` 的图形态差异会继续造成 matched 0 的假象。
+- **§3 的 atol 分档与 §5 的家族级读法结论（GEMM/FA 类在 compile 下不变、收益来自小 kernel 链被融合/消减）绑 dtype 组合与实测模型**：数值门以 `pattern-dev/SKILL.md` Phase 4 为单点重新核对（本文件只引用不定义）；家族级读法用 `scripts/compare_profiles.py` 对当前模型重跑一次 kernel diff，若 GEMM/FA 部分不再占 compile kernel_sum 的绝大部分，§5 的组合结论需重写。
+
 ## 维护与更新
 
 当PatternBase/注册框架行为变化时，按 dev-workflow 的复盘流程更新本文件。

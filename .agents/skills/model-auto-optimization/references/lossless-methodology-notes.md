@@ -151,3 +151,14 @@
   框架开启方式：framework-integration/references/vllm-omni-enablement.md
 - 质量门禁首个案例：accuracy-gate/references/quality-gate.md + MindIE-SD/evals/（契约/工具/profile minimax-h3.toml）
 - 有损档位表与组合：H3_TUNING_REPORT 归档（见 `vllm-omni-enablement.md` §6 产物坐标指针）
+
+## G. 维护与更新
+
+- **触发条件**：① §B 的框架 offload 开启姿势变化（vllm-omni `--enable-distributed-layerwise-offload`
+  / `--dlo-resident-layers` 等开关、mindiesd `enable_offload` 语义）；② 有损档使能改变 kernel 序列，
+  使 §D 的 `DynamicQuantV2 → QuantBatchMatmulV3` 邻接证据与 O1–O7 机会清单失效、或 §E 的
+  Comm(未重叠) 占比结论漂移；③ §F 两条提速轨（少量 step 快测 / mindiesd dummy-run）的覆盖边界变化；
+  ④ §C 的归档坐标（`vllm-omni-minimax-h3-case.md`、`H3_w8a8_fusion_analysis.md`）改名或迁移。
+- **复核方法**：用 profiling-collect 的 env 门控单 forward hook 对新档重采一次同口径单步
+  kernel_details / step_trace_time，按 §D 重做邻接计数、按 §E 看 compute / comm(未重叠) / free
+  占比是否仍复现原结论；不复现即改该节，并同步 post-enable-review 对应面。

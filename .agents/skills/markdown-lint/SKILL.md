@@ -72,23 +72,39 @@ examples/dummy_run/
 | MD009 | 禁止行尾空格（由 `trailing-whitespace` 钩子覆盖） |
 | MD012 | 禁止连续多个空白行 |
 | MD031 | 围栏代码块前后需有空行 |
+| MD032 | 列表前后需有空行（`**标题**：` 段末**直接接列表**、块引用内列表项前缺空引用行都会触发） |
 | MD047 | 文件末尾需有换行符（由 `end-of-file-fixer` 钩子覆盖） |
 
 ---
 
 ## 2. 验证命令
 
+> ⚠️ **先读清钩子结构（2026-09 核实）**：`.pre-commit-config.yaml` 里有**两个同 `id: markdownlint`
+> 的钩子**，别当成一个：
+>
+> - `markdownlint-manual`（alias）：`exclude: ^\.agents/` + `stages: [manual]` —— **仓库 `.agents/`
+>   之外的 `.md` 才需要显式触发**；
+> - `markdownlint-agents`（alias）：`files: ^\.agents/.*\.md$`，**未覆盖 `stages` ⇒ 走 `default_stages:
+>   [pre-commit]`，即提交/CI 默认就会跑** —— 所以「本地 `pre-commit run --all-files` 通过 ≠ Markdown
+>   合规」这句话**对 `.agents/**` 不成立**。
+>
+> 另两条事实：配置为 `.markdownlint.json`（`default: true`，**关闭** `MD013`/`MD033`/`MD041`/`MD046`）；
+> 版本**必须用仓库 pin 的 v0.44.0** —— 更高版本（如 0.49.x）会对同一批文件报上千条 `MD060`
+> 版本性假违规（实测 0.44.0 = 0 违规 vs 0.49.1 = 1943 条）。
+
 ### 2.1 全量检查
 
 ```shell
-# 检查单个文件
-pre-commit run markdownlint --files path/to/file.md
+# 检查单个文件（manual 档的钩子必须带 --hook-stage manual，否则被跳过 = 实际没检查）
+pre-commit run markdownlint-manual --hook-stage manual --files path/to/file.md
 
 # 检查所有文件（CI 模式）
-pre-commit run markdownlint --all-files
+pre-commit run markdownlint-manual --hook-stage manual --all-files
 ```
 
-> `markdownlint` 钩子在 `.pre-commit-config.yaml` 中配置为 `stages: [manual]`，需显式触发。
+> `markdownlint-manual`（全仓档）配置为 `stages: [manual]`，**必须显式带 `--hook-stage manual`**
+> 才会执行——不带该标志的命令会被 pre-commit 跳过而**静默什么都不检查**。
+> `.agents/**/*.md` 由 `markdownlint-agents` 在默认档强制执行，无需手动触发。
 
 ### 2.2 提交范围专项检查
 

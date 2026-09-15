@@ -144,3 +144,24 @@ gate-msa 残差 2D 融合：kernel 级为正（新增 2D kernel 替换 mul+add �
 - **记录**：每个尝试（成功/失败/回退）写入优化日志，附实测数据与归因
 - 融合/并行收益用**融合阶梯**呈现（kernel 数/总耗时逐级：分解链→单算子→compile 融合），
   与单次 diff 相比更能说明收益来源与剩余空间
+
+## 7. 维护与更新
+
+- **触发条件**：分析工具链换代 —— `analyze_trace.py` 的 5 层递进划分、`--profile-dir` 须传
+  ASCEND_PROFILER_OUTPUT 的**父目录**、无 `__main__` 块需 `sys.argv` 包装、
+  NOTIFY_WAIT_SQE / DAVID_EVENT_WAIT 是同步事件须从 kernel 统计剔除；`compare_traces.py` 的
+  New / Removed / Common 三表与自动 verdict；以及 §1 的 5 步流程、§3.3 的判定表、§4.3 的归因
+  框架 —— 这些切法都按当时的分析动作定义，工具版本或 profiling 产出结构变化即需改写。
+  另：§2 的 rank 口径（固定 rank0、per-step 取 rank0 的 29 步求和、p50 代表稳态）依赖框架日志
+  行格式（`Run DiT cost  Rank…`、`Run Dit every step cost X seconds`），§6 的「≥1% 且可复现」
+  采纳门随测量纪律更新。**换模型 / 换框架本身不触发本节**（§0：可迁移的是方法，不是结论），
+  只触发重跑完整试验协议。
+- **复核方法**：换工具或换框架后走一遍最小闭环 —— 一次单步采集（warmup ≥5 步在 profiler 外，
+  compile 场景 ≥10，且保证 profiled step ≤ `infer_steps`，否则永远不触发），再依次跑
+  `analyze_trace.py` 与 `compare_traces.py`，确认 §3.3 的四条读数（New 次数对齐 → Removed
+  类别降幅 → 退化 kernel 消失 → 总量 / 占比解释）仍能逐条判读；任一条读数失去判读能力，
+  该条判据即作废并按新工具重写，不得沿用量级。
+- **口径联动**：§5 里依赖具体框架 / 引擎的现象（clean-window（steps 2-14）、卡组 / 端口环境
+  劣化的 ~10× 慢）应改引其真源（`../../perf-gate/references/measurement-discipline.md`、
+  `../../dit-parallel-opt/references/ascend-topology-bandwidth-diag.md`）；§3.2 两个脚本的行为
+  变化属工具链触发，本技能内引用它们的 reference（如 `analysis-flow.md`）须一并同步。

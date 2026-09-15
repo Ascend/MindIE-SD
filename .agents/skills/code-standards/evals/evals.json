@@ -15,7 +15,7 @@
     {
       "id": 2,
       "prompt": "提交前要跑哪些代码质量检查？",
-      "expected_output": "pre-commit run --all-files（默认 stage 的 16 个钩子：ruff-check/ruff-format/codespell/typos/pylint/bandit/clang-format/clang-tidy/gitleaks 等），Markdown 另跑 markdownlint（stages: [manual]，需 --hook-stage manual）",
+      "expected_output": "pre-commit run --all-files（默认 stage 的 20 个钩子，含 `kb-lint` / `kb-lint-selftest` / `run-evals-selftest` / `markdownlint-agents`：ruff-check/ruff-format/codespell/typos/pylint/bandit/clang-format/clang-tidy/gitleaks 等），Markdown 另跑 markdownlint（stages: [manual]，需 --hook-stage manual）",
       "files": [],
       "expectations": [
         "给出 pre-commit run --all-files",
@@ -27,7 +27,7 @@
     {
       "id": 3,
       "prompt": "门禁报 avoid-import-method 违规，怎么改？",
-      "expected_output": "把 __import__ 改为 importlib.import_module；该条属评审约定——本仓 pre-commit 17 个钩子无对应检查，且与 Ruff UP015 无关（UP015 的真实语义是 redundant-open-modes，即 open(f, \"r\") 简化为 open(f)）",
+      "expected_output": "把 __import__ 改为 importlib.import_module；该条属评审约定——本仓 pre-commit 21 个钩子条目无对应检查，且与 Ruff UP015 无关（UP015 的真实语义是 redundant-open-modes，即 open(f, \"r\") 简化为 open(f)）",
       "files": [],
       "expectations": [
         "给出 importlib.import_module 正例",

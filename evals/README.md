@@ -8,8 +8,12 @@
 | `benchmarks/` | 核心算子 FA/BSA/GMM/MM | 速度：MFU/MBU/时延、实现级选型 |
 | `evals/` | 扩散模型端到端产物（图像/视频帧） | 质量：定量指标 + 视觉伪影 + 归因核验 |
 
-> 命名消歧：本目录是产品仓的**质量门禁**；`.agents/skills/*/evals/` 是技能**触发测试**
-> （evals.json，skill-creator 语义），两者无关。
+> 命名消歧：本目录是产品仓的**质量门禁**；技能层的 `evals.json`（skill-creator 语义的**触发测试**）
+> 是另一套东西，与本目录无关。
+>
+> **依赖方向（强制）**：**skills 引用 evals**（技能读本目录的契约、调本目录的脚本）；
+> 本目录**不反向引用 skills 层路径**——反向引用会让产品侧资产随技能树重组而腐烂
+> （历史实例：本文件曾指向 skills 里已迁走的 `quality-gate.md`，迁移后即成死链）。
 
 ## 门禁契约（有损优化验收 = 性能门 + 质量门）
 
@@ -45,9 +49,8 @@ visual_artifact == pass
 
 ## 使用（S4 / 闭环复验）
 
-方法文档（何时用、流程、与相邻边界）见
-`.agents/skills/performance-optimization/references/quality-gate.md`；
-本目录只放契约、判定标准、基线 profile 约定与工具。
+本目录放**契约、判定标准、基线 profile 约定与工具**；“何时用 / 流程 / 与相邻边界”
+由**对应技能**承载（skills → evals 单向引用；本目录不列出跨层路径）。
 
 ```bash
 # 帧级定量对照（baseline vs config，同帧索引，CPU 可跑；阈值可选 fail-closed）
@@ -57,9 +60,7 @@ python evals/scripts/quality_compare.py --baseline {baseline_frames_dir} \
 # 视觉伪影判卷：按 rubrics/visual-artifact-gate.md 组织 VLM 或人工并排对照
 ```
 
-产物建议落在闭环产物目录（见
-`.agents/skills/model-auto-optimization/references/artifact-layout.md`
-的 `runs/YYYYMMDD_{model}_optimization/` 布局）。
+产物建议落在闭环产物目录 `runs/YYYYMMDD_{model}_optimization/`（布局约定由编排层技能承载）。
 
 ## 目录结构
 
@@ -84,5 +85,5 @@ evals/
   强校验（profile 完整、frozen_hash 非空、quality_json 指针、evidence 一致、仓库无具体 profile）。
 - 仓库只维护 `profiles/_template.toml`（契约骨架）与 `profiles/README.md`（约定）；
   首个真实 NPU 有损案例回填时若需新增字段 → 先改 _template + gen_profile/check_profile 再生成。
-- 门禁契约/结构变化 → 同步 `.agents/skills/performance-optimization/references/quality-gate.md`
-  与 `.agents/README.md` §4 槽位（S4-1）。
+- 门禁契约/结构变化 → **由 skills 侧同步**（技能引用本目录；本目录不反向引用 skills，
+  故同步义务在引用方）。

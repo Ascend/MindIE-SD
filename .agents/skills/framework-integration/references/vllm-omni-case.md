@@ -54,7 +54,9 @@ compiled = torch.compile(pipe.transformer, backend=MindieSDBackend())
 | backend 实例复用 | 必须 | 必须（跨框架通用） |
 | pattern 匹配实际图形态 | 必须（chunk 双 split） | 按模型图 dump 验证（Qwen/Wan/MiniMax 各不同） |
 
-> ⚠️ 以上为**推断**，vLLM-Omni 场景尚未实测；接入时必须按 §6 协议验证。
+> ⚠️ 以上为**推断**，vLLM-Omni 场景尚未实测；接入时必须按 `vllm-omni-enablement.md`
+> §1.3「使能判断口径（与 dummy run 对比 + 三层证据）」与 §3.6「计数契约与真实性核验」验证。
+> （原文写「按 §6 协议验证」，而本文件原无 §6 —— 既有空指，已改指真源；勿再引用本节号。）
 
 ## 3. 使能判断（与 dummy run 对比）
 
@@ -83,3 +85,17 @@ compiled = torch.compile(pipe.transformer, backend=MindieSDBackend())
 - 多卡通信占比高 → a2a 留 eager 的**通信重叠红利**可能显著（与 LightX2V 通信段明显下降同源）
 - 真实权重耗时：需完整推理 + rank0 口径墙钟 + compare_traces.py（本文不给出数字，
   该环境未完成 vLLM-Omni 真实权重墙钟对比）
+
+## 6. 维护与更新
+
+- **触发（存量件处置）**：本件为存量 `-case.md`（类别已取消，`../SKILL.md` §4 登记的建议处置为
+  「并入 `vllm-omni-enablement.md` 后删」）——一旦并入 / 归档完成即整体删除；在此之前只作参照，
+  不新增实测内容（新内容写入 `vllm-omni-enablement.md` 与矩阵格）。
+- **触发（推断转实测）**：§2.3「预期必要的修复」整表原文自述为**推断**（「vLLM-Omni 场景尚未实测」）；
+  vLLM-Omni 版本跨越 0.28 后，a2a/ring collective 留 eager（`torch._dynamo.disable`）、backend 实例复用、
+  pattern 图形态三项一律以 `vllm-omni-enablement.md` §3.5/§4 的实测结论为准，本表不得当结论引用；
+  该件 §2.2 的 `torch.compile(pipe.transformer, backend=MindieSDBackend())` 与 §2.1 启动开关
+  （`--omni` / `--tensor-parallel-size` / `--vae-use-tiling` / `--vae-patch-parallel-size`）改名 / 移除时同步失效。
+- **复核方法**：按 §3 跑一次最小使能即判本文件是否仍成立——三层证据（`MINDIE_LOG_LEVEL=DEBUG` 日志
+  → `graph_log_url` DOT 图 → `kernel_details.csv`）里能否取到融合 kernel 的实际执行次数；
+  若 `vllm-omni-enablement.md` 对应小节已给出实测结论，则 §2.3 / §5 直接作废（以实测件为准）。

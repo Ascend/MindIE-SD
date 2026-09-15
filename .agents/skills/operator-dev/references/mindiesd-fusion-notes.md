@@ -143,3 +143,16 @@ handler 从 out-proj Qmm 反向取 x1/w1/ws1/x_scale/bias，重建 fused + out Q
 - **共享远端 `.so` 可能被他方构建覆盖（不同 torch ABI）** → 复现前先 `check_mindie_operator_exists`。
 - qwen-image diffusers **0.40 的 `QwenEmbedRope` str-device bug** → 用 0.38。
 - **profile 并行必须 `--profile-dir` 隔离**。
+
+## 8. 维护与更新
+
+- **触发条件**：① §1 的构建链事实变化（kernel `.o/.json` 的 tiling-key 哈希缓存、`setup.py build_py`
+  的 vendors 拷贝行为、远端源副本与 vendors 一致性）；② CANN 版本变化引入/取消内建同名算子
+  （§2 的 `NormRopeConcat`）或改变 Ascend C API 语义（§3 的 `Muls/Adds` 对 `__bf16`、`Gather`
+  索引映射）；③ 语义核验与布局依据变化（§6 的 catlass——**外部库**，非本仓文件——`scripts/build.sh`
+  缓存行为、`npu_dynamic_mx_quant` 的 scale 布局）；④ §7 的 `enable_flux_wan_ffn_gelu_fusion`
+  开关与 `mm_gelu_mxquant` 集成落点变化。
+- **复核方法**：改 kernel 后按 §1 标准动作全清重建 + md5 校验 + 数值冒烟，并用 §1 sentinel 法
+  （在 kernel 里加一处可观测的语义改动）确认"跑的是新 kernel"；§6 的布局结论以实际
+  `npu_dynamic_mx_quant` 输出 shape 复核；§4 的 norm_rope 融合（已在量化路径整体移除）在
+  QuantMatmul 输出 dtype 变化时重测，不按旧结论直接复活。

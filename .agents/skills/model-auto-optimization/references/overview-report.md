@@ -119,7 +119,11 @@
     不作独立特性名）
   - 免训练有损：`Cache`、`量化({修饰符})`、`稀疏`、`时间步优化`
     （`Cache` = 固定特性名：实现**优先用框架自带能力**（如 vLLM-Omni 的 cache_dit /
-    DiTBlockCache），框架未接线时经 mindiesd `cache_agent` 接入；框架能力名/外部同名实现只作
+    DiTBlockCache）；**框架本身不支持 cache 时，明确记为「不支持」**（引用
+    `framework-integration/references/framework-support-matrix.md` 三态），**不引入 mindiesd
+    `cache_agent` 兜底**——仅当**明确要求基于 cache_agent 开发该缓存能力**时，才走
+    `framework-integration/references/cache-enablement-pattern.md`（属能力开发，不是「框架不支持
+    时的替代姿势」）；框架能力名/外部同名实现只作
     「说明」列内容，**不得作特性名**。`量化({修饰符})`：`量化` 为单一固定特性名，修饰符 =
     能力内容组合（w8a8 / f8 / w4a4 / w8a8f8 等，可多选组合），不是子特性。）
   - 训练感知：`少步蒸馏`、`VAE解码替换`、`可训练稀疏`、`QAT`

@@ -113,3 +113,10 @@ sys.stderr.flush()
   `../../perf-gate/references/measurement-discipline.md` §2；
 - **判定“差异很大算不算 bug”**前先做数值敏感度校准，SOP 单点在
   `../../perf-gate/references/measurement-discipline.md` §3。
+
+## 7. 维护与更新
+
+- **触发（门控接口变）**：门控变量名、默认值与其**读取点**变化（§2 探针里的 `VAE_SHARD_PIECES`、启动脚本是否把它 `unset`）——§1「门控没生效」与 §2 的 `pieces` 实读值判读要按新变量名同步，否则本文件会把静默回退又读成「切分没用」。
+- **触发（并行作用域判定变）**：片数推导式与「与 rank 无关」的写法一变（§2/§5 的 `WORLD_SIZE` / `RANK`、§4 对「逐字节相同」的两种解释），§3 的两侧对照表与 §5 的判别量顺序都要重排；一旦判定改回依赖 `rank`，本文件整体失效，先回到 `../SKILL.md` 第 4 步。
+- **触发（数字与口径类）**：§6 的亚秒级收益带作用域（Ascend 950PR 8 卡 · CANN 25.7.rc1.6 · 容器内 vLLM-Omni 0.28 + MindIE-SD），且「门控可逐请求翻转」是交错对照的前提——前提没了，§6 的上报路径不成立；测量口径单点在 `perf-gate/references/`，本文件不复制。
+- **复核方法**：按 §2 在解码入口与状态携带处各打一次状态量（`pieces` / 片内 shape / `state` 是否为 `None`），先确认片内输出宽度 ≈ 整段宽度 / `pieces`（§3 的「开」列），再跑 `scripts/shard_equivalence_check.py --model-spec <module>:build --pieces 2 4` 复核逐位等价；两者同时成立才可称「分片无损」。

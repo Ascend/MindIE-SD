@@ -26,12 +26,13 @@
     {
       "id": 3,
       "prompt": "完成一个功能阶段后要做复盘归档，流程是什么？",
-      "expected_output": "按 dev-workflow §6 复盘流程：回顾问题点 → 补充 rework-lessons → 交叉检查各模块 skill → 刷新 .agents/README.md",
+      "expected_output": "按 dev-workflow §6 复盘流程：回顾问题点 → 补充 rework-lessons → 交叉检查各模块 skill → 刷新 .agents/README.md 的技能清单（§1/§2 表）与目录树（§6）；过程记录与待办不写入该文件（历史查 git log）",
       "files": [],
       "expectations": [
         "输出 §6 复盘四步流程",
         "提到 rework-lessons.md 补充",
-        "提到刷新 .agents/README.md 技能总览"
+        "提到刷新 .agents/README.md 的技能清单（§1/§2）与目录树（§6）",
+        "说明过程记录/状态/待办不入 .agents/README.md（该文件只放当前有效内容）"
       ]
     }
   ]

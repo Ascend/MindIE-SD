@@ -21,7 +21,7 @@
       "expectations": [
         "指出 950PR/950DT 官方预构建镜像不覆盖，必须源码构建全栈（VLLM_TARGET_DEVICE=empty）",
         "给出 vllm 0.26.0 构建前先升级 setuptools（>=77.0.3,<81.0.0）并跳过 rust 的要点",
-        "给出 vllm-ascend / vllm-omni 用 pip install -e . --no-deps --no-build-isolation 安装并设置 VLLM_OMNI_VERSION_OVERRIDE",
+        "给出两者的源码安装参数**分别正确**：vllm-ascend 用 `--no-deps --no-build-isolation`，vllm-omni 用 `--no-build-isolation`（**不带 `--no-deps`**，带 `VLLM_OMNI_TARGET_DEVICE=npu`），并设置 VLLM_OMNI_VERSION_OVERRIDE",
         "提到容器需挂载 HCCL ranktable（/usr/local/Ascend/driver/topo）否则多卡启动报 hcclCommInitRootInfoConfig error code is 4"
       ]
     },

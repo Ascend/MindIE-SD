@@ -37,6 +37,10 @@
     `target_compile_options`（ASC 专属 `--npu-arch=dav-3510` 等）+ `set_source_files_properties(... LANGUAGE ASC)` + `target_sources` 加 kernel 源。
 - torch 入口：`csrc/plugin/mm_swiglu_mxquant.{h,cpp}` + `register_ops.cpp` 条件
   `m.def`/`m.impl`（`TORCH_LIBRARY_IMPL(..., PrivateUse1)`）；编译宏 `MINDIESD_CATLASS_FUSION_ENABLED` 由 csrc cmake 加。
+  > ⚠️ 本节的 `mm_swiglu_mxquant` 路径是**案例示例**：该算子的产品代码属**产品侧/另一 MR，
+  本仓不含**（2026-09 核实：`csrc/plugin/mm_swiglu_mxquant.*` 与
+  `mindiesd/layers/mm_swiglu_mxquant.py` 在本仓 git 全历史中均不存在）。**落位规则可照用，
+  路径须按实际接入的算子名替换**。
 - python 薄包装：`mindiesd/layers/mm_swiglu_mxquant.py`（校验 + 设备属性 + 调
   `torch.ops.mindiesd.*`）+ fake（`register_mindie_fake_op`，条件注册）。
 - `build/build_plugin.sh`：kernel 编译已并入 plugin cmake，无预构建步骤（仅 env 提示）。

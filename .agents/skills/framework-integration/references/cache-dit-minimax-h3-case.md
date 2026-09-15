@@ -256,3 +256,9 @@ CRLF（上传后 `sed -i 's/\r$//'`）；嵌套引号吞参数（上传脚本执
   （方法见 `dit-parallel-opt/references/ascend-topology-bandwidth-diag.md`）。
 - 口径注：`tensor_bytes` = op 本 rank 载荷；`moved~` 为估算（a2a / allreduce / broadcast ≈ ×(w−1)/w、
   all_reduce ≈ ×2(w−1)/w、all_gather ≈ ×(w−1)，w=2），**非 HCCL 硬件计数器**；跨卡移动 ≈ 2×per-rank moved。
+
+## 9. 维护与更新
+
+- 触发（版本 / 托管链）：cache-dit trunk `51979f0`、vllm-omni 0.26.0 或 diffusers 0.38.0 任一换版时，§2 使能面速查表（DBCache F2/B1/R0.4/W4/MC4 + TaylorSeer O2、`--diffusion-quantization-config`、`--diffusion-attention-backend RAINFUSION`、`OMNI_MINDIE_COMPILE=1`）与 §3 结果表的加速比结论整表失效——本文量级只在 4×950PR + MiniMax-H3/FL2VA + T2VA 1024×576/5s 口径下成立。
+- 触发（框架侧接线 / 缺口）：0.26 vLLM-Omni 的 RAINFUSION 后端补上 quant / mix 接线、cache_dit `summary.py` 的 `_cached_steps` 在视频路由被填充（§4.4）、或 §4.5 的 fp8 配置缺口被修时，§2 / §3 / §4.6 对应行与 `framework-support-matrix.md` 对应格须更新；§4.1 的泛型 pattern 误触回修（`enable_wan_residual_gate` / `enable_minimax_h3_gate` 注册移除）或 §1 的 vllm-omni 补丁 2 处一旦被回填覆盖，§3 的 compile 行结论不再可比。
+- 复核：按 §5 方法论复跑最小一步——同窗 lossless 括窗 + 目标档 n=2 稳态，用 §5 的 env 门控 hook 采一次单步 `kernel_details.csv`，核对 cached 步 kernel 计数、稀疏步 `BlockSparseAttentionV2` 出现次数与 dense FA 计数、以及 serve 日志 `RAINFUSION_ATTN active` 计数是否仍与本文一致；不一致即本文结论作废。

@@ -165,9 +165,10 @@ snapshot_download(
   processor 的 `_parallel_config`**（类属性默认 None）→ 必须给每个 `attn.processor._parallel_config` 设
   `ParallelConfig(context_parallel_config=cp_cfg)`（是 `ParallelConfig` **包装**，不是
   `ContextParallelConfig`），才会触发 Ulysses 的 all_to_all FA 切头路径。
-- **脚本（H3 侧坐标）**：`examples/dummy_run/minimax_h3_parallel.py`（runner）+
+- **脚本（H3 侧坐标 —— 产品侧/另一 MR，本仓不含）**：`examples/dummy_run/minimax_h3_parallel.py`（runner）+
   `examples/dummy_run/masking.py`（掩盖注入，含 pad+等分 all_to_all）+
   `mindiesd/parallel/`（comm stream 基础设施，自 framework 仓库移植）。
+  2026-09 核实：这三者在本仓 git 全历史中均不存在，故**不可据本行直接去读文件**。
 - **方向（本组合观测）**：掩盖把 comm stream 上的未掩盖通信从**主导项**压到**几乎可忽略**；
   USP 下 wall 由 **rank 间不均衡转为均衡**。该 4 卡档仍为 **host-bound**（Free 与设备等待与墙钟同量级，
   即设备等 host）——下一步方向见方法真源。
@@ -271,7 +272,9 @@ AdaLN:  index_select(scale_table) -> add(·,1.0) -> mul(x,·)
 - **FFN 形态（diffusers 0.40 `SwiGLU`）**：单个 `Linear(D→2F)` → `chunk` → `hidden*silu(gate)`；
   真图 `Qmm([S,2F]) → view[1,S,2F] → split → silu → mul → view[S,-1] → DxQ → Qmm`，view 尺寸带**动态 S**
   （同图 S=1/3967）⇒ trace 式 pattern 无法命中。
-- **FFN 融合算子（H3 侧接线事实）**：`mindiesd::mm_swiglu_mxquant`（`mindiesd/layers/mm_swiglu_mxquant.py`，
+- **FFN 融合算子（H3 侧接线事实）**：`mindiesd::mm_swiglu_mxquant`（python 薄包装坐标
+  `mindiesd/layers/mm_swiglu_mxquant.py` —— **属产品侧/另一 MR，本仓不含**，2026-09 核实；
+  本仓现存的相关实体是 `mindiesd/compilation/patterns/minimax_h3_swiglu_pattern.py`）；
   catlass 65 语义、单 problem、model-order W、kernel 内缓存列序调换）；**不接入 dummy eager 代码**，
   compile 侧默认开启（`enable_minimax_h3_ffn_fusion=True`），真图命中走 **graph-entry 手写 CallFunction 树
   - handler 手动改图**（参考 `torch/_inductor/fx_passes/mkldnn_fusion.py` 的 `_recover_linear`）：

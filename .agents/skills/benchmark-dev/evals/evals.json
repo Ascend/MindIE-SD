@@ -37,9 +37,9 @@
     {
       "id": 4,
       "prompt": "模型调优中，我想用 benchmark 对比一下 FA 的两种实现（torch_npu.npu_fusion_attention 和 mindiesd 的量化 FA）在同样序列下的性能，选出快的那个，还要看不同 head 数的影响。",
-      "expected_output": "用 mindie_bench run 分别以 --op {fa: {func: <实现>}} 跑两种实现（同 seqlen/dtype，--config 带 timeout），再用 --op {fa: {num_heads: N}} 扫不同 head 数；run 放同一 report 父目录下，report 合并为单 HTML 对比 MFU/latency 选型",
+      "expected_output": "用 mindie_bench run 按 **dtype/quant_algo 触发真实内核分发**分别跑两种实现（bf16 → torch_npu.npu_fusion_attention；mxfp4 → mindiesd 量化 FA，同 seqlen，--config 带 timeout），再用 --op {fa: {num_heads: N}} 扫不同 head 数；run 放同一 report 父目录下，report 合并为单 HTML 对比 MFU/latency 选型。**注意 `func` 键只是报告系列标签（fn=），不切换内核**——按它比会得到同一条数值曲线",
       "expectations": [
-        "用 --op {fa: {func: ...}} 指定不同 Python 内核实现做对比",
+        "按 dtype/quant_algo 触发**真实内核分发**做对比（bf16 → npu_fusion_attention；mxfp4 → 量化 FA）；不靠 `func` 键选实现（`func` 仅作报告系列标签）",
         "同口径对比：相同 seqlen/dtype/peak_flops（与 peak_bw）输入下比较 MFU 与 latency",
         "用 --op {fa: {num_heads: N}} 或 --config 多档扫描不同 head 数",
         "多次 run 放同一 report 父目录，report 合并为单 HTML 对比，选出最优实现/参数"

@@ -140,3 +140,19 @@
   `quality*/quality60*/qualitycmp*/qualitycurve*.json`、`frames*/frames60*/frames_cmp*/frames_curve/`、
   `kprof_kbf_{eager,compile}/…/ASCEND_PROFILER_OUTPUT/`。
 - 本地会话产物目录（`{run_results_dir}`）：H3_omni_tuning_analysis.md、H3_TUNING_REPORT_2026-09-05.md（§4b-4e 矩阵）、h3_frames/montage_*.png、h3_lossless60_r2.mp4。
+
+## 9. 维护与更新
+
+- **触发（口径失效即整表作废）**：§3/§4 的加速比与质量变化度只在开篇声明的口径内成立——
+  2026-09-05、env B、vLLM-Omni 0.28.0（`e305afba` + NPU fork 补丁）、MiniMax-H3-FL2VA 576p 10/60 步、
+  同卡组同步数同 seed；框架版本升级、环境/依赖换档（torch 2.13 / CANN 9.1.0 档）或基线变更后，
+  本表数字不得沿用，须按 `vllm-omni-enablement.md` 重采。
+- **触发（探针与开关面）**：§5 三条 fork 回修（RAINFUSION `supports_packed_mask_free` classmethod、
+  `OMNI_MINDIE_COMPILE` compile 注入、`OMNI_KPROF/OMNI_KPROF_AFTER/OMNI_KPROF_DIR` 采集 hook）
+  合入上游后按探针处置改写；§2 被点名的触发面（`find_spec("mindiesd")` 自动路由、`MINDIE_SD_FA_TYPE`、
+  `--diffusion-quantization-config` 的 `method:int8`、`RAINFUSION_ATTN`、`cache_dit`、
+  `--enable-distributed-layerwise-offload`）改名 / 移除时，本节与矩阵 V1 列（含子批次 V1a/V1b）同批核对。
+- **复核方法**：按 §4「计数契约」那条做最小复核即判本节结论是否仍成立——同卡组同 seed 冻结一次
+  lossless 基线后跑目标档，确认日志仍出现 `staying dense`（无 video 段 role 兜底）/ Cache-DiT 配置缺失
+  告警 / INT8 层宽超限回退，并确认 `kernel_details.csv` 里 `DynamicQuantV2` → `QuantBatchMatmulV3`
+  仍接管 MatMul；任一取证取不到 ⇒ 该档（含其 SSIM 变化度）作废，不得沿用。

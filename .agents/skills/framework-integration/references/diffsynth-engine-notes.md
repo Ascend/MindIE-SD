@@ -157,6 +157,13 @@ dummy run（2 层 / 0.72B）与真实权重（60 层 / 20B）的耗时差异由*
 
 ---
 
+## 4. 失效信号与复核
+
+- **§2.3 的两条模型层改写（RoPE 实数域、text encoder `key_mapping`）绑容器 `transformers` / `diffusers` 版本与权重布局**：换版本或换权重后先做一次加载，若 `load_state_dict(strict=True)` 不再报 key 缺失，则 `key_mapping` 已无必要；RoPE 侧看 `qwen_rope_pattern` 是否仍不命中（日志 `PatternMatchPass replace N` 为 0 且 DOT 图无 `npu_rotary_mul`）。
+- **§2.2 的 `_compiled_call_impl` 赋值陷阱属 torch 侧行为**：复核是用同一模型比对 `compile_backend` 走 mindie 与 eager 的 warmup 量级并看命中计数——若不做赋值而命中不再为 0、warmup 不再与 eager 一致，说明该赋值已非必需，本条可删。
+- **§3.1 的两条观测障碍（MINDIE 日志 `MAX_LOG_STRING_LEN` 截断、`FXGraphDrawer requires the pydot package`）随日志实现与依赖集变化**：换 MINDIE 版本后重跑一次使能判定，比较同一行 graph dump 是否仍被截断、DOT 是否仍因缺 pydot 落不了盘；两者都不再出现即该陷阱失效。
+- **§3.2 的使能集合结论（`RotaryPositionEmbeddingV2` / `npu_rotary_mul`、`npu_rms_norm`、`residual_gate_add_kernel`、`AdaLayerNormV2`、`FastGelu`）绑 pattern 实现与 torch_npu 融合 kernel 名**：按 §3.1 表格第 3 层重看 kernel_details.csv——这些融合 kernel 是否仍出现、对应原始算子（`GeluV2`、逐元素 `Mul/Stack` 链）是否仍消失；`residual_gate_add` 的 4D `fallback (ndim)` 实际执行次数也要重记一次。
+
 ## 维护与更新
 
 当 DiffSynth-Engine 或类似外部框架（如 Z-Image / Wan 在 diffsynth_engine 中的接入）的

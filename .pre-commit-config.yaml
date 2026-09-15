@@ -77,9 +77,42 @@ repos:
   - repo: https://gitcode.com/gh_mirrors/ma/markdownlint-cli
     rev: v0.44.0
     hooks:
+      # 全仓：manual 档，改动 .md 时按 governance §5.4 手动跑
       - id: markdownlint
+        alias: markdownlint-manual
         args: ["-c", ".markdownlint.json"]
+        exclude: ^\.agents/
         stages: [manual]
+      # .agents 知识层：提交/CI 强制（实测 pin 版 v0.44.0 下 0 违规；勿用更高版本，MD060 等
+      # 新规则会对同一批文件产生上千条版本性假违规 —— 见 .agents/README.md §7「校验」）
+      - id: markdownlint
+        alias: markdownlint-agents
+        args: ["-c", ".markdownlint.json"]
+        files: ^\.agents/.*\.md$
+
+  # 知识层结构门禁（.agents 技能库的链接图/接线/evals 契约；零网络零模型，纯 stdlib）
+  # 判据与规则清单以 .agents/scripts/kb_lint.py 的 RULES 为准，.agents/README.md §7 只做引用
+  - repo: local
+    hooks:
+      - id: kb-lint
+        name: kb-lint (.agents knowledge base structure)
+        entry: python .agents/scripts/kb_lint.py
+        language: system
+        files: ^\.agents/.*\.(md|json)$
+        pass_filenames: false
+      # 门禁自身的回归：改写规则后负样本必须仍能触发（防「门禁静默失效」）
+      - id: kb-lint-selftest
+        name: kb-lint selftest (negative samples)
+        entry: python .agents/scripts/kb_lint.py --selftest
+        language: system
+        files: ^\.agents/scripts/.*\.py$
+        pass_filenames: false
+      - id: run-evals-selftest
+        name: run-evals selftest (negative samples)
+        entry: python .agents/scripts/run_evals.py --selftest
+        language: system
+        files: ^\.agents/scripts/run_evals\.py$
+        pass_filenames: false
 
   # C++ 核心检查
   - repo: https://gitcode.com/pre-commit-clang/mirrors-clang-format

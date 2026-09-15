@@ -101,4 +101,6 @@ benchmarks/
 └── tests/UT/benchmark/ # 离线单测
 ```
 
-工具链的开发与排障见 skill：`.agents/skills/benchmark-dev/SKILL.md`。
+工具链的**开发与排障**由 Agent 技能层的 **`benchmark-dev`** 技能承载（仓内技能的索引入口见仓库根
+`README.md` 的「AI Agent 支持」；**本目录不列出跨层路径**——依赖方向为 skills → benchmarks，
+本目录引用 skills 会随技能结构调整而失效）。

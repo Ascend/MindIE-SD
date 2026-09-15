@@ -80,3 +80,14 @@
 - 工具：profiling-collect 单步 hook（同口径 kernel/step_trace）、quality-gate、combination-search、
   framework-integration（结构性缺口实现）；
 - 维护：六面内容变化 → 同步 SKILL S4 纪律与 `lossless-methodology-notes.md` §D/§E（方法细节不在此重复）。
+
+## 4. 维护与更新
+
+- **触发条件**：§1 六面（① kernel 序列与融合 … ⑥ 计数契约与证据）任一面的复核项增减；§0 触发表
+  新增使能类别（新量化/稀疏后端、新缓存机制、新并行拓扑）而六面无对应面；§2 首案例对照表结论随
+  宿主/工具失效（`DynamicQuantV2→QuantBatchMatmulV3` 邻接形态、`end_step` 语义、显式 TORCH_SDPA
+  基线路由）；其落点 `combination-search.md`、`overview-report.md §2.4`、
+  `runs/{task_id}/profiles/{model}.toml` 迁移或改名。
+- **复核方法**：取一条已归档的使能后复核记录（evidence.json + 对应子表），逐条照 §1 六面走一遍，
+  看是否有面缺采/缺回填；再按 §3 核对 SKILL S4 纪律与 `lossless-methodology-notes.md` §D/§E
+  是否已同步。

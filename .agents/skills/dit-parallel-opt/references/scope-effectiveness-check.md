@@ -144,3 +144,24 @@ sys.stderr.flush()
   SOP 单点在 `../../perf-gate/references/measurement-discipline.md` §3。
 - **把收敛后的结论外推到别的形态/步数**：口径与闸门见
   `few-step-multirank-protocol.md`（先在本文件确认分片生效，再用那份协议做跨形态外推）。
+
+---
+
+## 6. 维护与更新
+
+- **触发条件**：`vllm_omni.diffusion.parallel_state` 与 `forward_context` 的接口换代 ——
+  §2 的探针依赖 `get_sequence_parallel_world_size`、`get_sequence_parallel_rank`、
+  `get_forward_context` 以及 `sp_active` / `_sp_shard_depth` 这组名字，判读规则表也把
+  `_sp_shard_depth` 当作**唯一可靠的判别量**；§4 的收敛路径依赖 `sequence_parallel.py` 的
+  split hook / gather hook 与 `_sequence_parallel_local_span`；§2 末尾那条
+  `sp_plan_hooks_applied` 红鲱鱼提示随 contextvar 的实现方式变化。§0 已声明「错误码字面量、
+  各配置项默认值、后端支持面、对齐倍数、阈值与容差」必须现场复核。
+- **复核方法**：按 §2 把那段 `[probe] tensor=… sp_world=… sp_rank=… sp_active=… depth=…`
+  探针在**同一配置的两侧**各跑一次（基线 `--usp N` 与复合配置），按 §3 表格化对照后再下结论；
+  若 `x.shape[0] == seq_len` / `x.shape[0] == seq_len // sp_world` 与判读表里 `_sp_shard_depth`
+  的 0（作用域外）/ 非 0（作用域内）两档不再成立（新版本改用别的作用域量），
+  本文件的判据链整体作废重写，不做局部打补丁。
+- **口径联动**：本文件不复述测量口径，§5 的三条指针（`../../perf-gate/references/evidence-toolbox.md`
+  §1、`../../perf-gate/references/measurement-discipline.md` §3、
+  `few-step-multirank-protocol.md`）所在文件或章节号变化时一并更新；VAE / 解码器侧的同类判据在
+  `../../vae-opt/references/parallel-scope-effectiveness.md`，两边判据须一起复核。

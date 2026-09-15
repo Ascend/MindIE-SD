@@ -257,3 +257,10 @@
   无损矩阵文档、跨框架 GAP·COMPARE 文档。
 - 支持矩阵：**L1** 证据码的**能力面**留在 `framework-support-matrix.md`（含最后一列 last-checked），
   **开启方式**指回本文件。
+
+## 7. 维护与更新
+
+- 触发（版本 / 合入态势）：LightX2V 偏离上游合入版 PR #1471 的平台注册表架构（退回「全局改共享类」姿势）、或 `lightx2v_platform` 的 `PLATFORM_*_REGISTER` 机制调整时，§1.1 策略判定、§1.2「代码 / 配置必须配套」（`seq_p_a2a_backend`、`rms_type`、`rope_type`、`use_compile` / `compile_backend`）与 §4 代码地图须重核。
+- 触发（使能集合与探针）：mindiesd 侧 swiglu 的 `split_twice` 变体或注册顺序约束（`enable_minimax_h3_gate` 先于 `enable_wan_residual_gate`）失效，或 §5 的两条平台侧探针（`dit_quant_scheme="npu-w8a8-mxfp8"`、`npu_flash_attn_rf3` 与 launcher 的 `configure_sparse`）被回填覆盖时，§3.2 的 compile 三坑、§3.4 量化与 §3.5 稀疏的档位结论须重测。
+- 触发（支持面与口径）：`framework-support-matrix.md` 的 **L1** 证据码行刷新，或 clean-window / 质量档位口径（`accuracy-gate` 与仓库 `evals/`）变更时，§3.6 的 rank0 clean-window 与质量档位结论须同步复核。
+- 复核：最小核对 = 同配置跑一次并只在 rank0 采 kernel diff，看 `kernel_details.csv` 中 `swiglu` / `gather_scale_shift` / `gather_residual_gate` 融合 kernel 是否仍出现、`hcom_alltoallv` 是否仍完全消失（a2a 走 `hccl_eager` 未退化）；mindiesd 同步回退后必须复采 profile（swiglu 融合丢失**日志无痕、只有 profile 可见**）。

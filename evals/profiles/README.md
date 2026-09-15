@@ -12,7 +12,7 @@
 | **契约**：model/geometry/steps/seed/prompts/入口占位 | ✅ | 复现所需，跨运行不变 |
 | **判定结论**（不可推导的一次性语义判定） | ✅ | `[domain]` 归类依据、visual pass/fail/inconclusive、off-identity 结论、"弱视觉域无绝对门槛"等语义 |
 | **指针**：冻结 baseline 引用 + `last_verified` | ✅ | runs 目录 + md5/hash + 日期 |
-| **可推导数值**（psnr/ssim/delta/md5 等） | ❌ **不入库** | 由 `scripts/quality_compare.py` 对 `runs/` 冻结产物**现算**，存 `{run}/quality.json`；每次运行的标杆质量信息**强制随报表登记**（detail-report §E，见 .agents 侧） |
+| **可推导数值**（psnr/ssim/delta/md5 等） | ❌ **不入库** | 由 `scripts/quality_compare.py` 对 `runs/` 冻结产物**现算**，存 `{run}/quality.json`；每次运行的标杆质量信息**强制随报表登记**（detail-report §E，由技能侧承载） |
 
 > 原则：仓库里 profile 是"契约 + 判定记录 + 指针"，数值永远可复现、不漂移；
 > 与 `artifact-layout.md`「仓库零数据」（帧/媒体/原始产物只留 runs/，evidence.json 只存指针）一致。
@@ -27,12 +27,22 @@ python evals/scripts/gen_profile.py --model {model} \
     --domain video_chaos|image_seed_deterministic \
     --resolution {WxH} --frames {N} --steps {N} \
     --topology <同拓扑同卡组> --frozen-hash <baseline 帧集 md5> \
-    --seed {N} --off-identity <pass/说明>
+    --seed {N} --off-identity <pass/说明> --prompts {提示词集文件}
 ```
 
 字段语义与骨架见 `_template.toml` 注释（必填 section/字段、domain 协议、
 数值不预填原则）。模板到生成物的字段映射由 gen_profile.py 实现，改模板须同步
 gen_profile.py 与 check_profile.py 的 REQUIRED_* 校验。
+
+- **域 + 该域阈值语义是硬必填、且不可默认**：`[profile] domain` 无默认值（gen_profile.py 缺失/非法即
+  fail-closed 非 0 退出、不落盘）；`[decisions] threshold_policy` 由 domain 唯一决定
+  （video_chaos → `baseline_regression_only`、image_seed_deterministic → `absolute_threshold_allowed`），
+  `[decisions] threshold_source` 固定指向阈值真源
+  本目录的域阈值契约（`evals/README.md` + 本文件；阈值数字不入库，只放字段与指针）。
+  check_profile.py 强校验三者存在、取值合法、与 domain 及预期域自洽；**旧 profile（无域字段）报错
+  要求用 gen_profile.py 重生成**（不崩溃、不静默通过）。
+- **`--prompts` 须给真实提示词集文件**：默认占位值会被 check_profile 判「缺失或占位」拦下
+  （gen_profile 会打印 warn 提示，不再静默生成过不了门的 profile）。
 
 ## 约定
 

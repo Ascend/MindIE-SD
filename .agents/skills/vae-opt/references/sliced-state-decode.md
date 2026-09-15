@@ -113,3 +113,10 @@ else:  ...整段路径...
 3. 加 env 开关（默认段数、`0/1` 回退整段），并保证**判定与 rank 无关**；
 4. 上卡：端到端 4 请求比 md5（`scripts/frame_health.py` 看是否有尾段异常）；
 5. 记录耗时/峰值显存，确认“更快或持平、更省显存”。
+
+## 9. 维护与更新
+
+- **触发（潜帧边界 / 状态块几何变）**：`decoder_time_upscale` 变化（本文案例 `(False,True,True)` ⇒ `time_upscale = 2^2 = 4`）、出现 stride 非整数倍的时间层（§4 要求取最小公倍数对齐或改用最粗级边界）、记忆块位置或个数变化（§1 表与 §3 的 `state[i]` 定义）⇒ §4 的边界推导与 §3 骨架都要重推，切分点必须重新落回潜帧边界。
+- **触发（版本与数字类）**：§6 的「第 3 次 `Upsample` 单次 batch = 潜帧数×2 = 220 触发缺陷、2 段后降到 110」随 CANN / torch_npu 版本与形状变化，须按 `troubleshooting-cann-upsample.md` §2 重扫；§6 的耗时/显存读数（Ascend 950PR 8 卡 · CANN 25.7.rc1.6，单卡离线 fp32 口径）换环境即失效——骨架与推导可迁移，数字不可照抄。
+- **触发（门控侧）**：§5 的 `MY_DECODER_SLICES` 改名或读取点移动、`pieces >= 2 and world >= 2 and n_frames >= 2 * pieces` 退化条件变化时，§3 的 `slices < 2 or n_t < 2 * slices` 退化分支要一起改，并重做「与 rank 无关」自查。
+- **复核方法**：先 `python scripts/sliced_state_decode.py --demo` 自证骨架可跑，再用 `scripts/shard_equivalence_check.py --model-spec <module>:build --pieces 2 4` 做 CPU 整段 vs 2/4 段对拍，必须 `max|d| = 0`（不为 0 先查 §3 的三条要点）；上卡后按 §8 第 4 步比 md5 并用 `scripts/frame_health.py --input <产物>` 看尾段是否仍有塌陷。

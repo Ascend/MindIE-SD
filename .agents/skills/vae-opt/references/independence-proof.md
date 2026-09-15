@@ -102,3 +102,10 @@ frames_to_trim = 3        # 每块裁掉头部 3 帧
 - [ ] 切分点是否落在**最粗时间上采样级**的帧边界上？
 - [ ] 结论里是否明确写了“chunk/trim 不是独立性”的否证（若适用）？
 - [ ] 是否用“8 卡结果相同”**错误地**当成可切依据？
+
+## 7. 维护与更新
+
+- **触发（结构性，与版本无关）**：换网络就等于换判定表——§2 的 Kijai `vae_approx/taeh3.safetensors`（`layout=tae-2d`）与 §3 的官方 `h3-tae-official/taeh3.safetensors`（`layout=taehv-temporal`）结论相反；记忆块（`MemBlock(x, past)`）的位置与个数、§1 表里任一类算子（3D 卷积时间核 > 1、时间/因果注意力、整段 percentile 统计）被新增或替换时，§1 的逐算子判定必须重做。
+- **触发（否证所依赖的实现）**：§3 的否证备注锚在 stock 实现的 `chunk_latents = 5 / frames_to_trim = 3 / 末尾丢 3 * time_upscale` 上；这些常数或 `_MemBlock.forward(x, past)` 的 `past` 语义一变，否证要按新实现重写（“chunk 化不是独立性证据”这条判据本身不变）。
+- **触发（数字类）**：§2 的 12/12 md5 一致、§4 的 `max|d| = 0` 是来源环境（Ascend 950PR 8 卡 · CANN 25.7.rc1.6 · 15 s / 768P）下的一次观测——本文件可迁移的是 §1 判定表与 §5 的 proof 记录模板，**数字换环境即重测**。
+- **复核方法**：拿目标网络的算子表重跑 §1 的逐算子判定，再用 `scripts/shard_equivalence_check.py --model-spec <module>:build --pieces 2 4` 对拍；不再得到 `max|d| = 0` ⇒ 结构或版本已变，先回 §1 重判依赖范围，再按 §5 重写 proof 记录。

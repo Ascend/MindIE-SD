@@ -168,14 +168,14 @@
     {
       "id": 13,
       "prompt": "任务刚启动（S0 前），框架是 LightX2V + MiniMax-H3，怎么保证不遗漏该试的特性方向？",
-      "expected_output": "启动确认（§0）时预扫 framework-support-matrix 支持面与缺口 → 与用户确认目标/验收/补齐策略 → 登记 run-state「特性覆盖清单」：对固定特性全集（kernel融合/并行/Cache/量化/稀疏/时间步优化等）逐项给触发判定（做-目标/经验档 / 分析后做 / 不做+理由：无瓶颈/框架不支持/预期收益小<0.5%），如 LightX2V 的 Cache=框架未接线（❌ matrix）记 mindiesd cache_agent P0 待验而非静默略过；分析中按证据更新（记 round），闭环前复核无未裁决项",
+      "expected_output": "启动确认（§0）时预扫 framework-support-matrix 支持面与缺口 → 与用户确认目标/验收/补齐策略 → 登记 run-state「特性覆盖清单」：对固定特性全集（kernel融合/并行/Cache/量化/稀疏/时间步优化等）逐项给触发判定（做-目标/经验档 / 分析后做 / 不做+理由：无瓶颈/框架不支持/预期收益小<0.5%），如 LightX2V 的 Cache=框架不支持（❌ matrix）→ **明确记为「不支持」并引矩阵三态**（不引入 mindiesd cache_agent 兜底）而非静默略过；分析中按证据更新（记 round），闭环前复核无未裁决项",
       "files": [
         "SKILL.md",
         "references/run-state.md"
       ],
       "expectations": [
         "启动时建特性覆盖清单：固定特性全集逐项给触发判定（做/分析后做/不做+理由）",
-        "框架不支持项引用 support-matrix 三态并记录替代通道（如 cache_agent P0），不静默跳过",
+        "框架不支持项引用 support-matrix 三态并**明确记为「不支持」**（不引入 mindiesd cache_agent 兜底），不静默跳过",
         "闭环前复核清单无未裁决项，未裁决视为交付缺失"
       ]
     }

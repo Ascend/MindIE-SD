@@ -30,7 +30,7 @@
 ### 闸① CPU 等价性（实现完立刻做，别上卡）
 
 ```bash
-python scripts/shard_equivalence_check.py --model-spec my_decoder:build --axis time --pieces 2 4
+python scripts/shard_equivalence_check.py --model-spec my_decoder:build --pieces 2 4
 ```
 
 合格：**max|d| = 0**（整段 vs 每档段数）。不为 0 的常见原因：
@@ -103,3 +103,10 @@ python scripts/shard_equivalence_check.py --model-spec my_decoder:build --axis t
 闸④ 代价: 解码 <ms>，峰值显存 <GiB>，交换 <GB>，e2e <s>（相对整段 <快/持平/慢>）
 前置条件与回退: <条件 / MINLEN 类修复 / env 回退开关>
 ```
+
+## 6. 维护与更新
+
+- **触发（预算侧）**：输出张量形状 / dtype / 分辨率 / 时长变化 ⇒ §1 的交换量算式要按新张量重算（同环境 `(1,3,362,768,1344)` fp32 的「数 GB 量级」与 uint8「降到约其四分之一」都是形状的函数）；链路带宽与拓扑变（§1 的「8 卡同岛 UB 与跨岛 SYS 差一个量级，按最差算」）⇒ 重取有效链路带宽。
+- **触发（条件等价侧）**：§3 的前置条件 `T//2 + halo ≥ 359`（T ≥ 590 ≈ 14.75 s）与 `MINLEN=359` 是片长与实现的函数，换模型 / 换片长 / 换片数都要重算，8 片不精确的否证说明片数只能由等价性判据决定；换有损档则闸②/③ 的口径从「逐位」改判为数值门 + 质量门（判据引 `accuracy-gate`）。
+- **触发（闸与口径侧）**：闸③ 的桶化粒度（本文 24 帧一桶）与 `hf` / `d_prev` / 近重复段（`d_prev < 0.5`）的判读阈值、闸② 的 4 请求（1 冷 + 3 热）口径任一变化，都要与 `scripts/frame_health.py` 的 `--bucket` 取值及 `perf-gate` 的窗口口径一起改；§2 里除 `max|d| = 0` 外的耗时/显存读数（Ascend 950PR 8 卡 · CANN 25.7.rc1.6 · 15 s / 768P）换环境即失效。
+- **复核方法**：闸① 跑 `scripts/shard_equivalence_check.py --model-spec <module>:build --pieces 2 4` 看 `max|d|` 是否仍为 0；闸③ 用 `scripts/frame_health.py --input <产物>` 确认无「后半段塌陷」与近重复段；§4 的缺陷耦合要求换版本后按 `troubleshooting-cann-upsample.md` §2 重做判定实验，并在 §5 报告模板里写明「仍在 / 已修」。

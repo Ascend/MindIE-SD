@@ -264,7 +264,9 @@ warmup 5 步在 profiler 外；只 rank0 采集；产出 `ASCEND_PROFILER_OUTPUT
 - **S4 采纳项**：compile + `infer_steps=24`（原生步数裁剪，Run DiT 降约三成，帧 SSIM vs 30 步
   降约 0.06（近无感档）；20 步降约五成 / SSIM 降约 0.11 为激进档）——纯配置、机器自带能力；当时「优于为 H3 移植
   Taylor cache」成立的前提是框架 cache 不可用（`feature_caching` 对 H3 显式 NotImplemented）；
-  bench 侧 mindiesd CacheAgent 接入（§11 P0）后可做「24 步 × cache」叠加评估，勿沿用旧表述
+  bench 侧 mindiesd CacheAgent 接入（§11 P0）**已按策略转为探针观察**——框架不支持 cache 时
+  **明确记为「不支持」即可，不引入 cache_agent 兜底**；「24 步 × cache」叠加评估只在**明确要求
+  基于 cache_agent 开发该缓存能力**时才做，勿沿用旧表述
 - **S4 采纳项（2026-09 增）**：+ 原生线性量化 scheme `dit_quant_scheme="npu-w8a8-mxfp8"`
   （§11 P1 落地；最终部署配置为「24 步 + npu-w8a8-mxfp8」的 json）：24 步 Run DiT 明显下降、
   **clean-window 步时降约一成多（较 bf16，2× 复现），帧 SSIM 降约 0.03（近无损）**
@@ -350,3 +352,10 @@ warmup 5 步在 profiler 外；只 rank0 采集；产出 `ASCEND_PROFILER_OUTPUT
 - **移植纪律**：vllm-omni 的 compile 为负收益而 LightX2V 为正（架构/热路径差异）——上表任何
   补充都必须按「使能与验证回路」在 LightX2V 本体重验（kernel diff + rank0 墙钟 + 质量门禁），
   不直接照搬其他框架数字
+
+## 12. 维护与更新
+
+- 触发（框架版本）：LightX2V 合入版锚点（PR #1471 / commit `5c225825`）变更或回退到合入前版本时，§2 的三路组合（`rms_type` / `rope_type` / `use_compile` + `compile_backend`）、§5.1 的三个坑与 §5.2 合入版代码地图须重核；「代码 / 配置必须配套」（`seq_p_a2a_backend: "hccl_eager"`）是本文的硬前提，远端升级后必须同步配置。
+- 触发（采纳项与结论更正）：§10 的 S4 采纳项（`infer_steps=24`、原生 scheme `dit_quant_scheme="npu-w8a8-mxfp8"`）与 §10 / §11 的 rf_v3 稀疏档位，以及「质量梯度平滑单调、历史平台化结论证伪」这一更正，在 mindiesd pattern / 稀疏实现、质量门禁口径或 seed / 窗口径变化时须按同 seed / 同配置 / 同窗重测。
+- 触发（待解前置）：§11 登记的 compile × rf3 的 Dynamo trace 期错误、P0 缓存接线（框架 `feature_caching` 对 H3 显式 NotImplemented）、P1 ACLGraph 生效核验任一有进展时，对应条目与 `framework-support-matrix.md` 的 LightX2V 列须同步更新。
+- 复核：最小核对 = 同配置复跑并只取 rank0 的 clean-window（steps 2-14）avg/p50 墙钟，同时复采一次 `kernel_details.csv`，按 §4.2 / §8 的核验姿势确认 `swiglu` / `gather_residual_gate` 计数仍出现、`hcom_alltoallv` 仍完全消失（swiglu 融合丢失日志无痕、只有 profile 可见）。

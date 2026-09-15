@@ -3,6 +3,12 @@
 来源：vLLM-Omni / MiniMax-H3 + MindIE-SD 稀疏 FA 在 Ascend 950PR（A5 代）上的实测。
 每条都标注了**症状 → 原因 → 处置**，便于直接对照报错码定位。
 
+> 内容索引：§0 陷阱有寿命（先读）→ §1 coreDim 上限 → §2 静默关闭全部序列并行 →
+> §3 深度记账的静默破坏 → §4 gloo 地址族 → §5 `auto_pad` × attention_mask →
+> §6 Ring × 稀疏 FA 静默丢稀疏 → §7 序列长度对齐 → §8 量化器 scale 粒度 → §9 Q≠KV 假设 →
+> §10 池化/拼接陷阱 → §11 Q 窗口 → §12 CP × 稠密回退 → §13 通用排查姿态 → §14 参考 →
+> §15 维护与更新。
+>
 > ## ⚠️ 适用范围（先读）
 >
 > 本文档的报错码、常量与阈值来自**一次特定环境**：Ascend 950PR（A5）、56 vector core、
@@ -308,3 +314,21 @@ for n in [l.split(":")[0].strip() for l in open("/proc/net/dev").readlines()[2:]
 - 量化契约本体（MXFP8 / int8 / 位级对拍 SOP）：`../../quantization-dev/SKILL.md`
 - 测量与上报纪律（假数字三重验证、ABBA、敏感度地板、上报模板）：
   `../../perf-gate/references/measurement-discipline.md`
+
+## 15. 维护与更新
+
+- **触发条件**：CANN / triton-ascend / torch_npu / vLLM-Omni / MindIE-SD 任一升级，或硬件代际与
+  拓扑（§1 的 vector core 数、UB 容量、UB 岛 / SYS 跨岛结构）变化 —— §0.1 表里归为「框架 /
+  编译器缺陷」的那一类条目（§2 的「仅支持纯 Ulysses」守卫、§5 的 `auto_pad` × 不支持
+  attention_mask 的后端互斥、§6 的 ring 绕过 backend 导致稀疏被静默丢弃、§7 的
+  块大小 × `sequence_parallel_size` 对齐、§9–§11 的 Q≠KV / 池化前 `cat` / `query_start` 假设）
+  **可能在下个版本直接修好**；§1 的 `EE1003 … coreDim` 上限与 §8 的 64-token scale 粒度属常量类，
+  新环境必须重新确认。
+- **复核方法**：按 §0.2 第 2 条「升级软件栈后逐条复核」，逐条跑该条自带的「复核触发」最小实验
+  （§1 跑一个 `grid=(70001,)` 的空 triton kernel、§5 在非整除序列长度下**直接**开
+  `auto_pad=True` 配该后端、§11 打印 `query_start` / `q_eff` / `q_split` 与 Q/KV 的 shape）
+  —— 仍复现则绕行保留，**不再复现的条目必须删除**（§0.2 第 5 条），并注明从哪个版本起不再需要。
+- **口径联动**：§1 / §2 的「未分片 vs 已分片」判别与处置都指向
+  `scope-effectiveness-check.md`，那份的分片判据（`_sp_shard_depth` 等）变了本节要同步；
+  §13 第 4 条的全局形状 `(1, S, 56, 128)` 随头数与 world_size 变化 ⇒ 换模型先按 rank 重核形状
+  再套用前面各节的结论。

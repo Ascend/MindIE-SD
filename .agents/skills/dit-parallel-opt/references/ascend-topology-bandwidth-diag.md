@@ -11,6 +11,9 @@
 3. [HCCL 带宽验证（等价工具姿势与坑）](#3-hccl-带宽验证)
 4. [多卡环境诊断与恢复（端口泄漏 / 卡组健康）](#4-多卡环境诊断与恢复)
 5. [复现与对比纪律](#5-复现与对比纪律)
+6. [运行时通信分布采集（shim 法，无仓库改动）](#6-运行时通信分布采集shim-法无仓库改动h3-usp2-实测案例-2026-09-09)
+7. [通信占比口径：按并行策略与特性叠加重估](#7-通信占比口径按并行策略与特性叠加重估方法增量-2026-09-12)
+8. [维护与更新](#8-维护与更新)
 
 ## 1. 拓扑读取与判据
 
@@ -157,3 +160,21 @@ per-call 载荷（seq-parallel a2a ≈ local_tokens × heads × head_dim × 2B�
   （`Communication` 是 `Communication(Not Overlapped)` 的子串，子串匹配会静默取错列）。
 - **占比随步数是否漂移**是同步并行选型的判据之一（少步测得 ≠ 全步可得），协议与阈值见
   `few-step-multirank-protocol.md` §6。
+
+## 8. 维护与更新
+
+- **触发条件**：机型 / 互联拓扑或卡数变化（§1 的 `npu-smi info -t topo` UB / SYS 判定与
+  「SYS 对约低三成」的读数；§2 表中「单 UB 岛 USP4 bulk 最优」与「SYS 跨岛组 head-parallel
+  更优」的翻转关系）；CANN / 驱动版本变化（§3 `hccl_test` 的
+  `HcclGetRootInfo failed / invalid data`、§4 的 `already been bound` 与
+  `hcclCommInitRootInfoConfig error`、§2 的 compile × head-parallel `recompile_limit`
+  （日志 `[5/8]`）都属版本相关缺陷）；序列长度 / 步数档 / 框架变化（§2 的 masking 否决结论、
+  §7 的「换框架 / 模型 / 规模按 §2 与 §5 重测」）。
+- **复核方法**：§1 判据用同尺寸同口径重测一次 2 卡 UB / SYS 对；§2 的两条选型结论必须
+  **同窗口同卡组**重跑（4 步 smoke + CANN profile 核验 a2a 形态未退化 + 30 步墙钟），判据以
+  墙钟 / clean-window 为准 ——「kernel-sum 不能直接比」；masking 值不值得做按 §2 的 4 卡微基准
+  重算 `hidden_ratio` 是否仍低于 0.5 判据。
+- **口径联动**：§5 的 clean-window（steps 2-14）与热降频判定、§7 的 profiler 捕获膨胀与
+  「`Communication` 是 `Communication(Not Overlapped)` 子串」的精确匹配要求，真源在
+  `../../perf-gate/references/measurement-discipline.md` 与 `few-step-multirank-protocol.md` §6；
+  那两处口径改了，本节读数与判据须回来同步。

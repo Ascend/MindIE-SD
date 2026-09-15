@@ -112,3 +112,21 @@
   s0-s4_evidence.md + frames/ + kernel csv）；远端 `{run_results_dir}`；
   profile 回填按 `evals/profiles/_template.toml` 生成到 `runs/{task_id}/profiles/`（V3 校准）；
   support-matrix 证据码 V3。
+
+## 8. 维护与更新
+
+- **触发（口径失效即整表作废）**：§2–§4 的结论只在开篇口径内成立——2026-09-05、env A、vLLM-Omni 0.28.0
+  （`e305afba` + NPU fork 补丁）、Qwen-Image-2512 1024²/20 步、唯一基线 TP1 FLASH_ATTN、21 同 seed
+  像素对；框架版本升级、基线或 seed 集更换、并行形态更换后不得沿用（矩阵 V3 列须同批刷新）。
+- **触发（开关面与几何前置）**：§2 被点名的对象改名 / 移除时重写本表——`--diffusion-quantization-config`
+  的 `method:int8` 与 `activation_scheme:dynamic`、`--cache-backend cache_dit --enable-cache-dit-summary`
+  与 `DBCacheConfig`（th/warmup/max_cont）、`--diffusion-attention-config` 的 `RAINFUSION_ATTN`、
+  `OMNI_MINDIE_COMPILE=1`、`--usp 2`；**尤其** rf_v2 的几何前置（层未声明 `qkv_layout='BSND'` ⇒
+  staying dense）——若框架补上图像 2D / BSND 稀疏路径，§2 / §6「图像不可用（0.4 与 0.8 档位无关）」
+  必须重测后改写，不得留旧结论。
+- **触发（探针）**：§5 第 1 条的 `OMNI_KPROF_TARGET=qwen_image` 平台 hook 扩展属 fork 改动；合入上游或
+  目标模型类名（`QwenImageTransformer2DModel`）变化后按探针处置改写。
+- **复核方法**：按 §3「同窗相邻对」+ §2 表格逐项取计数即判本节是否仍成立——同一并行配置内跑两遍确认
+  同拓扑逐字节（跨拓扑输出非逐字节，不作数），再看 FA / DQ+QuantBatchMatmul 每步计数、Cache 步跳过
+  是否可读、稀疏是否仍 `staying dense`；并核 §7 待办（P1）是否闭环：**未闭环则有损组合与质量基线仍属
+  TP2 基底口径**，§3 的 TP1×USP2 无损最优不得与之混读。

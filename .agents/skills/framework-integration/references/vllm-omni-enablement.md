@@ -1,5 +1,8 @@
 # vLLM-Omni：特性开启方式与框架差异（0.28）
 
+> 内容索引：§1 框架画像与版本边界 → §2 启动与并行（含前置）→ §3 特性开关面板（开关 / 日志契约 / 坑）
+> → §4 与其它框架的差异（快速迁移对照）→ §5 回修与坑（`[探针]` 标注）→ §6 产物坐标指针。
+>
 > 定位：本文件只放 **vLLM-Omni 侧特有**的内容——开启方式（命令 / 开关 / 日志契约）、框架侧前置与坑、
 > 特性开关面板、与其它框架的差异对照。**通用方法与判定纪律**见
 > `model-auto-optimization/references/lossless-methodology-notes.md`（无损·计算/通信方法）、
@@ -315,3 +318,22 @@ compiled = torch.compile(pipe.transformer, backend=MindieSDBackend())
   成立，**不可跨模型 / 框架 / 规模 / 窗口引用**。
 - 支持矩阵证据码 V1（MiniMax-H3-FL2VA）/ V3（Qwen-Image-2512）的**能力面**留在
   `framework-support-matrix.md`，**开启方式**指回本文件。
+
+## 7. 维护与更新
+
+- **触发（版本边界）**：跨过 §1.2 的版本锚点（vllm-omni 0.28.0 时代 commit `e305afba` + NPU fork 补丁）
+  时，§1.2–§3 的依赖前置、开关名与坑整段重核；§5 三条 `[探针]`（RAINFUSION `supports_packed_mask_free`
+  classmethod、`OMNI_MINDIE_COMPILE=1` 的 compile 注入、`OMNI_KPROF*` 采集 hook）任一**合入上游 / 解除
+  env 门控**后，须从探针段移出并按 `../SKILL.md` §2.4 改档（不得留「以防万一」的旧标注）。
+- **触发（被点名对象改名 / 移除）**：§3 开关面板与 §2 并行前提里的具体对象是本节维护清单——
+  `--diffusion-quantization-config` 的 `method:int8` / `method:mxfp8`、`--diffusion-attention-config` 的
+  `RAINFUSION_ATTN` 与其 `qkv_layout='BSND'` 几何前置及 `end_step` 语义、`--cache-backend cache_dit`
+  与 `DBCacheConfig`、`MINDIE_SD_FA_TYPE`、`--enable-distributed-layerwise-offload`、
+  `--usp` / `--ring` / `--allgather-degree` / `--text-encoder-tp-size` 契约：任一项在框架侧改名 / 移除，
+  对应小节与 §4 对照表重写。
+- **触发（能力面刷新）**：V1 / V3 / V4 证据码与格状态只在 `framework-support-matrix.md` 更新
+  （含其列 last-checked）；本文件不复写状态，只留开启方式与坑，两处不得各写一份状态。
+- **复核方法**：按 §1.3 + §3.6 做一次最小核对即判本文结论是否仍成立——同一拓扑同一配置跑两遍确认输出
+  逐字节（跨拓扑输出本就非逐字节，不作数），再以 `graph_log_url` DOT 图 / `kernel_details.csv` 的融合
+  kernel 计数判命中（**勿用会被 2048 字符截断的日志判 0 命中**），并检查日志有无 `staying dense` 或
+  `Can't find Parallelism/Quantization Config` 类兜底证据（二者均按「未生效 / 配置缺失」而非「收益小」读）。

@@ -175,7 +175,7 @@ python -m ruff check benchmarks tests/UT/benchmark
 - 新算子/新指标加入
 - 新的数据异常模式被定位（追加 references/troubleshooting-benchmark.md）
 - 口径变更（MFU/MBU 公式、峰值来源、展示方式）
-- 按 dev-workflow §6 复盘流程同步刷新 `.agents/README.md` 技能总览
+- 按 dev-workflow §6 复盘流程同步刷新 `.agents/README.md` 的技能清单（§1/§2 表）
 
 ## Reference Files
 

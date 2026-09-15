@@ -26,11 +26,11 @@
     {
       "id": 3,
       "prompt": "改了 docs/zh/ 下的用户文档，需要做什么配套检查？",
-      "expected_output": "按治理规范：检查 docs/en/ 是否有对应配套页；若改首页/目录检查 docs/index.md 与中英文 menu_user_manual.md；给出文档站点编译验证命令（sphinx-build）",
+      "expected_output": "按治理规范：检查 docs/en/ 是否有对应配套页（实测基线：全量一一对应，仅 docs/zh/appendix/{error_code,log}.md 在 en 侧无对应页，须复核是否有意）；若改首页/导航，检查 docs/zh/index.md 与 docs/en/index.md 的 {toctree}（本仓无 docs/index.md、也无 menu_user_manual.md）；给出文档站点编译验证命令（sphinx-build）",
       "files": [],
       "expectations": [
-        "检查英文配套页是否存在",
-        "检查首页/目录入口（index.md / menu_user_manual.md）",
+        "检查英文配套页是否存在（并说明唯一实测差异是 zh/appendix/{error_code,log}.md）",
+        "检查首页/导航入口应为 docs/{zh,en}/index.md 的 {toctree}，不得引用 docs/index.md 或 menu_user_manual.md",
         "给出 sphinx 编译验证路径"
       ]
     }

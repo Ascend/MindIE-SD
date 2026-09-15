@@ -13,7 +13,7 @@ description: MindIE-SD Python 代码格式与 lint 规则。当编写、格式�
 事实来源（**取值只认 §0/§1 的记录，不要从历史描述或直觉推断**）：
 
 - `pre-commit/pyproject.toml` —— **门禁实际读取的那一份**（`.pre-commit-config.yaml` 用 `--config` / `--rcfile` 指定）
-- `.pre-commit-config.yaml` —— 17 个钩子
+- `.pre-commit-config.yaml` —— 21 个钩子条目（其中 `markdownlint` 出现 2 次，见别名）
 - 根 `pyproject.toml` —— **不是** pre-commit 用的那份；IDE / 手动 ruff 可能读它，取值不同（见 §0）
 - `mindiesd/compilation/` 目录下既有代码风格
 - 规则正文与示例：`references/gate-check-rules.md`（**单点**，本文件只留摘要）
@@ -77,7 +77,7 @@ description: MindIE-SD Python 代码格式与 lint 规则。当编写、格式�
 
 ---
 
-## 2. Pre-commit 钩子（共 17 个；CI 默认 stage 跑 16 个）
+## 2. Pre-commit 钩子（共 21 个条目；默认 stage 跑 20 个，`markdownlint-manual` 为 manual 档）
 
 来自 `.pre-commit-config.yaml`（`default_stages: [pre-commit]`）：
 
@@ -96,14 +96,16 @@ description: MindIE-SD Python 代码格式与 lint 规则。当编写、格式�
 | `pylint` | `--rcfile=pre-commit/pyproject.toml`（仅 `*.py`） | 见 §1.2 |
 | `bandit` | `--config=pre-commit/pyproject.toml --quiet`（仅 `*.py`） | 见 §1.3 |
 | `typos` | `--force-exclude --config pre-commit/typos.toml` | 标识符拼写 |
-| `markdownlint` | `-c .markdownlint.json`，**`stages: [manual]`** | **默认不跑**，需显式触发（§4）；详见 `markdown-lint` skill |
+| `markdownlint`（**两个同 id 钩子，见下**） | `-c .markdownlint.json`；`markdownlint-manual`＝`exclude: ^\.agents/` + `stages: [manual]`；`markdownlint-agents`＝`files: ^\.agents/.*\.md$` 且**未覆盖 stages ⇒ 默认档会跑** | **`.agents/**` 默认强制**（否则改不动）；**其余 `.md` 默认不跑**，需显式 `--hook-stage manual`（§4）；详见 `markdown-lint` skill |
 | `clang-format` | `--style=file --verbose -i`，`files: \.(c\|h\|cpp\|hpp\|cc\|hh\|cxx\|hxx)$` | C++ |
 | `clang-tidy` | `repo: local`，`files: ^csrc/.*\.(cpp\|cc\|cxx\|c)$`（排除 `csrc/ops/`） | 依赖宿主机已装 `clang-tidy` |
 | `gitleaks-offline-scan` | `repo: local`，`entry: ./gitleaks`（本地离线二进制） | 密钥扫描 |
 
 **不存在** `no-commit-to-branch`（本仓不禁止直接提交到 main/master）。
-`markdownlint` 带 `stages: [manual]`，不随默认 stage 运行，所以"本地 `pre-commit run --all-files` 通过"
-**不等于** Markdown 合规；`clang-tidy`/`gitleaks-offline-scan` 是 local 钩子，缺少对应二进制时会失败。
+`markdownlint` 有**两个钩子**：`markdownlint-agents`（`.agents/**/*.md`，走默认 stage，提交/CI 会跑）
+与 `markdownlint-manual`（其余 `.md`，`stages: [manual]`）。所以「本地 `pre-commit run --all-files` 通过
+**不等于** Markdown 合规」这句话**只对 `.agents/` 之外的 `.md` 成立**（`.agents/**` 已被默认档覆盖）；
+`clang-tidy`/`gitleaks-offline-scan` 是 local 钩子，缺少对应二进制时会失败。
 
 ---
 
@@ -252,19 +254,19 @@ logger.warning("...")
 ruff format --config pre-commit/pyproject.toml mindiesd/compilation/target_file.py
 ruff check --config pre-commit/pyproject.toml --fix mindiesd/compilation/target_file.py
 
-# 门禁等价：默认 stage（16 个钩子，不含 markdownlint）
+# 门禁等价：默认 stage（含 markdownlint-agents，覆盖 .agents/**/*.md）
 pre-commit run --all-files
 pre-commit run --files mindiesd/compilation/target_file.py
 
-# Markdown（stages: [manual]，必须显式指定 hook stage）
+# Markdown 全仓（markdownlint-manual 是 stages: [manual]，必须显式指定 hook stage）
 pre-commit run --all-files --hook-stage manual
-pre-commit run markdownlint --hook-stage manual --files docs/zh/README.md
+pre-commit run markdownlint-manual --hook-stage manual --files docs/zh/README.md
 ```
 
-适用范围（容易误判的两点）：
+适用范围（容易误判的三点）：
 
-- `pre-commit run --all-files` 只跑**默认 stage** 的钩子；`markdownlint` 带 `stages: [manual]`，
-  **不在其中**，需按上面的 `--hook-stage manual` 单独跑
+- `pre-commit run --all-files` 只跑**默认 stage** 的钩子：`markdownlint-agents`（`.agents/**/*.md`）
+  **在其中**，`markdownlint-manual`（其余 `.md`）**不在其中**，后者需按上面的 `--hook-stage manual` 单独跑
 - `--all-files` 只覆盖 **git 跟踪的文件**：新建但未 `git add` 的文件不在扫描范围内
 - `clang-tidy` / `gitleaks-offline-scan` 是 `repo: local` 钩子，依赖宿主机存在对应二进制
 
@@ -285,7 +287,7 @@ pre-commit run markdownlint --hook-stage manual --files docs/zh/README.md
 | 某条 pylint 消息是否仍被禁用 | `grep -n -e protected-access -e raise-missing-from -e too-many-arguments pre-commit/pyproject.toml` | 命中位于 `disable = [...]` 内 → 仍不作为门禁失败项；若挪进 `enable` → 必须删除 §3.9 对应行与 `gate-check-rules.md` 对应档位 |
 | ruff 实际生效取值与规则集 | `ruff check --config pre-commit/pyproject.toml --show-settings mindiesd/__init__.py` 后接 `grep -e "Settings path" -e "^linter.line_length" -e "^formatter.quote_style" -e "^formatter.docstring_code_format"` | `Settings path` 指向 `pre-commit/pyproject.toml`；`linter.line_length = 120`；`quote_style = preserve`；`docstring_code_format = disabled` |
 | 门禁侧是否仍不启用 `E501` | 同上 `--show-settings` 输出接 `grep -c "line-too-long (E501)"` | 输出 `0`（enabled 列表里没有它）→ §3.4 结论成立 |
-| 钩子清单与 manual stage | `grep -n -e "^- id:" -e "stages:" .pre-commit-config.yaml`，再跑 `pre-commit validate-config .pre-commit-config.yaml` | 17 个 `id`；`markdownlint` 带 `stages: [manual]`；无 `no-commit-to-branch`；配置校验退出码 0 |
+| 钩子清单与 manual stage | `grep -n -e "^- id:" -e "stages:" .pre-commit-config.yaml`，再跑 `pre-commit validate-config .pre-commit-config.yaml` | 21 个 `id` 条目（`markdownlint` 出现 2 次：manual / agents）；默认 stage 20 个，manual 档 1 个；无 `no-commit-to-branch`；配置校验退出码 0 |
 | 两份配置是否仍不同 | `grep -n -e line-length -e quote-style -e "^select" -e "^ignore" pyproject.toml pre-commit/pyproject.toml` | 有差异属预期（100 vs 120、`select` 有无）；若某天合并成一份，§0 的差异表要重写 |
 | 门禁专项规则是否仍无强制来源 | `grep -n -e avoid-import-method -e avoid-using-exit -e function-order -e duplicate-string .pre-commit-config.yaml pre-commit/pyproject.toml` | 无命中（退出码 1）→ `gate-check-rules.md` 的"历史记录·未能复核"档位仍正确 |
 | bandit 是否仍拦 `except: pass` / 裸命令名 | `grep -n -e B110 -e B607 -e skips pre-commit/pyproject.toml` | `B110`、`B607` 在 `tests` 内且不在 `skips` 内 |

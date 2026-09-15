@@ -5,7 +5,7 @@
 >
 > - **【门禁·pre-commit】**：`.pre-commit-config.yaml` 的钩子会让提交失败（钩子清单见 `SKILL.md` §2）。
 > - **【评审约定】**：不产生门禁失败，只是评审/自查要求——门禁**不会**替你拦住它。
-> - **【历史记录·未能复核】**：本仓 pre-commit 17 个钩子中无对应钩子，pylint 的 `enable`/`disable`
+> - **【历史记录·未能复核】**：本仓 pre-commit 21 个钩子条目中无对应钩子，pylint 的 `enable`/`disable`
 >   与 bandit 的 `tests`/`skips` 也覆盖不到；按【评审约定】对待，**不要**当成"提交必过"的硬约束。
 >
 > 取值真源：`pre-commit/pyproject.toml`（门禁实际读取的那份）+ `.pre-commit-config.yaml`。
@@ -101,7 +101,7 @@ def build(config, a=None, b=None, c=None, d=None):
 
 ## 4. avoid-import-method — 禁止直接使用 `__import__`
 
-**【历史记录·未能复核】属评审约定**：本仓 17 个 pre-commit 钩子中没有检查 `__import__` 的钩子
+**【历史记录·未能复核】属评审约定**：本仓 21 个 pre-commit 钩子条目中没有检查 `__import__` 的钩子
 （ruff 门禁侧未启用 `UP` 组，pylint `enable` 列表也不含相关消息）。判定：
 
 ```bash

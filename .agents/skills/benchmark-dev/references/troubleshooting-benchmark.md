@@ -101,3 +101,11 @@ docker exec {容器} bash -lc 'cd /home/{user}/code/MindIE-SD && \
 - [ ] **有效运行三证据（返回码 / 产物字节数 / 成功日志条数）是否齐备**？**失败运行返回得更快**，
   极易被误读成"优化见效"——三缺一该数字即作废（见
   `../../perf-gate/references/evidence-toolbox.md` §1）
+
+## 7. 维护与更新
+
+- **更新触发条件**：四个案例的判据被改写或新增（案例 A 的 `inner_precise` / mask 布局对齐、案例 B 的偶发值增量复跑、
+  案例 C 的「记账 FLOPs vs kernel 实际执行、peak_flops 由 `--config` 输入」、案例 D 的同 report_dir jsonl 覆盖与 mtime 顺序），
+  或 §1 的算子 UT 分流表、§6 通用诊断清单条目增删。
+- **复核方法**：对任一在用档位按 §1 跑一次算子 UT，再按 §5 用独立 report_dir 精确 `--config` 单 case 复跑，
+  核对 latency 随 q_len / M / num_tokens 增长、输出非零，且 §6 三证据（返回码 / 字节数 / 成功日志条数）齐备。

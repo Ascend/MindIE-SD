@@ -208,7 +208,9 @@ Ascend 上 triton 后端的 codegen（grid-stride + mask 谓词、无手调双�
 1. **wall AB**：该 pattern 单独关闭 vs 开启，timed 段收益转正（>0.1ms 视为有效）；
    ⚠️ 本阈值与 `../../benchmark-dev/references/benchmark-guide.md` / dit-perf-opt 优化闭环 Step 5 /
    `../../dit-parallel-opt/references/few-step-multirank-protocol.md` §3 的「<3% 视为噪声」、
-   以及 `.agents/README.md` 的「整 block 耗时影响 <0.5% 视为收益小」**分母各不相同**，
+   以及 `../../model-auto-optimization/workflows/optimization-flow.md`（单点定义）
+   与 `../../model-auto-optimization/references/run-state.md` §特性覆盖清单 的
+   「整 block 耗时影响 <0.5% 视为收益小」**分母各不相同**，
    **不得互换使用**——给出任一阈值时必须写明它适用的**分母**；
    **作用域提示**：本阈值（`>0.1ms` 视为有效）与上面并列的其他阈值一样，是**本环境、本模型**口径下定的，
    换硬件 / 换模型 / 换负载须**本地重新标定**后再用——除分母外还须写明其**环境来源**。

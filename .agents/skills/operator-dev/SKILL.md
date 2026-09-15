@@ -84,6 +84,7 @@ VV（纯 vector elementwise）推荐 triton**（细则见「使用约束」）�
 - 🔌 `references/catlass-kernel-integration.md` — 加载时机: 把 catlass/类 catlass 外部 AscendC kernel 以标准算子形态接入 mindiesd（单 .so ASC 混编、ASC 链接/静态运行时、torch custom op C++ 形态、设备事实、集成侧验证）时；接入 compile 图的 fake/无状态约束与 compile 前后收益核验 → `../pattern-dev/references/pattern-dev-notes.md` §5
 - 🔗 `references/catlass-ffn-fusion-guide.md` — 加载时机: 开发/复刻「量化 matmul+激活+输出量化」catlass 类融合算子（vendored 头、bias、GraphPatternEntry 真图命中、开关治理）时（六段流水线；案例 mm_swiglu_mxquant/mm_gelu_mxquant）
 - 📋 `references/mindiesd-fusion-notes.md` §7 — 加载时机: 对照 mm_gelu_mxquant 案例（真实图链/bias 实况/装载 API 坑/工程坑）时（原 `mmgelu-flux-wan-qwen-case.md` 已并入该节并删除）
+- 🧱 `references/vertical-fusion-notes.md` — 加载时机: 评估/实施**垂直融合**（VV 融合、含逐元素/归一化/激活的融合内核）、写 Ascend 融合内核、或判断「站点级收益能否传导到阶段级」时（瓶颈判型、收益判定与已证伪清单；与 `mindiesd-fusion-notes.md` 的前置评估并行使用、非互斥）
 
 ## Bundled Scripts
 

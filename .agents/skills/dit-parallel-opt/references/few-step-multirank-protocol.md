@@ -205,3 +205,31 @@ python fewstep_multirank_probe.py --out-dir ./runs/probe --parse-only
 3. 这正是少步矩阵**必须包含「同卡数、不同切分」一对**的深层理由：只有把形态变量单独暴露出来，
    才能发现「结论依赖形态」这件事本身；而**对照臂的价值**说明矩阵里还应保留一个「只改一个
    可疑参数」的格子，否则归因不可证伪。
+
+## 10. 维护与更新
+
+- **触发条件**：§4 判据表里的具体阈值（离散度 3%、漂移 5%）与 §1 的 DiT-only 口径
+  （日志行 `[DiffusionPipelineProfiler] <Pipeline>.diffuse took <x>s`、
+  `forward ≈ diffuse + decode + encode_prompt` 自检）随框架 / profiler 版本变化；
+  §7 那批框架相关事实（进度条 `s/it` 与累计 `MM:SS ÷ N` 差约 1.5 倍、
+  `num_inference_steps=N` 与实测 denoise forward 次数不一定相等、`OMNI_KPROF_AFTER` 的捕获落点、
+  `--text-encoder-tp-size` 须与 DiT world 对齐）一旦不成立，对应判据与坑位立即改写；
+  §5 第 5/6 条（特性叠加改变单步结构、显存解锁改变可行域）随量化 / 稀疏 / offload 档位落地触发
+  重测；§9 的三个未验证项（跨机型 / 跨互联拓扑的漂移阈值是否仍取 5%、不同框架的 profiler
+  膨胀系数是否同量级）一旦有数据即回填。
+- **复核方法**：先确认回锚点触发条件本身是否仍成立 —— 按 §8 重跑探针：
+
+  ```bash
+  python fewstep_multirank_probe.py --out-dir ./runs/probe \
+      --config A:{cards}:tp1,usp2,dlo --config B:{cards}:tp2,usp1 \
+      --config C:{cards4}:tp1,usp4,dlo --config D:{cards4}:tp2,usp2 \
+      --steps-few 4 --steps-anchor 10 --reps 3
+  ```
+
+  读 `summary.json` 的逐格离散度、逐配置判定与跨配置排序一致性；无 NPU 时用 `--parse-only`
+  离线复盘同一批日志，核对 3% / 5% 两个阈值是否仍能把「可外推 / 不可外推」分开；
+  任一格离散度超阈值时按 §3 先修噪声再判，不得跳过闸门。
+- **口径联动**：§6 的「掩盖空间上限 = 未重叠通信占 DiT 单步的比例」与
+  `ascend-topology-bandwidth-diag.md` §7、`comm-masking-method.md` 同源；§2 的
+  「同卡数、不同切分」必含对与 §9.1 的形态分支结论依赖框架实际支持的形态集合，
+  形态集合变化时先按 §2 重建矩阵。

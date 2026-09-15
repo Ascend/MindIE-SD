@@ -220,3 +220,10 @@ vllm serve {model_weight_dir}/MiniMax-H3/FL2VA --omni --num-gpus 4 \
   `comm_analysis_usp2.md` / `comm_cann_verify.md`；**采集方法**见 `profiling-collect` 与
   `dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` §6。
 - 支持矩阵：本链**能力面**按 `framework-support-matrix.md` 对应格核对，**开启方式**指回本文件。
+
+## 7. 维护与更新
+
+- 触发（版本）：cache-dit 离开 trunk `51979f0`、或 vllm-omni 由 0.26.0 换版时，§1.2 的版本锚点、§1.1「DiT 仅 USP 形态（无 TP）」与 §3.1 的 Cache 档位结论（`--cache-backend cache_dit` / `--cache-config` 的 MC / R）整节失效——本文「使能结论只在该框架版本 + 该模型 + 该环境成立」。
+- 触发（缺口补齐 / 框架侧接线）：§3.1 的 cache_summary 计数缺口、§3.2 的 fp8 配置缺口、§3.3 路径 2「融合 op 未接线」（0.28 fork 的 `precision=mix`）任一被框架侧补上，或 §2.2 的自研算子部署顺序（先 `import mindiesd`）被改动时，对应小节与 `framework-support-matrix.md` 对应格须一并刷新。
+- 触发（探针）：§5 的 vllm-omni 补丁 2 处（`regionally_compile` 的 `backend` 透传、`diffusion_model_runner` 选 `MindieSDBackend`）与泛型 pattern 误触回修均属 `[探针]`，重装 editable 或合入上游后须重新确认是否仍在、是否仍需本地保留。
+- 复核：换版后按 §3.5 计数契约复核——同窗（同卡组、n≥2 中位）复采一次单步 `kernel_details.csv`，确认 cached 步的 FA / MatMul / RMSNorm 计数仍相对 eager 步骤降、且 serve 日志 `RAINFUSION` active 计数仍在；再按 §3.1 用 `quality=lossless` 关 cache 复现基线（跨进程 framemd5 逐帧一致），确认 off-identity 未破。

@@ -300,6 +300,10 @@ vLLM-Omni 全栈（950PR/950DT）或排障 vllm / vllm-ascend / vllm-omni 构建
 
 - 纯 Python 包、无需编译：无 `setup.py build_py` / CANN 构建步骤，增量传输源码后
   `pip install -e . --no-deps` 即可（安装要点见 deploy_to_remote.py 的传输姿势）
+- ⚠️ **vLLM 全栈两者的源码安装参数不同，勿合并成一组**（950PR/950DT 源码构建口径）：
+  `vllm-ascend`（releases/v0.26.0rc）用 `pip install -e . --no-deps --no-build-isolation`；
+  `vllm-omni`（main）用 `VLLM_OMNI_TARGET_DEVICE=npu pip install -e . --no-build-isolation`
+  —— **不带 `--no-deps`**。差异的完整步骤见 `references/vllm-omni-build.md` §2.4/§2.5
 - ⚠️ `--no-deps` 的原因：pyproject 锁旧版 `transformers==4.57.6` / `diffusers==0.36.0`，
   而容器内是较新版本（vllm-omni / mindiesd 依赖）——带依赖安装会把容器环境降级破坏；
   装完用框架自有的 import 兼容检查确认可导入（如 Qwen2_5_VL / QwenImagePipelineOutput 等）

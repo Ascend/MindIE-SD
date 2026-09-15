@@ -116,3 +116,15 @@ P4 mindiesd 集成 -> P5 compile 真图使能 -> P6 验证、报告与开关治�
 | `../../pattern-dev/references/pattern-dev-notes.md` §5 | P5/P7：compile 前后 kernel 级收益核验 |
 | `../../dummy-run/references/compile-ab-report-template.md` | P7：§C 双表模板 |
 | 外部（语义参考）：ops-nn `quant_matmul_activation_quant` docs | P1 公式/布局锚点 |
+
+## 8. 维护与更新
+
+- **触发条件**：① catlass 版本或 vendored 落位变化（`csrc/ops/{op}/include/catlass/...` 与
+  `MINDIESD_CATLASS_HOME/include` 的先后、`TileSwigluAndMxQuant::ComputeMaxExp/ComputeScale/QuantToFp8`
+  的可复用性），含 catlass（**外部库**，非本仓文件）`scripts/build.sh` 复用 build 目录时的全清重建前提；
+  ② CANN Ascend C 语义变化（`AscendC::DataCopy` 的 count 单位、MTE2_V 同步、`DataCopyPad` 参数）；
+  ③ §1.2 的语义锚点 ops-nn `quant_matmul_activation_quant` 公式/注册状态变化；④ §6 的
+  `enable_{scope}_{feature}` flag 与 `passes/__init__.py` 注册路径、或目标模型 FFN 形态（h3 swiglu
+  与 flux/wan/qwen gelu）变化。
+- **复核方法**：对 §1.1 的 dummy run（`--quant w8a8 --compile --profile`）重跑一次，核对 probe 到的
+  FFN 站点链与 §1/§5 描述一致、且 fused 实例数 == 命中站点数（计数契约）；不符即改对应小节。

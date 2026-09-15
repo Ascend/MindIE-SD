@@ -2,12 +2,23 @@
 
 > ⚠️ **本文件是字段契约/语义文档（含 markdown 说明，非纯 toml，勿用 tomllib 解析）**。
 > 具体模型 profile 的**生成骨架以 `evals/scripts/gen_profile.py` 内嵌定义为实现源**；改字段时
-> 三者同步：脚本骨架 + 本文件 + check_profile.py 的 REQUIRED_* 校验。
+> 三者同步：脚本骨架 + 本文件 + check_profile.py 的 REQUIRED_*/域契约校验（gen_profile.py 另以
+> 「本文件须含 domain/threshold_policy/threshold_source 标记」作门禁，缺则拒绝生成）。
 > 具体模型 profile（`profiles/{model}.toml`）**不提交仓库**，
 > 由 model-auto-optimization 流程在 **S0 冻结基线后强制生成**到 `runs/{task_id}/profiles/{model}.toml`
 > （脚本 `evals/scripts/gen_profile.py`），并由 `evals/scripts/check_profile.py` 在 close 前强校验。
 > 原则（继承 profiles/README.md）：仓库存「契约 + 判定结论 + 指针」；**可推导数值不入库**，
 > 由 quality_compare.py 对 runs/ 冻结产物现算存 quality.json。
+>
+> **变更理由（2026-09-15，域阈值语义落到可执行载体）**：质量阈值**不可跨域迁移**——视频域同 prompt
+> 异配置的帧级相似度天然偏低（混沌轨迹）⇒ 定量指标只作基线登记与回归对比、**不设绝对门槛**；
+> 图像域用同 seed 像素对口径、质量域显著高于视频 ⇒ **可设绝对门槛**。原形态缺「域 + 该域阈值语义」
+> 字段，图像任务会**静默套用视频域阈值**（判错也不报错）。故：① `domain` 变成**无默认值的硬必填**
+> （gen_profile.py 缺失/非法即 fail-closed 非 0 退出、不落盘）；② 新增 `threshold_policy` /
+> `threshold_source`，让「该域阈值语义 + 阈值真源」成为**可校验字段**（而非只写在文档里）；
+> ③ check_profile.py 强校验三者与 `domain` 自洽，旧 profile（无域字段）明确报错要求重生成。
+> **阈值契约（唯一真源）**：本目录（`evals/README.md` 门禁契约 + `evals/profiles/README.md` 域阈值契约）——本模板与脚本
+> 只放**字段与指针，不放任何阈值数字**（数字纪律：绝对质量分值不入库）。
 
 ## 字段语义
 
@@ -15,11 +26,14 @@
 |---|---|---|
 | [profile] model/entry/precision | ✅ | 模型/入口（敏感字段占位）/精度 |
 | [profile] official_config | ✅ | 使用官方可比设置 |
-| [profile] domain | ✅ | `video_chaos`（视频：定量仅登记回归）\| `image_seed_deterministic`（图像：可设绝对门槛）——取样协议由此自动决定（视频 21 采样帧 / 图像 21-seed 同 seed 对） |
+| [profile] domain | ✅ | **无默认值**：`video_chaos`（视频/混沌轨迹：定量仅登记回归、不设绝对门槛）\| `image_seed_deterministic`（图像/同 seed 像素对：质量域显著高于视频、可设绝对门槛）。**为何必须按域**：两域阈值与数值域不可跨任务类型迁移，缺省（= 默认视频域）会让图像任务静默用错阈值；取样协议（视频 21 采样帧 / 图像 21-seed 同 seed 对）也由它决定 |
 | [prompts] file/seed | ✅ | 提示词集文件指针（文本可入库 runs 或引用官方）+ seed |
 | [geometry] resolution/frames/steps | ✅ | 与 baseline 对齐；少步档须显式声明 |
 | [baseline] topology/run_ref/frozen_hash | ✅ | 同拓扑同卡组 + 冻结产物目录指针 + 帧集 md5（一致性锚） |
-| [decisions] visual_artifact/off_identity/threshold_semantics | ✅ | 一次性判定结论（不可推导） |
+| [decisions] visual_artifact/off_identity | ✅ | 一次性判定结论（不可推导） |
+| [decisions] threshold_policy | ✅ | 该域阈值语义（**由 domain 唯一决定，不可手改**）：`baseline_regression_only`（video_chaos：定量只作基线登记/回归对比）\| `absolute_threshold_allowed`（image_seed_deterministic：可设绝对门槛）；check_profile 强校验 domain↔policy 一一对应 |
+| [decisions] threshold_source | ✅ | 阈值**契约指针**（固定值，check_profile 强校验；**不得指向 `.agents/`**——依赖方向 skills → evals，反向不成立）：`evals/profiles/README.md` + `evals/README.md` |
+| [decisions] threshold_semantics | ✅ | 人读语义（**须含所属域标识**，防跨域复制）：由 gen_profile.py 按 domain 写入 |
 | [last_verified] date/run_ref/quality_json | ✅ | 指针（数值以 quality.json 为准） |
 | 可推导数值字段（psnr/ssim/md5 帧等） | ❌ | 一律不预填/不入库——现算存 runs/{id}/quality.json |
 
@@ -31,6 +45,9 @@ model = "<model>"
 entry = "<推理脚本或服务端点占位>"
 precision = "bfloat16"
 official_config = true
+# domain 必填且**无默认**：视频域不设绝对门槛、图像域可设绝对门槛，域阈值不可迁移；
+# 缺省（默认视频域）会让图像任务静默用错阈值 —— 生成侧缺失/非法一律非 0 退出、不落盘。
+# 取样协议随之而定：video_chaos = 21 采样帧；image_seed_deterministic = 21-seed 同 seed 像素对。
 domain = "video_chaos"          # 或 image_seed_deterministic
 
 [prompts]
@@ -51,7 +68,13 @@ frozen_hash = "<baseline 帧集 md5>"
 [decisions]
 visual_artifact = "inconclusive（无 VLM，并排存证）"
 off_identity = "<pass/数值差说明>"
-threshold_semantics = "video_chaos 域：定量仅登记回归不设绝对门槛；主判据 visual+off_identity"
+# 阈值语义由 domain 唯一决定（脚本按 domain 写入，不手改；check_profile 强校验 domain↔policy 一致）：
+#   video_chaos              → baseline_regression_only（定量只登记回归，不设绝对门槛）
+#   image_seed_deterministic → absolute_threshold_allowed（可设绝对门槛；不可跨域迁移）
+# 阈值数字一律不入库：契约在本目录（evals/README.md 门禁契约 + evals/profiles/README.md 域阈值契约）
+threshold_policy = "baseline_regression_only"   # 或 absolute_threshold_allowed
+threshold_source = "evals/profiles/README.md + evals/README.md"
+threshold_semantics = "video_chaos 域（视频/混沌轨迹）：定量指标（psnr/ssim）只作基线登记与回归对比，不设绝对门槛；主判据 visual_artifact + off_identity"
 
 [last_verified]
 date = "<YYYY-MM-DD>"

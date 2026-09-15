@@ -112,3 +112,22 @@ Increasing max LoRA rank: 0 -> 64       # rank 生效
   蒸馏适配器 `{model_weight_dir}/flashgen-lora/*.safetensors`、
   预览级解码器 `{model_weight_dir}/h3-tae-official/taeh3.safetensors`（时序布局）。
 - 代码落点（`[探针]`）：框架源码树内新增解码器模块 + pipeline env 分派；原文件 `.bak` 保留。
+
+## 7. 维护与更新
+
+- **触发（版本边界）**：§1 的少步蒸馏 LoRA 链原文自述「**仅 0.28 有**（0.26 无）」——换框架版本前先查
+  `framework-support-matrix.md`「训练感知」表（V4 行），本节开启姿势不跨版本沿用；
+  §4 的并行与负载前提（`--tensor-parallel-size` / `--usp` / `--ring` /
+  `--enable-distributed-layerwise-offload` / `--text-encoder-tp-size` / `--vae-*`、`duration` ∈ [4, 15] s、
+  `fps` 固定 24）随框架升级重核。
+- **触发（前置契约与日志契约）**：§1.2 两条前置契约（`model_index.json` 不得 pin `base_schedule`；
+  适配器 metadata 声明 `base_schedule` ⇒ `num_inference_steps` = denoiser 评估次数）与 §1.3 三行日志契约
+  （`num_modules` 模块计数 / `rank` 提升 / 每个 worker 激活）任一在框架侧改名或不再输出，本节与矩阵 V4 行
+  同批重写；§3 的模型侧契约（帧数式 `out = 4T − 3·⌈T/5⌉`、latent **原样喂入**、末层 `12 = 3 × patch²`
+  通道 + `pixel_shuffle` + `MemBlock`）原文已声明**换模型须重新逆向**，不得按本模型指纹套用。
+- **触发（探针）**：§2 的 `[探针]` 落点与 `OMNI_H3_TAE` / `OMNI_H3_TAE_DENORMALIZE` /
+  `OMNI_H3_TAE_OUTPUT_PERCENTILE` 三个 env（默认关、`.bak` 保留、未合入上游）——合入上游或默认值改变后
+  按 `../SKILL.md` §2.4 改档，`OMNI_H3_TAE_OUTPUT_PERCENTILE` 的后处理随 checkpoint 变化必须重验。
+- **复核方法**：按 §1.3 逐行核对装载日志（模块计数 / rank 提升 / 各 worker 激活）确认适配器真装载，
+  再按 §5 对少步档做开 / 关 Cache 的**两次独立 serve** 产物 mp4 md5 对比——md5 相同即字节级等价，
+  该维度整体剔除而不记「收益近似为零」；任一项取不到 ⇒ 该档只能记「未生效」，不得宣称收益。

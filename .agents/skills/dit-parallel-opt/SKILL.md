@@ -76,7 +76,9 @@ Ulysses 的 all_to_all FA 切头路径**不会自动生效**：仅给 attention 
 
 把 `torch.distributed._functional_collectives.all_to_all_single` /
 `all_gather_tensor` monkey-patch 为 `mindiesd.parallel` 的专用流版本
-（见 `examples/dummy_run/masking.py`）：HCCL 集合跑在独立 comm stream 上，
+（实现注入点 `examples/dummy_run/masking.py` —— **该坐标属产品侧/另一 MR，本仓不含**，
+已按 `[探针]` 口径处理，见 `references/comm-masking-method.md` 的适用窗口与复核方法）：
+HCCL 集合跑在独立 comm stream 上，
 与 caller stream 的计算重叠（compute 记 ready 事件 → comm stream 等 → HCCL → 记 done → compute 等）。
 
 实测收益（mask on/off）：
