@@ -4,10 +4,10 @@ compatibility: mindie_bench CLI（benchmarks/ 工具链，需 mindiesd/xpu-perf-
 description: MindIE-SD 核心算子（FA/BSA/GMM/MM）性能基准工具链。使用：模型优化（model-auto-optimization
              的 S1/S4 选型）中用 mindie_bench 对单算子做实现级实测，按 dtype/量化档/稀疏度/形态对比
              选出最优配置（产物：选型证据；稀疏度-性能曲线供 S4 稀疏度选型）；开发：benchmarks/
-             工具链扩展与新算子接入测试（供 operator-dev / compilation-dev 调用）。
+             工具链扩展与新算子接入测试（供 operator-dev / pattern-dev 调用）。
              当用户需要对比算子实现选型、新增或修改 benchmark 代码、排查 benchmark 数据异常、
              给基准加算子/指标时使用；即使用户只说"benchmark 数据不对""给基准加个算子"
-             "对比下这几个 FA 实现哪个快"也应触发；特性级方案选档请走 performance-optimization
+             "对比下这几个 FA 实现哪个快"也应触发；特性级方案选档请走 dit-perf-opt
              （本 skill 只做实现级实测）。
              由 model-auto-optimization 的 S1/S4 选型场景与 operator-dev 的算子接入验证场景调用，
              亦由 dev-workflow 在基准开发时指引加载。
@@ -53,9 +53,9 @@ description: MindIE-SD 核心算子（FA/BSA/GMM/MM）性能基准工具链。�
 - **对比多档位**：一次 `--config` 内列表值笛卡尔积（heads × dtype），一次跑完对比
 - **多 run 合并**：不同实现的 run 放同一 report 父目录下，`report` 合并为单 HTML 对比
 
-**选型依据**：MFU（计算利用率）、latency；FA/BSA 对比时注意口径一致性（**同一 `peak_flops`/`peak_bw` 输入**、同 seqlen、同 dtype）。选出的最优配置再进入模型（结合 performance-optimization 的方案实施与复验）。
+**选型依据**：MFU（计算利用率）、latency；FA/BSA 对比时注意口径一致性（**同一 `peak_flops`/`peak_bw` 输入**、同 seqlen、同 dtype）。选出的最优配置再进入模型（结合 dit-perf-opt 的方案实施与复验）。
 
-**选型语义**：本 skill 的「选型」是**实现级实测**（同一算子不同 dtype/形态/稀疏度选最优实现）；与 performance-optimization 的「特性级选档」（features.md 选方案）互补——实测结论回填 performance-optimization Step 4 作为实施/复验证据（反向入口见其 Step 3 划界）。稀疏 FA/BSA 的稀疏度-性能曲线即 S4 有损阶段稀疏度选型的算子级证据。
+**选型语义**：本 skill 的「选型」是**实现级实测**（同一算子不同 dtype/形态/稀疏度选最优实现）；与 dit-perf-opt 的「特性级选档」（按 `docs/zh/features/*` 选方案）互补——实测结论回填 dit-perf-opt Step 4 作为实施/复验证据（反向入口见其 Step 3 划界）。稀疏 FA/BSA 的稀疏度-性能曲线即 S4 有损阶段稀疏度选型的算子级证据。
 
 ## 2. 架构（三层，口径单点）
 
@@ -136,7 +136,7 @@ python -m ruff check benchmarks tests/UT/benchmark
 1. `op_defs/{op}.py`：base（`MfuMbuSummaryMixin + BasicOp`，FLOPs/字节记账 + `vendor_impl_run` 抛 NotImplementedError）
 2. `vendor_ops/NPU/{op}.py`：`register_vendor_impl("{op}", "NPU")` 真实 kernel（**调用参数必须对齐算子自身 UT**，见调试章节）
 3. `common/schema.py`：`OP_SLOT_ARGS` / `OP_SEQ_AXIS` / `OP_SERIES_KEY` / `OP_DISPLAY_METRICS`
-4. `scripts/mindie_bench.py`：`VALID_OPS` + `OP_DEFAULTS`
+4. 主仓 `benchmarks/scripts/mindie_bench.py`：`VALID_OPS` + `OP_DEFAULTS`
 5. 记账纯函数加进 `op_defs/_common.py` 并单测
 
 ### 5.2 新增 config 键
@@ -180,6 +180,7 @@ python -m ruff check benchmarks tests/UT/benchmark
 ## Reference Files
 
 - 📋 `references/troubleshooting-benchmark.md` — 加载时机: benchmark 数据异常（全零/恒定 latency/偶发污染/增量合并陷阱）排查时
+- 📋 `references/benchmark-guide.md` — 加载时机: 计时口径（warmup/`torch.npu.synchronize()`/编译预热排除/多场景对照/<3% 噪声）——自 `pattern-dev` 迁入的计时方法论单点，`pattern-dev` Phase 6/7 与 `copy-elimination-guide.md` 均指向本文件
 - 📄 `../env-install/SKILL.md` — 加载时机: 远端安装/同步/运行时（SSH 工具见 `../remote-access/SKILL.md`）
 - 📄 `../code-standards/SKILL.md` — 加载时机: 编写 Python 代码时
 - 📄 `../dev-workflow/SKILL.md` — 加载时机: 开发流程/复盘归档时

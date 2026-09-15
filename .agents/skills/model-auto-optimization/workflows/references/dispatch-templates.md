@@ -11,7 +11,7 @@
 - 回执只回：结论摘要 + 证据文件路径 + 需编排者决策的问题；长日志 / 原始数据留 evidence/，
   不回传主上下文。
 - 任何涉及代码改动的执行，先确认改动归属（mindiesd 仓内 → dev-workflow 子任务；三方框架 →
-  framework-feature-enablement / framework-extension-dev），不静默越界。
+  framework-integration），不静默越界。
 
 ## 角色与写权限
 
@@ -19,7 +19,7 @@
 |------|------|--------|------|
 | 采集者 collector | profiling 采集（profiling-collect） | evidence/{task_id}/{stage}/ | 不改模型代码/配置 |
 | 分析者 analyzer | profiling 分析 / 候选清单（profiling-analyze） | evidence/{task_id}/{stage}/ | 不改模型代码/配置 |
-| 实施者 implementer | 按已确认方案实施（framework-feature-enablement 等） | evidence/ + 工作区；代码改动按归属子任务 | 唯一可改代码方；不自改已确认方案 |
+| 实施者 implementer | 按已确认方案实施（framework-integration 等） | evidence/ + 工作区；代码改动按归属子任务 | 唯一可改代码方；不自改已确认方案 |
 | 复核者 reviewer | 验收复核（只读） | evidence/{task_id}/{stage}/review.md | 禁改模型代码/配置，不做自行修复 |
 
 ## 派发模板
@@ -40,7 +40,7 @@
 ```text
 工作目录: {work_dir}
 角色: implementer
-必须使用 skill: {framework-feature-enablement | performance-optimization | …（按 run-state 决策）}
+必须使用 skill: {framework-integration | performance-optimization | …（按 run-state 决策）}
 任务: {阶段 {Sn} 实施：…}
 方案要点: 见 run-state「决策与轮次」{记录 id}，不自改方案；发现问题停止并报告
 自验证: 按下方「自验证回执格式」写入 evidence/{task_id}/{stage}/selfcheck.md 与 run-state 工作区

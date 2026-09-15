@@ -1,0 +1,50 @@
+{
+  "skill_name": "dit-perf-opt",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "性能分析报告说 MatMul 占 DiT 58%，优化方向是量化，具体选哪个方案？",
+      "expected_output": "按 dit-perf-opt Step 3 选档：查 docs/zh/features/quantization.md §Linear量化（仓内真源）确定 API 与参数，查 framework-integration/references/framework-support-matrix.md 确认支持状态，考虑硬件约束/模型兼容/精度权衡，选具体档（如 W8A8_MXFP8）；多方案时优先级 MindIE-SD Pattern > 量化 > 稀疏 > 缓存 > 通用；瓶颈占比来自 profiling-analyze，本技能不重新定位",
+      "files": [],
+      "expectations": [
+        "以 docs/zh/features/*（仓内特性真源）为选档依据，不依赖任何仓内镜像副本",
+        "给出方案优先级（MindIE-SD Pattern > 量化 > 稀疏 > 缓存 > 通用）",
+        "提到硬件约束与精度权衡检查，并核对 framework-support-matrix.md 的支持状态",
+        "不重新做占比分析/瓶颈定位（占比与标签来自 profiling-analyze 或编排层）"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "开了 DiTCache 之后端到端墙钟没变化，是收益太小吗？",
+      "expected_output": "按 dit-perf-opt Step 4 的「使能成功由本技能负责」：先取该特性确实参与的证据（图命中 / kernel diff / 特性 active 计数 / 抽样步 kernel），不看墙钟下结论；与无损基线的产物逐字节相同 ⇒ 判「未生效」，登记为能力未生效，不得记作「收益近似为零」；生效后再按 Step 5 复验（同窗可比、差距 <3% 视为噪声）",
+      "files": [],
+      "expectations": [
+        "先验证特性是否真正生效（图命中/kernel diff/active 计数），而非只看墙钟",
+        "给出「未生效 ≠ 收益小」的判定：字节级等价 ⇒ 判未生效",
+        "复验要求同窗可比，并提到 3% 噪声阈值"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "8 卡上 DiT 通信没掩盖住，顺便帮我把量化也一起开了吧。",
+      "expected_output": "识别为跨模块请求：多卡通信掩盖/并行形态属 dit-parallel-opt（本技能 near-miss），DiT 计算侧量化档位才归 dit-perf-opt；应拆成两条，先由对应模块各自处理，量化部分按本技能 Step 3 选档（并说明量化与并行的叠加要按 references/combination-search.md 的 seam 与必测覆盖集裁决）",
+      "files": [],
+      "expectations": [
+        "指出通信掩盖/并行形态不属本技能，路由 dit-parallel-opt",
+        "只承接 DiT 计算侧（量化档位）部分",
+        "提到并行 × 有损叠加需按 combination-search.md 的 seam 判定与必测覆盖集处理"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "我在 vLLM-Omni 里把稀疏开关打开了，但感觉没生效，帮我看看，顺便把 80% 稀疏档也定了。",
+      "expected_output": "分两段：①框架侧开关是否落地/生效验证 → framework-integration；②80% 稀疏档的选档（rf_v2 vs ada_bsa、按模型/视频还是图像给 sparsity）→ 本技能 Step 3 按 docs/zh/features/sparse.md 选取并核对 support-matrix；若需要新增/适配 pattern 或算子才能落地该档 → pattern-dev / operator-dev",
+      "files": [],
+      "expectations": [
+        "框架侧使能与生效验证路由 framework-integration，不属本技能",
+        "稀疏档位选择以 docs/zh/features/sparse.md 为真源，并核对 support-matrix 支持状态",
+        "需要新增 pattern/算子才能落地时路由 pattern-dev / operator-dev"
+      ]
+    }
+  ]
+}

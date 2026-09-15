@@ -7,7 +7,7 @@ description: >
   当需要在远端昇腾设备执行命令、查询 NPU 状态、
   选择空闲卡或向远端传输文件时使用本技能；
   即使用户只提到「在服务器上跑个命令」而未说明 SSH，只要目标是远端昇腾环境也应触发；
-  只提供远程执行通道，不负责安装/编译（env-install）与框架验证（framework-feature-enablement）。
+  只提供远程执行通道，不负责安装/编译（env-install）与框架验证（framework-integration）。
   由 env-install 的部署流程与 dev-workflow 的部署阶段调用，亦可独立使用。
 ---
 
@@ -16,7 +16,11 @@ description: >
 ## 定位与分工
 
 本技能提供远程执行通道这一通用能力：SSH 连接复用、容器内命令执行、空闲卡选择与文件传输。
-安装与编译由 env-install 负责，其 `scripts/deploy_to_remote.py` 完成「传输 + 远端编译安装」时会调用本技能的能力；
+安装与编译由 env-install 负责；其 `env-install/scripts/deploy_to_remote.py` 完成「传输 + 远端编译安装」时
+**直接复用本技能的 `scripts/ssh_helper.py`**（`make_ssh` 建连 + `run` 执行）：同一凭据来源优先级
+（`MINDIE_SD_SSH_PASSWORD` / `MINDIE_SSH_PASSWORD` > 交互输入（不回显）> `--password`）、同一主机密钥纪律
+（默认 RejectPolicy + 加载 known_hosts；仅显式 `allow_unknown_host=True` 才放开）、同一「stdout/stderr
+并发读取」防管道死锁实现——因此运行该部署脚本要求本技能同时存在（缺它脚本会明确报错退出）。
 安装 / 编译细节（源码构建、依赖检查等）不在本技能范围。本技能由 env-install 的部署流程与 dev-workflow 的部署阶段调用，
 亦可独立以 CLI 或 Python import 方式使用。
 
@@ -111,7 +115,9 @@ finally:
   （远端任务不受影响，但轮询/后处理会停）。
 - 不要在 python f-string 里内嵌远端 shell 变量（如 `${t}` → `NameError`）；用字符串拼接，
   或把 `{{ }}` 转义成字面 `{}`。
-- 结束释放卡：`pkill -9 -f "vllm-omni serve"` 后用 `npu-smi info` 进程段复核（0 进程）再交还。
+- 结束释放卡：`pkill -9 -f "[v]llm-omni serve"` 后用 `npu-smi info` 进程段复核（0 进程）再交还。
+  模式首字符加 `[x]` 断字符是**必须**的：裸写的 pattern 会匹配到执行这条命令的 shell 自身，
+  导致连接被自杀式中断（纪律与反例见 `../dev-workflow/references/rework-lessons.md`）。
 
 ## 空闲卡选择
 
@@ -147,7 +153,7 @@ dev, usage = pick_free_device(ssh, container="{容器名}", num_cards=8)
 
 ## 文件传输
 
-- 部署级传输（增量 + CRLF→LF + 远端编译安装）由 env-install 完成：其 `scripts/deploy_to_remote.py`
+- 部署级传输（增量 + CRLF→LF + 远端编译安装）由 env-install 完成：其 `env-install/scripts/deploy_to_remote.py`
   复用本技能建立的 SSH / SFTP 通道做传输并触发容器内编译安装，本技能不重复实现安装流程。
 - 增量原则：`sftp.stat` 逐个文件比对远端是主要瓶颈——先 `ls -l` 拉取远端文件清单，本地 diff 后仅传输变更文件。
 - 复用连接：SFTP 会话挂在已建 SSH 连接上（`ssh.open_sftp()`），不为每个文件新建连接。
@@ -176,7 +182,7 @@ SSH / 连接 / 容器 / 换行相关条目速查（完整决策树见 Reference 
 | --- | --- | --- |
 | SSH 认证失败 | IP / 用户名 / 密码错误或网络不通 | 核对参数并检查网络连通性 |
 | 报 "Server not found in known_hosts"（密钥已登记仍报） | **paramiko ≥ 4.0 不再自动加载用户 known_hosts**，`make_ssh` 需显式 `load_system_host_keys()` | ssh_helper.py 已修复；自写脚本建连时同样先 `ssh.load_system_host_keys()`，保持 RejectPolicy 语义 |
-| 复杂命令内层引号（`python -c "…"`、`$`、反引号）经多层 shell 被吞/截断 | 每层 shell 解一次引号；Windows PowerShell 外层双引号遇内层 `"` 提前终止命令串 | 命令先 base64 编码，远端 `echo {b64} \| base64 -d \| bash` 执行（本会话验证可靠）；或用 ssh_helper 的 shlex.quote |
+| 复杂命令内层引号（`python -c "…"`、`$`、反引号）经多层 shell 被吞/截断 | 每层 shell 解一次引号；Windows PowerShell 外层双引号遇内层 `"` 提前终止命令串 | 命令先 base64 编码，远端 `echo {b64} \| base64 -d \| bash` 执行（同环境实测可靠）；或用 ssh_helper 的 shlex.quote |
 | 短时间多次连接被拒 | 远端 `MaxStartups` 限制 | 遵循连接复用原则，单连接跑完所有命令 |
 | 报错 command not found（脚本含 CR 字符） | Windows 编辑的脚本未转 LF | 远端用 sed 去除行尾 CR，或由 deploy_to_remote.py 自动转换 |
 | docker exec 内命令报语法错误或输出丢失 | 多层 shell 逐层解引号破坏命令 | 用 ssh_helper 的 shlex.quote 包装，或 SFTP 上传脚本再执行 |
@@ -185,11 +191,17 @@ SSH / 连接 / 容器 / 换行相关条目速查（完整决策树见 Reference 
 | 凭据明文泄露 | `--password` 明文传递并留在进程列表 / 日志 | 改用 `MINDIE_SSH_PASSWORD` 环境变量或 SSH key；日志不回显 |
 | 改了代码但不生效 / 远端结果与本地不符 | 同 basename 上传互相覆盖，远端执行的是旧文件 | 按任务建 distinct dest 目录（见「上传同步纪律」），上传后比对 mtime / hash |
 
-> 其他 SSH / 容器 / 环境类问题（含 Windows 开发机 schannel、传输路径语义等）见 env-install 的故障排查决策树（归属 env-install，本技能只引用不复制全文）。
+> 其他传输域 / 本地开发机问题（Windows 开发机 schannel 握手失败、传输范围与路径语义、网络不可达定位顺序）
+> 见 `references/transport-troubleshooting.md`（本技能补充单点）；安装 / 编译 / 依赖 / 权重类问题归
+> env-install（`../env-install/references/troubleshooting-env.md`，本技能只引用不复制全文）。
 
 ## Reference Files
 
-- `../env-install/references/troubleshooting-env.md` — 加载时机: SSH 认证 / 连接 / 容器 / 换行等问题需系统排查定位根因时（该文件归属 env-install，仅引用不复制）
+- `references/transport-troubleshooting.md` — 加载时机: Windows 开发机 git/curl 报
+  `SEC_E_NO_CREDENTIALS`（schannel）、需要判断失败在本地传输侧还是远端环境侧、
+  或要定位传输范围 / 路径语义时（本技能补充单点；认证 / CRLF / 引号 / 后台化 / 凭据仍在正文「故障排查」表）
+- `../env-install/references/troubleshooting-env.md` — 加载时机: 安装 / 编译 / 依赖 / 权重类异常需系统排查时
+  （该文件归属 env-install，本技能仅引用不复制；其 SSH / CRLF / 传输域条目已收敛为指回本技能）
 
 ## Bundled Scripts
 

@@ -18,7 +18,6 @@ import logging
 import os
 import sys
 from collections import defaultdict
-from typing import Dict, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +27,14 @@ _KEY_TOTAL_WAIT = "total_wait"
 _KEY_MAX_DUR = "max_dur"
 
 
-def load_csv(path: str) -> Dict[str, Dict]:
-    by_name = defaultdict(lambda: {_KEY_COUNT: 0, _KEY_TOTAL_DUR: 0.0, _KEY_TOTAL_WAIT: 0.0, _KEY_MAX_DUR: 0.0})
+def load_csv(path: str) -> dict[str, dict]:
+    by_name = defaultdict(
+        lambda: {_KEY_COUNT: 0, _KEY_TOTAL_DUR: 0.0, _KEY_TOTAL_WAIT: 0.0, _KEY_MAX_DUR: 0.0}
+    )
     total_dur = 0.0
     total_count = 0
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         for row in csv.DictReader(f):
             n = row["Name"]
             dur = float(row["Duration(us)"])
@@ -76,10 +77,18 @@ def render_comparison(
     w()
     w(f"| Metric | {baseline_label} | {target_label} | Delta |")
     w("|---|---|---|---|")
-    w(f"| Total kernel count | {base_count} | {tgt_count} | {tgt_count - base_count:+d} |")
-    w(f"| Unique operator count | {len(base_set)} | {len(tgt_set)} | {len(tgt_set) - len(base_set):+d} |")
+    w(
+        f"| Total kernel count | {base_count} | {tgt_count} | {tgt_count - base_count:+d} |"
+    )
+    w(
+        f"| Unique operator count | {len(base_set)} | {len(tgt_set)} | "
+        f"{len(tgt_set) - len(base_set):+d} |"
+    )
     dur_delta = tgt_total_ms - base_total_ms
-    w(f"| Total kernel duration | {base_total_ms:.1f} ms | {tgt_total_ms:.1f} ms | {dur_delta:+.1f} ms |")
+    w(
+        f"| Total kernel duration | {base_total_ms:.1f} ms | {tgt_total_ms:.1f} ms | "
+        f"{dur_delta:+.1f} ms |"
+    )
     w(f"| Data source | {os.path.basename(baseline_path)} | {os.path.basename(target_path)} |")
     w()
 
@@ -91,7 +100,10 @@ def render_comparison(
         w("|---|---|---|---|")
         for name in sorted(new_ops.keys(), key=lambda n: new_ops[n][_KEY_TOTAL_DUR], reverse=True):
             info = new_ops[name]
-            w(f"| {name} | {info[_KEY_COUNT]} | {info[_KEY_TOTAL_DUR] / 1000:.2f} | {info[_KEY_MAX_DUR]:.0f} |")
+            w(
+                f"| {name} | {info[_KEY_COUNT]} | {info[_KEY_TOTAL_DUR] / 1000:.2f} | "
+                f"{info[_KEY_MAX_DUR]:.0f} |"
+            )
         w()
 
     # Gone ops
@@ -100,15 +112,23 @@ def render_comparison(
         w()
         w("| Operator | Count | Total Dur (ms) | Max Dur (us) |")
         w("|---|---|---|---|")
-        for name in sorted(gone_ops.keys(), key=lambda n: gone_ops[n][_KEY_TOTAL_DUR], reverse=True):
+        for name in sorted(
+            gone_ops.keys(), key=lambda n: gone_ops[n][_KEY_TOTAL_DUR], reverse=True
+        ):
             info = gone_ops[name]
-            w(f"| {name} | {info[_KEY_COUNT]} | {info[_KEY_TOTAL_DUR] / 1000:.2f} | {info[_KEY_MAX_DUR]:.0f} |")
+            w(
+                f"| {name} | {info[_KEY_COUNT]} | {info[_KEY_TOTAL_DUR] / 1000:.2f} | "
+                f"{info[_KEY_MAX_DUR]:.0f} |"
+            )
         w()
 
     # Common ops: sorted by delta abs
     w("## 4. Operator Duration Changes (Common Ops)")
     w()
-    w("| Operator | BC Count | BC Dur(ms) | TC Count | TC Dur(ms) | Count Delta | Dur Delta(ms) | Dur % |")
+    w(
+        "| Operator | BC Count | BC Dur(ms) | TC Count | TC Dur(ms) | "
+        "Count Delta | Dur Delta(ms) | Dur % |"
+    )
     w("|---|---|---|---|---|---|---|")
 
     all_diffs = []
@@ -138,10 +158,7 @@ def render_comparison(
         tc = ti[_KEY_COUNT]
         marker = ""
         if abs(diff_ms) > 1.0:
-            if diff_ms > 0:
-                marker = " **REGRESSION**"
-            else:
-                marker = " *improvement*"
+            marker = " **REGRESSION**" if diff_ms > 0 else " *improvement*"
         w(
             f"| {name[:60]} | {bc} | {bd_ms:.2f} | {tc} | {td_ms:.2f} | "
             f"{count_diff:+d} | {diff_ms:+.2f} | {pct:+.0f}% | {marker} |"
@@ -151,7 +168,10 @@ def render_comparison(
     w("## 5. Summary")
     w()
     pct_change = (tgt_total_ms - base_total_ms) / base_total_ms * 100 if base_total_ms > 0 else 0
-    w(f"- Total kernel duration changed by: **{tgt_total_ms - base_total_ms:+.1f} ms ({pct_change:+.1f}%)**")
+    w(
+        f"- Total kernel duration changed by: **{tgt_total_ms - base_total_ms:+.1f} ms "
+        f"({pct_change:+.1f}%)**"
+    )
     w(f"- Kernel count changed by: **{tgt_count - base_count:+d}**")
     w(f"- New operators: {len(new_ops)}, Removed operators: {len(gone_ops)}")
 
@@ -166,7 +186,9 @@ def render_comparison(
     w()
     w("## 6. Auto-Verdict")
     w()
-    ctx = VerdictContext(base, tgt, base_total_ms, tgt_total_ms, base_count, tgt_count, new_ops, gone_ops)
+    ctx = VerdictContext(
+        base, tgt, base_total_ms, tgt_total_ms, base_count, tgt_count, new_ops, gone_ops
+    )
     verdict, reasons = _compute_verdict(ctx)
     w(f"**Verdict: {verdict}**")
     w()
@@ -179,7 +201,9 @@ def render_comparison(
 class VerdictContext:
     """Context for computing comparison verdict."""
 
-    def __init__(self, base, tgt, base_total_ms, tgt_total_ms, base_count, tgt_count, new_ops, gone_ops):
+    def __init__(
+        self, base, tgt, base_total_ms, tgt_total_ms, base_count, tgt_count, new_ops, gone_ops
+    ):
         self.base = base
         self.tgt = tgt
         self.base_total_ms = base_total_ms
@@ -190,12 +214,16 @@ class VerdictContext:
         self.gone_ops = gone_ops
 
 
-def _compute_verdict(ctx: VerdictContext) -> Tuple[str, list]:
+def _compute_verdict(ctx: VerdictContext) -> tuple[str, list]:
     reasons = []
     fail_flags = False
     warn_flags = False
 
-    dur_change_pct = (ctx.tgt_total_ms - ctx.base_total_ms) / ctx.base_total_ms * 100 if ctx.base_total_ms > 0 else 0
+    dur_change_pct = (
+        (ctx.tgt_total_ms - ctx.base_total_ms) / ctx.base_total_ms * 100
+        if ctx.base_total_ms > 0
+        else 0
+    )
     reasons.append(f"Total kernel duration: {dur_change_pct:+.1f}%")
     if dur_change_pct >= 5.0:
         reasons.append(f"  => REGRESSION: timed inference slowed by {dur_change_pct:.1f}%")
@@ -208,15 +236,21 @@ def _compute_verdict(ctx: VerdictContext) -> Tuple[str, list]:
     else:
         reasons.append("  => Noise-level change")
 
-    count_change_pct = (ctx.tgt_count - ctx.base_count) / ctx.base_count * 100 if ctx.base_count > 0 else 0
+    count_change_pct = (
+        (ctx.tgt_count - ctx.base_count) / ctx.base_count * 100 if ctx.base_count > 0 else 0
+    )
     reasons.append(f"Kernel count: {count_change_pct:+.1f}% ({ctx.tgt_count - ctx.base_count:+d})")
     if count_change_pct >= 10.0:
         reasons.append("  => WARNING: kernel count inflated >=10% (functionalization overhead)")
         warn_flags = True
 
     copy_keywords = ["InplaceCopy", "ViewCopy", "TensorMove", "StridedSlice", "_to_copy", "copy_"]
-    base_copy_dur = sum(info[_KEY_TOTAL_DUR] for n, info in ctx.base.items() if any(kw in n for kw in copy_keywords))
-    tgt_copy_dur = sum(info[_KEY_TOTAL_DUR] for n, info in ctx.tgt.items() if any(kw in n for kw in copy_keywords))
+    base_copy_dur = sum(
+        info[_KEY_TOTAL_DUR] for n, info in ctx.base.items() if any(kw in n for kw in copy_keywords)
+    )
+    tgt_copy_dur = sum(
+        info[_KEY_TOTAL_DUR] for n, info in ctx.tgt.items() if any(kw in n for kw in copy_keywords)
+    )
     if base_copy_dur > 0:
         copy_change_pct = (tgt_copy_dur - base_copy_dur) / base_copy_dur * 100
     elif tgt_copy_dur > 0:
@@ -224,7 +258,8 @@ def _compute_verdict(ctx: VerdictContext) -> Tuple[str, list]:
     else:
         copy_change_pct = 0
     reasons.append(
-        f"Copy operators: {base_copy_dur / 1000:.1f}ms -> {tgt_copy_dur / 1000:.1f}ms ({copy_change_pct:+.1f}%)"
+        f"Copy operators: {base_copy_dur / 1000:.1f}ms -> {tgt_copy_dur / 1000:.1f}ms "
+        f"({copy_change_pct:+.1f}%)"
     )
     if copy_change_pct >= 50.0:
         reasons.append("  => CRITICAL: copy operator overhead >=50%")
@@ -236,7 +271,10 @@ def _compute_verdict(ctx: VerdictContext) -> Tuple[str, list]:
     new_total_ms = sum(info[_KEY_TOTAL_DUR] for info in ctx.new_ops.values()) / 1000.0
     gone_total_ms = sum(info[_KEY_TOTAL_DUR] for info in ctx.gone_ops.values()) / 1000.0
     net_new = new_total_ms - gone_total_ms
-    reasons.append(f"Net new operator cost: {net_new:+.1f}ms (new={new_total_ms:.1f}ms, gone={gone_total_ms:.1f}ms)")
+    reasons.append(
+        f"Net new operator cost: {net_new:+.1f}ms "
+        f"(new={new_total_ms:.1f}ms, gone={gone_total_ms:.1f}ms)"
+    )
     if net_new > 10.0:
         reasons.append("  => WARNING: net new operator cost >10ms")
         warn_flags = True
@@ -252,12 +290,16 @@ def _compute_verdict(ctx: VerdictContext) -> Tuple[str, list]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Compare two Ascend profiler kernel_details.csv files")
+    parser = argparse.ArgumentParser(
+        description="Compare two Ascend profiler kernel_details.csv files"
+    )
     parser.add_argument("--baseline", required=True, help="Path to baseline kernel_details.csv")
     parser.add_argument("--target", required=True, help="Path to target kernel_details.csv")
     parser.add_argument("--baseline-label", default="Baseline", help="Label for baseline in report")
     parser.add_argument("--target-label", default="Target", help="Label for target in report")
-    parser.add_argument("--output", default="comparison_report.md", help="Output Markdown report path")
+    parser.add_argument(
+        "--output", default="comparison_report.md", help="Output Markdown report path"
+    )
     args = parser.parse_args()
 
     if not os.path.exists(args.baseline):

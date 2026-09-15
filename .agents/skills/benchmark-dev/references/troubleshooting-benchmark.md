@@ -98,3 +98,6 @@ docker exec {容器} bash -lc 'cd /home/{user}/code/MindIE-SD && \
 - [ ] 偶发异常值是否被增量重跑确认/覆盖？
 - [ ] 长序列是否配了 `--config {timeout: 300}`（默认 5s 会超时跳过大档位）？
 - [ ] MFU 钳位 1 是否因 peak 口径/记账/假 latency 导致（而非接受钳位）？
+- [ ] **有效运行三证据（返回码 / 产物字节数 / 成功日志条数）是否齐备**？**失败运行返回得更快**，
+  极易被误读成"优化见效"——三缺一该数字即作废（见
+  `../../perf-gate/references/evidence-toolbox.md` §1）

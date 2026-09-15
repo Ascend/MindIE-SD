@@ -24,9 +24,11 @@ import csv
 import json
 import logging
 import os
+import sys
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -46,14 +48,14 @@ class Interval:
         return max(0.0, self.end_us - self.start_us)
 
 
-def merge_intervals(intervals: Sequence[Interval]) -> List[Interval]:
+def merge_intervals(intervals: Sequence[Interval]) -> list[Interval]:
     items = sorted(
         (i for i in intervals if i.end_us > i.start_us),
         key=lambda x: (x.start_us, x.end_us),
     )
     if not items:
         return []
-    merged: List[Interval] = [Interval(items[0].start_us, items[0].end_us)]
+    merged: list[Interval] = [Interval(items[0].start_us, items[0].end_us)]
     for cur in items[1:]:
         last = merged[-1]
         if cur.start_us <= last.end_us:
@@ -67,10 +69,10 @@ def interval_union_us(intervals: Sequence[Interval]) -> float:
     return sum(i.dur_us for i in merge_intervals(intervals))
 
 
-def interval_overlap_ratio(target: Interval, others: Sequence[Interval]) -> Optional[float]:
+def interval_overlap_ratio(target: Interval, others: Sequence[Interval]) -> float | None:
     if target.dur_us <= 0:
         return None
-    clipped: List[Interval] = []
+    clipped: list[Interval] = []
     for x in others:
         s = max(target.start_us, x.start_us)
         e = min(target.end_us, x.end_us)
@@ -145,7 +147,7 @@ class KernelInfo:
 _PROFILER_OUTPUT_DIR = "ASCEND_PROFILER_OUTPUT"
 
 
-def find_profiler_output_dir(profile_dir: str) -> Optional[str]:
+def find_profiler_output_dir(profile_dir: str) -> str | None:
     """Find the ASCEND_PROFILER_OUTPUT directory within profile_dir."""
     for root, dirs, _files in os.walk(profile_dir):
         if _PROFILER_OUTPUT_DIR in dirs:
@@ -156,12 +158,12 @@ def find_profiler_output_dir(profile_dir: str) -> Optional[str]:
     return None
 
 
-def load_kernels_from_csv(csv_path: str) -> List[KernelInfo]:
+def load_kernels_from_csv(csv_path: str) -> list[KernelInfo]:
     """Load kernel events from kernel_details.csv (CANN profiler format)."""
-    kernels: List[KernelInfo] = []
+    kernels: list[KernelInfo] = []
     t0 = None
 
-    with open(csv_path, "r", encoding="utf-8") as fh:
+    with open(csv_path, encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
             try:
@@ -211,10 +213,10 @@ def _infer_task_type_from_name(name: str) -> str:
     return "AI_CORE"
 
 
-def load_host_events_from_trace(trace_path: str, t0: float) -> List[TraceEvent]:
+def load_host_events_from_trace(trace_path: str, t0: float) -> list[TraceEvent]:
     """Load host-side events from trace_view.json."""
-    events: List[TraceEvent] = []
-    with open(trace_path, "r", encoding="utf-8") as fh:
+    events: list[TraceEvent] = []
+    with open(trace_path, encoding="utf-8") as fh:
         data = json.load(fh)
     trace_events = data.get("traceEvents", data) if isinstance(data, dict) else data
 
@@ -231,7 +233,9 @@ def load_host_events_from_trace(trace_path: str, t0: float) -> List[TraceEvent]:
 
         if ph == "X" and dur > 0:
             rel_ts = ts - t0 if t0 else ts
-            events.append(TraceEvent(ts=rel_ts, dur=dur, name=name, cat=cat, pid=pid, tid=tid, ph=ph))
+            events.append(
+                TraceEvent(ts=rel_ts, dur=dur, name=name, cat=cat, pid=pid, tid=tid, ph=ph)
+            )
         elif ph == "M":
             pass  # Skip metadata events
         elif ph == "C":
@@ -240,18 +244,20 @@ def load_host_events_from_trace(trace_path: str, t0: float) -> List[TraceEvent]:
     return events
 
 
-def load_step_time_from_csv(csv_path: str) -> Dict[str, Any]:
+def load_step_time_from_csv(csv_path: str) -> dict[str, Any]:
     """Load step-level timing from step_trace_time.csv."""
-    step_info: Dict[str, Any] = {}
+    step_info: dict[str, Any] = {}
     try:
-        with open(csv_path, "r", encoding="utf-8") as fh:
+        with open(csv_path, encoding="utf-8") as fh:
             reader = csv.DictReader(fh)
             row_count = 0
             for row in reader:
                 step_info["device_id"] = row.get("Device_id", "")
                 step_info["computing_us"] = float(row.get("Computing", 0))
                 step_info["communication_us"] = float(row.get("Communication", 0))
-                step_info["communication_not_overlapped_us"] = float(row.get("Communication(Not Overlapped)", 0))
+                step_info["communication_not_overlapped_us"] = float(
+                    row.get("Communication(Not Overlapped)", 0)
+                )
                 step_info["overlapped_us"] = float(row.get("Overlapped", 0))
                 step_info["free_us"] = float(row.get("Free", 0))
                 step_info["stage_us"] = float(row.get("Stage", 0))
@@ -268,11 +274,11 @@ def load_step_time_from_csv(csv_path: str) -> Dict[str, Any]:
 # ============================================================================
 
 
-def load_trace_events(trace_path: str) -> List[TraceEvent]:
-    with open(trace_path, "r", encoding="utf-8") as fh:
+def load_trace_events(trace_path: str) -> list[TraceEvent]:
+    with open(trace_path, encoding="utf-8") as fh:
         data = json.load(fh)
 
-    events: List[TraceEvent] = []
+    events: list[TraceEvent] = []
     trace_events = data.get("traceEvents", data) if isinstance(data, dict) else data
 
     for raw in trace_events:
@@ -295,9 +301,9 @@ def load_trace_events(trace_path: str) -> List[TraceEvent]:
     return events
 
 
-def load_all_traces(profile_dir: str) -> Tuple[List[TraceEvent], List[str]]:
-    events: List[TraceEvent] = []
-    sources: List[str] = []
+def load_all_traces(profile_dir: str) -> tuple[list[TraceEvent], list[str]]:
+    events: list[TraceEvent] = []
+    sources: list[str] = []
     for fn in sorted(os.listdir(profile_dir)):
         if fn.endswith(".pt.trace.json") or fn.endswith(".trace.json"):
             path = os.path.join(profile_dir, fn)
@@ -311,14 +317,14 @@ def load_all_traces(profile_dir: str) -> Tuple[List[TraceEvent], List[str]]:
 # CLASSIFY: split events into kernel/host/communication
 # ============================================================================
 
-ClassifyResult = Tuple[List[KernelInfo], List[TraceEvent], List[TraceEvent], List[TraceEvent]]
+ClassifyResult = tuple[list[KernelInfo], list[TraceEvent], list[TraceEvent], list[TraceEvent]]
 
 
-def classify_events(events: List[TraceEvent]) -> ClassifyResult:
-    kernels: List[KernelInfo] = []
-    host_events: List[TraceEvent] = []
-    comm_events: List[TraceEvent] = []
-    step_markers: List[TraceEvent] = []
+def classify_events(events: list[TraceEvent]) -> ClassifyResult:
+    kernels: list[KernelInfo] = []
+    host_events: list[TraceEvent] = []
+    comm_events: list[TraceEvent] = []
+    step_markers: list[TraceEvent] = []
 
     for ev in events:
         if ev.is_device:
@@ -362,7 +368,7 @@ def _guess_task_type(name: str) -> str:
 # ============================================================================
 
 
-def detect_steps(kernels: List[KernelInfo], markers: List[TraceEvent]) -> List[Dict[str, Any]]:
+def detect_steps(kernels: list[KernelInfo], markers: list[TraceEvent]) -> list[dict[str, Any]]:
     if not kernels:
         return []
 
@@ -371,7 +377,11 @@ def detect_steps(kernels: List[KernelInfo], markers: List[TraceEvent]) -> List[D
         steps = []
         for i, m in enumerate(markers_sorted):
             step_start = m.ts
-            step_end = markers_sorted[i + 1].ts if i + 1 < len(markers_sorted) else max(k.end_us for k in kernels)
+            step_end = (
+                markers_sorted[i + 1].ts
+                if i + 1 < len(markers_sorted)
+                else max(k.end_us for k in kernels)
+            )
             steps.append(
                 {
                     "id": i,
@@ -398,8 +408,10 @@ def detect_steps(kernels: List[KernelInfo], markers: List[TraceEvent]) -> List[D
 # ============================================================================
 
 
-def build_device_intervals(kernels: List[KernelInfo], step_start_us: float, step_end_us: float) -> List[Interval]:
-    out: List[Interval] = []
+def build_device_intervals(
+    kernels: list[KernelInfo], step_start_us: float, step_end_us: float
+) -> list[Interval]:
+    out: list[Interval] = []
     for k in kernels:
         s = max(step_start_us, k.start_us)
         e = min(step_end_us, k.end_us)
@@ -410,7 +422,7 @@ def build_device_intervals(kernels: List[KernelInfo], step_start_us: float, step
 
 def compute_bubble_metrics(
     step_start_us: float, step_end_us: float, device_intervals: Sequence[Interval]
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     service_us = max(0.0, step_end_us - step_start_us)
     merged = merge_intervals(device_intervals)
 
@@ -433,7 +445,7 @@ def compute_bubble_metrics(
     prelaunch_us = max(0.0, merged[0].start_us - step_start_us)
     tail_us = max(0.0, step_end_us - merged[-1].end_us)
 
-    bubbles: List[Interval] = []
+    bubbles: list[Interval] = []
     for left, right in zip(merged[:-1], merged[1:]):
         if right.start_us > left.end_us:
             bubbles.append(Interval(left.end_us, right.start_us))
@@ -463,8 +475,8 @@ def compute_bubble_metrics(
 # ============================================================================
 
 
-def classify_hidden_issue(metrics: Dict[str, Any]) -> List[str]:
-    tags: List[str] = []
+def classify_hidden_issue(metrics: dict[str, Any]) -> list[str]:
+    tags: list[str] = []
     service_ms = float(metrics["service_ms"])
     if metrics["underfeed_ratio"] >= 0.30:
         tags.append("DEVICE_IDLE_GAP_HEAVY")
@@ -487,11 +499,11 @@ def soft_attribution_for_bubble(
     host_intervals: Sequence[Interval],
     sync_intervals: Sequence[Interval],
     comm_intervals: Sequence[Interval],
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     host_cov = interval_overlap_ratio(bubble, host_intervals)
     sync_cov = interval_overlap_ratio(bubble, sync_intervals)
     comm_cov = interval_overlap_ratio(bubble, comm_intervals)
-    labels: List[str] = []
+    labels: list[str] = []
 
     if (sync_cov or 0.0) >= 0.20:
         labels.append("possible_sync_or_h2d")
@@ -518,10 +530,10 @@ def soft_attribution_for_bubble(
 
 
 def detect_wait_anchors(
-    kernels: List[KernelInfo],
+    kernels: list[KernelInfo],
     step_start_us: float,
     step_end_us: float,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Detect wait-anchor false hotspots (kernel duration tiny but total cost = wait dominates)."""
     # torch_npu profiler at level=l1 does not provide per-kernel wait time,
     # but we can detect anomalies from gaps between kernels
@@ -549,7 +561,9 @@ def detect_wait_anchors(
 # ============================================================================
 
 
-def classify_aicpu(kernels: List[KernelInfo], ai_core_intervals: Sequence[Interval]) -> List[Dict[str, Any]]:
+def classify_aicpu(
+    kernels: list[KernelInfo], ai_core_intervals: Sequence[Interval]
+) -> list[dict[str, Any]]:
     """Classify AI_CPU kernels by masked_ratio (how much they overlap with AI_CORE)."""
     results = []
     for k in kernels:
@@ -580,8 +594,8 @@ def classify_aicpu(kernels: List[KernelInfo], ai_core_intervals: Sequence[Interv
 
 
 def segment_structures(
-    kernels: List[KernelInfo], step: Dict[str, Any], host_events: List[TraceEvent]
-) -> List[Dict[str, Any]]:
+    kernels: list[KernelInfo], step: dict[str, Any], host_events: list[TraceEvent]
+) -> list[dict[str, Any]]:
     """Segment a step into structures (layers/components)."""
     step_start = step["start_us"]
     step_end = step["end_us"]
@@ -627,14 +641,14 @@ def segment_structures(
     return structures
 
 
-def _group_by_pattern(kernels: List[KernelInfo]) -> List[Dict[str, Any]]:
+def _group_by_pattern(kernels: list[KernelInfo]) -> list[dict[str, Any]]:
     """Group kernels by repeating name patterns."""
     if len(kernels) < 4:
         return []
 
     # Try to find repeating sequences
     # For now, group by coarse functional categories
-    groups: List[Dict[str, Any]] = []
+    groups: list[dict[str, Any]] = []
     current_group = []
     current_start = kernels[0].start_us
     prev_role = _kernel_role(kernels[0].name)
@@ -673,7 +687,7 @@ def _kernel_role(name: str) -> str:
     return "other"
 
 
-def _build_structure(kernels: List[KernelInfo], start_us: float) -> Dict[str, Any]:
+def _build_structure(kernels: list[KernelInfo], start_us: float) -> dict[str, Any]:
     if not kernels:
         return {}
     end_us = max(k.end_us for k in kernels)
@@ -707,7 +721,7 @@ def _build_structure(kernels: List[KernelInfo], start_us: float) -> Dict[str, An
     }
 
 
-def _classify_structure_type(names: List[str]) -> str:
+def _classify_structure_type(names: list[str]) -> str:
     name_str = " ".join(names).lower()
     if any(kw in name_str for kw in ("attention", "flash_attn", "fia")):
         if any(kw in name_str for kw in ("matmul", "linear")):
@@ -732,8 +746,8 @@ def _classify_structure_type(names: List[str]) -> str:
 
 
 def analyze_communication(
-    kernels: List[KernelInfo], comm_events: List[TraceEvent], compute_intervals: Sequence[Interval]
-) -> Dict[str, Any]:
+    kernels: list[KernelInfo], comm_events: list[TraceEvent], compute_intervals: Sequence[Interval]
+) -> dict[str, Any]:
     """Analyze communication overhead and overlap with compute."""
     comm_kernels = [k for k in kernels if k.task_type == "HCCL"]
 
@@ -821,7 +835,7 @@ _ROLE_ACTIVATION = "activation"
 _FUSION_KEY_START = "start_us"
 
 
-def detect_fusion_opportunities(kernels: List[KernelInfo]) -> List[Dict[str, Any]]:
+def detect_fusion_opportunities(kernels: list[KernelInfo]) -> list[dict[str, Any]]:
     """Detect operator fusion opportunities from kernel sequence."""
     if not kernels:
         return []
@@ -840,24 +854,27 @@ def detect_fusion_opportunities(kernels: List[KernelInfo]) -> List[Dict[str, Any
 
             skip = False
             for j, (actual_role, expected) in enumerate(zip(window_roles, pat)):
-                if expected == _ROLE_MATMUL and actual_role != _ROLE_MATMUL:
-                    skip = True
-                elif expected == _ROLE_ATTENTION and actual_role != _ROLE_ATTENTION:
-                    skip = True
-                elif expected == _ROLE_NORM and actual_role != _ROLE_NORM:
+                if (
+                    expected == _ROLE_MATMUL
+                    and actual_role != _ROLE_MATMUL
+                    or expected == _ROLE_ATTENTION
+                    and actual_role != _ROLE_ATTENTION
+                    or expected == _ROLE_NORM
+                    and actual_role != _ROLE_NORM
+                ):
                     skip = True
                 elif expected == _ROLE_ELEMENTWISE:
                     if actual_role != _ROLE_ELEMENTWISE:
                         skip = True
-                elif expected == _ROLE_ACTIVATION:
-                    if actual_role != _ROLE_ACTIVATION:
-                        skip = True
+                elif expected == _ROLE_ACTIVATION and actual_role != _ROLE_ACTIVATION:
+                    skip = True
             if skip:
                 continue
 
             if pat == [_ROLE_ELEMENTWISE, _ROLE_ELEMENTWISE, _ROLE_ELEMENTWISE]:
                 all_elementwise = all(
-                    any(kw in k.name.lower() for kw in ("add", "mul", "div", "sub")) for k in window_kernels
+                    any(kw in k.name.lower() for kw in ("add", "mul", "div", "sub"))
+                    for k in window_kernels
                 )
                 if not all_elementwise:
                     continue
@@ -895,9 +912,9 @@ def detect_fusion_opportunities(kernels: List[KernelInfo]) -> List[Dict[str, Any
 # ============================================================================
 
 
-def compute_kernel_stats(kernels: List[KernelInfo]) -> Dict[str, Any]:
+def compute_kernel_stats(kernels: list[KernelInfo]) -> dict[str, Any]:
     """Compute per-kernel-name statistics."""
-    by_name: Dict[str, List[KernelInfo]] = defaultdict(list)
+    by_name: dict[str, list[KernelInfo]] = defaultdict(list)
     for k in kernels:
         by_name[k.name].append(k)
 
@@ -991,12 +1008,18 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
     w()
     if warmup_info:
         if warmup_info.get("stripped", True):
-            w(f"Warmup properly stripped during profiling collection. {warmup_info.get('note', '')}")
+            w(
+                f"Warmup properly stripped during profiling collection. "
+                f"{warmup_info.get('note', '')}"
+            )
         else:
-            w(f"**WARMUP_NOT_STRIPPED**: warmup steps detected in profiling data. {warmup_info.get('note', '')}")
+            w(
+                f"**WARMUP_NOT_STRIPPED**: warmup steps detected in profiling data. "
+                f"{warmup_info.get('note', '')}"
+            )
             w()
             w(
-                "> Recommendation: re-profile with profiling-collection skill "
+                "> Recommendation: re-profile with profiling-collect skill "
                 "ensuring warmup runs outside the profiler context."
             )
     w()
@@ -1016,9 +1039,15 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
         dit_pct = stage_breakdown.get("dit", {}).get("pct", 0)
         vae_pct = stage_breakdown.get("vae", {}).get("pct", 0)
         if dit_pct >= 0.70:
-            w(f"> Bottleneck stage: **DiT** ({dit_pct:.0%}). Focus optimization on Transformer path.")
+            w(
+                f"> Bottleneck stage: **DiT** ({dit_pct:.0%}). "
+                f"Focus optimization on Transformer path."
+            )
         elif vae_pct >= 0.70:
-            w(f"> Bottleneck stage: **VAE** ({vae_pct:.0%}). Focus optimization on VAE encode/decode.")
+            w(
+                f"> Bottleneck stage: **VAE** ({vae_pct:.0%}). "
+                f"Focus optimization on VAE encode/decode."
+            )
         else:
             w(f"> Balanced workload: DiT ({dit_pct:.0%}) / VAE ({vae_pct:.0%}).")
     w()
@@ -1081,13 +1110,19 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
 
         bubbles = sorted(bubble["bubble_windows"], key=lambda b: b.dur_us, reverse=True)[:5]
         if bubbles:
-            w("| # | Start (us) | End (us) | Dur (ms) | Host Cov | Sync Cov | Comm Cov | Attribution |")
+            w(
+                "| # | Start (us) | End (us) | Dur (ms) | Host Cov | Sync Cov | "
+                "Comm Cov | Attribution |"
+            )
             w("|---|---|---|---|---|---|---|---|")
             for bi, bub in enumerate(bubbles):
-                attr = soft_attribution_for_bubble(bub, host_intervals, sync_intervals, comm_event_intervals)
+                attr = soft_attribution_for_bubble(
+                    bub, host_intervals, sync_intervals, comm_event_intervals
+                )
                 labels = ", ".join(attr["soft_root_cause_labels"])
                 w(
-                    f"| {bi + 1} | {bub.start_us:.0f} | {bub.end_us:.0f} | {bub.dur_us / 1000:.2f} | "
+                    f"| {bi + 1} | {bub.start_us:.0f} | {bub.end_us:.0f} | "
+                    f"{bub.dur_us / 1000:.2f} | "
                     f"{_fmt_pct(attr['host_visible_coverage_ratio'])} | "
                     f"{_fmt_pct(attr['sync_marker_overlap_ratio'])} | "
                     f"{_fmt_pct(attr['comm_marker_overlap_ratio'])} | {labels} |"
@@ -1118,8 +1153,14 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
         w("| Metric | Value |")
         w("|---|---|")
         w(f"| Total communication time | {comm_analysis['comm_total_ms']:.2f} ms |")
-        w(f"| Communication hidden (overlapped w/ compute) | {comm_analysis['comm_hidden_ms']:.2f} ms |")
-        w(f"| **Communication exposed (not overlapped)** | **{comm_analysis['comm_exposed_ms']:.2f} ms** |")
+        w(
+            f"| Communication hidden (overlapped w/ compute) | "
+            f"{comm_analysis['comm_hidden_ms']:.2f} ms |"
+        )
+        w(
+            f"| **Communication exposed (not overlapped)** | "
+            f"**{comm_analysis['comm_exposed_ms']:.2f} ms** |"
+        )
         w(f"| **Exposed (can not hide) ratio** | **{comm_analysis['can_not_hide_ratio']:.1%}** |")
         w()
         if comm_analysis["can_not_hide_ratio"] > 0.30:
@@ -1135,7 +1176,10 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
     w("## 7. Structure (Layer) Timing Breakdown")
     w()
     if structures:
-        w("| # | Type | Kernels | Wall (ms) | Busy (ms) | Kernel Sum (ms) | AI_CORE% | AI_CPU% | HCCL% |")
+        w(
+            "| # | Type | Kernels | Wall (ms) | Busy (ms) | Kernel Sum (ms) | "
+            "AI_CORE% | AI_CPU% | HCCL% |"
+        )
         w("|---|---|---|---|---|---|---|---|---|")
         for i, s in enumerate(structures):
             w(
@@ -1167,7 +1211,9 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
     w()
 
     # ===== Wait-Anchor =====
-    wait_anchors = detect_wait_anchors(all_kernels, steps[0]["start_us"], steps[0]["end_us"]) if steps else []
+    wait_anchors = (
+        detect_wait_anchors(all_kernels, steps[0]["start_us"], steps[0]["end_us"]) if steps else []
+    )
     if wait_anchors:
         w("## 9. Wait-Anchor False Hotspot Candidates")
         w()
@@ -1176,14 +1222,21 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
         for wa in wait_anchors[:10]:
             w(f"| {wa['name']} | {wa['duration_us']:.1f} | {wa['start_us']:.0f} |")
         w()
-        w("Note: These are tiny-kernel candidates. Real wait-anchor detection requires `Wait Time(us)`")
+        w(
+            "Note: These are tiny-kernel candidates. Real wait-anchor detection "
+            "requires `Wait Time(us)`"
+        )
         w("from kernel_details.csv which is not available in Chrome Trace format at level=l1.")
         w()
 
     # ===== AICPU =====
-    device_intervals_all = [k.interval for k in all_kernels if k.task_type == "AI_CORE"] if not steps else []
+    device_intervals_all = (
+        [k.interval for k in all_kernels if k.task_type == "AI_CORE"] if not steps else []
+    )
     if not device_intervals_all and steps:
-        step_kernels = [k for k in all_kernels if steps[0]["start_us"] <= k.start_us < steps[0]["end_us"]]
+        step_kernels = [
+            k for k in all_kernels if steps[0]["start_us"] <= k.start_us < steps[0]["end_us"]
+        ]
         device_intervals_all = [k.interval for k in step_kernels if k.task_type == "AI_CORE"]
 
     aicpu_results = classify_aicpu(all_kernels, device_intervals_all)
@@ -1194,10 +1247,16 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
         w("| Name | Dur (us) | Masked Ratio | Classification |")
         w("|---|---|---|---|")
         for a in aicpu_results[:20]:
-            w(f"| {a['name']} | {a['duration_us']:.1f} | {a['masked_ratio']:.1%} | {a['classification']} |")
+            w(
+                f"| {a['name']} | {a['duration_us']:.1f} | {a['masked_ratio']:.1%} | "
+                f"{a['classification']} |"
+            )
         if exposed_aicpu:
             w()
-            w(f"WARNING: {len(exposed_aicpu)} AICPU kernels are fully exposed (not masked by AI_CORE overlap).")
+            w(
+                f"WARNING: {len(exposed_aicpu)} AICPU kernels are fully exposed "
+                f"(not masked by AI_CORE overlap)."
+            )
         w()
 
     # ===== Fusion Opportunities =====
@@ -1211,13 +1270,17 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
     w("### Generic Fusion Suggestions (requires custom implementation)")
     w()
     if fusion_opps:
-        w("| # | Pattern | Kernel Chain | Current (ms) | Est. Savings (ms) | Est. After (ms) | Savings% |")
+        w(
+            "| # | Pattern | Kernel Chain | Current (ms) | Est. Savings (ms) | "
+            "Est. After (ms) | Savings% |"
+        )
         w("|---|---|---|---|---|---|---|")
         for fi, fo in enumerate(fusion_opps[:20], 1):
             chain_short = " -> ".join(fo["kernel_chain"][:4])
             w(
                 f"| {fi} | {fo['pattern']} | {chain_short} | {fo['current_dur_ms']:.3f} | "
-                f"{fo['estimated_savings_ms']:.3f} | {fo['estimated_fused_ms']:.3f} | {fo['savings_pct']:.0f}% |"
+                f"{fo['estimated_savings_ms']:.3f} | {fo['estimated_fused_ms']:.3f} | "
+                f"{fo['savings_pct']:.0f}% |"
             )
     else:
         w("No clear generic fusion opportunities detected.")
@@ -1235,9 +1298,15 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
         underfeed_ratio = bubble["underfeed_ratio"]
 
         q1 = "YES" if bubble["underfeed_ratio"] >= 0.10 else "NO"
-        w(f"1. Are there significant device idle bubbles? **{q1}** (underfeed={bubble['underfeed_ratio']:.1%})")
+        w(
+            f"1. Are there significant device idle bubbles? **{q1}** "
+            f"(underfeed={bubble['underfeed_ratio']:.1%})"
+        )
 
-        w(f"2. Which step type/group do they concentrate in? Step {step['id']} (`{step['marker_name']}`)")
+        w(
+            f"2. Which step type/group do they concentrate in? "
+            f"Step {step['id']} (`{step['marker_name']}`)"
+        )
 
         dominant = "none"
         if bubble["prelaunch_gap_ms"] >= max(1.0, 0.05 * bubble["service_ms"]):
@@ -1246,7 +1315,10 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
             dominant = f"{dominant}/tail" if dominant != "none" else "tail"
         if bubble["internal_bubble_total_ms"] >= max(1.0, 0.05 * bubble["service_ms"]):
             dominant = f"{dominant}/internal" if dominant != "none" else "internal"
-        w(f"3. Are they primarily prelaunch / tail / internal / inter-step? **{dominant or 'none'}**")
+        w(
+            f"3. Are they primarily prelaunch / tail / internal / inter-step? "
+            f"**{dominant or 'none'}**"
+        )
 
         w(
             f"4. Is there significant host-originated risk? "
@@ -1279,11 +1351,36 @@ def _render_mindie_fusion_table(w, all_kernels, steps):
 
     # MindIE-SD fusion patterns with recognition rules
     mindie_patterns = [
-        ("RMSNorm", "rmsnorm", "RMSNorm + adjacent MatMul", "CompilationConfig.fusion_patterns.enable_rms_norm"),
-        ("RoPE", "rope", "RoPE kernel consecutively appears", "CompilationConfig.fusion_patterns.enable_rope"),
-        ("AdaLayerNorm", "adaln", "AdaLN + adjacent kernel", "CompilationConfig.fusion_patterns.enable_adalayernorm"),
-        ("fastGELU", "gelu", "MatMul -> Add -> GELU", "CompilationConfig.fusion_patterns.enable_fast_gelu"),
-        ("Mul+Add", "mul", "Mul -> Add consecutively", "CompilationConfig.fusion_patterns.enable_mul_add"),
+        (
+            "RMSNorm",
+            "rmsnorm",
+            "RMSNorm + adjacent MatMul",
+            "CompilationConfig.fusion_patterns.enable_rms_norm",
+        ),
+        (
+            "RoPE",
+            "rope",
+            "RoPE kernel consecutively appears",
+            "CompilationConfig.fusion_patterns.enable_rope",
+        ),
+        (
+            "AdaLayerNorm",
+            "adaln",
+            "AdaLN + adjacent kernel",
+            "CompilationConfig.fusion_patterns.enable_adalayernorm",
+        ),
+        (
+            "fastGELU",
+            "gelu",
+            "MatMul -> Add -> GELU",
+            "CompilationConfig.fusion_patterns.enable_fast_gelu",
+        ),
+        (
+            "Mul+Add",
+            "mul",
+            "Mul -> Add consecutively",
+            "CompilationConfig.fusion_patterns.enable_mul_add",
+        ),
     ]
 
     # Check each pattern against kernel sequence
@@ -1315,7 +1412,7 @@ def _generate_recommendations(ctx, underfeed, exposed_aicpu):
                 "P0",
                 "Warmup not stripped",
                 "Re-profile with warmup steps outside profiler",
-                "profiling-collection §Warmup配置",
+                "profiling-collect §Warmup配置",
             )
         )
 
@@ -1328,7 +1425,7 @@ def _generate_recommendations(ctx, underfeed, exposed_aicpu):
                         "P0",
                         f"Pattern {fo['pattern']} detected",
                         "Enable MindIE-SD compilation fusion for this pattern",
-                        "compilation-dev",
+                        "pattern-dev",
                     )
                 )
 
@@ -1343,8 +1440,9 @@ def _generate_recommendations(ctx, underfeed, exposed_aicpu):
                 (
                     "P1",
                     "DiT MatMul dominant",
-                    "MatMul quantization direction — consult features.md for available algorithms",
-                    "mindiesd-features.md §MatMul量化",
+                    "MatMul quantization direction — consult docs/zh/features/quantization.md "
+                    "for available algorithms",
+                    "docs/zh/features/quantization.md §Linear量化",
                 )
             )
         # DiT: FA dominant → Attention优化方向
@@ -1353,8 +1451,9 @@ def _generate_recommendations(ctx, underfeed, exposed_aicpu):
                 (
                     "P1",
                     "DiT FA dominant",
-                    "Attention optimization direction — consult features.md for FA quantization + sparse options",
-                    "mindiesd-features.md §Attention优化",
+                    "Attention optimization direction — consult docs/zh/features/quantization.md "
+                    "for FA quantization + sparse.md options",
+                    "docs/zh/features/quantization.md §FA量化 + sparse.md",
                 )
             )
         # DiT: Vector dominant → 编译融合方向
@@ -1363,8 +1462,9 @@ def _generate_recommendations(ctx, underfeed, exposed_aicpu):
                 (
                     "P1",
                     "DiT Vector dominant",
-                    "Compilation fusion direction — consult features.md for Pattern switch options",
-                    "compilation-dev",
+                    "Compilation fusion direction — consult docs/zh/features/compilation.md "
+                    "for Pattern switch options",
+                    "pattern-dev",
                 )
             )
         # DiT: Comm exposed → 通信掩盖方向
@@ -1373,8 +1473,9 @@ def _generate_recommendations(ctx, underfeed, exposed_aicpu):
                 (
                     "P1",
                     "Communication exposed",
-                    "Communication hiding direction — consult features.md for RSP/USP options",
-                    "mindiesd-features.md §通信掩盖",
+                    "Communication hiding direction — consult docs/zh/features/parallelism.md "
+                    "for RSP/USP options",
+                    "docs/zh/features/parallelism.md",
                 )
             )
         # VAE: MatMul dominant → ACLGraph方向
@@ -1383,8 +1484,9 @@ def _generate_recommendations(ctx, underfeed, exposed_aicpu):
                 (
                     "P1",
                     "VAE MatMul dominant",
-                    "ACLGraph acceleration direction — consult features.md for compilation options",
-                    "compilation-dev",
+                    "ACLGraph acceleration direction — consult docs/zh/features/compilation.md "
+                    "for compilation options",
+                    "pattern-dev",
                 )
             )
 
@@ -1395,14 +1497,19 @@ def _generate_recommendations(ctx, underfeed, exposed_aicpu):
                 "P1",
                 "High Host Bound",
                 "Re-profile with with_stack=true to identify Host-side bottleneck",
-                "performance-analysis §Layer 3a",
+                "profiling-analyze §Layer 3a",
             )
         )
 
     # P2: Data quality
     if 0.10 <= underfeed < 0.20:
         recs.append(
-            ("P2", "Moderate Host Bound", "Consider re-profiling with with_stack=true for better attribution", "—")
+            (
+                "P2",
+                "Moderate Host Bound",
+                "Consider re-profiling with with_stack=true for better attribution",
+                "—",
+            )
         )
 
     # P2: Generic fusion with lower benefit
@@ -1438,8 +1545,9 @@ def _generate_recommendations(ctx, underfeed, exposed_aicpu):
                 (
                     "P2",
                     "DiT is bottleneck stage",
-                    f"DiT accounts for {dit_pct:.0%} of time. Prioritize DiT optimization over VAE.",
-                    "performance-analysis §Layer 1",
+                    f"DiT accounts for {dit_pct:.0%} of time. "
+                    f"Prioritize DiT optimization over VAE.",
+                    "profiling-analyze §Layer 1",
                 )
             )
         elif vae_pct >= 0.70:
@@ -1448,7 +1556,7 @@ def _generate_recommendations(ctx, underfeed, exposed_aicpu):
                     "P2",
                     "VAE is bottleneck stage",
                     f"VAE accounts for {vae_pct:.0%} of time. Check CANN Conv2D compatibility.",
-                    "performance-analysis §Layer 1",
+                    "profiling-analyze §Layer 1",
                 )
             )
 
@@ -1470,11 +1578,11 @@ def _generate_recommendations(ctx, underfeed, exposed_aicpu):
 
 
 def render_architecture_report(
-    all_kernels: List[KernelInfo],
-    steps: List[Dict[str, Any]],
-    structures: List[Dict[str, Any]],
-    comm_analysis: Dict[str, Any],
-    meta: Dict[str, Any],
+    all_kernels: list[KernelInfo],
+    steps: list[dict[str, Any]],
+    structures: list[dict[str, Any]],
+    comm_analysis: dict[str, Any],
+    meta: dict[str, Any],
 ) -> str:
     lines = []
 
@@ -1502,9 +1610,15 @@ def render_architecture_report(
     w("|---|---|---|")
     w(f"| Steps detected | {len(steps)} | high |")
     w(f"| Structures segmented | {len(structures)} | medium |")
-    w(f"| Distinct structure types | {len(set(s.get('type', 'unknown') for s in structures))} | medium |")
+    w(
+        f"| Distinct structure types | "
+        f"{len({s.get('type', 'unknown') for s in structures})} | medium |"
+    )
     w()
-    w("Given the dummy run uses Wan2.2 with 2 transformer blocks per stream, the model structure is:")
+    w(
+        "Given the dummy run uses Wan2.2 with 2 transformer blocks per stream, "
+        "the model structure is:"
+    )
     w()
     w("```")
     w("TextEncoder -> Transformer(block_0) -> Transformer_2(block_0) [-> VAE(optional)]")
@@ -1531,9 +1645,9 @@ def render_architecture_report(
     if structures:
         w("| Layer Type | Count | Kernel Count | Wall (ms) | Characteristics |")
         w("|---|---|---|---|---|")
-        type_counts: Dict[str, int] = defaultdict(int)
-        type_kcounts: Dict[str, int] = defaultdict(int)
-        type_walls: Dict[str, float] = defaultdict(float)
+        type_counts: dict[str, int] = defaultdict(int)
+        type_kcounts: dict[str, int] = defaultdict(int)
+        type_walls: dict[str, float] = defaultdict(float)
 
         for s in structures:
             t = s["type"]
@@ -1556,16 +1670,21 @@ def render_architecture_report(
         w()
         w(f"- Wall time: {s['wall_ms']:.2f} ms")
         w(f"- Kernel count: {s['kernel_count']}")
-        w(f"- AI_CORE: {s['ai_core_pct']:.0%}, AI_CPU: {s['ai_cpu_pct']:.0%}, HCCL: {s['hccl_pct']:.0%}")
+        w(
+            f"- AI_CORE: {s['ai_core_pct']:.0%}, AI_CPU: {s['ai_cpu_pct']:.0%}, "
+            f"HCCL: {s['hccl_pct']:.0%}"
+        )
         w()
 
         # Top kernels in this structure
         kernels_in = s.get("kernels", [])
         if kernels_in:
-            by_name: Dict[str, List[KernelInfo]] = defaultdict(list)
+            by_name: dict[str, list[KernelInfo]] = defaultdict(list)
             for k in kernels_in:
                 by_name[k.name].append(k)
-            ranked = sorted(by_name.items(), key=lambda x: sum(kk.dur_us for kk in x[1]), reverse=True)
+            ranked = sorted(
+                by_name.items(), key=lambda x: sum(kk.dur_us for kk in x[1]), reverse=True
+            )
 
             w("| Operator | Count | Total Dur (ms) | Share of Layer |")
             w("|---|---|---|---|")
@@ -1582,7 +1701,7 @@ def render_architecture_report(
     if comm_analysis["comm_total_ms"] > 0:
         w("| Stream | Role | Notes |")
         w("|---|---|---|")
-        streams = set(k.stream_id for k in all_kernels)
+        streams = {k.stream_id for k in all_kernels}
         for sid in sorted(streams):
             role = "compute" if sid == 0 else "auxiliary"
             sk = [k for k in all_kernels if k.stream_id == sid]
@@ -1601,7 +1720,10 @@ def render_architecture_report(
         hidden_bar = '#' * max(1, comm_pct_hidden)
         exposed_bar = '.' * max(1, comm_pct_exposed)
         w(f"  Compute [{'=' * 40}] {compute_total:.1f}ms")
-        w(f"  Comm    [{hidden_bar}{exposed_bar}] {comm_total:.1f}ms (hidden={hidden:.1f}ms exposed={exposed:.1f}ms)")
+        w(
+            f"  Comm    [{hidden_bar}{exposed_bar}] {comm_total:.1f}ms "
+            f"(hidden={hidden:.1f}ms exposed={exposed:.1f}ms)"
+        )
         w("```")
     else:
         w("No HCCL communication detected (single card).")
@@ -1637,20 +1759,20 @@ def _is_sync_event(ev: TraceEvent) -> bool:
     return any(kw in name_lower for kw in ("sync", "memcpy", "copy", "h2d", "d2h", "to", "_copy"))
 
 
-def _fmt_pct(val: Optional[float]) -> str:
+def _fmt_pct(val: float | None) -> str:
     if val is None:
         return "N/A"
     return f"{val:.0%}"
 
 
-def _kernel_before(kernels: List[KernelInfo], ts: float) -> Optional[KernelInfo]:
+def _kernel_before(kernels: list[KernelInfo], ts: float) -> KernelInfo | None:
     candidates = [k for k in kernels if k.end_us <= ts]
     if not candidates:
         return None
     return max(candidates, key=lambda k: k.end_us)
 
 
-def _kernel_after(kernels: List[KernelInfo], ts: float) -> Optional[KernelInfo]:
+def _kernel_after(kernels: list[KernelInfo], ts: float) -> KernelInfo | None:
     candidates = [k for k in kernels if k.start_us >= ts]
     if not candidates:
         return None
@@ -1678,7 +1800,9 @@ def main():
     parser = argparse.ArgumentParser(
         description="Analyze Ascend NPU profiling trace (CANN or Chrome Trace JSON format)"
     )
-    parser.add_argument("--profile-dir", required=True, help="Directory containing profiling output")
+    parser.add_argument(
+        "--profile-dir", required=True, help="Directory containing profiling output"
+    )
     parser.add_argument("--output-dir", default="./", help="Directory for output reports")
     parser.add_argument("--model", default="Wan2.2", help="Model name for report titles")
     args = parser.parse_args()
@@ -1693,7 +1817,7 @@ def main():
     # ---- INGEST ----
     logger.info("Loading profiling data from: %s", profile_dir)
     profiler_output = find_profiler_output_dir(profile_dir)
-    sources: List[str] = []
+    sources: list[str] = []
 
     if profiler_output:
         logger.info("  Found CANN profiler output: %s", profiler_output)
@@ -1710,9 +1834,9 @@ def main():
             logger.info("  kernel_details.csv not found, falling back to trace JSON")
             kernels = []
 
-        host_events: List[TraceEvent] = []
-        comm_events: List[TraceEvent] = []
-        step_markers: List[TraceEvent] = []
+        host_events: list[TraceEvent] = []
+        comm_events: list[TraceEvent] = []
+        step_markers: list[TraceEvent] = []
 
         if os.path.exists(trace_path) and kernels:
             # Load host events from trace_view.json, already normalized
@@ -1727,9 +1851,12 @@ def main():
             for ev in all_trace_events:
                 if "Step#" in ev.name or "Iteration" in ev.name or "ProfilerStep" in ev.name:
                     step_markers.append(ev)
-                elif "AllReduce" in ev.name or "AllGather" in ev.name or "Hcom" in ev.name:
-                    comm_events.append(ev)
-                elif ev.cat == "HostToDevice":
+                elif (
+                    "AllReduce" in ev.name
+                    or "AllGather" in ev.name
+                    or "Hcom" in ev.name
+                    or ev.cat == "HostToDevice"
+                ):
                     comm_events.append(ev)
                 elif ev.cat == "" and ev.name in ("Computing", "Free"):
                     pass  # Runtime overhead events, not host ops
@@ -1744,7 +1871,7 @@ def main():
                     trace_kernel_events.append(ev)
 
             # Merge trace kernel events into kernel list if not already present
-            csv_names = set(k.name for k in kernels)
+            csv_names = {k.name for k in kernels}
             for ev in trace_kernel_events:
                 if ev.name not in csv_names:
                     ki = KernelInfo(
@@ -1766,7 +1893,7 @@ def main():
             )
 
         # Load step-level timing
-        step_time_info: Dict[str, Any] = {}
+        step_time_info: dict[str, Any] = {}
         if os.path.exists(step_csv_path):
             step_time_info = load_step_time_from_csv(step_csv_path)
             if step_time_info:
@@ -1914,7 +2041,17 @@ def main():
 # ---- STAGE & CATEGORY CLASSIFICATION ----
 
 
-_VAE_KEYWORDS = ("conv2d", "conv3d", "groupnorm", "upsample", "resblock", "encoder", "decoder", "vae", "latent")
+_VAE_KEYWORDS = (
+    "conv2d",
+    "conv3d",
+    "groupnorm",
+    "upsample",
+    "resblock",
+    "encoder",
+    "decoder",
+    "vae",
+    "latent",
+)
 _DIT_KEYWORDS = (
     "attn",
     "matmul",
@@ -1945,7 +2082,14 @@ def _classify_kernel_stage(name: str, task_type: str) -> str:
     return _STAGE_DIT
 
 
-_FA_KEYWORDS = ("attn", "flash_attention", "sdpa", "fused_attn", "attention_forward", "attention_score")
+_FA_KEYWORDS = (
+    "attn",
+    "flash_attention",
+    "sdpa",
+    "fused_attn",
+    "attention_forward",
+    "attention_score",
+)
 _MM_KEYWORDS = ("matmul", "linear", "gemm", "dequantgemm", "biasadd", "bmm", "quant")
 _VEC_KEYWORDS = (
     "gelu",
@@ -1986,10 +2130,10 @@ def _classify_kernel_category(name: str, task_type: str) -> str:
 
 
 def _compute_stage_breakdown(
-    kernels: List["KernelInfo"],
-    steps: List[Dict[str, Any]],
+    kernels: list[KernelInfo],
+    steps: list[dict[str, Any]],
     warmup_skip: int = 0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Compute DiT vs VAE breakdown across timed steps."""
     dit_dur = 0.0
     vae_dur = 0.0
@@ -2011,10 +2155,10 @@ def _compute_stage_breakdown(
 
 
 def _compute_category_ratios(
-    kernels: List["KernelInfo"],
-    steps: List[Dict[str, Any]],
+    kernels: list[KernelInfo],
+    steps: list[dict[str, Any]],
     warmup_skip: int = 0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Compute FA/MatMul/Vector/Comm ratios, per stage and overall."""
     result = {}
     for stage_key in ("dit", "vae"):
@@ -2035,7 +2179,7 @@ def _compute_category_ratios(
     return result
 
 
-def _detect_warmup(steps: List[Dict[str, Any]], kernels: List["KernelInfo"]) -> Dict[str, Any]:
+def _detect_warmup(steps: list[dict[str, Any]], kernels: list[KernelInfo]) -> dict[str, Any]:
     """Detect if warmup steps were not stripped from profiling data."""
     _key_stripped = "stripped"
     _key_note = "note"
@@ -2052,23 +2196,27 @@ def _detect_warmup(steps: List[Dict[str, Any]], kernels: List["KernelInfo"]) -> 
     first_step = step_durs[0]
     first_vs_avg = first_step / avg if avg > 0 else 1.0
 
-    compile_kernels = sum(1 for k in kernels if "compile" in k.name.lower() or "jit" in k.name.lower())
+    compile_kernels = sum(
+        1 for k in kernels if "compile" in k.name.lower() or "jit" in k.name.lower()
+    )
 
     if first_vs_avg > 1.5 or compile_kernels > 0:
         return {
             _key_stripped: False,
-            _key_note: f"first step {first_step:.0f}ms vs avg {avg:.0f}ms (ratio {first_vs_avg:.1f}x), "
-            f"{compile_kernels} compile/JIT kernels detected",
+            _key_note: (
+                f"first step {first_step:.0f}ms vs avg {avg:.0f}ms (ratio {first_vs_avg:.1f}x), "
+                f"{compile_kernels} compile/JIT kernels detected"
+            ),
             "suggested_skip": 1 if first_vs_avg > 1.5 else 0,
         }
     return {_key_stripped: True, _key_note: "no warmup anomaly detected"}
 
 
 def _filter_operators_by_threshold(
-    kernel_stats: Dict[str, Any],
+    kernel_stats: dict[str, Any],
     total_dur_us: float,
     threshold_pct: float = 1.0,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Filter operator stats to those above threshold percentage."""
     ranked = sorted(kernel_stats.items(), key=lambda x: x[1]["total_dur_us"], reverse=True)
     result = []
@@ -2088,7 +2236,7 @@ def _get_csv_raw_t0(csv_path: str) -> float:
     """Get the minimum Start Time from kernel_details.csv (raw timestamp, not normalized)."""
     t0 = None
     try:
-        with open(csv_path, "r", encoding="utf-8") as fh:
+        with open(csv_path, encoding="utf-8") as fh:
             reader = csv.DictReader(fh)
             for row in reader:
                 try:
@@ -2100,3 +2248,8 @@ def _get_csv_raw_t0(csv_path: str) -> float:
     except Exception as exc:
         logger.warning("Failed to read CSV for t0: %s", exc)
     return t0 or 0.0
+
+
+if __name__ == "__main__":
+    # 入口守卫：此前只有 def main() 而无调用点，按文档以 CLI 运行会静默退出（exit 0、无输出）
+    sys.exit(main())

@@ -116,11 +116,21 @@
 - 本仓库没有合适 skill，或本地 skill 缺少必要规范时，再参考 `https://gitcode.com/Ascend/agent-skills` 或 `https://gitcode.com/cann/cannbot-skills`（算子级开发/优化场景）。
 - 只选择最小、最贴合当前任务的 skill，不做全量加载。
 - 对高风险流程类任务，`AGENTS.md` 允许显式指定必须优先加载的本地 skill。
-- 模型/三方框架自动优化类任务（接入、无损/有损加速、量化/稀疏/缓存、并行调优、性能收益确认，
-  且非本仓代码改动）：优先读取 `.agents/skills/model-auto-optimization/SKILL.md`，由其 S0–S4
-  阶段路由表定位能力技能（env-install / remote-access / framework-feature-enablement /
-  profiling-collect / profiling-analyze / performance-optimization / parallelism-strategy /
-  benchmark-dev / dummy-run）。MindIE-SD 代码开发类任务继续走 dev-workflow。
+- **入口三分法**（2026-09 重构后）：
+  - 模型/三方框架自动优化类任务（接入、无损/有损加速、量化/稀疏/缓存、并行调优、性能收益确认，
+    且非本仓代码改动，**瓶颈未明**）：读取 `.agents/skills/model-auto-optimization/SKILL.md`，
+    由其 **S0 环境准备 → S1 DiT·融合 → S3 DiT·并行 → S4 DiT·有损 → S5 DiT·训练感知 →
+    S6 VAE + host（非 DiT 段占比 ≥10% 才启动，见该技能 `references/bottleneck-labels.md`）→ 闭环复验**
+    路由到能力技能（`env-install` / `remote-access` / `framework-integration` / `profiling-collect` /
+    `profiling-analyze` / `dit-perf-opt` / `dit-parallel-opt` / `vae-opt` / `host-opt` / `benchmark-dev` /
+    `dummy-run`）。
+  - **瓶颈点已明确**（用户带一句实测锚点，或编排层已给出瓶颈标签）：可直接读取
+    `.agents/skills/performance-optimization/SKILL.md`（优化域入口 L2），由它按标签分发到四个优化模块
+    （`dit-perf-opt` / `dit-parallel-opt` / `vae-opt` / `host-opt`）。
+  - MindIE-SD 代码开发类任务（本仓 pattern / 算子 / 图下发 / 测试 / 文档）：走 `dev-workflow`；
+    三方框架侧特性落地（缺失或使能）走 `framework-integration`。
+- **验收标准是强制引用**：性能结论按 `.agents/skills/perf-gate/SKILL.md`（**只有验收态结果可写入总览表**）；
+  "改动不应改变结果"的场合按 `.agents/skills/accuracy-gate/SKILL.md`（等价分层 + 三级验收）。
 - 以下请求必须先读取 `.agents/skills/mindie-sd-community-governance/SKILL.md`：
 - commit message 格式调整
 - 提交拆分、压缩、rebase、cherry-pick 或历史整理

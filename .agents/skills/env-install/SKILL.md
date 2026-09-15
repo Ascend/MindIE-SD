@@ -5,7 +5,7 @@ description: >
   环境安装与准备：把部署环境从零安装就绪——mindiesd 编译安装（本地昇腾直装 / SSH 推远端容器 /
   Docker 镜像直装）与三方推理框架全栈安装（vLLM-Omni 950PR 源码构建、DiffSynth-Engine 部署、
   LightX2V editable 部署），并负责模型权重确认与下载（下载前先确认远端是否已存在）。不含特性使能与验证
-  （framework-feature-enablement）与 profiling（profiling-collect）；SSH 工具由 remote-access 提供。
+  （framework-integration）与 profiling（profiling-collect）；SSH 工具由 remote-access 提供。
   当用户需要安装 MindIE-SD、源码构建/直装 vLLM-Omni 或 LightX2V（editable + PLATFORM=ascend_npu）、
   或确认/下载模型权重时使用此技能；
   即使用户只提到"把代码推到服务器""在容器里装 vllm 全栈""准备 lightx2v 调优环境"而未说昇腾，
@@ -27,10 +27,27 @@ description: >
 
 - **remote-access**：提供 SSH/SFTP 连接、传输与容器执行等远程工具；本技能决定「装什么、怎么装」，
   remote-access 决定「怎么连、怎么传」。本技能内的 deploy_to_remote.py 也可独立使用。
-- **framework-feature-enablement**：特性使能与框架侧验证（服务启动、特性开关、推理验证）；
+- **framework-integration**：特性使能与框架侧验证（服务启动、特性开关、推理验证）；
   本技能止于安装完成（import mindiesd 成功、版本配套就位、权重就位）。
 - **dummy-run**：随机权重模型验证，不需要真实权重；本技能不为其下载权重。
 - **profiling-collect**：性能 profiling 采集；本技能不含。
+
+**越界问题去哪（本技能只留指针，不展开）**：
+
+| 症状 / 需求 | 归属 |
+|---|---|
+| SSH / 认证 / CRLF / 传输域 / Windows 开发机 schannel | `remote-access/SKILL.md`「故障排查」表 + `../remote-access/references/transport-troubleshooting.md` |
+| 服务启动 / 运行入口（`vllm serve`、`torchrun`）/ 请求级 task 档位 / 档位报错回退 | `../framework-integration/references/run-entry-and-request-tiers.md` |
+| 特性使能不生效 / 计数契约 / 三层证据 / 回退判据 | `../framework-integration/SKILL.md` §1 |
+| 显存不足选哪一档降 / 使能档 crash 退到哪一档 | `../dit-perf-opt/references/resource-fallback-tiers.md` |
+| 多卡运行期劣化 / 端口 bind / 热降频与 clean-window 口径 / 拓扑选卡 | `../dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` §1–§5 |
+| 自研算子运行期不可见（`inferShape does not exist`）/ golden 校验 | `../operator-dev/references/custom-op-runtime-deploy-verify.md` |
+| 输出异常与精度判定（NaN / 黑图 / 花屏 / eager vs compiled） | `accuracy-gate`（`../accuracy-gate/references/silent-failure-localization.md`、`../accuracy-gate/references/equivalence-criteria.md`） |
+| 测点口径 / 报数与入库 | `perf-gate` |
+| 随机权重快验（不需要真实权重） | `dummy-run` |
+
+> 本技能**止于安装完成**：`import mindiesd` 成功、版本配套就位、权重就位即交接；
+> 上表问题在安装过程中发现时**只做记录与转交**，不在本技能内解决。
 
 触发：当用户需要部署安装 MindIE-SD、在远端容器内装三方框架全栈或确认/下载模型权重时使用本技能；
 即使用户只提到"把代码推到服务器""在容器里装 vllm 全栈"，只要上下文涉及环境安装与准备都应触发。
@@ -190,11 +207,17 @@ source ${current_script_dir}/build_tik_ops.sh
 # source ${current_script_dir}/build_tik_ops.sh
 ```
 
-容器内可用 sed 一键完成等效修改：
+容器内可用 sed 一键完成等效修改（**注意行首缩进**：`build/build_ops.sh:70` 该行有 4 空格缩进，
+用 `^source` 作锚点的写法会静默不生效，故锚点须容忍前导空白）：
 
 ```bash
-sed -i 's|^source ${current_script_dir}/build_tik_ops.sh|# source ${current_script_dir}/build_tik_ops.sh|' build/build_ops.sh
+sed -i 's|^\([[:space:]]*\)source \(.*build_tik_ops\.sh\)|\1# source \2|' build/build_ops.sh
+grep -n "build_tik_ops.sh" build/build_ops.sh   # 复核：该行须已带注释符
 ```
+
+**如何判定该问题仍存在（换版本后先复核，再决定是否绕行）**：直接跑一次
+`bash build/build_ops.sh`（或跳过本步骤对比），若 `build_tik_ops.sh` 正常返回 0 且产物齐全，
+说明上游已修复 —— 此时**不要再注释**，删掉本条绕行；仅当其仍失败（或报 issue#64 同类错误）时才套用。
 
 ### 编译 + 安装
 
@@ -288,7 +311,7 @@ vLLM-Omni 全栈（950PR/950DT）或排障 vllm / vllm-ascend / vllm-omni 构建
   （transformer/vae/text_encoder/tokenizer/scheduler + model_index.json），确认见 weights-prep
 
 > compile 适配（`compile_backend="mindie"`、`_compiled_call_impl` 写入、text encoder key
-> 归一化等）与融合算子使能判断属 framework-feature-enablement，不在本技能范围。
+> 归一化等）与融合算子使能判断属 framework-integration，不在本技能范围。
 
 ### LightX2V 部署要点
 
@@ -299,10 +322,13 @@ LightX2V 与 vLLM-Omni 形态不同：**editable 源码 + `PLATFORM=ascend_npu` 
 - ⚠️ **`import lightx2v` 前必须 `export PLATFORM=ascend_npu`**：否则设备初始化按默认平台走，
   报 `ERR99999 UNKNOWN application exception` 类异常
 - 版本配套实测矩阵（python 3.12 / torch 2.11 / torch_npu 2.11 / CANN 9.1）、就绪验证、
-  运行入口、MiniMax-H3 权重分区（t2av 不需要 FL2VA 135G）：见 `references/lightx2v-env.md`
+  MiniMax-H3 权重分区（t2av 不需要 FL2VA 135G）：见 `references/lightx2v-env.md`
 
+> **运行入口不属本技能**：`torchrun` 命令与 `--config_json` 档位语义（含档位报错回退）见
+> `framework-integration/references/run-entry-and-request-tiers.md` §2；并行档位形态选择归
+> dit-parallel-opt。本技能止于环境就绪（`PLATFORM=ascend_npu` 下 import 成功、版本配套、权重就位）。
 > LightX2V 侧 compile 使能（`compile_backend` / `hccl_eager`）与 kernel diff 方法属
-> framework-feature-enablement，不在本技能范围。
+> framework-integration，不在本技能范围。
 
 ## 权重确认与下载
 
@@ -314,12 +340,16 @@ LightX2V 与 vLLM-Omni 形态不同：**editable 源码 + `PLATFORM=ascend_npu` 
 
 - **何时需要**：三方框架（vLLM-Omni / LightX2V / DiffSynth-Engine / diffusers）需要真实权重时；
   dummy run（随机权重）不需要，见 dummy-run。
-- **目录约定**：`{model_weight_dir}/{模型名}/`（如 `{model_weight_dir}/MiniMax-H3`），
-  模型根目录直接 serve；仓库内 `FL2VA/`、`Ref2VA/` 等子目录 = vLLM-Omni 格式，按任务分区下载。
+- **下载源优先级**：**默认 modelscope**（`modelscope download` / `snapshot_download` + `local_dir`
+  直落；国内可达、HF gated 仓库在 modelscope 镜像通常**免鉴权**）；**次选 HuggingFace / 其他
+  gated 仓库**（需 token：`hf auth login` / `HF_TOKEN`，或 hf-mirror 镜像）。判据与两种用法见
+  `references/weights-prep.md` §2.1。
+- **目录约定**：`{model_weight_dir}/{模型名}/{任务变体}/`，模型根目录直接 serve；仓库内
+  `FL2VA/`、`Ref2VA/` 等子目录 = vLLM-Omni 格式，按任务分区下载。
+  **各模型实测落位见 `references/weights-prep.md` §2.2 落位表**
+  （H3 已填；Qwen-Image / Wan2.2 / FLUX 的仓库 id 与任务变体列标 `待回填`——未实测不推测）。
   ⚠️ LightX2V t2av 运行不需要 `FL2VA`（135G，其他任务组件），其实际分区口径见
   `references/lightx2v-env.md` §5。
-- **首选 modelscope**：HF gated 模型在 modelscope 镜像通常**免鉴权**；实测下载聚合速率
-  ~9 MB/s（16 并发），单分区 134 GiB 约 4.5 小时。
 
 核心命令（MiniMax-H3 T2VA 示例）：
 
@@ -362,6 +392,7 @@ echo $! > {model_weight_dir}/h3_download.pid
 | 分区入口 | `ls {root}/FL2VA/model_index.json` | 存在（vLLM-Omni 用分区识别） |
 | 残留未完成 | `find {root} -name '*.incomplete' \| wc -l` | 0 |
 | 文件总数 | `find {root} -type f \| wc -l` | 与下载进度 "81/81" 一致 |
+| 校验和 | 仓库提供 `*.md5` / `*.sha256` / `checksums.json` 时逐文件核对 | 一致；无校验和文件时以「无 `.incomplete` + 分片齐全 + 文件数一致」为准 |
 | 下载日志 | `tail` 日志 | `100% ... 81/81` + `Snapshot ready` |
 
 已知坑：
@@ -378,29 +409,34 @@ echo $! > {model_weight_dir}/h3_download.pid
 - **模型仓库双格式混用**：vLLM-Omni 部署目录（如 `{root}/FL2VA`）**不能**当 dummy run 的
   `--config_cache`（类名/配置键不兼容）。
 
-服务侧直接用模型根目录 serve（`vllm serve {root} --task-type t2va ...` 或 serve 分区目录；
-启动细节见 framework-feature-enablement）。
+权重就位后按「落位约定」的模型根目录**可直接被框架 serve / 加载**（路径语义见 `references/weights-prep.md` §7）；
+**服务启动与请求级档位不属本技能**（`vllm serve` 目标二选一、`--task-type`、`extra_params.task`
+请求级切换、换档后的生效复核）→ `framework-integration/references/run-entry-and-request-tiers.md` §1。
 
 ## 部署脚本
 
-`scripts/deploy_to_remote.py` 是本技能的部署主脚本（本地开发机 → 远端昇腾容器），
-自带 paramiko 连接；底层 SSH/SFTP 连接复用等通用工具由 remote-access 提供。
+`scripts/deploy_to_remote.py` 是本技能的部署主脚本（本地开发机 → 远端昇腾容器）。
+**SSH 通道复用 `remote-access/scripts/ssh_helper.py`**（同一凭据来源优先级 + 同一主机密钥纪律 +
+同一条"stdout/stderr 并发读取"防死锁实现）——因此运行该脚本要求 `.agents/skills/` 下
+`remote-access` 技能同时存在；缺它脚本会直接报错退出并给出提示。
 
-命令行参数（均为必填）：
+命令行参数：
 
-| 参数 | 说明 |
-| --- | --- |
-| `--host` | 远端服务器 IP |
-| `--user` | SSH 登录用户名 |
-| `--password` | SSH 登录密码 |
-| `--workspace` | 远端工作目录 |
-| `--container` | 远端容器名 |
-| `--local-root` | 本地源码根目录 |
+| 参数 | 必填 | 说明 |
+| --- | --- | --- |
+| `--host` | ✓ | 远端服务器 IP |
+| `--user` | ✓ | SSH 登录用户名 |
+| `--password` | 可选 | **不推荐**：会留在进程列表 / shell history。凭据优先级 = 环境变量 `MINDIE_SD_SSH_PASSWORD` / `MINDIE_SSH_PASSWORD` > 交互式输入（不回显）> `--password` |
+| `--workspace` | ✓ | 远端工作目录 |
+| `--container` | ✓ | 远端容器名 |
+| `--local-root` | ✓ | 本地源码根目录 |
+| `--allow-unknown-host` | 可选 | 首次接入**陌生主机**时才加：默认 RejectPolicy（未知主机密钥直接拒绝，防中间人） |
 
-执行传输 + 编译：
+执行传输 + 编译（推荐用环境变量给凭据）：
 
 ```bash
-python deploy_to_remote.py --host <远端IP> --user {用户名} --password {密码} \
+export MINDIE_SSH_PASSWORD='***'          # 或用交互输入（省略 --password）
+python deploy_to_remote.py --host <远端IP> --user {用户名} \
   --workspace {远端工作目录} --container {容器名} \
   --local-root {本地源码根目录}
 ```
@@ -435,20 +471,32 @@ python deploy_to_remote.py --host <远端IP> --user {用户名} --password {密�
 | `build_ops.sh` exit code 101 | build_tik_ops.sh 失败 | 注释掉 build_ops.sh 中 `source build_tik_ops.sh` 行 |
 | `import triton` 成功但 `0 active drivers` | 安装了标准 triton（非 Ascend 版本） | `pip uninstall triton -y && pip install triton-ascend && pip install pybind11` |
 | `ModuleNotFoundError: mindiesd` | `pip install -e .` 未重新索引 | 重新执行 `python setup.py build_py && pip install -e .` |
-| git/curl HTTPS 报 `SEC_E_NO_CREDENTIALS`（Windows 开发机） | git 默认 schannel TLS 后端在受限进程里握手失败 | `git -c http.sslBackend=openssl fetch`（可全局 `git config --global http.sslBackend openssl`） |
 | vllm 多卡启动报 `hcclCommInitRootInfoConfig error code is 4` | 容器缺 HCCL ranktable | `docker cp /usr/local/Ascend/driver/topo {容器}:/usr/local/Ascend/driver/topo` 或挂载（见 `references/vllm-omni-build.md` Step 2.1） |
 
-> 其他问题（SSH 认证、docker exec 引号转义、CRLF、环境依赖、运行时 OOM、NPU 崩溃、输出异常等）
-> 见 `references/troubleshooting-env.md`；vLLM-Omni 全栈构建期问题另见
-> framework-feature-enablement 的 `references/troubleshooting-vllm-omni.md`。
+> **本表只收安装 / 部署域**（装起来 + 权重备齐）。越界症状一律去对应技能，本技能不展开：
+> **SSH / 认证 / CRLF / 传输域 / Windows 开发机 schannel** → `remote-access/SKILL.md`「故障排查」表与
+> `../remote-access/references/transport-troubleshooting.md`；**服务启动 / 运行档位 / 请求级 task** →
+> `../framework-integration/references/run-entry-and-request-tiers.md`；**特性不生效 / 使能回退** →
+> `../framework-integration/SKILL.md` §1；**显存不足选哪一档 / 档位 crash 退到哪一档** →
+> `../dit-perf-opt/references/resource-fallback-tiers.md`；**多卡运行期劣化 / 热降频口径 / 拓扑** →
+> `../dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` §1–§5；**自研算子运行期不可见 / golden** →
+> `../operator-dev/references/custom-op-runtime-deploy-verify.md`；**输出异常 / 精度判定（NaN / 花屏 /
+> eager vs compiled）** → `../accuracy-gate/references/silent-failure-localization.md`；
+> 测点与报数口径 → `perf-gate`。
+> 完整归属表与安装域决策树见 `references/troubleshooting-env.md`；vLLM-Omni 全栈构建期问题另见
+> `../framework-integration/references/troubleshooting-vllm-omni.md`。
 
 ## Reference Files
 
-- `references/weights-prep.md` — 加载时机: 三方框架需要真实权重，把模型权重从 modelscope
-  下载到远端容器并校验完整时（分区选择、nohup 后台化、完整性校验、已知坑）
+- `references/weights-prep.md` — 加载时机: 三方框架需要真实权重时（**下载源优先级：默认
+  modelscope、HF/gated 次选**；目录/分区约定与**各模型落位表 §2.2**（未实测列标 `待回填`）；
+  下载命令、nohup 后台化、完整性校验、已知坑；§7 只讲"权重就绪"的交接语义）
 - `references/lightx2v-env.md` — 加载时机: 部署/复现 LightX2V 调优环境（editable 安装、
-  PLATFORM=ascend_npu、版本配套矩阵、运行入口、MiniMax-H3 t2av 权重分区）时
+  PLATFORM=ascend_npu、版本配套矩阵、就绪验证、MiniMax-H3 t2av 权重分区）时
+  （**运行入口与 `--config_json` 档位不在本文件** → `../framework-integration/references/run-entry-and-request-tiers.md` §2）
 - `references/troubleshooting-env.md` — 加载时机: 部署/编译/安装遇到异常，需系统排查定位根因时
+  （**安装 / 部署域决策树 + 越界归属表**：服务启动、使能、选档、多卡归因、精度判定、传输域
+  均只留指针，不在本文件展开）
 - `references/vllm-omni-build.md` — 加载时机: 需要源码构建 vLLM-Omni 全栈（950PR/950DT）或排障 vllm / vllm-ascend / vllm-omni 构建问题时（版本配套矩阵、Step 2.1–2.6 全量细节）
 
 ## 维护与更新

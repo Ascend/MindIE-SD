@@ -49,7 +49,7 @@
   掩盖空间量级；随特性（量化等）使能后重采（见 `post-enable-review.md` 面②）。
 - **A.2.4 通信带宽合理性**：hccl test 或其替代（实测 all_reduce/集合通信带宽 vs 理论带宽、跨拓扑/
   跨环差异）——用于验证并行策略的通信已内部优化；无数据标 ❓ 并写明方法与引用
-  （parallelism-strategy `ascend-topology-bandwidth-diag`）。
+  （dit-parallel-opt `ascend-topology-bandwidth-diag`）。
 - **纪律（方法要点，写进正文）**：**并行策略比较必须在「各自通信已内部优化（带宽利用/掩盖到位）」
   的前提下进行**——否则好策略因优化没做好而被低估（测得差），导致该策略后续优化潜力被误判丢弃；
   用 hccl 带宽基线 + step_trace comm 时间交叉核验「策略差因通信未调优」而非策略本身差。
@@ -121,9 +121,9 @@
   visual_artifact(pass/fail/inconclusive+存证) | off_identity(逐字节/数值差/md5) | 证据引用
   (runs/{id}/quality.json + 帧或 profile 指针)]`；
   数值口径 = 与 `runs/{task_id}/profiles/{model}.toml`（gen_profile.py 生成）冻结 baseline 的**同 seed 对照**（视频 21 采样帧 /
-  图像 21-seed 像素对，按 profile `[domain]` 套用协议）；
+  图像 21-seed 像素对，按 profile `[profile].domain` 套用协议）；
   弱视觉域（video_chaos）数值只登记回归、主判据 visual+off-identity；强视觉域（图像）可设
-  绝对门槛——域规则来自 profile `[domain]`，报表不另起。
+  绝对门槛——域规则来自 profile `[profile].domain`，报表不另起。
 - **E.2 强制产物与关联（2026-09-08 收紧）**：
   - **quality.json 必须由契约工具现算**：`evals/scripts/quality_compare.py --baseline <帧目录>
     --config <帧目录> --metric ssim --metric psnr --output runs/{id}/quality.json`；

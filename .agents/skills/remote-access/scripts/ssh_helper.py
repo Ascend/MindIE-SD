@@ -12,7 +12,7 @@
 
 """Reusable SSH runner for remote MindIE-SD operations (single-connection reuse).
 
-与 ascend-deploy §1 连接复用原则一致：一个 SSH 连接执行多次命令，
+连接复用原则：一个 SSH 连接执行多次命令，
 避免远端 MaxStartups 限制导致的拒绝访问。
 
 Usage:
@@ -33,14 +33,17 @@ import threading
 import paramiko
 
 
-def make_ssh(host, user, password, timeout=30):
+def make_ssh(host, user, password, timeout=30, allow_unknown_host=False):
     """Create a single SSH connection (reuse across commands).
 
-    不设置 AutoAddPolicy：paramiko 默认 MissingHostKeyPolicy 为 RejectPolicy，
+    默认**不设置 AutoAddPolicy**：paramiko 默认 MissingHostKeyPolicy 为 RejectPolicy，
     未知主机密钥直接拒绝（防中间人）；已知主机（SSHClient 自动加载系统
-    known_hosts）正常连接。
+    known_hosts）正常连接。仅在显式传入 `allow_unknown_host=True` 时才放开
+    （首次接入陌生主机的一次性场景），调用方须自行提示风险。
     """
     ssh = paramiko.SSHClient()
+    if allow_unknown_host:
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     # paramiko >= 4.0 no longer auto-loads the user known_hosts on connect();
     # load them explicitly so RejectPolicy still admits pre-registered hosts.
     ssh.load_system_host_keys()

@@ -1,6 +1,6 @@
 # 算子分类与瓶颈判断
 
-具体 API 和算法名见 performance-optimization/references/mindiesd-features.md（唯一真相源）。
+具体 API 和算法名见 `docs/zh/features/*`（特性真源）。
 
 ## 阶段划分
 

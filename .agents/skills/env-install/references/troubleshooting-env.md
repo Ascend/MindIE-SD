@@ -1,12 +1,30 @@
-# 故障排查决策树
+# 故障排查决策树（安装 / 部署域）
 
-## 问题分类
+> **本文件只收「安装就绪」域的问题**——把部署环境装起来（mindiesd 编译安装、三方框架全栈、
+> 容器与依赖）与把权重备齐。**止于安装完成**：`import mindiesd` 成功、版本配套就位、权重就位。
+> 运行期问题（服务启动 / 特性使能 / 选档 / 精度判定 / 多卡归因 / 传输域）一律**收敛为指针**，
+> 不在本文件展开——先按下表定位归属，再去对应技能。
 
-### A. 部署失败
+## 归属速查（越界问题都从这里出去）
+
+| 症状族 | 归属 |
+|---|---|
+| 服务启动 / 运行入口 / 请求级 task 档位 / 档位报错怎么回退 | `framework-integration/references/run-entry-and-request-tiers.md` |
+| 特性使能不生效 / 计数契约 / 三层证据 / 回退判据 | `framework-integration/SKILL.md` §1 |
+| 显存不足选哪一档降 / 使能档 crash 退到哪一档 | `dit-perf-opt/references/resource-fallback-tiers.md` |
+| 多卡运行期劣化（SIGKILL 残留态 / 端口 bind / 拓扑选卡） | `dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` §1–§5 |
+| 热降频与 clean-window **取数口径** | `perf-gate/references/measurement-discipline.md` §7（读数仍在 `dit-parallel-opt` 上表文件） |
+| 自研算子运行期不可见（`inferShape does not exist`）/ golden 校验 | `operator-dev/references/custom-op-runtime-deploy-verify.md` |
+| 输出异常与精度判定（NaN / 黑图 / 花屏 / eager vs compiled） | `accuracy-gate`（`../../accuracy-gate/references/silent-failure-localization.md`、`../../accuracy-gate/references/equivalence-criteria.md`） |
+| SSH / 认证 / CRLF / 传输域 / 本地开发机 schannel | `remote-access/SKILL.md`「故障排查」表 + `remote-access/references/transport-troubleshooting.md` |
+| 选空闲卡 / 卡占用与进程归属 | `remote-access/SKILL.md`「空闲卡选择」 |
+| 测量口径 / 报数与入库 | `perf-gate` |
+
+## A. 部署失败
 
 ```text
 部署失败
-├─ SSH 认证失败 → 确认 IP/用户名/密码，检查网络连通性
+├─ SSH 认证失败 → 不属本技能：remote-access「故障排查」表（核对 IP/用户名/密码与网络连通性）
 ├─ 编译错误
 │   ├─ CANN 环境未 source → source /usr/local/Ascend/ascend-toolkit/set_env.sh
 │   ├─ build_tik_ops.sh 失败 → 注释掉 build_ops.sh 中的 source build_tik_ops.sh 行
@@ -16,79 +34,59 @@
     └─ 新增 .py 文件未识别 → 重新执行 pip install -e .
 ```
 
-### B. 运行时 OOM
+## B. 资源不足（安装 / 部署期）
 
 ```text
-OOM
-├─ CPU OOM（构造阶段）
-│   └─ from_config 时内存不足 → 使用 meta→to_empty 构造方式
-├─ NPU OOM（推理阶段）
-│   ├─ 模型 > 显存 → 启用 CPU offload
-│   ├─ 中间激活值过大 → 减少 batch / 降低分辨率
-│   └─ CFG 双分支翻倍 → 关闭 CFG 使用 guidance_scale=1.0
-└─ 排查步骤
-    1. npu-smi info -t memory -i {device_id} 检查当前显存
-    2. 确认是否有其他进程占用
-    3. 选择空闲卡或启用 offload
+资源不足
+├─ CPU OOM（构造阶段）→ 不是"降档"问题：改进构造方式（如 meta→to_empty）
+└─ NPU OOM（推理阶段）→ 不属本技能：降显存档位与回退顺序见
+    dit-perf-opt `../../dit-perf-opt/references/resource-fallback-tiers.md` §1；
+    卡占用 / 选空闲卡见 remote-access `../../remote-access/SKILL.md`「空闲卡选择」
+    排查步骤: npu-smi info -t memory -i {device_id} 看显存；确认是否有其他进程占用
 ```
 
-### C. 输出异常（NaN / 黑图 / 花屏）
+## C. 输出异常（NaN / 黑图 / 花屏）
+
+**不属本技能**（精度与静默错误判定）：判据、等价分层与排障入口见 `accuracy-gate`
+（`../../accuracy-gate/references/silent-failure-localization.md`；"等价替换有没有把结果改坏"见
+`../../accuracy-gate/references/equivalence-criteria.md`）。
+其中**加载期**症状若源于传输：tokenizer / 权重加载异常常由**二进制文件被 CRLF 转换损坏**引起
+→ `remote-access`（`../../remote-access/SKILL.md`「故障排查」表 +
+`../../remote-access/references/transport-troubleshooting.md`）。
+
+## D. 安装 / 部署期 NPU 与进程异常
 
 ```text
-输出异常
-├─ NaN
-│   ├─ 精度问题 → 检查 bf16 vs fp16，某层可能溢出
-│   └─ 算子精度 → 检查是否有算子返回 inf/nan（npu_add_rms_norm_dynamic_quant 已知 crash）
-├─ 黑图（全零输出）
-│   ├─ VAE decode 未触发 → 检查 output_type 参数
-│   └─ latent 全零 → 检查 transformer 输出
-├─ 花屏 / 图像错乱
-│   ├─ CFG 参数错误 → guidance_scale 是否正确传递
-│   ├─ tokenizer 异常 → from_pretrained 返回 bool 而非 tokenizer（二进制文件被 CRLF 损坏）
-│   └─ latent channel 数不匹配 → VAE config 与 transformer 输出不一致
-└─ 排查步骤
-    1. 先用 bf16 验证输出正确性
-    2. 逐组件检查：text_encoder → transformer → VAE
-    3. 对比 eager vs compiled 输出（cosine similarity）
-```
-
-### D. NPU 崩溃（HCCL 超时 / 算子 crash）
-
-```text
-NPU 崩溃
-├─ 症状: 进程卡住无响应
-│   ├─ npu-smi info -l 检查卡状态
-│   ├─ 卡处于 ERROR 状态 → 需要复位
-│   └─ HCCL 拓扑问题 → 检查多卡互联
-├─ 症状: core dump / 进程退出
-│   ├─ 算子 AC L error → 查询 CANN 错误码文档
-│   ├─ triton 版本错误 → pip uninstall triton && pip install triton-ascend
-│   └─ 特定算子 crash → 降级为 eager 路径、记录到 ascend-ops.md
-├─ 症状: 输出随机错误（非 NaN）
-│   └─ 显存越界 → npu-smi 检查显存，调整分辨率或启用 offload
+NPU 异常（安装验证期）
+├─ 进程卡住无响应 / 卡处于 ERROR → npu-smi info -l 看卡状态；复位与卡组可用性判定见
+│   dit-parallel-opt `../../dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` §4
+│   （Health=OK ≠ 组可用）
+├─ 多卡互联 / 拓扑相关 → dit-parallel-opt
+│   `../../dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` §1
+├─ core dump / 进程退出
+│   ├─ 算子 ACL error → 查询 CANN 错误码文档
+│   ├─ triton 版本错误 → pip uninstall triton -y && pip install triton-ascend
+│   └─ 特定算子 crash → **回退到 eager 路径**属选档 + 回退姿势：
+│       dit-perf-opt `../../dit-perf-opt/references/resource-fallback-tiers.md` §2（选哪一档）+
+│       framework-integration `../../framework-integration/references/run-entry-and-request-tiers.md`
+│       §3（怎么退）；自研算子运行期不可见另见 operator-dev
+│       `../../operator-dev/references/custom-op-runtime-deploy-verify.md`
 └─ 排查步骤
     1. 查看容器日志: docker logs {container}
     2. 查看 CANN 日志: /var/log/npu/slog/
-    3. 用单卡最小配置复现（bf16 / 最低分辨率 / 1 步）
-    4. 若稳定复现 → 标记为算子兼容性问题
+    3. 用单卡最小配置复现（最小分辨率 / 1 步）
+    4. 若稳定复现 → 记录并转对应技能（上述归属速查表）
 ```
 
-### E. 本地环境（Windows 开发机）
+## E. 本地开发机（Windows）
 
-```text
-本地环境问题
-├─ git/curl HTTPS 握手失败: schannel: AcquireCredentialsHandle failed:
-│   SEC_E_NO_CREDENTIALS (0x8009030e) —— 沙箱/受限进程下 schannel 拿不到凭据，
-│   curl 与 git 均受影响；python urllib(openssl) 正常（可用此判断是否为 schannel 问题）
-│   └─ 解决: git -c http.sslBackend=openssl fetch；或 git config --global http.sslBackend openssl
-├─ deploy_to_remote.py 路径语义与仓库实际远端不一致
-│   ├─ 脚本把文件传到 {workspace}/{local_root.name}（如 /home/{user}/code/MindIE-SD_compile）
-│   │   但 build 却在 {workspace}/MindIE-SD 内执行 → 与本仓实际远端
-│   │   （如 /home/{user}/code/mindie-sd-compile）不一致时不要直接用，改精准 SFTP 同步
-│   └─ 注意: refs/ 等大目录不在脚本排除列表，全量传输会带上 profiling 数据
-└─ 凭据安全: refs/ssh_helper.py 明文存 host/user/password —— 属历史遗留，
-    新代码改用环境变量或 SSH key；报告/日志中不回显密码
-```
+**已收敛为指针**（SSH / 传输域属 `remote-access`）：
+
+- git / curl HTTPS 握手失败（`schannel: AcquireCredentialsHandle failed: SEC_E_NO_CREDENTIALS`）
+  → `remote-access/references/transport-troubleshooting.md` §1；
+- `deploy_to_remote.py` 的**路径语义**与**排除列表**（`refs/` 等大目录会全量传输）单点在本技能
+  `SKILL.md`「部署脚本」节；远端布局与本仓约定不一致时不要直接跑脚本，改精准 SFTP 同步；
+- 凭据与日志纪律 → `remote-access/SKILL.md`（环境变量 `MINDIE_SSH_PASSWORD` / SSH key；不回显密码）。
 
 ## 工具速查
 
@@ -98,37 +96,60 @@ NPU 崩溃
 | `npu-smi info -t memory -i 0` | 查看卡 0 显存 |
 | `docker logs {container}` | 查看容器运行日志 |
 | `python -c "import torch_npu; print(torch_npu.__version__)"` | 确认 TorchNPU 版本 |
-| `npu-smi info -t usages -i 0` | 查看卡 0 使用率 |
 
-### F. 多卡运行期劣化（通信/环境层；详见 parallelism-strategy `ascend-topology-bandwidth-diag.md`）
+### F. 多卡运行期劣化（**正文已收敛为指针**，不属本技能）
+
+- 症状与恢复（整组数量级变慢 = SIGKILL 驱动损伤残留态、端口 `already been bound`、
+  `hcclCommInitRootInfoConfig error` 的 ranktable 检查、拓扑选卡）→
+  `../../dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` §1–§5；
+- **clean-window / 热降频的测量口径**（怎么取数、怎么判热降频）→
+  `../../perf-gate/references/measurement-discipline.md` §7（口径单点），具体读数仍归上述 dit-parallel-opt 文件；
+- 本技能只保留**安装侧**一条：容器**必须挂载** HCCL ranktable `/usr/local/Ascend/driver/topo`
+  （见 §A 与 `vllm-omni-build.md` Step 2.1）。并列/掩盖/选型归 `dit-parallel-opt`。
+
+### G. 自研 CANN 算子部署顺序与 golden 校验（**正文已收敛为指针**，不属本技能）
+
+- **部署顺序**（产物只在 `{repo}/mindiesd/ops/vendors/*`、运行期由 `import mindiesd` 设
+  `ASCEND_CUSTOM_OPP_PATH`、**必须先 import mindiesd 再初始化 NPU / 建张量**）→
+  `../../framework-integration/SKILL.md` §1.5 + `../../framework-integration/references/cache-dit-enablement.md` §2.2；
+- **部署校验与 golden 通过判据**（可见性 → 走的是哪一个 → 数值）→
+  `../../operator-dev/references/custom-op-runtime-deploy-verify.md`；
+- gloo 偶发 `ss1.ss_family == ss2.ss_family (10 vs 2)`（IPv4/IPv6 混用）→ 多卡启动陷阱，
+  见 `../../dit-parallel-opt/references/ascend-parallel-traps.md`（重试；持续出现则强制 IPv4）。
+
+### H. 三方框架容器：装库 / 权重缺口（自 framework-integration 迁入）
+
+> 归属判据：**"库没装 / 权重不全 / 装错树"属环境安装**，不是特性使能问题——修复后回到
+> `framework-integration` 继续使能与验证。
 
 ```text
-多卡 run 变慢/起不来
-├─ 整组 ~10× 慢（步长 4s→44-60s、CPU 100% 而单算子 GEMM 正常）
-│   └─ 疑似运行中 SIGKILL 多卡任务致 NPU/HCCL 驱动状态异常 → 换健康卡组复验；
-│      必要时重启容器/复位 NPU（管理员）
-├─ HCCL init 报「port already been bound」（ss 无监听）
-│   ├─ 裸脚本缺 torch_npu.npu.set_device(local_rank)（各 rank 绑同端口）→ init 前补 set_device
-│   └─ NPU 网卡 listen socket 泄漏（强杀累积）→ 换全新端口段（如 30000+）；仍失败 → 驱动复位
-├─ hcclCommInitRootInfoConfig error → 查 /usr/local/Ascend/driver/topo/{chip}/*.json 是否齐全
-│   （容器内常缺失 → docker cp/挂载）；查端口段与 set_device
-└─ 拓扑相关：`npu-smi info -t topo` 判 UB 岛/SYS 跨岛；4 卡 a2a 优先单 UB 岛（跨岛带宽 -35%）
+vllm serve --omni 启动即失败
+├─ ImportError: libxcb.so.1: cannot open shared object file
+│   └─ opencv-python 依赖 X11 库（容器缺系统库，非 Python 依赖问题）→
+│      dnf install -y libxcb xcb-util* libX11 libXext mesa-libGL ...
+├─ ValueError: ... weights were not initialized from checkpoint
+│   └─ 权重分片缺失：对照 {model_dir}/*.safetensors.index.json 的 weight_map 逐分片核对，
+│      缺失分片从 hf-mirror（https://hf-mirror.com/{org}/{model}/resolve/main/...）补下载；
+│      下载前先确认远端是否已存在该分片（避免重复下载）
+├─ pip 报 `Invalid wheel filename (wrong number of parts)`
+│   └─ 第三方 wheel 被**重命名**（如 `torch.whl` / `torch_npu.whl`）后安装：pip 要求文件名符合
+│      `{name}-{version}-{build}-{py}-{abi}-{platform}.whl` → **保留原始文件名**重新安装
+│      （如 `torch-2.11.0+cpu-cp312-cp312-manylinux_2_28_x86_64.whl`），不要为下载方便改名
+└─ 950PR / 950DT 上设置 MINDIE_SD_FA_TYPE 导致算子路由异常
+    └─ 该变量不适用于 950PR/950DT → 删除（勿与 900 A2/A3 场景写法混用）
+
+同机多棵 editable mindiesd 树：按「能力实体」选树，不按目录名 / 新旧选树
+└─ 先列出目标特性依赖的能力并逐项验证：
+   ├─ 稀疏类查算子签名是否含该框架需要的参数（如 rf_v2 需要 video_spans，缺则直接不兼容）
+   └─ 融合类查插件 md5 / import 是否成功（如 mm_swiglu_mxquant）
+   特性跑不通先核对"这棵树有没有这个能力"，再谈接线与算子
 ```
 
-### G. 自研 CANN 算子部署与启动偶发（mindiesd / 远端容器）
-
-```text
-自研算子调用报 "aclnnXxx … inferShape function does not exist"（如 EagleQuantBlockSparseAttention）
-└─ 根因通常是「算子包未进运行 CANN / import 顺序错」，不是 pattern 或参数问题：
-   ├─ mindiesd build_ops 产物只在 {repo}/mindiesd/ops/vendors/*，不会自动装进运行 CANN
-   ├─ 运行期由 `import mindiesd`（env.py）设置 ASCEND_CUSTOM_OPP_PATH → 必须先 import mindiesd
-   │   再初始化 NPU/建任何张量（GE 初始化后自定义算子注册不生效）
-   └─ 校验：跑对应 tests/ops/{op}/…_golden.py（如 eagle_quant_block_sparse_attention_golden.py，EB 阈值见文件）
-
-gloo 偶发 "ss1.ss_family == ss2.ss_family (10 vs 2)"（IPv4/IPv6 混用，容器 hostname 为空相关）
-└─ 重试即可；持续出现则强制 IPv4：export MASTER_ADDR=127.0.0.1 GLOO_SOCKET_IFNAME=lo
-```
+> 装库 / 权重缺口修好后，**服务启动、特性使能与验证**回到
+> `framework-integration`（`../../framework-integration/references/run-entry-and-request-tiers.md`
+> 与 `../../framework-integration/SKILL.md` §1）。
 
 ## 维护与更新
 
-当部署/编译故障模式变化或新增高危问题时，按 dev-workflow 的复盘流程更新本文件。
+当部署 / 编译 / 安装故障模式变化或新增高危问题时，按 dev-workflow 的复盘流程更新本文件；
+**运行期**问题的知识更新到上表对应技能，本文件只维护归属指针与安装域条目。

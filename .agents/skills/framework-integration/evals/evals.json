@@ -1,0 +1,206 @@
+{
+  "skill_name": "framework-integration",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "把 MindIE-SD 的 MindieSDBackend 编译接入 DiffSynth-Engine，Qwen-Image 真实权重在远端 <model_weight_dir>/qwen/Qwen/，怎么部署和适配？",
+      "expected_output": "路由到 framework-integration §3（框架差异真源登记）/ references/diffsynth-engine-enablement.md：部署（pip install -e . --no-deps + SETUPTOOLS_SCM_PRETEND_VERSION）、compile 适配（compile_backend='mindie' + _compiled_call_impl 原地写入）、Qwen-Image RoPE 实数域改写与 text encoder key 归一化，并说明融合算子使能判断方法",
+      "files": [],
+      "expectations": [
+        "提到 --no-deps 安装与 setuptools-scm 无 .git 的 PRETEND_VERSION 处理",
+        "提到 compile_transformer_blocks 须写入 submodule._compiled_call_impl（直接 torch.compile 不赋值不生效）",
+        "提到 Qwen-Image RoPE 实数域改写命中 qwen_rope_pattern",
+        "提到用 graph_log_url DOT 图 / kernel_details.csv 判断融合算子使能（日志 2048 截断会误判 0 命中）"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "外部框架（diffsynth_engine）里跑 compile 后，怎么确认 qwen_rope 这些 pattern 真的使能了？能直接用 dummy run 的结果判断吗？",
+      "expected_output": "按 diffsynth-engine-enablement.md §3.3：三层证据（DEBUG 日志 → graph_log_url DOT 图 → kernel_details.csv）；使能判断不依赖层数/权重，dummy run 与真实权重的融合 kernel 使能集合一致；只做使能判断不做耗时比较（耗时须真实权重 + kernel diff）",
+      "files": [],
+      "expectations": [
+        "输出三层使能证据（日志 / DOT 图 / kernel_details.csv）并说明以 DOT 图或 kernel csv 为最终依据",
+        "说明使能集合与 dummy run 一致（qwen_rope / qk_norm / 残差 gate / 调制 / GELU），可用于判断",
+        "说明图命中不等于运行期全部生效（residual_gate_add 对 4D 张量 fallback）",
+        "明确不做耗时比较，耗时评估须真实权重 + kernel diff",
+        "提到运行期计数（kernel 实际执行次数等）作为真实性证据与 fail-closed 断言（计数契约）"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "vllm serve --omni 启动 Qwen-Image-2512 时报 hcclCommInitRootInfoConfig error code is 4，怎么排查？",
+      "expected_output": "路由到 framework-integration §5（故障排查）/ references/troubleshooting-vllm-omni.md E2：容器缺 HCCL ranktable（/usr/local/Ascend/driver/topo/950/atlas_350_*.json）→ docker cp 或挂载",
+      "files": [],
+      "expectations": [
+        "定位为 HCCL ranktable 缺失（/usr/local/Ascend/driver/topo）",
+        "给出 docker cp / 挂载解决方案并说明容器重启后丢失",
+        "引用 troubleshooting-vllm-omni.md"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "已部署的 Qwen-Image 模型想验证 1 步推理是否正确，用 Cache DiT + diffusers 的方式怎么跑？",
+      "expected_output": "按 framework-integration §1.3（框架侧验证）：from_pretrained 加载 → 1 步推理 → 验证无异常/OOM、输出 shape 合法",
+      "files": [],
+      "expectations": [
+        "给出 from_pretrained + 1 步推理的验证代码路径",
+        "按 §1.3 通过标准检查（无异常、输出合法、显存正常）"
+      ]
+    },
+    {
+      "prompt": "DiffSynth-Engine 接入 mindiesd 后要验证融合算子实际收益（算子级 profile + kernel diff），找谁？",
+      "expected_output": "正确性/使能判断在本 skill（S1 融合：特性开关 / compile 融入与使能），性能验证/kernel 收益证据由 profiling-collect + profiling-analyze（采集 + kernel diff + 三层证据）承担",
+      "files": [],
+      "expectations": [
+        "提到性能验证证据走 profiling-collect/profiling-analyze",
+        "提到本 skill 支撑 S0/S1（融合）/S4 的阶段定位句",
+        "提到三层证据（图命中/kernel diff/墙钟）以性能侧 skill 为准"
+      ],
+      "id": 5
+    },
+    {
+      "id": 6,
+      "prompt": "LightX2V（已合入 #1471）给 MiniMax-H3 配 MindIE compile，同时想让 Ulysses a2a 避开编译图，配置怎么写？hccl_eager 是什么？",
+      "expected_output": "路由到 framework-integration §1.6（compile 融入）/ references/lightx2v-enablement.md §3.2/§4：配置 use_compile=true + compile_backend=mindie + parallel.seq_p_a2a_backend=hccl_eager；说明 hccl_eager 是平台注册的 a2a 后端（ops/a2a/ascend_npu/，@torch.compiler.disable，collective 留 eager 防 hcom_alltoallv 退化）；compile_backend 经 COMPILE_BACKEND_REGISTER 解析（compilation/ascend_npu/mindie.py 懒工厂）",
+      "files": [],
+      "expectations": [
+        "给出含 seq_p_a2a_backend=hccl_eager 的 parallel 配置段",
+        "说明 hccl_eager = collective 留 eager 的平台可选后端（防 split_sizes 推断错导致 hcom_alltoallv 退化）",
+        "说明 compile_backend=mindie 走平台注册表懒工厂，common 零改动",
+        "提示代码/配置必须配套（旧代码不认识 hccl_eager）"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "LightX2V 的 a2a 留 eager 和 mindie compile backend 都已经合入上游（#1471）。以后给另一个框架做类似接入时，应该照抄 LightX2V 合入前的写法（全局 @torch._dynamo.disable 改共享类 + core 里 try/except import mindiesd），还是按合入后的形态写？为什么？",
+      "expected_output": "按合入后形态：平台注册表（PLATFORM_A2A_BACKEND_REGISTER / PLATFORM_COMPILE_BACKEND_REGISTER）+ 配置可选键（hccl_eager / mindie）+ common 零改动；说明原因：全局改共享 collective 类影响所有平台所有 Ulysses 用户、评审会要求收敛；core 硬编码第三方包名耦合重、未知名应 raise 而非静默回退；实例仍须缓存单份（BACKEND_MATCH）",
+      "files": [],
+      "expectations": [
+        "推荐平台注册 + 配置可选形态（合入版），不推荐全局改共享类/核心硬编码",
+        "说明评审收敛动机（影响面/耦合）",
+        "提到 backend 实例复用原则不变"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "外部框架（DiffSynth-Engine 这类）本身没有有损特性，但想用 mindiesd 库自带的缓存能力（DiTBlockCache / AttentionCache）验证有损加速，不向框架加代码，怎么做？怎么防假加速？",
+      "expected_output": "路由到 framework-integration references/cache-enablement-pattern.md：用库现有 CacheAgent（DiTBlockCache/AttentionCache）在 bench 脚本侧 adapter 接入（DSE 源码零改动）；CacheConfig 语义对齐（CFG-off 单调用路径保证 1 transformer 调用 == 1 cache step）；验证三件套 = 墙钟（同窗口冷卡中位数）+ 计数契约（reuse/compute 与理论比对，防 no-op）+ 质量门禁（latent cosine ~0.98 + VAE 像素 mean-abs）",
+      "files": [],
+      "expectations": [
+        "提到用 mindiesd 库现有 CacheAgent/DiTBlockCache/AttentionCache，bench 侧接入不改框架源码",
+        "提到 CacheConfig blocks_count/steps_count 与 CFG-off 单调用路径对齐（CFG-on 会 shape 冲突）",
+        "提到计数契约（reuse/compute 与理论期望比对，no-op 禁止宣称）与质量门禁（cosine/像素）",
+        "提到双缓存（DiT+Attention）互斥、只能二选一（叠加会计数失步质量 FAIL）",
+        "提到量化/稀疏在框架无接口时记录阻塞、不硬接"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "vLLM-Omni 0.28 上给 MiniMax-H3 换入一个 4 步蒸馏适配器（LoRA）做少步推理：启动参数和请求怎么写？怎么确认权重真的生效了？num_inference_steps=4 是 4 次评估还是 5 个 sigma 点？",
+      "expected_output": "**框架差异** → references/vllm-omni-train-aware-enablement.md §1；**步数语义契约** → references/train-aware-lossy-method.md §3.1。服务侧 --task-type fl2va --lora-backend peft --lora-path <适配器>，请求侧 num_inference_steps=4 + lora={name,path,scale}；两条前置契约——model_index.json 不得 pin base_schedule、适配器 metadata 声明 base_schedule 时步数语义 = denoiser 评估次数（4 = 4 次评估，不是 5 个 sigma 区间点，按区间理解会少跑一步）；计数契约 = serve 日志 Loaded LoRA model: num_modules=259、Increasing max LoRA rank: 0 -> 64、各 worker 激活记录（防 no-op 假加速）",
+      "files": [
+        "references/vllm-omni-train-aware-enablement.md",
+        "references/train-aware-lossy-method.md"
+      ],
+      "expectations": [
+        "给出服务侧 --task-type fl2va --lora-backend peft --lora-path 与请求侧 num_inference_steps=4 + lora 字段",
+        "明确 num_inference_steps 语义 = denoiser 评估次数（4 次评估），并说明 base_schedule metadata 前置契约",
+        "给出装载计数契约（num_modules / rank 提升 / adapter 激活）以防 no-op 假加速",
+        "提示该蒸馏权重链仅 vLLM-Omni 0.28 有（0.26 无）"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "为省解码时间，我们想用一个外部训练的小型自编码器替换原生视频 VAE 解码器，但换上去后画面发灰、有块状。怎么判断是「接错了」还是「这模型本身就这画质」？PSNR 只有 12dB 是不是说明接错了？",
+      "expected_output": "**通用方法** → references/train-aware-lossy-method.md §3.3（组件契约）/§4.2（质量分层）/§5（归因链）；**本框架/本模型的具体契约与开关** → references/vllm-omni-train-aware-enablement.md §2/§3；阈值口径 → accuracy-gate/references/quality-gate.md。先核参考实现的判定契约（张量形状判定 / 构造参数 / 输入是否被变换 / 后处理与输出范围）——契约对不上就是选错权重（架构级错配），扫参不可补；再查 latent 约定（上游已执行 latent*std+mean，替换件须原样喂入，重复归一化会过驱动头部非线性）；外观先量输出 std 与被钳位像素占比（末层无激活 → 输出无界，照抄 clamp(0,1) 会把大比例像素钉成纯黑白 → 观感即大片斑块）；再分层判定：逐帧灰度相关系数（对尺度不变、判「接对与否」）+ 同 latent 对拍 SSIM + 视觉门（判画质档位）；PSNR 对预览级组件不敏感，偏低属正常，不能用来判接错",
+      "files": [
+        "references/train-aware-lossy-method.md",
+        "references/vllm-omni-train-aware-enablement.md"
+      ],
+      "expectations": [
+        "先核参考实现的判定契约（张量形状/构造参数/输入是否变换/输出范围），契约不符判为选错权重而非扫参问题",
+        "指出 latent 须原样喂入（上游已做 *std+mean，重复归一化是常见错因）",
+        "用输出 std + 被钳位像素占比定位外观异常（无界输出 + clamp 大面积钉死）",
+        "用灰度相关系数 + 同 latent SSIM 分层判定接口正确性与画质档位，并说明 PSNR 不能用于判接错",
+        "结论落成档位声明（预览级/保画质）并给两条并列部署建议",
+        "把通用方法（method 文档）与框架/模型差异（enablement 文档）分开引用，不把具体命令混进通用方法"
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "接到一个训练感知优化任务：要在某框架上给视频模型做少步蒸馏 + 换解码器。动手前要先确认什么？如果框架根本没有这条链路怎么办？落地后还要复核什么？",
+      "expected_output": "按 references/framework-support-matrix.md（「训练感知」表 + V4 证据码）先核该框架列的支持面：少步蒸馏是否有 LoRA/蒸馏权重链（vLLM-Omni 0.28 ✅、其余 ❓）、VAE解码替换是否有接口（未提供 = 待开发）；无链路时按 model-auto-optimization 缺口补齐策略选「跳过 / 走本技能 §2 分支 B 补齐开发 / fork 探针（钉版本 + 默认关 + .bak 保留）并标 [探针]」，不得静默做；训练感知档落地后按 post-enable-review 重审各维度是否仍生效（步数预算骤降会让 Cache 整体失效，判据 = 开/关产物 md5 字节级等价，而非加速比）；与免训练有损档可叠加，但报表须给保画质档 + 预览档两条并列建议；**通用方法（references/train-aware-lossy-method.md）与框架差异（该框架 enablement 文档）须分开引用，且不引用别处的加速比**",
+      "files": [
+        "references/framework-support-matrix.md",
+        "references/train-aware-lossy-method.md",
+        "references/vllm-omni-train-aware-enablement.md"
+      ],
+      "expectations": [
+        "动手前先查支持矩阵的框架列（训练感知表）确认链路是否存在",
+        "框架未提供时按缺口补齐策略处理（跳过/开发/fork 探针），探针须标 [探针] 且默认关",
+        "训练感知档落地后按 post-enable-review 重审其他维度是否仍生效（Cache 可能整体失效）",
+        "报表给保画质档 + 预览档两条并列建议",
+        "区分「特性分类跨框架相似」与「开启方式按框架不同」，把后者落到框架差异文档"
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "某个第三方框架没有 rms_type/rope_type 这类注册表接口，模型层是硬编码 torch 算子。我们想把 mindiesd 的融合算子接进去，是不是只能直接写 pattern 走 compile？顺序上要注意什么？做完 API 接入后什么情况下可以不做 compile？",
+      "expected_output": "路由到 framework-integration §1.2（分支 A「两阶段顺序纪律」）：无注册表接口不等于只能走 compile——**阶段 1 API 优先**（runtime 注入：框架配置注册表 / 框架侧 dispatch / 直接改模型源码 import mindiesd 并替换调用点），出口 = 接口签名与几何约定对得上 + 同 seed 数值对拍通过 + 单点收益方向明确；**阶段 2 再走 compile** 做图级适配（pattern 图形态变体 / _compiled_call_impl 写入 / 平台注册 backend），适配动作清单见 pattern-dev/references/fusion-enablement-notes.md「compile 阶段的适配动作」（1→7 顺序）。为何 API 先行：改动面小、失败早暴露（接口/几何/自研算子部署顺序错配）、先拿到可归因的单点收益与 eager 对拍基线。何时停在 API 阶段：eager 单算子已覆盖热路径而 compile kernel 级为负 / 受控交错 A/B 落噪声阈值内（<3%）/ 编译改变数值语义使输出非逐字节 / 适配需改框架仓未合入上游（按 [探针] 标注）——均按证据回退，不留半开。",
+      "files": [
+        "SKILL.md",
+        "references/framework-support-matrix.md"
+      ],
+      "expectations": [
+        "明确「无注册表接口 ≠ 只能走 compile」：阶段 1 可用模型层直接注入（import mindiesd 替换调用点）先验证接口与数值",
+        "给出两阶段顺序与各自出口条件（阶段 1：接口可行 + 同 seed 数值对拍；阶段 2：真图命中 + kernel diff + 数值核验 + 墙钟过噪声阈值）",
+        "说明为何 API 先行（改动面小 / 失败早暴露 / 先拿到可归因的单点收益与对拍基线）",
+        "给出「停在 API 阶段」的判据（eager 已覆盖热路径、compile 无正收益、输出非逐字节、适配落探针），并强调按证据回退不留半开",
+        "compile 阶段适配动作指向 pattern-dev/references/fusion-enablement-notes.md §4（与该 SKILL 分支 A「两阶段顺序纪律」路由成对）",
+        "不引用别处的绝对耗时/绝对加速比；方向类结论标注「本组合观测」"
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "vLLM-Omni 0.28 里 MiniMax-H3 想压通算暴露但框架没有 comm-stream 掩盖机制，用户已确认要我补齐，从哪下手",
+      "expected_output": "判据：框架该能力**未支持**（无机制/无注入点）⇒ 本技能 §0 分流到**分支 B（补齐开发）**：最小复现缺口（step_trace 未重叠通信证据）→ 形态选择（优先平台注册 + 合入上游，参照 LightX2V #1471 收敛姿势；fork 钉版 / monkey-patch 备选，按 §0 用户确认）→ 按该框架真源（references/vllm-omni-enablement.md 的平台分发 / interface 默认方法）实现 → 验证（输出一致 + 计数契约 + 三层证据，防 no-op）→ 回填 framework-support-matrix 与对应 enablement/-notes（-case.md 已取消，见 README §7）",
+      "files": [
+        "SKILL.md",
+        "references/vllm-omni-enablement.md"
+      ],
+      "expectations": [
+        "先做缺口归属判定（框架自身未支持 → 分支 B / 已有开关 → 分支 A / mindiesd 仓内 → dev-workflow）",
+        "给最小复现缺口证据 + 合入姿势选择（平台注册合入上游优先，fork/monkey 备选）",
+        "指向该框架的真源文件（注入点 / 注册机制 / 代码地图），不另存第二份速查表",
+        "验证含计数契约 + 三层证据，并回填 framework-support-matrix 与框架 enablement 文件"
+      ]
+    },
+    {
+      "id": 14,
+      "prompt": "LightX2V 上想给 H3 加缓存特性但 feature_caching NotImplemented，是先自己开发还是绕道？",
+      "expected_output": "先查 references/framework-support-matrix.md（LightX2V 缓存 ❌）与替代路径：评估结构性补齐成本（缓存框架开发 vs 时间步优化等替代）→ 替代若已够用则绕道（不回填假支持）；确要补齐则回 model-auto-optimization §0 与用户确认策略后按本技能 §2 分支 B 流程开发（注入点 + 合入姿势）；不静默把 monkey-patch 当上游能力宣称",
+      "files": [
+        "references/framework-support-matrix.md"
+      ],
+      "expectations": [
+        "先查 support-matrix 与替代路径（时间步优化），避免盲目开发",
+        "补齐策略需经 model-auto-optimization §0 用户确认",
+        "开发流程引本技能 §2 分支 B（注入点 / 合入姿势 / 回填）",
+        "不把本地补丁（fork / monkey）当框架上游能力宣称"
+      ]
+    },
+    {
+      "id": 15,
+      "prompt": "远端容器里 vllm serve --omni 起不来，报 ImportError: libxcb.so.1，另外权重索引里有几个分片找不到，这算特性使能问题吗？找谁？",
+      "expected_output": "不算——**装库 / 权重属环境安装**：near-miss 判据是「库没装 / 权重不全」而非「框架侧特性没落地」⇒ 走 env-install/references/troubleshooting-env.md §H（X11 库 dnf 安装 / 按 *.safetensors.index.json 核对分片并从 hf-mirror 补下载 / 950PR 不设 MINDIE_SD_FA_TYPE）；修复后如需特性使能与验证再回本技能分支 A",
+      "files": [
+        "SKILL.md"
+      ],
+      "expectations": [
+        "判定为环境安装类（env-install），不套用特性使能流程",
+        "给出 X11 库与权重分片的具体处置（指针到 troubleshooting-env.md §H）",
+        "说明修好环境后特性使能与验证仍回本技能（分支 A）"
+      ]
+    }
+  ]
+}

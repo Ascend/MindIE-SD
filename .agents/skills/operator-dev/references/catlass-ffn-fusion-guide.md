@@ -2,11 +2,12 @@
 
 > 场景：在 MindIE-SD 内把「量化 matmul + 激活(swiglu/gelu) epilogue + 输出 MX 量化」做成
 > 融合算子并在 compile 图真实命中。案例：MiniMax-H3 `mm_swiglu_mxquant`（2026-09 真图 3/3、
-> 位级）与 FLUX/Wan/Qwen `mm_gelu_mxquant`（GraphPatternEntry 真图；站点/收益数字见
-> `mmgelu-flux-wan-qwen-case.md`）。
-> 机制细节不在此重复：pattern/graph-entry 写法 → compilation-dev `graph-pattern-rewrite-guide.md`；
-> ASC 混编/构建/torch custom op → `catlass-kernel-integration.md`；开关治理/载体 → compilation-dev
-> `fusion-enablement-notes.md`。本文给编排与决策（案例细节一律走 case 指针，不重复）。
+> 位级）与 FLUX/Wan/Qwen `mm_gelu_mxquant`（GraphPatternEntry 真图；站点计数/收益排序见
+> pattern-dev `fusion-enablement-notes.md` §3，集成侧细节见 `mindiesd-fusion-notes.md` §7）。
+> 机制细节不在此重复：pattern/graph-entry 写法 → pattern-dev `graph-pattern-rewrite-guide.md`；
+> ASC 混编/构建/torch custom op → `catlass-kernel-integration.md`；开关治理/载体 → pattern-dev
+> `fusion-enablement-notes.md`。本文给编排与决策（案例细节一律走对应 case 归属文件指针：实测记录
+> 在会话产物目录、经验在 `mindiesd-fusion-notes.md`，不重复）。
 
 ## 0. 定位
 
@@ -54,14 +55,14 @@ P4 mindiesd 集成 -> P5 compile 真图使能 -> P6 验证、报告与开关治�
 - 可选 bias（仅模型 bias≠0）：epilogue 在激活前按列加。GM→UB 装载用
   `AscendC::DataCopy(Local, Global, uint32 元素数)`（count=**元素数**非 32B 块），同步用
   **MTE2_V**（DataCopy 是 MTE2；MTE3_V 会竞态）；bias 的 UB 位置（VECIN/VECOUT/VECCALC）
-  以实际编译+对拍为准。API 错用史与"列加没加对"判别法见 case §2。
+  以实际编译+对拍为准。API 错用史与"列加没加对"判别法见 `mindiesd-fusion-notes.md` §7.2。
 
 ## 3. P3 standalone 数值与计时
 
 - 对拍对象 = torch 参考链（同量化输入 → Qmm → 激活 → DxQ），比 fp8 输出与 scale：字节一致率
   98%+/解码 rel≈1e-3 即通过（fp8 量化级）；位级一致是特例（h3 swiglu），别默认要求。
 - 判别"没加/加错列/精度差"：用**常数/ramp bias**（列不敏感）+ 逐列误差统计，别在随机 bias 里
-  猜列错位（fp8 边界翻转会放大随机噪声）——证据与数字见 case §2。
+  猜列错位（fp8 边界翻转会放大随机噪声）——证据与数字见 `mindiesd-fusion-notes.md` §7.2。
 - 计时（同窗同卡）：fused vs 现役链；收敛预期 fused ≈ Qmm 耗时，收益 = 被吸收的小 kernel
   （激活 + 输出 DxQ）及其 HBM 往返。
 
@@ -95,7 +96,7 @@ P4 mindiesd 集成 -> P5 compile 真图使能 -> P6 验证、报告与开关治�
 `mindiesd/compilation/compiliation_config.py::CompilationConfig`（一融合一
 `enable_{scope}_{feature}`，默认 True 需真实命中背书；关闭=置 False 同 flag 复现 AB）。
 禁止 dummy/推理入口独立 env/arg 开关；多载体（graph entry/pattern）共享 flag；
-`MINDIESD_CATLASS_HOME` 等构建开关非运行开关。细则/清单：compilation-dev
+`MINDIESD_CATLASS_HOME` 等构建开关非运行开关。细则/清单：pattern-dev
 `fusion-enablement-notes.md`。
 
 ## 7. 验证、报告与复盘
@@ -108,10 +109,10 @@ P4 mindiesd 集成 -> P5 compile 真图使能 -> P6 验证、报告与开关治�
 
 | 文件 | 加载时机 |
 |------|---------|
-| `mmgelu-flux-wan-qwen-case.md` | P1-P7 实战对照（真实图链/bias=0/装载坑/计数与 AB/命令） |
+| `mindiesd-fusion-notes.md` §7 | P1-P7 实战对照（真实图链/bias=0/装载坑/工程坑；本站案例已并入该节） |
 | `catlass-kernel-integration.md` | P4：ASC 混编/CMake/链接/torch custom op 细节 |
-| `../compilation-dev/references/graph-pattern-rewrite-guide.md` | P5：GraphPatternEntry 四条硬规则与 handler 写法 |
-| `../compilation-dev/references/fusion-enablement-notes.md` | §6 开关治理 R1-R7 与现状清单 |
-| `../compilation-dev/references/pattern-dev-notes.md` §5 | P5/P7：compile 前后 kernel 级收益核验 |
-| `../dummy-run/references/compile-ab-report-template.md` | P7：§C 双表模板 |
+| `../../pattern-dev/references/graph-pattern-rewrite-guide.md` | P5：GraphPatternEntry 四条硬规则与 handler 写法 |
+| `../../pattern-dev/references/fusion-enablement-notes.md` | §1/§2 开关治理 R1-R7 与现状清单；§4 compile 阶段适配动作（阶段 2） |
+| `../../pattern-dev/references/pattern-dev-notes.md` §5 | P5/P7：compile 前后 kernel 级收益核验 |
+| `../../dummy-run/references/compile-ab-report-template.md` | P7：§C 双表模板 |
 | 外部（语义参考）：ops-nn `quant_matmul_activation_quant` docs | P1 公式/布局锚点 |

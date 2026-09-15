@@ -7,7 +7,7 @@
       "expected_output": "按 profiling-collect 流程：SSH（复用连接）→ 前置验证（1 步推理）→ torch_npu.profiler 开启（warmup ≥5 步）→ 运行推理 → 压缩 profile_l1.tar.gz → 回传本地",
       "files": [],
       "expectations": [
-        "给出 collect_profile.py 用法（--host/--user/--container/--script/--warmup-steps）",
+        "给出 collect_profile.py 用法（--host/--user/--container/--script）",
         "提到 warmup 在 profiler 外完成（默认 5 步，编译场景 ≥10）",
         "提到回传 profile_l1.tar.gz 供 profiling-analyze"
       ]

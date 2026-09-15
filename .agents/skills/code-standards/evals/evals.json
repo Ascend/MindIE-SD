@@ -15,23 +15,49 @@
     {
       "id": 2,
       "prompt": "提交前要跑哪些代码质量检查？",
-      "expected_output": "pre-commit run --all-files（ruff-check/ruff-format/codespell/typos/trailing-whitespace 等钩子），Markdown 另跑 markdownlint",
+      "expected_output": "pre-commit run --all-files（默认 stage 的 16 个钩子：ruff-check/ruff-format/codespell/typos/pylint/bandit/clang-format/clang-tidy/gitleaks 等），Markdown 另跑 markdownlint（stages: [manual]，需 --hook-stage manual）",
       "files": [],
       "expectations": [
         "给出 pre-commit run --all-files",
-        "列出主要钩子（ruff、codespell、typos）",
-        "提到 markdownlint 走 manual stage 需显式触发"
+        "列出主要钩子（ruff、codespell、typos、pylint、bandit）",
+        "提到 markdownlint 走 manual stage 需显式触发（不在默认 stage 内）",
+        "不把 no-commit-to-branch 当作本仓钩子（本仓无此钩子）"
       ]
     },
     {
       "id": 3,
       "prompt": "门禁报 avoid-import-method 违规，怎么改？",
-      "expected_output": "把 __import__ 改为 importlib.import_module；同时注意 Ruff UP015 也会覆盖，两处检查都要过",
+      "expected_output": "把 __import__ 改为 importlib.import_module；该条属评审约定——本仓 pre-commit 17 个钩子无对应检查，且与 Ruff UP015 无关（UP015 的真实语义是 redundant-open-modes，即 open(f, \"r\") 简化为 open(f)）",
       "files": [],
       "expectations": [
         "给出 importlib.import_module 正例",
-        "提到与 Ruff UP015 的关系",
+        "说明该规范属评审约定、不由 pre-commit 强制",
+        "指出 UP015 是 redundant-open-modes，与 __import__ 无关（不编造新规则号）",
         "提到 examples/ 目录同样适用"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "本地 ruff 报 E501 Line too long (102 > 100)，但 CI 门禁没报，行长到底按多少写？",
+      "expected_output": "门禁读取的是 pre-commit/pyproject.toml：line-length = 120，且该配置未声明 select，E501（line-too-long）不在 enabled 规则集内 → 门禁不会因超长行失败；100 来自仓库根 pyproject.toml（IDE/手动 ruff），E501 按显示列宽计（CJK 按 2 列）；评审仍按 120 显示列要求排版",
+      "files": [],
+      "expectations": [
+        "指出门禁实际读取 pre-commit/pyproject.toml（不是根 pyproject.toml）",
+        "给出 120 为门禁取值",
+        "说明 E501 在门禁配置下未启用，100 来自根配置/本地",
+        "不要求为满足 100 列去改动未修改的行"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "怎么确认 code-standards 里记的行长、参数上限、pylint 禁用项现在仍然成立？",
+      "expected_output": "按 SKILL.md §5 复核：grep pre-commit/pyproject.toml 中的 line-length/max-args/protected-access；ruff check --config pre-commit/pyproject.toml --show-settings 看生效取值与规则集；pre-commit validate-config + grep '^- id:' 看钩子清单；升级 ruff/pylint/配置后必须重跑，不再复现的条目必须删除",
+      "files": [],
+      "expectations": [
+        "给出针对 pre-commit/pyproject.toml 的 grep 复核命令",
+        "给出 ruff --show-settings 或等效的生效配置复核方式",
+        "提到钩子清单/配置有效性复核（validate-config 或 grep -n '^- id:'）",
+        "说明升级后必须重跑复核、不再复现的条目应删除"
       ]
     }
   ]

@@ -32,11 +32,11 @@
 | 从 PyTorch 代码提取算子任务 | `triton-task-extractor` | 构建标准化任务文件（单/多 case） |
 | 算法草图设计 | `triton-op-designer` | UnifiedSketch DSL，指导代码生成 |
 | 代码生成/迭代修复 | `triton-op-coding` | 生成含 ModelNew 的内核代码 |
-| **性能优化（核心）** | `triton-latency-optimizer` | 31 个优化点严格顺序扫描、单点验证；`references/Index.md` 索引 |
+| **性能优化（核心）** | `triton-latency-optimizer` | 31 个优化点严格顺序扫描、单点验证；索引见**外部仓**（`$CANNBOT_SKILLS_DIR/cannbot-skills/ops/triton-latency-optimizer/references/Index.md`，**非本仓路径、不可按本文件相对解析**）；**本仓的场景索引即本文件** |
 | 瓶颈不明/宣称硬件极限前 | `triton-simulator-optimizer` | msprof op simulator 流水诊断，只采集+诊断 |
-| 精度对齐（MERE/MARE 失败） | `triton-precision-debug` | 五阶隔离法定位 ULP 级差异 |
+| 精度对齐（MERE/MARE 失败） | `triton-precision-debug` | 五阶隔离法定位 ULP 级差异（**本仓无 ULP 级定位工具**：ULP 级精度调试须走该外部 cannbot skill，本仓不另造工具） |
 | 功能/性能验证 | `triton-op-verifier` | verify.py + benchmark.py |
-| 算子特定经验 | `references/operators/adain.md`、`swiglu-quant.md`、`permute-layout-transform.md`、`general-insights.md`、`dimension-merge-large-block.md` | AdaIN/SwiGLU 量化/布局变换等已沉淀案例 |
+| 算子特定经验 | **外部仓** `$CANNBOT_SKILLS_DIR/cannbot-skills/ops/triton-latency-optimizer/references/operators/`（**非本仓路径，不可按本文件相对解析**）：`adain.md`、`swiglu-quant.md`、`permute-layout-transform.md`、`general-insights.md`、`dimension-merge-large-block.md` | AdaIN/SwiGLU 量化/布局变换等已沉淀案例 |
 
 > 本次 AdaLN/SwiGLU/gate 三算子直接命中：`avoid_scalar_lowering.md`
 > （i64 向量算术降级）、`vector_core_partition.md`（多行并行/grid 匹配）、
@@ -88,15 +88,15 @@
 
 | 场景 | 本仓库入口 |
 | --- | --- |
-| **register_replacement pattern 命中≠收益**：kernel diff → 逐 pass AB → R1-R5 根因目录（含"负收益先查 kernel 形态"教训） | `compilation-dev/references/benefit-rootcause-guide.md` |
-| **kernel diff 方法论**：kernel_details.csv 聚合对比、L2-flush bench 必须放计时区外、warm/cold 双档测量 | `compilation-dev/references/benefit-rootcause-guide.md` §2 + `dev-workflow/references/rework-lessons.md` #26 |
-| **模型级验证闭环**（不只看单测）：compute-precision 图验证、叠加 AB、远端 NPU 部署流程 | `dev-workflow/references/rework-lessons.md`、`dummy-run/` |
+| **register_replacement pattern 命中≠收益**：kernel diff → 逐 pass AB → R1-R5 根因目录（含"负收益先查 kernel 形态"教训） | `pattern-dev/references/benefit-rootcause-guide.md` |
+| **kernel diff 方法论**：kernel_details.csv 聚合对比、L2-flush bench 必须放计时区外、warm/cold 双档测量 | 计时口径单点 `benchmark-dev/references/benchmark-guide.md`；聚合对比见 `pattern-dev/references/benefit-rootcause-guide.md` §2 |
+| **模型级验证闭环**（不只看单测）：双层测试与图验证、eager×compile kernel diff、远端 NPU 部署流程 | `pattern-dev/references/test-templates.md`、`pattern-dev/scripts/compare_profiles.py`、`env-install/SKILL.md`、`dummy-run/` |
 | MiniMax-H3 算子上下文（npu_swiglu 语义、表 [3,D] L2 驻留、真实图形态） | `dummy-run/references/minimax-h3-notes.md` §10 |
 | **MindIE-SD/CANN 集成侧经验**：kernel 改动生效性排障、同名内建算子冲突、AscendC API 陷阱、triton 短行地板、w8a8×pattern 冲突、融合收益前置评估 | `operator-dev/references/mindiesd-fusion-notes.md` |
 | **catlass 类外部 kernel 接入工程机制**：单 .so ASC 混编为终态、CMake/ASC 链接与静态运行时、torch custom op C++ 形态、设备/运行时事实、集成侧验证 | `operator-dev/references/catlass-kernel-integration.md` |
-| **只读 catlass 融合算子全链开发**（量化 mm+激活+输出量化）：六段流水线 P1-P7、vendored 头、GraphPatternEntry 真图使能、开关治理 | `operator-dev/references/catlass-ffn-fusion-guide.md`（案例对照：`mmgelu-flux-wan-qwen-case.md`） |
-| CP/多卡通信掩盖（HcclAlltoAllV 缺陷、pad+等分绕过） | `parallelism-strategy/` |
-| MindIE-SD 编译后端（default/Inductor 与 aclgraph 批量下发）与 Copy 消减 | `compilation-dev/`（copy-elimination-guide）+ `aclgraph-dev/` |
+| **只读 catlass 融合算子全链开发**（量化 mm+激活+输出量化）：六段流水线 P1-P7、vendored 头、GraphPatternEntry 真图使能、开关治理 | `operator-dev/references/catlass-ffn-fusion-guide.md`（案例对照：`mindiesd-fusion-notes.md` §7 `mm_gelu_mxquant`） |
+| CP/多卡通信掩盖（HcclAlltoAllV 缺陷、pad+等分绕过） | `dit-parallel-opt/` |
+| MindIE-SD 编译后端（default/Inductor 与 aclgraph 批量下发）与 Copy 消减 | `pattern-dev/`（copy-elimination-guide）+ `aclgraph-dev/` |
 
 ---
 
@@ -109,11 +109,11 @@
     → 形态级优化：gather 融合（表小 L2 驻留时吸收 index_select）
     → swiglu 免 cat（cat 大张量是隐藏成本）
   → 每步 bench（warm/cold 双档）+ 模型级 AB + kernel diff 确认
-结果：AdaLN +0.64ms → -0.45ms；SwiGLU -0.35 → 免 cat 后总 -1.86ms；
-     gate 融合新增 -0.4ms；总 25.96 → 24.10ms（-7.2%）
+结果：AdaLN 由净负转正（并随 i32 + 多行并行继续放大）；SwiGLU 由净正到免 cat 后进一步扩大；
+     gate 融合再增一项净正；三者合并为该轮最大组合收益（本组合观测）
 ```
 
-> 经验要点（详见 `compilation-dev/references/benefit-rootcause-guide.md` §3 R1-R5）：负收益先查 kernel 形态
+> 经验要点（详见 `pattern-dev/references/benefit-rootcause-guide.md` §3 R1-R5）：负收益先查 kernel 形态
 > （流量冗余/融合边界/i64 降级/并行度），不要归咎 triton 本身；隔离
 > bench 热缓存值会高估，必须以模型内 profile device 时间为准。
 

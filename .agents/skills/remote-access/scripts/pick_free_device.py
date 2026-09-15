@@ -15,6 +15,7 @@ Usage as import:
 
 import argparse
 import sys
+
 import paramiko
 
 DEFAULT_HOST = ""

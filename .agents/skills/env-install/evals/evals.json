@@ -16,7 +16,7 @@
     {
       "id": 2,
       "prompt": "Ascend 950PR（x86_64）上要用 vLLM-Omni 托管 Qwen-Image-2512，官方预构建镜像不覆盖，全栈怎么从源码构建安装？",
-      "expected_output": "按 env-install 三方框架全栈安装：950PR/950DT 必须源码构建，按版本配套矩阵（torch 2.11.0+cpu / torch_npu 2.11.0 / vllm 0.26.0 / vllm-ascend releases/v0.26.0rc / vllm-omni main / mindiesd dev）依序执行 Step 2.1 容器预检（含 HCCL ranktable 挂载检查）→ 2.2 torch+torch_npu → 2.3 vllm（先升级 setuptools、跳过 rust）→ 2.4 vllm-ascend → 2.5 vllm-omni（设 VLLM_OMNI_VERSION_OVERRIDE、装完重装回 torch 2.11.0）→ 2.6 mindiesd（triton-ascend==3.2.1）；装完转权重确认/下载，服务启动与验证归 framework-feature-enablement",
+      "expected_output": "按 env-install 三方框架全栈安装：950PR/950DT 必须源码构建，按版本配套矩阵（torch 2.11.0+cpu / torch_npu 2.11.0 / vllm 0.26.0 / vllm-ascend releases/v0.26.0rc / vllm-omni main / mindiesd dev）依序执行 Step 2.1 容器预检（含 HCCL ranktable 挂载检查）→ 2.2 torch+torch_npu → 2.3 vllm（先升级 setuptools、跳过 rust）→ 2.4 vllm-ascend → 2.5 vllm-omni（设 VLLM_OMNI_VERSION_OVERRIDE、装完重装回 torch 2.11.0）→ 2.6 mindiesd（triton-ascend==3.2.1）；装完转权重确认/下载，服务启动与验证归 framework-integration",
       "files": [],
       "expectations": [
         "指出 950PR/950DT 官方预构建镜像不覆盖，必须源码构建全栈（VLLM_TARGET_DEVICE=empty）",
@@ -51,6 +51,34 @@
         "说明 import lightx2v 前必须 export PLATFORM=ascend_npu，ERR99999 是设备初始化路径问题",
         "提到版本配套实测矩阵（torch/torch_npu 2.11、CANN 9.1）与就绪验证命令",
         "说明 LightX2V t2av 权重分区口径（FL2VA 不需要）"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "远端容器要下载 Qwen-Image / Wan2.2 的真实权重，从哪个源下、放到哪个目录？HF 上那个仓库是 gated 的，需要申请吗？",
+      "expected_output": "按 env-install 权重确认与下载 → references/weights-prep.md §2.1/§2.2：**默认 modelscope 优先**（国内可达、免代理；HF gated 仓库在 modelscope 镜像通常免鉴权，如 MiniMaxAI/MiniMax-H3 ↔ MiniMax/MiniMax-H3）——用 `modelscope download {repo} --local_dir {root} --include '{分区}/**'` 直落（`cache_dir` 会产生哈希嵌套目录，不用）；modelscope 无镜像或必须用 HF revision 时才走 HuggingFace（gated 需授权 + token：`hf auth login` / `HF_TOKEN`，或 hf-mirror 镜像）。落位按约定 `{model_weight_dir}/{模型名}/{任务变体}/`（模型根目录直接 serve），并查 §2.2 落位表：H3 已填、Qwen-Image / Wan2.2 相关列标 `待回填` —— 未实测的路径不得推测，须按实测回填；下载后按「权重确认纪律」校验（先确认远端已存在则不重下、无 `.incomplete`、分片齐全/文件总数一致、仓库提供校验和则逐文件核对）",
+      "files": [
+        "references/weights-prep.md"
+      ],
+      "expectations": [
+        "明确默认走 modelscope（含免鉴权理由），HuggingFace/gated 只是次选（需 token 的姿势）",
+        "给出 modelscope 的 --local_dir 直落约定，并说明不用 cache_dir（哈希嵌套目录会让服务路径漂移）",
+        "给出落位约定 {model_weight_dir}/{模型名}/{任务变体}/ 并指向 §2.2 落位表",
+        "对未实测模型（Qwen-Image / Wan2.2 / FLUX）明确标 待回填、不推测路径",
+        "保留下载后校验纪律（先确认已存在、.incomplete 为 0、分片/文件数一致、有校验和则核对）"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "环境刚装完，接下来：怎么起 vllm 服务并切换到 t2va 任务档？LightX2V 用哪个 config_json 档位跑？多卡跑起来每步时长明显变长怎么归因？显存不够该关 CFG 还是开 offload？输出花屏算不算安装问题？这些都在 env-install 里解决吗？",
+      "expected_output": "按 env-install 的边界（止于安装完成：import mindiesd 成功、版本配套就位、权重就位）逐项**转交**，不在本技能展开：服务启动与请求级 task 档位 → framework-integration/references/run-entry-and-request-tiers.md（serve 目标二选一 + extra_params.task）；LightX2V 的 --config_json 档位语义同文件 §2（并行档位形态选择归 dit-parallel-opt）；多卡运行期劣化（SIGKILL 残留态/端口 bind/热降频与 clean-window 口径/拓扑）→ dit-parallel-opt/references/ascend-topology-bandwidth-diag.md §1–§5；显存不足选哪一档（关 CFG / offload / 降分辨率）→ dit-perf-opt/references/resource-fallback-tiers.md，档位报错后的回退姿势 → framework-integration §1.2 与 run-entry §3；输出异常与精度判定（花屏 / NaN / eager vs compiled）→ accuracy-gate（silent-failure-localization.md、equivalence-criteria.md）。env-install 侧只保留安装就绪判据（import/版本配套/权重完整性）与其自身的安装域决策树",
+      "files": [],
+      "expectations": [
+        "明确 env-install 止于安装完成，不承接服务启动 / 请求级档位 / 选档 / 精度判定",
+        "把服务启动与 LightX2V config_json 档位指向 framework-integration 的 run-entry-and-request-tiers.md",
+        "把多卡运行期劣化与 clean-window 口径指向 dit-parallel-opt 的 ascend-topology-bandwidth-diag.md",
+        "把显存不足的降档选择指向 dit-perf-opt resource-fallback-tiers.md，回退姿势仍归 framework-integration",
+        "把输出异常 / 花屏 / eager vs compiled 指向 accuracy-gate，并保留安装就绪判据（import mindiesd、版本配套、权重完整性）"
       ]
     }
   ]

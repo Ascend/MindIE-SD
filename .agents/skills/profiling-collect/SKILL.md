@@ -7,7 +7,7 @@ description: profiling 数据统一采集：远端昇腾采集 NPU 性能数据�
              warmup 在 profiler 外（默认 5 步，compile ≥10）。
              只要用户想"开 profiler/采 profile/拿算子级数据"，自家脚本或 vllm、LightX2V 等框架都先
              用本入口；分析/瓶颈定位/优化选型/并行/基准请求分别属 profiling-analyze、
-             performance-optimization、parallelism-strategy、benchmark-dev，本入口不承接。
+             dit-perf-opt、dit-parallel-opt、benchmark-dev，本入口不承接。
              由 model-auto-optimization 的 S1（融合分析）阶段调用，亦由 profiling-analyze 与 dev-workflow 的
              采集场景指引加载。
 ---
@@ -46,7 +46,7 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 
 nohup torchrun --standalone --nproc_per_node=4 /home/{user}/collect_patch.py \
   --model_cls {框架模型类} --task {任务} --model_path {权重目录} --seed 42 \
-  > {model_dir}/prof.log 2>&1 < /dev/null &
+  > {model_weight_dir}/prof.log 2>&1 < /dev/null &
 ```
 
 回传：远端打包 `ASCEND_PROFILER_OUTPUT` 目录为 tar.gz → 本地解压后直接喂 profiling-analyze。
@@ -57,6 +57,10 @@ nohup torchrun --standalone --nproc_per_node=4 /home/{user}/collect_patch.py \
 - 容器内 `ss -tlnp` 可能查不到 HCCL 端口（走 NPU RoCE 网卡）→ 端口"看似空闲"仍冲突时直接加端口范围
 - Windows 编辑的脚本上传报 `$'\r'` → 先转 LF
 - 远端 `pgrep` 等待不可靠 → 每次只启动一个 run，用日志行数外部轮询，完成后再启下一个
+- 日志含 ANSI 转义 / emoji → grep 或脚本解析前先 `strings` / 专用清洗脚本，否则命中判断失真
+- **容器内 `/tmp` 与宿主 `/tmp` 不是同一目录** → 取产物一律 `docker cp`，勿在宿主同名路径找
+- 单 forward kernel 采集 hook 里直接 `analyse()` 会报「daemon 不可解析」→ **离线用独立进程
+  analyse**（`torch_npu.profiler.profiler.analyse`），勿在采集进程内跑
 
 ### 三方框架分场景采集要点
 
@@ -93,10 +97,32 @@ diffusers 单进程：无需 torchrun，本地脚本直接包装 pipeline 调用
 trace_view.json + step_trace_time.csv）→ 打包回传后喂同一 profiling-analyze 管道
 （analyze_trace.py / compare_traces.py），无需按框架分化。
 
-各框架接入/使能上下文与实测案例参考 framework-feature-enablement 的 references：
-`lightx2v-mindiesd-case.md`（LightX2V 接入完整案例，含采集方法）、`vllm-omni-case.md`
-（vLLM-Omni HTTP 服务使能方法）、`diffsynth-engine-case.md`（DiffSynth-Engine 使能与
-验证），见文末 Reference Files。
+各框架接入/使能上下文与实测案例参考 framework-integration 的 references：
+`lightx2v-enablement.md`（LightX2V 开启方式 + 采集相关坑）、`vllm-omni-enablement.md`
+（vLLM-Omni HTTP 服务使能方法 + 采集 hook 探针）、`cache-dit-enablement.md`（cache-dit × vLLM-Omni
+托管链开启方式）、`diffsynth-engine-enablement.md`（DiffSynth-Engine compile 接入/使能与验证），见文末 Reference Files。
+
+### 运行时集合通信采集（collective shim 法 · 零仓库改动）
+
+需要**通信分布**（哪些阶段、哪些 collective、多少字节）而非 CANN 默认输出时，用运行时 shim：
+
+- **做法**：包装 `torch.distributed` 的 6 个 collective（`all_reduce` / `all_gather` /
+  `all_to_all_single` / `all_to_all` / `broadcast` / `reduce_scatter`），逐 op 记录
+  stage / op / shape / dtype / tensor_bytes / world / step。
+- **阶段锚**：各阶段模型入口 forward（DiT / VAE 的 `forward` / `decode_latent`）；
+  ⚠️ **text encoder 的入口常常是 `encode_ids` / `encode_prompt` 而不是 `forward`**——锚错方法会把
+  该阶段通信落进 other。
+- **钩子时机**：`torch.distributed` 在 `torch` 包导入期间就被加载 ⇒ 独立 meta-finder 拦截不稳；
+  可靠做法 = meta-finder 拦 **`torch` 根导入**，加载完成后强制 `import torch.distributed` 再 wrap；
+  阶段锚可在首个 collective 内**懒安装**（届时框架模型模块已导入）。
+- **输入语义坑**：同 prompt 时 text encoder 输出被缓存（只有首请求有通信）⇒ 要测 encoder 通信必须
+  **每请求不同 prompt**。
+- **字节口径**：`tensor_bytes` = op 的**本 rank 载荷**；`moved~` 为**估算**（a2a/broadcast
+  ≈ ×(w−1)/w、all_reduce ≈ ×2(w−1)/w、all_gather ≈ ×(w−1)），**不是 HCCL 硬件计数器**；
+  rank 对称时整簇移动 ≈ 2×per-rank。
+- **二次验证**：与 `msprof` 的 HCCL 计数器对拍（`--hccl=on`；output 目录须先建、`--rule` 不可与
+  `--export` 同用、导出后查 `hccl.db`）。
+- 方法细节与实测明细见 `dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` §6。
 
 ## Profiler 配置
 
@@ -127,11 +153,11 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 
 Profiling 采集时必须在 profiler 外部完成 warmup，确保分析数据不含 JIT 编译开销：
 
-- Profiler 打开前先执行 **5 步 warmup**（`--warmup-steps` 默认 5，含 `torch.npu.synchronize()`）
+- Profiler 打开前先完成 warmup（口径 **5 步**；含 `torch.npu.synchronize()`）。**warmup 步数由被测脚本/补丁控制，本入口不接管**：自家脚本按其自身默认预热（如 `examples/dummy_run/wan_infer.py`），三方框架补丁用 `WARMUP`/`H3_WARMUP_STEPS` 环境变量（模板默认 5）。
 - Profiler 仅在 warmup 之后开启 **capture ≥5 步** timed steps（自家脚本保守口径；三方框架补丁
   只采 1 步，见下「少步快速采集经验」）
 - MindieSDBackend 编译场景：warmup 步数需同时覆盖 JIT 编译（最多 8 次，建议 ≥10 步）
-- `--warmup-steps` 参数（默认 5）控制 warmup 步数
+- 口径与实现的差异须知：`collect_profile.py` 只透传 `--device_id` / `--profile`（+ `--compile`）给远端脚本，**未透传 warmup 步数**——预热由脚本/补丁侧负责；若需改预热步数，改脚本或补丁的环境变量，而不是采集入口的参数。
 
 > profiling-analyze 会验证 warmup 是否已剔除，未剔除时标注 `WARMUP_NOT_STRIPPED` 异常。
 
@@ -162,7 +188,7 @@ assert output.images[0].size is not None, "Output shape is invalid"
 print(f"Pre-check OK: output shape={output.images[0].size}")
 ```
 
-验证通过后再开启 profiler 采集。验证失败时中止，排查推理问题（参考 framework-feature-enablement）。
+验证通过后再开启 profiler 采集。验证失败时中止，排查推理问题（参考 framework-integration）。
 
 ## 输出产物
 
@@ -180,7 +206,7 @@ print(f"Pre-check OK: output shape={output.images[0].size}")
 ## 数据流向
 
 ```text
-profiling-collect ──→ profiling-analyze ──→ performance-optimization
+profiling-collect ──→ profiling-analyze ──→ dit-perf-opt
        │                        │                        │
    采集数据                 5 层递进分析           选取最优方案
 ```
@@ -200,13 +226,18 @@ profiling-collect ──→ profiling-analyze ──→ performance-optimization
 - 🔧 `scripts/collect_patch_template.py` — 三方框架入口：补丁模板（warmup/rank0/trace handler）
 - 🔗 `../profiling-analyze/SKILL.md` — 下游分析（统一 ASCEND_PROFILER_OUTPUT 输入）
 - 🔗 `../env-install/SKILL.md` / `../remote-access/SKILL.md` — 部署与 SSH 工具
-- 🔗 `../framework-feature-enablement/SKILL.md` — 使能异常时排查推理问题
-- 🔗 `../framework-feature-enablement/references/lightx2v-mindiesd-case.md` — 加载时机:
-  LightX2V 接入/采集前，参考其实测案例与采集方法
-- 🔗 `../framework-feature-enablement/references/vllm-omni-case.md` — 加载时机:
-  vLLM-Omni HTTP 服务采集前，确认 transformer forward 采集点与服务预热姿势
-- 🔗 `../framework-feature-enablement/references/diffsynth-engine-case.md` — 加载时机:
-  DiffSynth-Engine 使能/性能验证时，参考其实测结论
+- 🔗 `../framework-integration/SKILL.md` — 使能异常时排查推理问题
+- 📁 `references/profile-dir-isolation.md` — 加载时机: **并行跑多份采集**（多个 `*_infer.py` 并行 worker）时——`--profile` 默认目录会互相覆盖，须按 模型×配置 隔离输出目录（`--profile-dir` / `DUMMY_PROFILE_DIR`）；自 `dummy-run` 下沉，**该口径的单点在本文件**
+- 🔗 `../framework-integration/references/lightx2v-enablement.md` — 加载时机:
+  LightX2V 接入/采集前，参考其开启方式、采集相关坑与档位方向
+- 🔗 `../framework-integration/references/cache-dit-enablement.md` — 加载时机:
+  cache-dit（框架本体）× vLLM-Omni 托管链采集前，确认自研算子部署顺序与单 rank 单 forward
+  kernel 采集 hook 姿势
+- 🔗 `../framework-integration/references/vllm-omni-enablement.md` — 加载时机:
+  vLLM-Omni HTTP 服务采集前，确认 transformer forward 采集点与服务预热姿势（单 step 采集 hook 见 §5，
+  证据口径与日志判据见 §1.3/§3.6）
+- 🔗 `../framework-integration/references/diffsynth-engine-enablement.md` — 加载时机:
+  DiffSynth-Engine 使能/性能验证时，参考其使能判断与方向结论（§3.4/§5）
 
 ## 维护与更新
 

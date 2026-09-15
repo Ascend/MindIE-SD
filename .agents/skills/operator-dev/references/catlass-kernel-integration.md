@@ -4,11 +4,11 @@
 > 编译期模板、`<<<blockDim, nullptr, stream>>>` 形态）需要在 mindiesd 内**以标准算子形态**
 > 使用（与其他算子同 `libPTAExtensionOPS.so`、同 `torch.ops.mindiesd::*` 注册、编译可选）。
 > 本文覆盖 kernel 接入/构建/C++/设备侧；**接入 compile 图的约束与 compile 前后收益核验见
-> `../compilation-dev/references/pattern-dev-notes.md` §5**（本文件不再重复）。
-> MiniMax-H3 FFN 融合案例收益数字仅作指针：`tmp/mmx_w8a8/mmx_h3_w8a8_ffn_fusion_analysis.md`
-> （§5i/§5j）、`tmp/mmx_w8a8/h3_w8a8_optimization_headroom.md`；同族第二案例
+> `../../pattern-dev/references/pattern-dev-notes.md` §5**（本文件不再重复）。
+> MiniMax-H3 FFN 融合案例收益数字仅作指针：会话产物目录 `{run_results_dir}/`
+> `mmx_h3_w8a8_ffn_fusion_analysis.md`（§5i/§5j）、`h3_w8a8_optimization_headroom.md`；同族第二案例
 > mm_gelu_mxquant（FLUX/Wan/Qwen，含 GraphPatternEntry 真图使能）编排见
-> `catlass-ffn-fusion-guide.md`，细节见 `mmgelu-flux-wan-qwen-case.md`。
+> `catlass-ffn-fusion-guide.md`，集成侧细节见 `mindiesd-fusion-notes.md` §7。
 
 ## 1. 形态决策（先选，避免返工）
 
@@ -95,12 +95,15 @@
    **位级仅当融合前后数值路径完全等价时才成立（h3 mm_swiglu 特例：输入量化与激活路径一致）**；
    一般融合（如 mm_gelu 的 kernel fp32 激活 vs 参考 bf16 路径）为 **fp8 量化级近似**（字节一致
    98%+/rel≈1e-3），验收按量化级容差 + 模型级质量门，勿套"应 0"（判别法见
-   `mmgelu-flux-wan-qwen-case.md` §2）。
+   `mindiesd-fusion-notes.md` §7.2）。**非零差异 ≠ 错误**：latents 对拍出现非零时，须对照该模型
+   已校准的**数值敏感度地板**判定，而不是对照 0——见
+   `../../perf-gate/references/measurement-discipline.md` §3 与
+   `../../accuracy-gate/references/quality-gate.md` V5。
 4. eager/compile 双跑、compile 回归（重编译）排查与 kernel 级收益 diff → 属 compile 侧，
-   见 `../compilation-dev/references/pattern-dev-notes.md` §5（含 MiniMax w8a8 实测数字指针）。
+   见 `../../pattern-dev/references/pattern-dev-notes.md` §5（含 MiniMax w8a8 实测数字指针）。
 
 ## 维护与更新
 
 以下情况按 dev-workflow 复盘更新本文：新的外部 kernel 接入形态/工具链变化、CANN ASC
 链接与 `libascendc_runtime.a` 位置变化、mindiesd 构建流程（setup.py/build_plugin.sh）改动。
-compile 侧结论变化时更新 `../compilation-dev/references/pattern-dev-notes.md` §5。
+compile 侧结论变化时更新 `../../pattern-dev/references/pattern-dev-notes.md` §5。

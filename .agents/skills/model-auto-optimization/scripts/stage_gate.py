@@ -3,7 +3,9 @@
 
 做：解析 run-state.md（见 ../references/run-state.md）的「阶段推进表」→ 校验目标阶段
 状态为 done 且声明的验收证据路径真实存在；close 阶段额外强制声明 overview_report.md /
-detail_report.md（缺任一视为未闭环）。不做：真实运行/耗时/质量判定（那些在能力技能门禁内）。
+detail_report.md（缺任一视为未闭环），并联动 report_lint.py（主表**写法**）+ audit_report.py
+（表**结构**与**数值自洽**）+ evals/scripts/check_profile.py（profile 强校验）。不做：真实运行/耗时/
+质量判定（那些在能力技能门禁内）。
 
 用法：
     python stage_gate.py --stage S0 --run-dir <工作目录>/agentic
@@ -17,7 +19,7 @@ import re
 import sys
 from pathlib import Path
 
-STAGES = ("S0", "S1", "S3", "S4", "S5", "close")
+STAGES = ("S0", "S1", "S3", "S4", "S5", "S6", "close")
 VALID_STATUS = {"done", "in_progress", "blocked"}
 RUN_STATE_NAME = "run-state.md"
 # close 阶段的强制交付双报表（存在性以推进表声明为准，不猜测产物目录）
@@ -51,12 +53,17 @@ def split_evidence(raw: str) -> list[str]:
 
 
 def coverage_checklist_check(text: str) -> list[str]:
-    """close：校验「特性覆盖清单」逐特性判定已收口（无空/无"分析后做"残留）。"""
+    """close：校验「特性覆盖清单」逐特性判定已收口（无空/无"分析后做"残留）。
+
+    「触发判定」列**按表头名定位**（模板见 ../references/run-state.md）——此前按 cells[1]
+    取列，而模板第 2 列是「框架档位」，导致该校验长期空转（校的是恒非空的档位列）。
+    """
     errors: list[str] = []
     m = re.search(r"^##\s*特性覆盖清单.*?$\n(.*?)(?=^##\s|\Z)", text, re.M | re.S)
     if not m:
         errors.append("close: run-state 缺「特性覆盖清单」——闭环前须对固定特性全集逐项判定收口")
         return errors
+    decision_idx: int | None = None
     for line in m.group(1).splitlines():
         s = line.strip()
         if not s.startswith("|"):
@@ -64,9 +71,20 @@ def coverage_checklist_check(text: str) -> list[str]:
         if re.search(r"^\|[\s\-:|]+\|?$", s):  # 表头分隔行
             continue
         cells = [c.strip() for c in s.strip("|").split("|")]
-        if len(cells) < 2 or cells[0] in ("特性", "特性/能力", "特性/实现"):
+        if decision_idx is None:
+            # 表头行：定位「触发判定」列（容忍括注/词序差异）
+            hit = next((i for i, c in enumerate(cells) if "触发判定" in c or "判定" in c), None)
+            if hit is None:
+                errors.append(
+                    "close: 覆盖清单表头未含「触发判定」列，无法校验收口"
+                    "（模板见 references/run-state.md，须含该列）"
+                )
+                return errors
+            decision_idx = hit
             continue
-        decision = cells[1]
+        if len(cells) <= decision_idx:
+            continue
+        decision = cells[decision_idx]
         if not decision or "分析后做" in decision or "未裁决" in decision:
             errors.append(
                 f"close: 覆盖清单「{cells[0]}」判定未收口"
@@ -177,8 +195,8 @@ def main(argv: list[str] | None = None) -> int:
     # close：覆盖清单逐特性判定收口校验（L1 总览收口的机械兜底）
     if args.stage == "close":
         errors += coverage_checklist_check(content)
-        if args.task_id:
-            errors += _run_close_tools(args.task_id, args.run_dir)
+        # 无条件跑（此前以 --task-id 传参为条件，按文档命令执行会静默跳过两个强校验）
+        errors += _run_close_tools(args.run_dir)
 
     for w in warns:
         print(f"[warn] {w}")
@@ -188,10 +206,32 @@ def main(argv: list[str] | None = None) -> int:
     return 1 if errors else 0
 
 
-def _run_close_tools(task_id: str, run_dir: Path) -> list[str]:
-    """close 前置工具：报表结构 lint + profile 强校验（缺工具/失败均记 error）。"""
+def _run_close_tools(run_dir: Path) -> list[str]:
+    """close 前置工具：报表 lint + 表结构/数值审计 + profile 强校验（缺工具/失败均记 error）。
+
+    不接收 task_id：任务隔离校验在 check_row（evidence/ 前缀）内完成，这里只处理产物。
+    """
+    import os
     import subprocess
     import sys
+
+    def run_tool(cmd: list[str]) -> subprocess.CompletedProcess:
+        """跑子工具；两侧都钉 UTF-8，保证中文诊断文本可读、不抛解码异常。
+
+        为什么两侧都要钉：`text=True` 不带 `encoding` 时**父侧按 locale 解码**，而子进程
+        的管道 stdout **也按 locale 编码**——同 locale 时偶然一致，一旦父进程处于 UTF-8
+        模式（`python -X utf8`）或两侧 `PYTHONIOENCODING` 不一致，就会父侧按 UTF-8 解
+        locale 字节：轻则中文乱码，重则 `UnicodeDecodeError`（此时 `r.stdout` 变 None，
+        后面 `r.stdout[-2000:]` 直接 `TypeError` 崩掉整个 close 门禁）。
+        子侧用 `PYTHONIOENCODING`（**只影响 stdio**，不改 `open()` 默认编码，故不改变各工具
+        自身的读写语义）；父侧 `errors="replace"` 兜底，任何字节都能得到可读文本而不抛异常。
+        退出码语义不变（仍是 `returncode`）。
+        """
+        return subprocess.run(
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=120, env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        )
+
     errs: list[str] = []
     here = Path(__file__).resolve().parent
     scripts = here / "report_lint.py"
@@ -219,14 +259,24 @@ def _run_close_tools(task_id: str, run_dir: Path) -> list[str]:
                 detail = p
 
     if overview and scripts.exists():
-        r = subprocess.run([sys.executable, str(scripts), str(overview)],
-                           capture_output=True, text=True, timeout=120)
+        r = run_tool([sys.executable, str(scripts), str(overview)])
         if r.returncode != 0:
             errs.append(f"close: report_lint 失败（{overview.name}）：\n{r.stdout[-2000:]}")
     elif overview:
         errs.append(f"close: report_lint.py 缺失（应随 skills 提供）：{scripts}")
     else:
         errs.append("close: 推进表 close 行未声明 overview_report.md（lint 无法定位报表）")
+
+    # 结构与数值审计（契约 §7/§8）：lint 管"主表写法合规"，审计管"改表后结构是否还渲染得出来、
+    # 每个数字是否与自己表里的分母自洽"（含"锚点缺失须显式报错"与"分母口径"打印）；
+    # 缺工具/非 0 均记 error——lint + 结构审计 + 数值审计三者都干净才算闭环。
+    audit = here / "audit_report.py"
+    if overview and audit.exists():
+        r = run_tool([sys.executable, str(audit), str(overview)])
+        if r.returncode != 0:
+            errs.append(f"close: audit_report 失败（{overview.name}）：\n{r.stdout[-2000:]}")
+    elif overview:
+        errs.append(f"close: audit_report.py 缺失（应随 skills 提供）：{audit}")
 
     # 双报表契约：close 行须同时声明 detail_report.md（report_lint 只 lint overview）
     if not detail:
@@ -237,9 +287,8 @@ def _run_close_tools(task_id: str, run_dir: Path) -> list[str]:
         task_dir = overview.parent
         # model 名从产物目录名推导：runs/{task_id}_{model}_optimization
         model = _model_from_task_dir(task_dir)
-        r = subprocess.run([sys.executable, str(chk), "--model", model,
-                            "--task-dir", str(task_dir)],
-                           capture_output=True, text=True, timeout=120)
+        r = run_tool([sys.executable, str(chk), "--model", model,
+                      "--task-dir", str(task_dir)])
         if r.returncode != 0:
             errs.append(f"close: check_profile 失败：\n{r.stdout[-1500:]}")
     elif overview:

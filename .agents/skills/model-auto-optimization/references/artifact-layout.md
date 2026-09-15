@@ -121,8 +121,8 @@ final_report 面向人读；需要机器可读伴生块时（跨会话交接/归
 > **仓库零数据**：`source_binding` 只存标识与指针（commit/hash/版本/manifest/profile/远端目录）；
 > 帧/媒体/原始 profile/日志等数据只保留在远端 `runs/…` 产物目录，不入 git。
 > claim_limits 语义：`matched_baseline=false` 时 `speedup_claim` 必须为 null（只报绝对值）；
-> `quality_gate_run=false` 时不得宣称质量通过（质量门禁见 performance-optimization
-> `references/quality-gate.md` + 仓库 `evals/`）。
+> `quality_gate_run=false` 时不得宣称质量通过（质量门禁见
+> `accuracy-gate/references/quality-gate.md` + 仓库 `evals/`）。
 
 ## 维护与更新
 

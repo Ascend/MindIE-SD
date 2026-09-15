@@ -1,0 +1,61 @@
+# 量化档位 × 设备代际：选档语义（档位名 ≠ 实际算法）
+
+> **加载时机**：选取/复验量化档位，或解释「同一档位在两台机器上精度与收益都不同」时。
+> **边界**：本文件只承载**选档语义**（哪个代际落到哪个算法、怎么确认、怎么复验）。
+> 量化器的**数值契约**（编码公式 / 舍入 / scale 粒度 / 退化块 / 布局互通）在
+> `../../quantization-dev/references/online-quant-contract.md` 与 `../../quantization-dev/SKILL.md`。
+
+## 1. 核心判据：档位名 ≠ 实际算法
+
+「在线 W8A8」在载体侧只是一个入口，**实际算法由设备代际分派**：
+
+| 设备代际 | 落到的实际算法 | 数值契约归属 |
+|---|---|---|
+| A5（如 950PR） | W8A8-**MXFP8**（e8m0 块尺度 + e4m3 payload） | quantization-dev SKILL §一 |
+| A2 / A3（910B / 910C，含 Duo） | W8A8_**DYNAMIC**（INT8） | quantization-dev SKILL §二 |
+
+推论（选档时必须遵守）：
+
+- 同一句「开 w8a8」在**不同代际落到不同编码公式 / scale 粒度** ⇒ 精度表现与质量变化度
+  **不可跨代际迁移**，也不可与另一档混合比较；
+- 报数 / 归档必须同时写「**设备代际 + 实际算法**」两件，否则读者无法判断结论适用哪套契约；
+- **确认方法**是取证而不是读档位名：看量化节点（`npu_dynamic_mx_quant` 等）的出现与计数
+  （契约见 `online-quant-contract.md` §5）。
+
+## 2. 为什么按设备分派
+
+MX 类格式（块尺度 e8m0 + fp8 payload）是较新代际才提供的量化数据类型；较早代际可用的是
+INT8 动态量化。⇒ 选档的**第一约束是硬件支持的量化类型**，其次才是模型兼容性与负载形态。
+
+## 3. 选档流程（真源外置，不在此复制）
+
+1. 前提：瓶颈点已定位（DiT 计算受限 / MatMul 占比高）——未定位先回编排层；
+2. 查 `docs/zh/features/quantization.md` 对应节（API / 算法名 / 硬件列）——**特性真源**；
+3. 查 `framework-integration/references/framework-support-matrix.md` 的支持状态
+   （框架 × 模型 × 档位的 ✅/🟡/❌）；
+4. 确认目标设备代际 → 由 §1 得到**实际算法**，并记录；
+5. 落地后按本 SKILL Step 4 / Step 5 复验：**"开了 ≠ 生效"**，以图节点/计数证据为准；
+6. 有损档另过三级精度验收（`accuracy-gate`）——只过墙钟不得宣称有损加速。
+
+## 4. 不可迁移性提示（写结论前先看）
+
+- 数值契约与**设备代际**绑定 ⇒ 不跨代际引用（`quantization-dev`）；
+- 支持状态与**框架版本**绑定 ⇒ 只信 support matrix，不信历史结论；
+- 部分代际的 INT8 路径属「实现完毕但需真机复验」（载体侧记录）⇒ 引用前复测，不得当已验证档位；
+- 单点收益随负载形态变化（注意力占比越高、量化占比被稀释）⇒ 收益方向要按负载重测。
+
+## 5. 与其它模块的边界
+
+| 情形 | 去向 |
+|---|---|
+| 量化器编码/舍入/粒度对不上、要逆向契约 | `quantization-dev` |
+| 融合内核里复现量化语义 | `quantization-dev` + `operator-dev` |
+| 量化前移进集合通信的字节账 | `dit-parallel-opt` + `quantization-dev` §四·B |
+| 量化档落地需要新增 pattern / 算子 | `pattern-dev` / `operator-dev` |
+| 框架侧量化开关没使能 / 生效验证 | `framework-integration` |
+| 精度门与阈值 | `accuracy-gate` |
+
+## 维护与更新
+
+设备代际与算法的对应关系、支持状态入口或复验要求变化时更新本文件；
+与 `quantization-dev/references/online-quant-contract.md` §1 的映射表必须保持一致。

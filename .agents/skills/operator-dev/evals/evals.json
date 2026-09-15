@@ -15,7 +15,7 @@
     {
       "id": 2,
       "prompt": "register_replacement pattern 命中了但性能反而变差，怎么查？",
-      "expected_output": "路由到 compilation-dev/references/benefit-rootcause-guide.md：kernel diff → 逐 pass AB → R1-R5 根因目录（先查 kernel 形态：triton codegen 访存效率 vs aclnn 手调 kernel）",
+      "expected_output": "路由到 pattern-dev/references/benefit-rootcause-guide.md：kernel diff → 逐 pass AB → R1-R5 根因目录（先查 kernel 形态：triton codegen 访存效率 vs aclnn 手调 kernel）",
       "files": [],
       "expectations": [
         "引用 benefit-rootcause-guide.md 的 R1-R5 根因目录",

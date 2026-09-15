@@ -3,7 +3,7 @@ name: dummy-run
 compatibility: diffusers, transformers, modelscope（离线 config 可选）, NPU 设备
 description: 简化模型代码的快速验证载体：用随机权重/精简代码在 NPU 上快速验证模型架构
              兼容性、算子先接入与融合可行性（产物：架构兼容性 + 基线/快验输出），无需真实权重。
-             已部署模型的框架侧验证见 framework-feature-enablement，环境安装见 env-install。
+             已部署模型的框架侧验证见 framework-integration，环境安装见 env-install。
              当用户需要确认模型能否跑通、评估参数量与显存占用、或在算子接入/融合优化前
              做快速验证时使用此 skill；即使用户只提到"帮我试试这个模型能不能跑"而未说
              dummy run，也应触发。由 model-auto-optimization 的 S0/S1（融合/编译快验）阶段调用，
@@ -30,7 +30,7 @@ description: 简化模型代码的快速验证载体：用随机权重/精简代
 
 ```text
 ├─ 无真实权重 → §A Dummy Run 构造验证
-└─ 有真实权重 → framework-feature-enablement 框架侧验证（需 env-install 完成）
+└─ 有真实权重 → framework-integration 框架侧验证（需 env-install 完成）
 ```
 
 > 环境部署问题见 env-install。NPU OOM 处理见 env-install 故障排查。
@@ -133,42 +133,49 @@ Verification:             PASSED
 
 | 模式 | 结论 |
 |---|---|
-| bf16 compile | 全面小幅加速（-7% ~ -22%） |
-| w8a8 compile | 修复量化层 guard bug 后全面加速（-7% ~ -30%），且优于 bf16 compile |
+| bf16 compile | 全面小幅加速（各站点同向、幅度相近；本组合观测） |
+| w8a8 compile | 修复量化层 guard bug 后全面加速，收益幅度大于 bf16 compile（本组合观测） |
+
+**质量变化度**（dummy 口径，同 seed latents 对拍）：`w8a8` 档下 compile vs eager **位级一致
+（mean_rel=0.0）** → compile 档在该口径下**不引入质量变化**（本组合观测；读数见归档
+`{run_results_dir}/archive/minimax-h3-notes-numbers.md` §13）。**量化档 vs bf16 的质量变化度
+未在该 dummy 口径下测**——按真实权重档读：视频档 **SSIM 降幅约三成**、图像档 **约 0.01
+（质量基本无感）**，且**不可跨任务类型迁移**（见 `../accuracy-gate/references/quality-gate.md`
+「校准经验」与 `../framework-integration/references/vllm-omni-enablement.md` §3）。
 
 **diffusers 0.40 全模型 wall（w8a8，A310-50，三模型并行一模型一卡，2026-09-06）**：
 
-| 模型 | eager (ms) | compile (ms) | 收益 |
-|---|---:|---:|---:|
-| Wan2.2-T2V (dummy) | 951.49 | 841.76 | **-11.5%** |
-| MiniMax-H3 (dummy，FFN 融合 compile pattern 承载) | 21.77 | 15.65 | **-28.1%** |
-| FLUX.1-dev (dummy) | 17.2 | 15.14 | **-12.0%** |
+| 模型 | 结论 |
+|---|---|
+| Wan2.2-T2V (dummy) | compile 全面小幅加速（本组合观测） |
+| MiniMax-H3 (dummy，FFN 融合 compile pattern 承载) | 三模型里加速幅度最大（本组合观测） |
+| FLUX.1-dev (dummy) | compile 全面小幅加速（本组合观测） |
 
 > 并行复现口径：每模型独立卡、eager→compile 同卡先后；`PYTHONPATH=/tmp/dif040_site`
 > （diffusers 0.40 隔离安装，MiniMax-H3 需要）；qwen_image 在 0.40 broken 排除。
 > MiniMax-H3 的 mm_swiglu_mxquant 融合**不接入 eager**（dummy 无 layer-route patch），
 > 由 compile 侧 pattern `enable_minimax_h3_ffn_fusion`（默认 True）在图编译期命中承载；
 > kernel 级 §C 双报表见 `references/compile-ab-report-template.md` §3
-> 与 `tmp/mmx_w8a8/dummy_ab_reports_mmx_fusion_default_on.md`。
+> 与 `{run_results_dir}/dummy_ab_reports_mmx_fusion_default_on.md`。
 >
-> ⚠️ 历史教训：w8a8/mxfp8 compile 曾比 eager 慢 11~229×，根因是量化层 forward 内就地改
-> `self.bias` dtype 导致 Dynamo guard 每次失败重编译（~1.8s/次）。已修复（局部变量）。
-> 遇到 compile 远慢于 eager 先跑 `TORCH_LOGS=recompiles`，详见 compilation-dev §4。
+> ⚠️ 历史教训：w8a8/mxfp8 compile 曾比 eager 慢数个数量级（最坏达两个数量级），根因是量化层 forward 内就地改
+> `self.bias` dtype 导致 Dynamo guard 每次失败重编译（单次重编译为秒级开销）。已修复（局部变量）。
+> 遇到 compile 远慢于 eager 先跑 `TORCH_LOGS=recompiles`，详见 pattern-dev §4。
 
 ---
 
 ## 算子先接入 / 融合可行性快验
 
-在真实权重接入（framework-feature-enablement）与融合优化（model-auto-optimization S1 融合）之前，用本载体做两件事：
+在真实权重接入（framework-integration）与融合优化（model-auto-optimization S1 融合）之前，用本载体做两件事：
 
-- **算子先接入**：把候选 mindiesd 单算子（如 npu_rms_norm / npu_rotary_mul）先替换进 dummy 的模型代码，验证调用姿势与输出一致性（配合 framework-feature-enablement 的运行时接入姿势）；
+- **算子先接入**：把候选 mindiesd 单算子（如 npu_rms_norm / npu_rotary_mul）先替换进 dummy 的模型代码，验证调用姿势与输出一致性（配合 framework-integration 的运行时接入姿势）；
 - **融合可行性快验**：pattern 命中基于图结构、不依赖层数与权重 → 在 dummy（num_layers=2）上开启 compile/开关，用图 dump 看候选 pattern 是否命中实际图形态；命中后再到真实权重做 kernel diff + 墙钟复验（profiling-collect → profiling-analyze）。
 
 快验清单（每步留证据）：
 
 1. 小层数 dummy 跑通（eager 基线）
-2. 开启目标使能项（runtime 替换或 compile，姿势见 framework-feature-enablement）
-3. 图命中确认（graph.print_readable / pattern dump；需新增 pattern 时指向 compilation-dev）
+2. 开启目标使能项（runtime 替换或 compile，姿势见 framework-integration）
+3. 图命中确认（graph.print_readable / pattern dump；需新增 pattern 时指向 pattern-dev）
 4. 输出一致性（dummy 内前后对比）
 5. 结论（可行/不可行 + 原因）交 S1 融合决策；不可行不进入真实权重试错
 
@@ -186,51 +193,47 @@ Verification:             PASSED
 
 ## §B' 并行跑多个 dummy 模型（profile 目录隔离）
 
-同一 host 并行验证多个模型（一模型一 NPU 卡）时，**必须隔离 profiling 输出目录**：
-所有 `*_infer.py` 的 `--profile` 默认写 `./profile_l1`（CWD 内），并行 worker 共用会互相
-覆盖 → kernel_details 缺失/损坏（实测：并行采集 wan csv=None、flux 被拖慢）。
+同一 host 并行验证多个模型（一模型一 NPU 卡）时**必须隔离 profiling 输出目录**：所有 `*_infer.py` 的
+`--profile` 默认写 `./profile_l1`（CWD 内），并行 worker 共用会互相覆盖 → kernel_details 缺失/损坏。
 
-- 每个 `*_infer.py` 支持 `--profile-dir {dir}`，或环境变量 `DUMMY_PROFILE_DIR={dir}`
-  （模块级 `PROFILE_DIR = os.environ.get("DUMMY_PROFILE_DIR", "./profile_l1")`）。
-- 并行时按 模型×配置 给独立目录：`--profile-dir {work}/profiles/{model}_{eager|compile}`；
-  采集完再按模型回传/聚合，不要事后从共享 `profile_l1` 猜归属。
-- 纯 wall timed（无 `--profile`）不写 profile_l1，无此冲突；kernel 级报表才需要隔离目录。
-- 例：`examples/dummy_run/README.md` CLI 表已登记 `--profile-dir`；远端并行 AB 脚本
-  （allmodels_ab.py / mmx_v040_ab.py）按此隔离。qwen_image dummy 在 diffusers 0.40
-  broken（`QwenEmbedRope._compute_video_freqs` 对 str device 调 `.type`），0.40 全模型
-  AB 排除之。
+- **本技能提供载体参数**：`--profile-dir {dir}` 或环境变量 `DUMMY_PROFILE_DIR={dir}`
+  （模块级 `PROFILE_DIR = os.environ.get("DUMMY_PROFILE_DIR", "./profile_l1")`）；并行时按
+  模型×配置 给独立目录（`--profile-dir {work}/profiles/{model}_{eager|compile}`），采集完按模型
+  回传/聚合，不要事后从共享 `profile_l1` 猜归属。纯 wall timed（无 `--profile`）无此冲突。
+- **口径与判别单点**（为什么必须隔离、如何判"是被覆盖而不是没采到"）见
+  `../profiling-collect/references/profile-dir-isolation.md`——**本处不复制**。
+- 版本绑定坑（用前先复核，不复现即删除）：qwen_image dummy 在 diffusers 0.40 broken
+  （`QwenEmbedRope._compute_video_freqs` 对 str device 调 `.type`）⇒ 该版本下全模型 AB 排除之。
 
 ---
 
 ## §C compile vs 非 compile（eager）对比：强制双报表
 
-**强制要求（每次比较 compile 与非 compile 的收益时必须产出，缺一不可）**：
-同一配置分别跑 eager（非 compile）与 compile（开启 MindieSDBackend + 融合开关），各采一份
-profile（各 `*_infer.py` 用 `--profile`；并行时加 `--profile-dir` 隔离，见 §B'），在结果中附
-下列两张表（markdown 表格）。口径统一如下：
+**强制要求**：每次比较 compile 与非 compile 的收益**必须产出两张表**（overview 按融合算子一行 /
+detail 按 block 执行序列行，骨架见下），缺一不可。同配置分别跑 eager 与 compile（开启
+MindieSDBackend + 融合开关），各采一份 profile（并行时加 `--profile-dir` 隔离，见 §B'）。
 
-- **数据窗口**：eager/compile 各一次 transformer timed + 对应 `kernel_details.csv` 聚合；
-  "融合"指 compile 相对 eager 引入的融合单元（pattern/自研算子：npu_rms_norm、npu_rotary_mul、
-  gather_scale_shift、gather_residual_gate、swiglu/FFN fused op、mm_swiglu_mxquant 等）；
-  非融合的 GEMM/FA 不拆行，只出现在 detail 的执行序里作为"未融合"行。
-- **Block 耗时基准**（两张表的收益分母）：**非 compile（eager）下该模型 transformer block
-  单步耗时**（= eager timed transformer / 步数；无法拆步时用 eager transformer timed）。
-  相对收益一律 = (融合后耗时 − 融合前耗时) / eager block 耗时 × 100%。
-- **未实现填充**：尚未实现的融合单元行——"是否完成融合=N（预期可融合：{依据}）"、
-  "融合后耗时=融合前耗时"、"收益=0"（预期值不得虚填）。
-- 站点→kernel 归属需结合图 dump（融合后节点）与 eager 分解链做映射，避免仅按 kernel 名猜测。
+- **报表口径单点**（数据窗口、**收益分母 = eager block 单步耗时**、未实现行的填充规则、
+  站点→kernel 归属方法、fail-closed 记帐）见
+  `../profiling-analyze/references/eager-vs-compile-report.md`——**本处不复制口径**。
+- **质量变化度（总览表末列）**：与 `../model-auto-optimization/references/overview-report.md` §4/§7
+  的「质量数据」列同源；dummy 口径 = **同 seed latents 对拍**（见 §A6）。它是**整体 compile vs eager**
+  口径、**非逐算子拆分** ⇒ 总览表各行本列通常取同一份对拍结论（逐行相同属正常）；
+  **只写相对变化度，不写绝对分值**（纪律见 `.agents/README.md` §7）；未测行标 ❓ + 待测计划，
+  **禁止静默留空或用「—」**；明细表不重复登记本列。
+- **模板与示例**：`references/compile-ab-report-template.md`（含 MiniMax-H3 w8a8 fusion-on 填写示例）。
 
 ### 总览表（overview：按融合算子一行）
 
-| 序号 | 融合算子 | 融合前组成（eager 被替代链） | 是否完成融合 | 融合前耗时 | 融合后耗时 | 相对融合前 block 耗时的收益 |
-|---:|---|---|:--:|---:|---:|---:|
-| 1 | npu_rms_norm | Pow+Mean+Rsqrt+Mul/Add 分解链 | Y | 1.20ms | 0.46ms | -3.3% |
+| 序号 | 融合算子 | 融合前组成（eager 被替代链） | 是否完成融合 | 融合前耗时 | 融合后耗时 | 相对融合前 block 耗时的收益 | 质量变化度 |
+|---:|---|---|:--:|---:|---:|---:|---|
+| 1 | npu_rms_norm | Pow+Mean+Rsqrt+Mul/Add 分解链 | Y | ms 量级（分解链聚合） | 降至约四成量级 | 占 block 个位数百分比量级（本组合观测） | 位级一致（变化度 0） |
 
 ### 明细表（detail：按 block 算子执行序列行）
 
 | 算子归属（Attn/FFN(MoE)） | 融合后所属算子 | 未融合时的组成 | 融合后性能 | 未融合性能 | 相对未 compile block 耗时的收益 |
 |---|---|---|---:|---:|---:|
-| FFN | mm_swiglu_mxquant（mm+swiglu+mxquant） | DxQ→Qmm([S,2F])→swiglu→DxQ→Qmm(out) | 1.85ms | 2.03ms | -1.1% |
+| FFN | mm_swiglu_mxquant（mm+swiglu+mxquant） | DxQ→Qmm([S,2F])→swiglu→DxQ→Qmm(out) | 降至约九成量级 | ms 量级（未融合链聚合） | 占 block 约 1% 量级（本组合观测） |
 
 - detail 的"融合后所属算子"：该行在 compile 图里的算子名（原算子未变则填原名）；
   "未融合时的组成"：eager 下该站点由哪些 kernel 组成（原算子未变则填单一算子名）。
@@ -239,9 +242,9 @@ profile（各 `*_infer.py` 用 `--profile`；并行时加 `--profile-dir` 隔离
 
 示例（MiniMax-H3 w8a8 fusion-on 口径）见 `references/compile-ab-report-template.md`；
 融合收益归属分析（GEMM 不变、小 kernel 融合）见
-`../compilation-dev/references/pattern-dev-notes.md` §5。
+`../pattern-dev/references/pattern-dev-notes.md` §5。
 0.40 全模型双报表（wan/flux kernel 级 + minimax wall/kernel）：
-`tmp/mmx_w8a8/dummy_ab_reports_v040.md`、`dummy_ab_reports_mmx_fusion_default_on.md`。
+`{run_results_dir}/dummy_ab_reports_v040.md`、`dummy_ab_reports_mmx_fusion_default_on.md`。
 
 ## Reference Files
 

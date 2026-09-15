@@ -98,7 +98,7 @@ pip install -e . --no-deps --no-build-isolation
 python -c "import vllm_ascend"   # 期望打印 "Platform plugin ascend is activated"
 ```
 
-已知坑（与 framework-feature-enablement 的 `references/troubleshooting-vllm-omni.md` §E1 同源）：
+已知坑（与 `../../framework-integration/references/troubleshooting-vllm-omni.md` §E1 同源）：
 
 - **CRLF**：Windows 打包上传的 `.sh` 报 `$'\r': command not found` →
   先 `find . -name '*.sh' -exec sed -i 's/\r$//' {} +`
@@ -143,7 +143,7 @@ python -c "import mindiesd; print(mindiesd.attention_forward, mindiesd.fast_laye
 > 否则 `python setup.py build_py` 报 `No such file or directory: .../MindIE-SD/build`。
 
 安装完成的下一步：真实权重确认/下载（见 SKILL.md「权重确认与下载」与 references/weights-prep.md）。服务启动（`vllm serve`、curl 验证、特性叠加）
-属 framework-feature-enablement，本技能止于安装。
+属 framework-integration，本技能止于安装。
 
 ## 维护与更新
 

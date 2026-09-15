@@ -85,7 +85,9 @@ def main(argv: list[str] | None = None) -> int:
     elif not feats:
         is_baseline = bool(cfg.get("run", {}).get("baseline_run", False))
         if is_baseline:
-            print("[info] features.enable=[] 且 baseline_run=true：按基线档处理（无 seam 可查，跳过）")
+            print(
+                "[info] features.enable=[] 且 baseline_run=true：按基线档处理（无 seam 可查，跳过）"
+            )
         else:
             errors.append(
                 "features.enable 为空且非基线档（非基线档必须声明 enable 列表；"

@@ -12,7 +12,8 @@
 用法：
     python seam_check.py --features quant_w8a8_dynamic,sparse_rf_v2,cache_dit
     python seam_check.py --features cache_dit,cache_attention --model minimax-h3-vllm-omni
-    python seam_check.py --required-combos quant_w8a8_mxfp8,sparse_rf_v2,cache_dit --model minimax-h3-vllm-omni
+    python seam_check.py --required-combos quant_w8a8_mxfp8,sparse_rf_v2,cache_dit """ \
+    """--model minimax-h3-vllm-omni
         # S4-2 组合前：由已过 gate 的单点 frontier 推导 [MUST] 必测组合清单
         # （跨族两两 + 三元 Cache+量化+稀疏，行内带 seam 预判）
 退出码：0 = 无 error（可有 warning）；1 = 存在 error。
@@ -88,7 +89,10 @@ def required_combos(single_ids: list[str], model: str | None, decl: dict) -> lis
     """
     by_id = {f["id"]: f for f in decl["features"]}
     family_map = {"quant": "量化", "sparse": "稀疏", "cache": "Cache"}
-    get_family = lambda i: by_id[i]["family"]
+
+    def get_family(fid):
+        return by_id[fid]["family"]
+
     present = {}
     for i in single_ids:
         if i not in by_id:

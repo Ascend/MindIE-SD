@@ -36,11 +36,11 @@
     },
     {
       "prompt": "有个新融合算子，想在花大价钱跑真实权重前先确认它在框架图里能不能命中，有更快的验证办法吗？",
-      "expected_output": "用 dummy-run 的简化模型（随机权重、num_layers=2）做融合可行性快验：pattern 命中基于图结构、不依赖层数与权重；按 SKILL.md「算子先接入 / 融合可行性快验」清单走（eager 基线 → 开启使能项，姿势见 framework-feature-enablement → 图命中确认 graph.print_readable → 输出一致性 → 结论交 S1 融合决策），命中后再到真实权重做 kernel diff + 墙钟复验（profiling-collect → profiling-analyze）",
+      "expected_output": "用 dummy-run 的简化模型（随机权重、num_layers=2）做融合可行性快验：pattern 命中基于图结构、不依赖层数与权重；按 SKILL.md「算子先接入 / 融合可行性快验」清单走（eager 基线 → 开启使能项，姿势见 framework-integration → 图命中确认 graph.print_readable → 输出一致性 → 结论交 S1 融合决策），命中后再到真实权重做 kernel diff + 墙钟复验（profiling-collect → profiling-analyze）",
       "files": [],
       "expectations": [
         "提到 dummy-run 可先于真实权重验证 pattern 命中（不依赖层数/权重）",
-        "提到使能姿势与图命中确认（framework-feature-enablement / 图打印）",
+        "提到使能姿势与图命中确认（framework-integration / 图打印）",
         "提到命中后仍需真实权重 kernel diff/墙钟复验"
       ],
       "id": 4

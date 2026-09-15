@@ -10,13 +10,13 @@
     H3_WARMUP_STEPS   profiler 外 warmup 步数（默认 5；compile/首次 JIT 场景建议 >=10）
                       —— 少步快速采集：设 1 = 1 步预热 + 采第 2 步 1 步（eager / 图已编译稳定
                       的重复采集；单步即代表算子形态与 kernel 序，kernel diff 用 1 步数据足够）。
-                      ⚠️ 少 step 是 profiling 手段非优化目标：只改采集配置、采完还原；
+                      注意：少 step 是 profiling 手段非优化目标：只改采集配置、采完还原；
                       compile/首次 JIT 必须预热覆盖编译（>=10）后再采，勿用 1 步预热。
     H3_CANN_PROF_OUT  CANN 输出目录（默认 <model_dir>/h3_cann_prof）
 
 产出：<PROF_OUT>/localhost.localdomain_*_ascend_pt/ASCEND_PROFILER_OUTPUT/
       kernel_details.csv + trace_view.json + step_trace_time.csv
-      （performance-analysis 的 analyze_trace.py / compare_traces.py 直接消费）
+      （profiling-analyze 的 analyze_trace.py / compare_traces.py 直接消费）
 """
 import os
 
@@ -29,9 +29,11 @@ os.environ.setdefault("PYTORCH_NPU_ALLOC_CONF", "expandable_segments:True")
 PROF_OUT = os.environ.get("H3_CANN_PROF_OUT", "<model_dir>/h3_cann_prof")
 WARMUP = int(os.environ.get("H3_WARMUP_STEPS", "5"))
 
-import torch
-import torch.distributed as dist
-import torch_npu
+# 这三行必须留在上面的 os.environ.setdefault 之后：NPU 侧环境变量需在 torch/torch_npu
+# 初始化前生效，提前 import 会改变执行顺序，故就地抑制 E402。
+import torch  # noqa: E402
+import torch.distributed as dist  # noqa: E402
+import torch_npu  # noqa: E402
 
 # ── 框架适配区 ────────────────────────────────────────────────
 # 把下面两行替换为实际框架的顶层推理类与方法：
@@ -64,7 +66,7 @@ def _make_patch():
                 record_shapes=True,
                 profile_memory=False,
                 on_trace_ready=handler,
-            ) as prof:
+            ) as _prof:
                 out = _orig(self, *args, **kwargs)
                 torch.npu.synchronize()
             print(f"[CANN] profiled step {n}; output in {PROF_OUT}", flush=True)

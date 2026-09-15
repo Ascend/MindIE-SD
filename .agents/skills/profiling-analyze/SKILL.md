@@ -6,8 +6,8 @@ description: 对 profiling 数据（kernel_details.csv / trace_view.json / step_
              瓶颈诊断、算子执行序、可融合候选与 P0-P2 方向建议。输入统一来自 profiling-collect。
              只要用户有 profiling
              产出并问"为什么慢/瓶颈在哪/优化前后差多少/往哪个方向"，都用本技能；采集走
-             profiling-collect，方案选档走 performance-optimization，实现/并行/基准走
-             compilation-dev/parallelism-strategy/benchmark-dev——本技能只做诊断与方向。
+             profiling-collect，方案选档走 dit-perf-opt，实现/并行/基准走
+             pattern-dev/dit-parallel-opt/benchmark-dev——本技能只做诊断与方向。
              由 model-auto-optimization 的 S1（融合分析）/S3（并行）阶段调用，亦由 dev-workflow 的分析阶段指引加载。
 ---
 
@@ -40,7 +40,7 @@ Layer 3: 三层递进分析（Host Bound → 通信掩盖 → 融合机会，分
     ↓
 Layer 4: 算子明细（占比 >1%）
     ↓
-Layer 5: 优化建议（P0-P2 优先级 + 引用 mindiesd-features.md）
+Layer 5: 优化建议（P0-P2 优先级 + 引用 docs/zh/features 对应节）
 ```
 
 ---
@@ -91,7 +91,7 @@ DiT: xx ms (xx%)  |  VAE: xx ms (xx%)
 
 对每个阶段独立做三层分析：
 
-> 三层判断的启发式明细以 `references/heuristics.md` 为唯一真相源（正文保留判断主链）；通信掩盖相关方案见 parallelism-strategy（本仓），而非外部 hccl-test。
+> 三层判断的启发式明细以 `references/heuristics.md` 为唯一真相源（正文保留判断主链）；通信掩盖相关方案见 dit-parallel-opt（本仓），而非外部 hccl-test。
 
 #### Layer 3a: Host Bound 分析
 
@@ -124,7 +124,7 @@ Anomaly 标签（参照 ascend-profiling-anomaly）：
 #### 快捷判别：先排除 torch.compile 重编译，再归因 kernel
 
 当 `wall_ms / kernel_sum_ms >> 10`（kernel 总耗时只占墙钟个位数百分比）、`Wait Time` 合计接近
-wall、且出现**单个超大设备空闲间隙**（如 1.8s 里 99% 空闲）时，优先怀疑 **Dynamo guard 失败导致
+wall、且出现**单个超大设备空闲间隙**（如整个墙钟里几乎全程空闲）时，优先怀疑 **Dynamo guard 失败导致
 每次调用重编译**，而不是 kernel 慢。典型根因：算子层 forward 内就地修改模块状态（如把 bias 从
 bf16 改 fp32）使 guard 不稳定。
 
@@ -134,9 +134,9 @@ TORCH_LOGS=recompiles python {infer}.py --compile ... 2>&1 | grep -E "Recompilin
 # 输出形如: tensor '..._buffers['bias']' dtype mismatch. expected BFloat16, actual Float
 ```
 
-重编译一次 ≈ Dynamo trace + Inductor codegen + triton JIT（~1.8s），会让 compile 比 eager 慢
-10~200×。修复（forward 用局部变量、不 mutate 模块状态）后 compile 恢复应有的收益。
-详见 compilation-dev/references/pattern-dev-notes.md §4 与 dev-workflow/references/rework-lessons.md。
+重编译一次 ≈ Dynamo trace + Inductor codegen + triton JIT（秒级开销），会让 compile 比 eager 慢
+一到两个数量级。修复（forward 用局部变量、不 mutate 模块状态）后 compile 恢复应有的收益。
+详见 pattern-dev/references/pattern-dev-notes.md §4（模块状态就地变更类问题）与 pattern-dev/references/mismatch-catalog.md（7 类 mismatch）。
 
 #### Layer 3b: 通信掩盖分析（多卡）
 
@@ -180,6 +180,8 @@ Exposed Ratio = 未与计算重叠的通信耗时 / 通信总耗时
 | FlashAttention + MatMul | Attn → proj MatMul | ~5-10% |
 | Conv2D + GroupNorm | CNN → GN（VAE 专有） | ~10-15% |
 
+> ⚠️ 上表「预期收益」为业内通用启发式量级指引（非本仓实测值、非承诺），只用于排序与取舍；明细见 `references/heuristics.md`。
+>
 > 当无明显精确匹配的融合模式时，标注相似度：**high / medium / low**
 >
 > - **high**: kernel 序列模式、source location、TP context 高度一致
@@ -199,25 +201,26 @@ Exposed Ratio = 未与计算重叠的通信耗时 / 通信总耗时
 
 每条建议固定格式：优先级 | 发现 | 优化方向 | 引用
 
-分析仅给出**优化方向**，具体方案（API/算法/参数选择）由 performance-optimization 确定。
+分析仅给出**优化方向**，具体方案（API/算法/参数选择）由 dit-perf-opt 确定
+（特性真源 `docs/zh/features/*`；支持状态 `framework-integration/references/framework-support-matrix.md`）。
 
 建议触发规则：
 
 | Layer 2/3 发现 | 阈值 | 优化方向 | 引用 |
 |---------|:--:|------|------|
-| DiT, MatMul 占比高 | >50% | MatMul 量化 | mindiesd-features.md §MatMul量化 |
-| DiT, FA 占比高 | >30% | Attention 优化（量化+稀疏） | mindiesd-features.md §Attention优化 |
-| DiT, Vector 占比高 | >20% | 编译融合 | mindiesd-features.md §编译路径优化 |
-| DiT, Comm exposed | >30% | 通信掩盖 | mindiesd-features.md §通信掩盖 |
-| VAE, MatMul 占比高 | >30% | ACLGraph 加速 | mindiesd-features.md §编译路径优化 |
+| DiT, MatMul 占比高 | >50% | MatMul 量化 | docs/zh/features/quantization.md §Linear量化 |
+| DiT, FA 占比高 | >30% | Attention 优化（量化+稀疏） | docs/zh/features/quantization.md §FA量化 + sparse.md |
+| DiT, Vector 占比高 | >20% | 编译融合 | docs/zh/features/compilation.md §Pattern 融合 |
+| DiT, Comm exposed | >30% | 通信掩盖 | docs/zh/features/parallelism.md |
+| VAE, MatMul 占比高 | >30% | ACLGraph 加速 | docs/zh/features/compilation.md §ACLGraph 加速 |
 | VAE, Conv2D 连续 | — | VAE 融合（通用） | 需自行实现 |
 | Host Bound 高 | >20% | re-profile with with_stack=true | — |
-| MindIE-SD Pattern 命中 | — | 开启对应 CompilationConfig 开关 | mindiesd-features.md §编译路径优化 |
+| MindIE-SD Pattern 命中 | — | 开启对应 CompilationConfig 开关 | docs/zh/features/compilation.md §Pattern 融合 |
 
 优先级规则：
 
 - **P0** — MindIE-SD Pattern 命中，有开关可直接启用
-- **P1** — 算子分类触发建议，有 mindiesd-features.md 对应方向
+- **P1** — 算子分类触发建议，有 `docs/zh/features/*` 对应方向
 - **P2** — 通用融合建议或数据质量建议，需自行实现/验证
 
 > 建议结构同样遵循分阶段原则：DiT 和 VAE 各自的建议分开输出。
@@ -234,6 +237,7 @@ Exposed Ratio = 未与计算重叠的通信耗时 / 通信总耗时
 - `references/heuristics.md` — 加载时机: 判断优化方向时
 - `references/performance-analysis-methodology.md` — 加载时机: 多卡统计口径（固定 rank0/p50）、收益三层证据与同窗口同卡组对比基准时
 - `references/analysis-flow.md` — 加载时机: 需要端到端分析流程时
+- `references/eager-vs-compile-report.md` — 加载时机: 需要出 **compile vs eager 收益对比的双报表**（聚合口径、收益分母、站点→kernel 归属、未实现行填充规则、fail-closed 记帐）时——自 `dummy-run` 下沉，**该口径的单点在本文件**
 
 ## 维护与更新
 

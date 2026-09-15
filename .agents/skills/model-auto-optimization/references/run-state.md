@@ -46,7 +46,7 @@ method-baseline catalog / search_space 状态与 cannbot 探索 dashboard 的候
 - **框架档位列**：每特性/能力标 framework×模型组合下的档位——`已支持`（直接用）/
   `待配置`（能力实体已具备、差接线，如"量化有支持但缺 mxfp8 型 w8a8"）/ `待开发`（无支持需
   完整实现）/ `上界`（预留，定义待人工填写）——图例与判例见
-  `framework-feature-enablement/references/framework-support-matrix.md` §〇。
+  `framework-integration/references/framework-support-matrix.md` §〇。
 - **执行排序**：`已支持 / 待配置` 先做（零开发或接线即可）；`待开发` 先估成本并经 §0 补齐策略
   用户确认再投入；`上界` 只作天花板诊断不宣称（预留空间，语义后续填写）。
 - **范围**：固定特性全集（`kernel融合` / `并行` / `Cache` / `量化({修饰符})` / `稀疏` /
@@ -61,7 +61,7 @@ method-baseline catalog / search_space 状态与 cannbot 探索 dashboard 的候
 | 特性/能力 | 框架档位 | 触发判定 | 理由/证据 | round/阶段 |
 |-----------|----------|----------|-----------|------------|
 | kernel融合(API 接入) | 已支持 | 做 | rope/rms 注册表替换（S1） | S1 |
-| 量化(w8a8·mxfp8) | 待配置 | 做 | 能力在 mindiesd 已具备，框架差接线（case §11 P1） | S4 |
+| 量化(w8a8·mxfp8) | 待配置 | 做 | 能力在 mindiesd 已具备，框架差接线（`lightx2v-enablement.md` §3.4 + matrix「跨框架待补充能力清单」P1） | S4 |
 | Cache | 待开发 | 分析后做 | 框架无消费且无现成接线，需开发（成本待估） | S4 |
 | 稀疏(rf_v2) | 已支持(vLLM)/待配置(L1) | 分析后做 | 图像无 2D 路径待核 | S4 |
 | {候选特性} | 上界（预留） | — | 天花板定义待人工填写 | — |
@@ -75,7 +75,7 @@ method-baseline catalog / search_space 状态与 cannbot 探索 dashboard 的候
 ## 任务与口径
 - 目标/验收: <无损/有损档位、目标加速、质量门与时间盒>
 - 基线口径: <同拓扑同卡组 baseline / manifest 指针>
-- 缺口补齐策略: <开关使能 / framework-extension-dev / fork-monkey / 绕过 / 仅记录>（§0 确认结论）
+- 缺口补齐策略: <开关使能 / framework-integration / fork-monkey / 绕过 / 仅记录>（§0 确认结论）
 
 ## 阶段推进表
 <!-- stage_gate.py 解析：阶段 | 状态(done/in_progress/blocked) | 验收证据路径(逗号分隔,相对本文件目录) | 备注 -->
@@ -117,6 +117,10 @@ method-baseline catalog / search_space 状态与 cannbot 探索 dashboard 的候
 - 每阶段收尾：编排者更新推进表（status=done + 验收证据路径）→ 跑
   `python scripts/stage_gate.py --stage {Sn} --task-id {task_id} --run-dir {工作目录}/agentic`
   → error=0 才进入下一阶段或宣称闭环；未过不得推进、不得宣称完成。
+- **阶段清单**：S0 / S1 / S3 / S4 / S5 / **S6（VAE + host，非 DiT 段）** / close。
+- **S6 是条件进入**：由阶段账判定 `非DiT-解码段` / `非DiT-host段` 占比 **≥10%**（口径见
+  `bottleneck-labels.md`，**须带步数档**）；未达门限时该行状态写 `skipped` 并在备注写理由 ——
+  **`skipped` 是合法登记，不是缺失**；闭环时覆盖清单须无未裁决项（`skipped` 行本身须有理由）。
 - 验收证据路径相对 run-state.md 所在目录解析；`<…>` 占位路径跳过存在性校验（仅提示）。
 - **证据须属本任务（task_id 校验，强制）**：`evidence/` 下声明的证据路径必须含当前 task_id
   前缀（`evidence/{task_id}/...`）；stage_gate 校验——证据落 `evidence/` 但缺 task_id 前缀或
@@ -179,7 +183,7 @@ S5 训练感知候选等
   单点 frontier，迭代表须含 [MUST] 行（两两全测 + 三元 `Cache+量化+稀疏`），行首标 `[MUST]`，
   先于自由候选执行；[MUST] 行状态只允许 已测（retain/reject + gate 证据）或 豁免（原因 +
   证据指针），**禁止「未裁决」进入 close**；确未测者必须转豁免并写明阻断（模板与豁免语义见
-  performance-optimization/references/combination-search.md「必测组合覆盖集」）——预算记录同时
+  dit-perf-opt/references/combination-search.md「必测组合覆盖集」）——预算记录同时
   注明 `必测集: 已裁决=M/N`，未测必测行不得当作"预算耗尽未尝试"收尾。
 - 每轮裁决即时回写（与推进表同纪律）；进入下一阶段前，本阶段迭代表已含每候选的
   gate 证据与裁决。

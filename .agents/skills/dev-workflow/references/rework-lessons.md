@@ -1,6 +1,12 @@
-# 返工教训
+# 返工教训（dev-workflow 侧：流程与纪律）
 
-> **目录** · 1. 拒绝未实现功能的前置配置 · 2. 最小必要改动原则 · 3. 独立任务必须实际并行执行 · 4. 非代码仓内容不入库 · 5. PLAN.md 未随任务变更同步更新 · 6. triton vs triton-ascend 包名混淆 · 7. pip install -e . 新增文件未被索引 · 8. SSH 连接重复创建 · 9. dummy_run 门禁违规综合教训 · 10. Markdown 代码块未指定语言触发 MD040 · 11. 嵌套 Shell 引号转义失败 · 12. Profiling 结果回传与 GBK 编码 · 13. 通用分析脚本纳入 Skills · 14. meta→to_empty 构造后未注册 buffer · 15. CRLF→LF 转换破坏二进制文件 · 16. 远端 model 模块名冲突 · 17. Gated Model 配置下载 · 18. expandable_segments 池锁定误判 OOM · 19. 多模型 CLI 参数不一致 · 20. 首次部署未检查远端文件完整性 · 21. 过度抽象 · 22. 未请求的额外功能 · 23. Pattern 单元测试通过但全模型不命中 · 24. register_replacement 无法处理 get_attr · 25. Inductor freeze 不识别自定义 NPU ops · 26. 编译开销定位方法 · 27. 打包排除 build 目录误删源码脚本 · 28. 权重分片缺失未对照 index.json 预检 · 29. vllm-omni 源码包缺 .git 导致版本非法 · 30. pip 依赖解析降级 torch 后未复原 · 31. 容器缺 HCCL ranktable 导致多卡失败 · 32. 第三方 wheel 文件名重命名破坏 pip 解析 · 33. 量化层 forward 内就地修改模块状态 → compile 每次重编译 · 34. 先诊断再下结论：性能劣化勿直接归因 kernel · 35. 远程实验脚本与多卡工具纪律（2026-09 实测） · 36. npu-smi Health=OK ≠ 卡组功能可用：组验证必须实测每步时长（2026-09 实测） · 37. 质量门禁口径混淆 → 误判特性「质量平台」数月（2026-09 实证纠错）
+> **定位（本批拆分后）**：本文件只留**与具体领域无关的 dev 流程 / 纪律 / 工具使用教训**（§1–§5、§13 一类），
+> 以及**指向 L3 真源的索引**。**领域知识已按 `.agents/README.md` §7 的落位四分类外迁**到各能力技能，
+> 本文件对已外迁条目只保留**指针存根**（**编号不变**，`§N` 锚点仍可用，外部引用不会悬空）；
+> **实测数字一律出库**（归档于会话产物目录 `{run_results_dir}/archive/`），外迁只搬**判据与流程**。
+>
+> **改前先看 §39「索引」**：它逐条给出归属（**留** / **已迁到 `路径`** / **已出库**）。
+> 编号 **14–22** 的内容已删除、编号保留不复用。
 
 以下问题均在 MindIE-SD 开发中实际发生并导致返工。
 
@@ -56,378 +62,237 @@
 - 任务粒度变化（如合并/拆分）同步刷新
 - PLAN.md 内容必须与代码仓实际状态一致
 
-## 6. triton vs triton-ascend 包名混淆
+## 6. triton vs triton-ascend 包名混淆（**留**：已是指针）
 
-详见 [ascend-ops.md](ascend-ops.md)。
+详见 [ascend-ops.md](ascend-ops.md)——含**复核方法**（`pip show triton-ascend` + `triton.runtime.driver.active`），
+换 triton / CANN 版本后**先复核再套用**绕行。
 
-## 7. pip install -e . 新增文件未被索引
+## 7. `pip install -e .` 新增文件未被索引（**已迁 `env-install`**）
 
-**问题**：首次部署后新增的 `.py` 文件存在于远端磁盘，但 import 报 `ModuleNotFoundError`。
+**判据与处置单点**在 `../../env-install/SKILL.md`「编译原理与何时重装」+ 故障排查表
+（`ModuleNotFoundError: mindiesd` → 重新 `python setup.py build_py && pip install -e .`）；
+安装域决策树见 `../../env-install/references/troubleshooting-env.md` §A。
 
-**根因**：`pip install -e .` 在首次安装时扫描包目录并建立索引，后续新增的文件不会自动加入。
+## 8. SSH 连接重复创建（**已迁 `remote-access`**）
 
-**规则**：
+**判据与处置单点**在 `../../remote-access/SKILL.md`「连接复用原则」+「文件传输」
+（单连接复用、`;`/`&&` 串联减少 login shell、增量传输不逐个 `sftp.stat`；
+远端 `MaxStartups` 限制与症状见同技能「故障排查」表）。
 
-- 新增 Python 文件后，必须重新执行 `pip install -e .` 让 editable install 重新扫描
-- 部署脚本的 `build_cmd` 中 `pip install -e .` 应在文件传输之后执行
+## 9. 嵌套 Shell 引号转义失败（**已迁 `remote-access`**）
 
-## 8. SSH 连接重复创建
+**判据与处置单点**在 `../../remote-access/SKILL.md`「嵌套 shell 引号」+「上传同步纪律」
+（复杂逻辑一律写 `.py` / `.sh` 上传后远端执行；必须内联时用 `shlex.quote` 或 base64 传递）。
+本文件不复述反例代码。
 
-**问题**：多个独立脚本各自 `ssh.connect()` 新建 TCP/TLS 连接，加上 `sftp.stat` 逐个文件远端比对，以及独立的 `docker exec` 启动 bash login shell，累计产生大量无效等待。
+## 10. Markdown 代码块未指定语言触发 MD040 门禁失败（**留**）
 
-**规则**：
+**规则**（格式细则与门禁配置单点在 `markdown-lint` skill，本文件只留流程）：
 
-- 所有远端操作（传输 + 编译 + 测试）合并为一个脚本，全程复用同一个 `ssh` 对象和 `sftp` 会话
-- `docker exec` 命令用 `;` 串联，减少 login shell 初始化次数
-- 仅传输本次变更文件，不做全量 `sftp.stat` 比对
-
-```python
-# 正例：长连接复用
-ssh = paramiko.SSHClient()
-ssh.connect(HOST, ...)
-sftp = ssh.open_sftp()
-for f in CHANGED_FILES:
-    sftp.putfo(...)
-sftp.close()
-_run(ssh, "docker exec ... pip install -e .")
-_run(ssh, "docker exec ... pytest tests/... -v")
-ssh.close()
-
-# 反例：每个操作独立 connect → 3 次连接，共浪费 6-15s
-```
-
-## 11. `examples/dummy_run` 门禁 11 项违规综合教训
-
-**问题**：`examples/dummy_run/` 首次提交通过了 markdownlint 检查（门禁仅报 MD040），但后续完整门禁扫描报出 11 项违规，涉及代码风格、异常处理、参数设计等多方面。
-
-**规则**（详见 `code-standards` skill）：
-
-| 违规类型 | 规则 | 修复方式 |
-|----------|------|----------|
-| `avoid-import-method` | 禁止 `__import__()` | 使用模块级 `import` 或 `importlib.import_module()` |
-| `avoid-using-exit` | 禁止在函数内 `sys.exit()` | 改为 `raise RuntimeError(...)` |
-| `full-path-executable` | 禁止裸命令名 | 使用 `shutil.which()` 解析全路径 |
-| `bare-except-pass` | 禁止无日志的 `except: pass` | 至少 `logger.debug(...)` |
-| `too-many-arguments` | 参数 ≤ 5 | 移除调用方未使用的参数 / 合并 / 提取配置对象 |
-| `comment-out-code` | 禁止注释掉的代码行 | 直接删除，或改为描述性注释 |
-| `function-order` | 类方法排序 | 私有方法集中放在公共方法之后 |
-| `duplicate-string` | 禁止重复字符串字面量 | 提取为类级/模块级常量 |
-
-**关键认知**：
-
-- `examples/` 目录与 `mindiesd/` 源目录受同一套门禁规则约束，不可放松标准
-- 完整门禁扫描可能分阶段执行（先 markdownlint，后代码检查），首次通过不代表完全通过
-- 提交前应全面运行门禁检查，不应依赖阶段性通过结果
-
-## 10. Markdown 代码块未指定语言触发 MD040 门禁失败
-
-**问题**：`examples/dummy_run/README.md` 中 3 处围栏代码块未指定语言标记（` ``` ` 裸写），CI markdownlint MD040 检查未通过。
-
-**规则**：
-
-- 所有围栏代码块必须指定语言或内容类型（`text`/`bash`/`python`/`shell`/`yaml`/`json`/`markdown` 等）
-- 目录树、终端输出、日志等非可执行内容使用 `text`
+- 所有围栏代码块必须指定语言或内容类型（`text`/`bash`/`python`/`shell`/`yaml`/`json`/`markdown` 等）；
+  目录树、终端输出、日志等非可执行内容用 `text`
 - 提交前自检：`pre-commit run markdownlint --files {changed_file}.md`
-- 详细规范见 `markdown-lint` skill
 
 ````markdown
-<!-- 正例 -->
- ```shell
- npu-smi info -l
- ```
+<!-- 正例：围栏后带语言标记 -->
+```shell
+npu-smi info -l
+```
 
- ```text
- examples/
- ├── a.py
- └── b.py
- ```
+```text
+examples/
+├── a.py
+└── b.py
+```
 
-<!-- 反例 -->
- ```
- examples/
- ├── a.py
- └── b.py
- ```
+<!-- 反例：裸围栏（无语言标记，触发 MD040） -->
+```
+examples/
+├── a.py
+└── b.py
+```
 ````
 
-## 9. 嵌套 Shell 引号转义失败
+## 11. `examples/dummy_run` 门禁违规（**留**：门禁纪律；规则表已迁 `code-standards`）
 
-**问题**：通过 paramiko `exec_command` 执行多层嵌套命令（Windows PowerShell → SSH → docker exec → bash -lc → python -c）时，内层 Python 代码中的 `%`、`$`、双引号被外层 shell 逐层转义，导致语法错误或输出静默丢弃。
+**问题**：文件先通过了阶段性检查（门禁仅报 MD040 / 仅跑 markdownlint），完整门禁扫描时才暴露
+代码风格、异常处理、参数设计等多类违规。
 
-具体来说，`$` 被 PowerShell 和 bash 各展开一次，`%` 被 bash printf-style 解释，" 的嵌套层次难以追踪。
+**规则**（每条规则的**定义、对应钩子与复核方法**均在
+`../../code-standards/references/gate-check-rules.md`，本文件不再罗列规则表）：
 
-**规则**：
+- `examples/` 目录与 `mindiesd/` 源目录受**同一套门禁规则**约束，不可放松标准
+- 完整门禁扫描可能**分阶段执行**（先 markdownlint，后代码检查）——**首次通过不代表完全通过**
+- 提交前应**全面**运行门禁检查，不依赖阶段性通过结果
 
-- 避免 `docker exec ... python -c "..."` 嵌套引号。改用 SFTP 上传 `.py` 脚本文件后远端执行：
+## 12. 远端日志回传与本地终端编码（**已迁 `remote-access`**）
 
-  ```python
-  sftp.putfo(io.BytesIO(script.encode()), "/path/to/remote.py")
-  _run(ssh, "docker exec container python3 /path/to/remote.py")
-  ```
+**判据与处置单点**在 `../../remote-access/SKILL.md`「长任务三段式」（`sys.stdout.reconfigure(encoding="utf-8",
+errors="replace")` 后再打印远端日志；远端任务不受影响但轮询/后处理会中断）。
+跨平台编码的通用注意事项另见本目录 `cross-platform.md`。
 
-- 如需传递少量参数，使用 `sys.argv` 或环境变量，不在 shell 命令行中拼接 Python 代码。
-- 示例反例（4 层嵌套转义失败）：
+## 13. 通用分析脚本纳入 Skills（**留**）
 
-  ```python
-  cmd = 'docker exec %s bash -lc "python3 -c \'import torch_npu; ...\'"'
-  ```
-
-  正例（SFTP 上传）：
-
-  ```python
-  script = "import torch_npu\nfor i in range(8):\n    print(...)"
-  sftp.putfo(BytesIO(script.encode()), "/tmp/check.py")
-  _run(ssh, "docker exec container python3 /tmp/check.py")
-  ```
-
-## 12. Profiling 结果回传与 GBK 编码
-
-**问题**：远端 CANN Profiler 日志含 non-ASCII 字符，Windows GBK 终端 `print()` 输出报 `UnicodeEncodeError`。
+**问题**：通用性强的脚本（参数化 IP/容器/密码，支持任意 output 格式）曾被当作一次性临时脚本。
 
 **规则**：
 
-- paramiko `exec_command` 返回的 stdout/stderr 统一以 UTF-8 解码（`errors="replace"`）
-- 打印前用 `str.encode("utf-8", errors="replace").decode("utf-8", errors="replace")` 二次清洗
-- 远端 profiling 日志不逐行打印到本地终端，改为保存到文件后 cat 前 N 行
-
-## 13. 通用分析脚本纳入 Skills
-
-**问题**：最初计划将 `deploy_and_profile.py` 和 `analyze_trace.py` 作为临时脚本。
-但两个脚本的通用性强（参数化 IP/容器/密码，支持任意 ASCEND_PROFILER_OUTPUT 格式），
-应作为可复用能力沉淀。
-
-**规则**：
-
-- 通用分析/部署脚本归入 skills 目录（`scripts/` 子目录），不作为一次性临时脚本
-- 代码仓内容仅限 `examples/dummy_run/` 示例本身，不包含 profiling 产出的数据和报告
+- 通用分析 / 部署脚本归入技能的 `{skill}/scripts/` 子目录，不作为一次性临时脚本
+- 代码仓内容仅限 `examples/dummy_run/` 示例本身，**不含 profiling 产出的数据与报告**
 - 脚本参数化程度应支持不同环境复用
 
-## 23. Pattern 单元测试通过但全模型不命中
+## 23. Pattern 单元测试通过但全模型不命中（**已迁 `pattern-dev`**）
 
-**问题**：单元测试 model 使用 functional API（`weight` 作为函数输入，FX graph 中为 `placeholder` 节点），
-全模型使用 `nn.Module`（`self.weight` 为 `get_attr` 节点），测试通过但全模型 graph 中 pattern 匹配静默失败。
+**判据与处置单点**在 `../../pattern-dev/SKILL.md` Phase 4/5 出口纪律 +
+`../../pattern-dev/references/mismatch-catalog.md`（类型 7：`placeholder` vs `get_attr`）+
+`../../pattern-dev/references/test-templates.md`（单测 model 必须与全模型图结构一致）。
 
-**规则**：
+## 24. `nn.Module` 权重（get_attr 形态）的 pattern 表达（**已迁 `pattern-dev`**）
 
-- 单元测试 model 的 graph 结构必须与全模型完全一致，包括参数来源方式（functional vs modular）
-- 单元测试通过是 pattern 验证的必要条件，但不是充分条件
-- 如果 pattern 涉及 `nn.Module` 的参数（weight/bias），必须用全模型 profiling + kernel diff 做最终验证
-- 全模型验证方法：采集 eager + compile profiling → `kernel_details.csv` diff → 确认融合 kernel 出现
+**判据与处置单点**在 `../../pattern-dev/SKILL.md` Phase 2 路径表 +
+`../../pattern-dev/references/mismatch-catalog.md` 类型 7 +
+`../../pattern-dev/references/graph-pattern-rewrite-guide.md`：
+weight 来自模块参数时把它收进 `inputs()` / `pattern()` / `replacement()` 参数（freeze 前窗口命中），
+**禁止**手写 FX graph traversal pass。
 
-## 24. `nn.Module` 权重（get_attr 形态）的 pattern 表达（历史：曾误判为需自定义 Graph Pass）
+## 25. （已废弃）自定义 Graph Pass 的 freeze 时序坑（**已迁 `pattern-dev`**，仅留档）
 
-**问题**（历史教训，2026-09 前）：曾认为 `torch._inductor.pattern_matcher.register_replacement`
-要求 pattern 所有参数在 traced graph 中为 `placeholder` 节点，而全模型中 `nn.Module` 的
-weight/bias 是 `get_attr` 节点，两者 node 类型不同 → 静默跳过（无错误日志，match count 不变），
-于是走了"手写自定义 graph traversal pass"方案（已废弃）。
+> ⛔ 自定义 FX graph traversal pass 已在 `../../pattern-dev/SKILL.md` Phase 2 **明令禁止并删除**
+> （`custom-graph-pass-guide.md` 已退役，`git rm`）——本条只是"**为什么禁止**"的记录，**不得再按此实现**。
+> 历史根因（`freeze()` 的 `node_copy` 遇未注册 NPU 自定义 op 报 `KeyError`）见上述 SKILL 的 ⛔ 段。
 
-**现状更正（torch 2.11）**：`nn.Module` 权重在 freeze 前仍是 placeholder，**把 weight 收进
-`inputs()` + `pattern()/replacement()` 参数即可用 register_replacement 命中**（参考
-`compilation-dev` skill 与 `patterns/rms_norm_pattern.py`），**不需要也不允许自定义 Graph Pass**。
+## 26. 编译开销定位方法（**已迁 `pattern-dev` / `profiling-analyze`**）
 
-**规则**：
+**判据与处置单点**在 `../../pattern-dev/SKILL.md` Phase 6「Kernel 级 diff 验证」+
+`../../pattern-dev/scripts/compare_profiles.py`（kernel 对比**唯一入口**）+
+`../../pattern-dev/references/copy-elimination-guide.md`（Copy 类专有读法：同名 Copy 本体耗时差与
+新增 Copy 的前后相邻 kernel）。归因顺序（先排除重编译，再归因 kernel）见 §34。
 
-- 创建 pattern 前先判断目标算子是否使用了 `nn.Module` 的参数
-- 若 weight 来自模块参数，把 weight 作为 pattern/replacement 的输入参数（meta tensor）表达，
-  freeze 前窗口命中——**禁止手写 FX graph traversal pass（该方案已废弃删除）**
-- pattern 中间夹动态 shape 节点 → 走 GraphPatternEntry（`compilation-dev` skill
-  `references/graph-pattern-rewrite-guide.md`）
+## 27. 打包排除 `build` 目录误删源码脚本（**已迁 `env-install`**）
 
-**判据**（kernel diff 中确认）：
+**判据与处置单点**在 `../../env-install/SKILL.md`「部署脚本」节（排除规则只排除编译产物，
+**不排除源码 `build/` 本身**）；症状（`build/*.sh` 与第三方 patch 目录一并消失）见同技能故障排查表。
 
-- 全模型中 RMSNorm 的 weight 收进 pattern 输入后融合 kernel 出现 → register_replacement 命中
-- 全模型中 GELU 无 learnable parameters → `register_replacement` 匹配成功
-- 全模型中 RoPE 的 `apply_rotary_emb` 使用 `slice_scatter` 两阶段复制 → 与现有 `chunk/stack/flatten` 模式不匹配
+## 28. 权重分片缺失未对照 `index.json` 预检（**已迁 `env-install`**）
 
-## 25. （已废弃）自定义 Graph Pass 的 freeze 时序坑 —— 方案已禁止，仅留档
+**判据与处置单点**在 `../../env-install/references/weights-prep.md` §5 +
+`../../env-install/references/troubleshooting-env.md` §H（**不能只数分片个数**，必须对照
+`*.safetensors.index.json` 的 `weight_map` 逐分片核对；缺失分片补下载前先确认远端是否已存在）。
 
-> ⛔ 自定义 FX graph traversal pass 已在 compilation-dev 明令禁止并删除
-> （`custom-graph-pass-guide.md`），本条仅作为"为什么禁止"的历史留档，**不得再按此实现**。
+## 29. vllm-omni 源码包缺 `.git` 导致版本非法（**已迁 `env-install`**）
 
-**历史问题**：曾用自定义 graph pass 插入 `npu_rms_norm` 等非 aten op 节点，
-在 `torch._inductor.freezing.freeze()` 的 `node_copy` 过程中 Crash（`KeyError: npu_rms_norm`）。
+**判据与处置单点**在 `../../env-install/references/vllm-omni-build.md` Step 2.5
+（`setuptools_scm` 无 `.git` 时返回 `dev`，拼 `+npu` 得非法版本 → 设 `VLLM_OMNI_VERSION_OVERRIDE`）。
 
-**根因**：`freeze()` 内部的图拷贝期望所有目标函数都在 Inductor 的 env dict 中注册。
-NPU 自定义 op（`torch.ops.npu.*`）不在该 dict 中 → `node_copy` 失败。
+## 30. pip 依赖解析降级 torch 后未复原（**已迁 `env-install`**）
 
-**结论**：该路径已废弃——正确做法是把 weight 收进 register_replacement 双参数 pattern
-（freeze 前命中），或走 GraphPatternEntry；不要再写 `_rewrite_*_to_fused` 手写遍历方法。
-
-## 26. 编译开销定位方法
-
-**问题**：compile 推理比 eager 慢 9%（Wan2.2: 7000ms vs 7624ms），无法从推理时间差异定位原因。
-
-**方法**（kernel 级 diff 分析法）：
-
-1. 分别在 eager 和 compile 模式下执行 profiling：
-
-   ```bash
-   python wan_infer.py --profile                    # eager
-   python wan_infer.py --compile --profile          # compile
-   ```
-
-2. 从 `ASCEND_PROFILER_OUTPUT/kernel_details.csv` 中按 kernel 名称聚合耗时
-
-3. 对同名 kernel 计算 `compile_time - eager_time`，按差值绝对值排序
-
-4. 定位开销来源：
-   - `ViewCopy` 569ms → 1137ms (+568ms, +100%) ← 最大开销源
-   - `TensorMove` 0 → 40ms（新增）
-   - `StridedSliceCopy` 0 → 25ms（新增）
-   - RMSNorm 融合节省约 9ms（Pow+Mean → RmsNorm）
-
-5. 确认 Custom Pattern 生效：搜索 compile 独有的 `RmsNorm` kernel（16ms）
-
-## 27. 打包排除 build 目录误删源码脚本
-
-**问题**：用 tar 打包上传 vllm-ascend / MindIE-SD 源码时，EXCLUDE 列表包含 `build` 目录
-（本意排除编译产物），但 **vllm-ascend 的 patch 目录**（`csrc/cmake/third_party/build/modules/patch/`）
-和 **MindIE-SD 的构建脚本目录**（`build/*.sh`）都含 `build` 路径段，被一并排除。
-后果：vllm-ascend 编译报 `protobuf_25.1_change_version.patch: No such file or directory`；
-mindiesd 报 `No such file or directory: .../MindIE-SD/build`。
-
-**规则**：
-
-- 不要用 `in ('build', ...)` 匹配任意路径段，用精确路径或白名单
-
-## 28. 权重分片缺失未对照 index.json 预检
-
-**问题**：vllm serve 启动到权重加载时报
-`ValueError: ... weights were not initialized from checkpoint`，列出几百个未加载权重。
-根因是 `transformer/` 下**缺少分片 00001**（`diffusion_pytorch_model-00001-of-00009.safetensors`），
-但 00002-00009 都在，目录看似"完整"。
-
-**规则**：
-
-- 不能只看目录里有多少个分片，必须对照 `*.safetensors.index.json` 的 `weight_map` 逐分片核对
-- 缺失分片补下载：`https://hf-mirror.com/{org}/{model}/resolve/main/transformer/{缺失分片名}`
-
-## 29. vllm-omni 源码包缺 .git 导致版本非法
-
-**问题**：tar 打包排除 `.git` 后，vllm-omni `setup.py` 的 `get_version()`（setuptools_scm）
-返回 `dev`，NPU 模式再拼 `+npu` 得到非法版本 `dev+npu`，
-pip 报 `packaging.version.InvalidVersion`，metadata 生成失败。
-
-**规则**：
-
-- 源码安装时设 `export VLLM_OMNI_VERSION_OVERRIDE=0.26.0`（与目标 vllm 版本一致）
-
-## 30. pip 依赖解析降级 torch 后未复原
-
-**问题**：安装 vllm-omni 时 pip 按 vllm-ascend/vllm-omni 的 `requirements.txt`
-（旧 pin `torch==2.10.0` / `torchaudio==2.10.0`）把 torch 从 2.11.0 **降级到 2.10.0**，
-导致 torch_npu 2.11.0 报 `torch-npu requires torch==2.11.0+cpu`，NPU 后端加载失败。
-
-**规则**：
-
-- 后装组件用 `--no-deps` 或装完后**立即复核版本**（`python -c "import torch; print(torch.__version__)"`）
-- 不以 vllm-ascend/omni 的 requirements.txt 旧 pin 为准
-- 一次确认全栈版本（torch/torch_npu/vllm/vllm-ascend/vllm-omni）
-
-## 31. 容器缺 HCCL ranktable 导致多卡失败
-
-**问题**：vllm serve 多卡启动时，`--tensor-parallel-size 8` 的 worker 初始化报
-`hcclCommInitRootInfoConfig error code is 4` / `Config_Error_Ranktable(EI0014)`。
-根因：容器只挂载了 `/usr/local/Ascend/driver/lib64` 和 `version.info`，
-**未挂载 `/usr/local/Ascend/driver/topo`**（HCCL ranktable JSON 所在目录）。
-
-**规则**：
-
-- 已运行容器可用 `docker cp /usr/local/Ascend/driver/topo {容器}:/usr/local/Ascend/driver/topo`
-- 注意：docker cp 在容器重启后丢失，需重建或持久化挂载
-
-## 32. 第三方 wheel 文件名重命名破坏 pip 解析
-
-**问题**：为下载方便把 wheel 重命名为 `torch.whl` / `torch_npu.whl` 后
-`pip install torch.whl` 报 `Invalid wheel filename (wrong number of parts)`。
-pip 要求 wheel 文件名符合 `{name}-{version}-{build}-{py}-{abi}-{platform}.whl` 规范。
-
-**规则**：
-
-- 保留原始文件名，如 `torch-2.11.0+cpu-cp312-cp312-manylinux_2_28_x86_64.whl`
-
-## 33. 量化层 forward 内就地修改模块状态 → compile 每次重编译
-
-**问题**：w8a8/mxfp8 `--compile` 比 eager 慢 11~229×（transformer 1.8s vs 20ms）。
-kernel profile 显示 wall 1873ms 中 kernel 仅 17ms（0.9%），Wait Time 1856ms，单个 1843ms
-设备空闲间隙 —— 极端 host-bound。
-
-**根因**：`W8A8MXFP8OnlineQuantLinear.quant_matmul`（`mindiesd/quantization/layer.py`）forward 内
-`self.bias = self.bias.to(torch.float32)` **就地修改模块状态**。Dynamo guard 记录 trace 时的
-bias dtype（bf16），执行后变成 fp32 → 每次调用 guard 失败 → 每次执行完整重编译
-（Dynamo trace + Inductor + triton JIT ≈ 1.8s）。
-
-**定位**：`TORCH_LOGS=recompiles` 直接给出 guard failure 与具体 tensor
-（`'..._buffers['bias']' dtype mismatch. expected BFloat16, actual Float`）。
-
-**规则**：
-
-- 算子层 forward **禁止就地修改模块属性**（`self.xxx = ...`）；dtype 转换用局部变量
-  （fp32 精度可通过局部变量传给算子保留）
-- compile 性能异常先跑 `TORCH_LOGS=recompiles` 排除重编译，再进入 kernel 分析
-- 修复后 w8a8 compile 从 1860ms 降至 16ms，全面优于 eager 与 bf16 compile
-
-## 34. 先诊断再下结论：性能劣化勿直接归因 kernel
-
-**问题**：曾将 mxfp8 compile 劣化初步归因于"量化算子无法融合/copy 开销"，但 profiling
-证明 kernel 只占墙钟 0.9%，真正瓶颈是重编译（见上条）。若按错误归因去优化 kernel 会白费功夫。
-
-**规则**：
-
-- 用 kernel_details 区分 kernel-bound 与 host-bound：`wall_ms / kernel_sum_ms > 10` + Wait Time
-  高 → host-bound，先查 host 侧（重编译、launch、sync），再优化 kernel
-- 结论必须基于 profiling 数据（kernel 时间占比、间隙位置、recompile 日志），不凭直觉
-
-## 35. 远程实验脚本与多卡工具纪律（2026-09 实测）
-
-**问题**：多轮远程多卡实验反复踩同一批脚本/环境坑，浪费整轮窗口。
-
-**规则**：
-
-- **卡组硬编码在本地脚本**：远程执行器（上传+运行型）会先用本地文件覆盖远端，再执行——
-  `sed` 在远端改卡组/端口会在下一次启动时被覆盖；要改就改本地脚本再上传
-- **不要在命令行里让模式匹配自杀**：`pkill -9 -f '{pattern}'` 会匹配到承载命令的 shell
-  自身（命令行含该串）→ 用 `[x]` 断字符或先 `pgrep` 复核
-- **SSH 批量命令用 JSON 文件**（`{"commands": [...]}`）：PowerShell 会把裸 `$(seq ...)`、
-  heredoc 换行、反引号提前展开/报错；JSON 内避免 `\` 转义与双引号嵌套，脚本逻辑落文件
-- **后台长任务先落盘再轮询**：nohup + 日志文件 + 轮询（marker 匹配）；前台同步执行会因
-  SSH 会话超时被杀；轮询的 grep 模式别用 `\[`（JSON 非法转义）
-- **多卡环境劣化优先换卡组/换端口段**，再怀疑代码：整组 ~10× 慢、HCCL「端口 already
-  bound」等环境问题处理见 parallelism-strategy `ascend-topology-bandwidth-diag.md`；
-  避免 SIGKILL 运行中的多卡任务（可伤驱动状态）
-- 实验结论以**同窗口同卡组 + 多次复现**为准；先 4 步 smoke 再 30 步墙钟
-
-## 36. npu-smi Health=OK ≠ 卡组功能可用：组验证必须实测每步时长（2026-09 实测）
-
-**问题**：某受损组（SIGKILL 后遗）npu-smi 全列 OK、4 步 smoke「跑通出视频」，但真实 run
-每步**均匀 ~43.6s**（无热降频斜率）≈ 正常步长 10 倍——若只按「smoke 通过 + npu-smi OK」就上
-30 步墙钟对比，整轮数据作废。
-
-**规则**：
-
-- **组可用性用真实多卡 run 验证并核对 per-step cost**（日志 `Run Dit every step cost X` 行）：
-  4 步 smoke 的总时长也能暴露（每步 43s → 4 步 ~3min+ vs 正常 ~30s），别只看 mp4 是否生成
-- 均匀 ~43-44s/步（无降频斜率）+ 单算子 GEMM 正常 + npu-smi OK = SIGKILL 驱动损伤**残留态**，
-  跨天不自动恢复；需驱动级复位（管理员），换健康组验证是标准处理
-- 共享机跑前查**物理卡**占用（不只 ASCEND_RT_VISIBLE_DEVICES 所选组）：租户任务可能正占组内
-  某卡 ~122GB → 载权重时 NPU OOM（错误特征：`NPU out of memory ... 250MB free` on a card
-  your group claims）→ 等租户释放或换组重试
-- 多卡墙钟结论的有效组必须在**同一次实验窗口内**复核健康，跨天数字不迁移
-
-## 37. 质量门禁口径混淆 → 误判特性「质量平台」数月（2026-09 实证纠错）
-
-**问题**：LightX2V rf3 稀疏曾因「sp0.3-0.6 帧 SSIM 平坦 0.82-0.84 平台」被暂缓数月；后用
-同 seed/同配置（仅稀疏度变化）/同窗 21 帧门禁重扫，得到**平滑梯度**（sp0.3=0.975 近无损、
-sp0.5=0.960、sp0.8=0.81）——历史平台系与 dense 基线**不同配置/seed/口径**混淆所致，证据作废。
-
-**规则**：
-
-- 特性质量门禁 = 与 dense 基线**同 seed/同 prompt/同步数/同分辨率，仅该特性单变量**，帧采样同窗；
-  跨配置/跨 seed 的 SSIM 不可比，也不得把历史不同口径数字当「平台」
-- 遇到「质量随强度异常平坦」先复核口径（基线配置/seed/帧对齐），再怀疑算子/几何；
-  怀疑算子侧结论须附「口径一致的对照实验」证据
-- 纠错后旧结论要显式作废并注明原因（本仓库 case §10/§11 已按此更正），避免新会话沿用错误「平台」
+**判据与处置单点**在 `../../env-install/references/vllm-omni-build.md`「版本配套矩阵」+
+Step 2.5（后装组件用 `--no-deps`，或装完**立即复核全栈版本**；不以后装组件的旧 pin 为准）。
+
+## 31. 容器缺 HCCL ranktable 导致多卡失败（**已迁 `env-install`**）
+
+**判据与处置单点**在 `../../env-install/SKILL.md` 容器启动节 +
+`../../env-install/references/vllm-omni-build.md` Step 2.1 +
+`../../env-install/references/troubleshooting-env.md` §A/§F
+（必须挂载 `/usr/local/Ascend/driver/topo`；`docker cp` 会在容器重启后丢失）。
+
+## 32. 第三方 wheel 文件名重命名破坏 pip 解析（**已迁 `env-install`**）
+
+**判据与处置单点**在 `../../env-install/references/troubleshooting-env.md` §H
+（保留原始 wheel 文件名，勿为下载方便重命名——pip 要求
+`{name}-{version}-{build}-{py}-{abi}-{platform}.whl`）。
+
+## 33. 量化层 forward 内就地修改模块状态 → compile 每次重编译（**已迁 `pattern-dev`**）
+
+**判据与处置单点**在 `../../pattern-dev/references/pattern-dev-notes.md` §4
+（含 `TORCH_LOGS=recompiles` 定位姿势与 guard 失败文本）+
+`../../profiling-analyze/SKILL.md`「快捷判别：先排除 torch.compile 重编译，再归因 kernel」。
+规则本体：算子层/模块 `forward` **禁止就地修改模块属性**；dtype 转换用局部变量。
+
+## 34. 先诊断再下结论：性能劣化勿直接归因 kernel（**已迁 `profiling-analyze`**）
+
+**判据与处置单点**在 `../../profiling-analyze/SKILL.md`「快捷判别：先排除 torch.compile 重编译，
+再归因 kernel」（`wall_ms / kernel_sum_ms >> 10` + Wait Time 高 + 单个超大设备空闲间隙 → 先查 host 侧）。
+结论必须基于 profiling 数据（kernel 时间占比、间隙位置、recompile 日志），不凭直觉。
+
+## 35. 远程多卡实验工具纪律（**已拆迁四处**）
+
+原条目的四项纪律各有单点真源，本文件不再复述：
+
+- 卡组 / 端口**硬编码在本地脚本**（远程执行器会重传覆盖远端 `sed` 修改）→
+  `../../framework-integration/references/lightx2v-enablement.md` §2.2；
+- `pkill` 模式匹配自杀、SSH 批量命令不堆 shell 嵌套、后台长任务先落盘再轮询 →
+  `../../remote-access/SKILL.md`「长任务三段式」+「上传同步纪律」+「故障排查」表；
+- 多卡环境劣化**优先换卡组/换端口段再怀疑代码**、避免 SIGKILL 运行中的多卡任务 →
+  `../../dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` §4；
+- 结论以**同窗口同卡组 + 多次复现**为准、先 4 步 smoke 再 30 步墙钟 →
+  `../../perf-gate/references/window-ab-protocol.md` +
+  `../../dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` §5。
+
+## 36. npu-smi Health=OK ≠ 卡组功能可用（**已迁 `dit-parallel-opt`**）
+
+**判据与处置单点**在 `../../dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` §4
+（组可用性必须用**真实多卡 run** 核对 per-step cost；每步**均匀**量级级抬升且**无热降频斜率** =
+SIGKILL 驱动损伤残留态，跨天不自动恢复，需驱动级复位 / 换健康组）。
+测量侧的取数口径（clean-window / 热降频判定）见 `../../perf-gate/references/measurement-discipline.md` §7。
+
+## 37. 质量门禁口径混淆（**已迁 `accuracy-gate`**，纠错纪律留档）
+
+**判据与处置单点**在 `../../accuracy-gate/references/quality-gate.md`
+（特性质量 = 与 lossless 基线**同 seed / 同 prompt / 同步数 / 同分辨率、仅该特性单变量**；
+跨配置、跨 seed 的 SSIM **不可比**；换分辨率 / 步数 = 新对照；绝对口径 = vs 同构 lossless）。
+
+**留档的纠错纪律**（流程，不属于口径本身）：
+
+- 遇到「质量随强度**异常平坦**」先复核口径（基线配置 / seed / 帧对齐），**再**怀疑算子或几何；
+  对算子侧的怀疑必须附「**口径一致的对照实验**」证据
+- 纠错后旧结论要**显式作废并注明原因**，避免新会话沿用错误结论
+
+## 38. 性能数字有效性：失败运行会给出更漂亮的耗时（**留**：已是指针）
+
+**判据与上报模板单点**在 `../../perf-gate/references/evidence-toolbox.md` §1（三重证据：
+返回码 + 产物字节数 + 成功日志条数，**缺一项该数字即作废**）与
+`../../perf-gate/references/measurement-discipline.md` §6（上报模板）。
+本文件只留一条流程纪律：**失败运行的数字应单独列出并标注作废**，不得用「大概是网络抖动 / 机器忙」
+之类的理由放过缺证据的数字。
+
+## 39. 索引（每条教训现在去哪找）
+
+| 编号 | 主题 | 处理 | 归属（真源） |
+|---|---|---|---|
+| 1 | 拒绝未实现功能的前置配置 | **留** | 本文件 §1 |
+| 2 | 最小必要改动原则 | **留** | 本文件 §2 |
+| 3 | 独立任务必须实际并行执行 | **留** | 本文件 §3 |
+| 4 | 非代码仓内容不入库 | **留** | 本文件 §4 |
+| 5 | PLAN.md 未随任务变更同步更新 | **留** | 本文件 §5 |
+| 6 | triton vs triton-ascend 包名混淆 | **留**（已是指针） | `ascend-ops.md`（本目录） |
+| 7 | `pip install -e .` 新增文件未被索引 | 已迁 | `env-install/SKILL.md`「编译原理与何时重装」+ `troubleshooting-env.md` §A |
+| 8 | SSH 连接重复创建 | 已迁 | `remote-access/SKILL.md`「连接复用原则」/「文件传输」 |
+| 9 | 嵌套 Shell 引号转义失败 | 已迁 | `remote-access/SKILL.md`「嵌套 shell 引号」/「上传同步纪律」 |
+| 10 | Markdown 代码块未指定语言（MD040） | **留** | 本文件 §10；格式细则在 `markdown-lint` |
+| 11 | `examples/dummy_run` 门禁违规 | **留**（规则表已迁） | 本文件 §11；规则定义与复核在 `code-standards/references/gate-check-rules.md` |
+| 12 | 远端日志回传与本地终端编码 | 已迁 | `remote-access/SKILL.md`「长任务三段式」；跨平台注意事项见本目录 `cross-platform.md` |
+| 13 | 通用分析脚本纳入 Skills | **留** | 本文件 §13 |
+| 14–22 | （内容已删除，编号不复用） | — | — |
+| 23 | Pattern 单测通过但全模型不命中 | 已迁 | `pattern-dev/SKILL.md` Phase 4/5 + `../../pattern-dev/references/mismatch-catalog.md` 类型 7 + `../../pattern-dev/references/test-templates.md` |
+| 24 | `nn.Module` 权重（get_attr）的 pattern 表达 | 已迁 | `pattern-dev/SKILL.md` Phase 2 路径表 + `../../pattern-dev/references/mismatch-catalog.md` 类型 7 + `../../pattern-dev/references/graph-pattern-rewrite-guide.md` |
+| 25 | （已废弃）自定义 Graph Pass 的 freeze 时序坑 | 已迁 | `pattern-dev/SKILL.md` Phase 2 ⛔ 段（禁用手写 FX graph traversal） |
+| 26 | 编译开销定位方法 | 已迁 | `pattern-dev/SKILL.md` Phase 6 + `../../pattern-dev/scripts/compare_profiles.py` + `../../pattern-dev/references/copy-elimination-guide.md` |
+| 27 | 打包排除 `build` 目录误删源码脚本 | 已迁 | `env-install/SKILL.md`「部署脚本」节 |
+| 28 | 权重分片缺失未对照 `index.json` 预检 | 已迁 | `env-install/references/weights-prep.md` §5 + `troubleshooting-env.md` §H |
+| 29 | vllm-omni 源码包缺 `.git` 导致版本非法 | 已迁 | `env-install/references/vllm-omni-build.md` Step 2.5 |
+| 30 | pip 依赖解析降级 torch 后未复原 | 已迁 | `env-install/references/vllm-omni-build.md`「版本配套矩阵」+ Step 2.5 |
+| 31 | 容器缺 HCCL ranktable 导致多卡失败 | 已迁 | `env-install/SKILL.md` 容器启动节 + `vllm-omni-build.md` Step 2.1 + `troubleshooting-env.md` §A/§F |
+| 32 | 第三方 wheel 文件名重命名破坏 pip 解析 | 已迁（本批新建条目） | `env-install/references/troubleshooting-env.md` §H |
+| 33 | 量化层 forward 就地修改模块状态 → 重编译 | 已迁 | `pattern-dev/references/pattern-dev-notes.md` §4 + `profiling-analyze/SKILL.md`「快捷判别」 |
+| 34 | 先诊断再下结论：劣化勿直接归因 kernel | 已迁 | `profiling-analyze/SKILL.md`「快捷判别」 |
+| 35 | 远程多卡实验工具纪律 | 已拆迁四处 | `framework-integration/references/lightx2v-enablement.md` §2.2 + `remote-access/SKILL.md` + `dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` §4/§5 + `perf-gate/references/window-ab-protocol.md` |
+| 36 | `npu-smi` Health=OK ≠ 卡组功能可用 | 已迁 | `dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` §4（口径见 `perf-gate/references/measurement-discipline.md` §7） |
+| 37 | 质量门禁口径混淆 | 已迁（纠错纪律留档） | `accuracy-gate/references/quality-gate.md` |
+| 38 | 性能数字有效性：失败运行更漂亮 | **留**（已是指针） | `perf-gate/references/evidence-toolbox.md` §1 + `measurement-discipline.md` §6 |
 
 ## 维护与更新
 
-当出现新的返工教训时（复盘流程同步补充），按 dev-workflow 的复盘流程更新本文件。
+新的返工教训按 dev-workflow 的复盘流程补充；**加条目时先判归属**——
+与具体领域无关的流程/纪律留本文件，领域知识按 `.agents/README.md` §7 落位四分类直接写进对应技能的
+真源并从本文件 §39 索引登记（**本文件不再复制领域正文**）。

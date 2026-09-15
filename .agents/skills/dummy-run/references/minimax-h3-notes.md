@@ -1,10 +1,27 @@
 # MiniMax-H3 Dummy Run 适配记录
 
-> **目录** · [1. 仓库双格式](#1-仓库双格式最易踩坑) · [2. 配置获取（gated → modelscope）](#2-配置获取gated--modelscope) · [3. 依赖版本](#3-依赖版本) · [4. 组件清单](#4-组件清单) · [5. 关键适配点](#5-关键适配点) · [6. BF16 计算精度](#6-bf16-计算精度--compute-precision默认-bf16) · [7. RMSNorm 融合](#7-rmsnorm-融合pattern-matcher-机制2026-08-实测) · [8. 其余融合](#8-其余融合2026-08-实测) · [9. CP + 通信掩盖](#9-4-卡-context-parallel--通信掩盖2026-08-实测) · [10. 验证结果](#10-验证结果远端-910b-npu2-layersdiffusers-0400-隔离安装256384124) · [11. SwiGLU + AdaLN + gate 融合](#11-swiglu--adaln--gate-融合2026-08-实现全模型验证完成总收益--186ms)
+> **本文件的定位（先读）**：本文件是**模型底座**（H3 的几何 / 组件 / 仓库格式 / 构造与命令），
+> 按 `.agents/README.md` §7 属「换框架仍成立、**换模型不成立**」一类。
+> **可迁移的方法已下沉到各自能力的真源**，本文件只保留 H3 侧的实测细节；**与真源冲突时以真源为准**：
+>
+> | 本文件章节 | 方法真源（可迁移部分去这里） |
+> |---|---|
+> | §7 / §8 / §11 / §12 融合 pattern 与图形态 | `../../pattern-dev/references/fusion-graph-forms-and-semantics.md` + `pattern-dev` SKILL 的 Phase 2/5 |
+> | §9 4 卡 CP + 通信掩盖 | `../../dit-parallel-opt/SKILL.md` §CP/掩盖 + `../../dit-parallel-opt/references/comm-masking-method.md` |
+> | §13 w8a8(MXFP8) 编译图与数据格式 | `../../quantization-dev/references/online-quant-contract.md`（契约） |
+> | §6 计算精度 / §A6 量化档位语义 | `../../dit-perf-opt/references/quant-tier-device-mapping.md`（选档语义） |
+> | §B' profile 目录隔离 | `../../profiling-collect/references/profile-dir-isolation.md` |
+> | §C compile vs eager 双报表口径 | `../../profiling-analyze/references/eager-vs-compile-report.md` |
+>
+> **目录** · [1. 仓库双格式](#1-仓库双格式最易踩坑) · [2. 配置获取（gated → modelscope）](#2-配置获取gated--modelscope) · [3. 依赖版本](#3-依赖版本) · [4. 组件清单](#4-组件清单) · [5. 关键适配点](#5-关键适配点) · [6. BF16 计算精度](#6-bf16-计算精度--compute-precision默认-bf16) · [7. RMSNorm 融合（H3 侧坐标）](#7-rmsnorm-融合h3-侧坐标) · [8. 其余融合（H3 侧坐标）](#8-其余融合h3-侧坐标) · [9. CP + 通信掩盖（H3 侧配置事实）](#9-4-卡-context-parallel--通信掩盖h3-侧并行配置事实) · [10. 验证结果](#10-验证结果远端-910b-npu2-layersdiffusers-0400-隔离安装256384124) · [11. SwiGLU + AdaLN + gate（H3 侧坐标）](#11-swiglu--adaln--gate-融合h3-侧实现坐标与实测细节) · [12. qk_norm + RoPE 大融合（负面结论归档）](#12-qk_norm--rope-大融合负面结论归档防重复实验) · [13. w8a8(MXFP8) 编译图（H3 侧图节点清单）](#13-w8a8mxfp8-编译图h3-侧图节点清单)
 >
 > MiniMax-H3（33B 全模态生成模型，T2VA / FL2VA / Ref2VA 工作流）在 `examples/dummy_run/` 的
 > dummy run 适配要点。依据：`examples/dummy_run/minimax_h3_infer.py` 与
 > `examples/dummy_run/model/minimax_h3_model.py`（2026-08 实测通过）。
+>
+> ⚠️ **数字纪律**：本文件的**绝对耗时与绝对加速比已按 `.agents/README.md` §7 移出**，归档于
+> 会话产物目录 `{run_results_dir}/archive/minimax-h3-notes-numbers.md`；正文只保留
+> **比例关系 / 占比 / 判定阈值 / 结构契约 / 计数契约**，方向性结论标注「本组合观测」。
 
 ## 1. 仓库双格式（最易踩坑）
 
@@ -84,181 +101,119 @@ snapshot_download(
   `.float()` 改写）。`--compute-precision` 取值 `bf16`（默认）/ `fp32`；bf16 时对
   transformer/text_encoder/vae/audio_vae 执行 `.to(torch.bfloat16)` + eager 部分 `Tensor.float`
   patch 兜底。编译图验证（`_verify_compute_precision_graph`）确认无 fp32/int32 计算输入。
-- **实测（eager，256×384×124，2 layers）**：transformer **319.8ms(fp32) → 30.9ms(bf16) ≈ 10.4×**；
-  总推理 338.3ms → 50.7ms（≈6.7×）；峰值显存 21.90GB → **13.50GB**。
-- **⚠️ compile 陷阱 1（forward 签名）**：`torch.compile` 把 forward 包装为 `(*args, **kwargs)`，
-  而 MiniMax-H3 的 denoise 块用 `inspect.signature(transformer.forward)` 过滤
-  `denoiser_input_fields` → 5 个行索引参数（token_tags/position_ids/video_indices/audio_indices/
-  text_indices）被丢弃，forward 报 `missing 5 required positional arguments`。修复：用
-  `_CompiledDiT` wrapper（显式声明完整 forward 签名，内部转发 compiled 模块）再
-  `register_components(transformer=...)`。
-- **⚠️ compile 陷阱 2（config 属性）**：`register_components` 后 pipeline 的 `patch_size` /
-  `canvas_multiple` property 访问 `transformer.config`，wrapper 必须暴露 `.config`；
-  否则 property 内部 AttributeError 被 Python 视为属性缺失，最终报
+- **实测（eager，256×384×124，2 layers）**：切 bf16 后 **transformer 前向与总推理耗时均下降约一个
+  数量级、峰值显存同步明显下降**（本组合观测；绝对数字归档于
+  `{run_results_dir}/archive/minimax-h3-notes-numbers.md`）。
+- **⚠️ compile 陷阱（H3 侧两条）**：① `torch.compile` 把 forward 包成 `(*args, **kwargs)`，而 H3 的
+  denoise 块用 `inspect.signature(transformer.forward)` 过滤 `denoiser_input_fields` → 5 个行索引参数
+  （token_tags/position_ids/video_indices/audio_indices/text_indices）被丢弃，报
+  `missing 5 required positional arguments`；修法 = 用 `_CompiledDiT` wrapper（显式声明完整 forward 签名）
+  再 `register_components(transformer=...)`。② 之后 pipeline 的 `patch_size` / `canvas_multiple` property
+  访问 `transformer.config`，wrapper 必须暴露 `.config`，否则报
   `'MiniMaxH3DummyPipeline' object has no attribute 'canvas_multiple'`。
 
-## 7. RMSNorm 融合（pattern matcher 机制，2026-08 实测）
+## 7. RMSNorm 融合（H3 侧坐标）
 
-- **方案**：`patterns/minimax_h3_rmsnorm_pattern.py`（register_replacement，bf16/fp32 × 3D/4D 四变体）。
-  **无需修改 `mindie_sd_backend.py`**（曾临时改过，torch 2.11 实测可还原——见下）。
-- **分解时机（torch 2.11 实测，910B）**：Dynamo/aot_autograd **在 freeze 前**就把
-  torch.rms_norm 分解成链（before-freezing 图直接是 `_to_copy(f32)→pow→mean→add.Scalar→
-  rsqrt→mul→mul`）→ before_freezing 的 pattern matcher 一次运行即命中。
-  **旧结论"必须 after_freezing 二次运行"基于 torch 2.9**（当时 aot 保留单节点、freeze 才分解）；
-  torch 2.11 已前置分解，该改动还原（`git checkout mindie_sd_backend.py`）后性能保持
-  25.87ms（vs 修改时 25.76ms，噪声级），单元测试 3/3 通过。
-- **为什么手写链而非 `torch.rms_norm` 作 pattern**：make_fx 对 torch.rms_norm 的自动分解产生
-  `add_.Scalar`（inplace，composite op + python dispatcher 展开），而真实图产生 `add.Scalar`
-  （非 inplace）——target 不同 0 命中。手写链精确固定每个 target（add.Scalar、mean dim
-  [x.dim()-1]、_to_copy(f32) 输入 cast、不含输出 cast 以避免 `_to_copy(bf16, layout, device)`
-  的 kwargs 差异）。
-  **注意**：make_fx 空 decomp 表下 torch.rms_norm 仍展开成链（composite 机制，与 decomp 表
-  无关）；`pre_dispatch=True` 的 make_fx 可保留 `aten.rms_norm` 单节点（备选方案，若未来
-  torch 恢复 freeze 后分解可改用单节点 pattern + pre_dispatch trace fn）。
-- **实测（compile bf16 vs eager bf16）**：transformer **30.9ms → 26.65ms（-4.4ms）**；
-  kernel 总耗时 32.4 → 28.0ms（-13.6%）；RmsNorm ×14 新增（0.45ms）、InplaceCopy_Cast
-  61→26（-96%）、Pow -99% / Mean -95% / Rsqrt -75%。模型 RMSNorm 总数 14（2 layers×4 +
-  token_refiner 4 + final 1 + norm_out 1）→ **14/14 全部命中**（eager 的 23 个 Pow 中 9 个为
-  非 RMSNorm 平方运算）。AB 验证：enable_minimax_h3_rmsnorm=False → 30.93ms vs True → 26.65ms。
+> **方法真源 → `../../pattern-dev/references/fusion-graph-forms-and-semantics.md`**（RMSNorm 的
+> torch 2.11 前置分解时机与 before/after-freezing 窗口判据）与 `../../pattern-dev/references/mismatch-catalog.md`
+> （手写链 vs `torch.rms_norm` 作 pattern 的 target 差异：`add_.Scalar` vs `add.Scalar`、输入 cast）。
 
-## 8. 其余融合（2026-08 实测）
+- **实现**：`patterns/minimax_h3_rmsnorm_pattern.py`（`register_replacement`，bf16/fp32 × 3D/4D 四变体）。
+  **无需修改 `mindie_sd_backend.py`**（曾临时改过，torch 2.11 实测可还原，还原后性能保持、单测 3/3 通过）。
+- **计数口径（本组合实测）**：RmsNorm ×14 新增、InplaceCopy_Cast 61→26（-96%）、Pow -99% / Mean -95% /
+  Rsqrt -75%；模型 RMSNorm 总数 **14**（2 layers×4 + token_refiner 4 + final 1 + norm_out 1）
+  → **14/14 全部命中**（eager 的 23 个 Pow 中 9 个为非 RMSNorm 平方运算）。
+- **AB 判据**：`enable_minimax_h3_rmsnorm=False` 回到基线耗时、`True` 为下降后耗时（方向确定，非噪声）；
+  transformer 与 kernel 总耗时均明显下降（绝对数字归档于 `{run_results_dir}/archive/minimax-h3-notes-numbers.md`）。
 
-- **RoPE 融合（已实现）**：`patterns/minimax_h3_rope_pattern.py`（register_replacement，
-  bf16/fp32 双变体）。匹配 rotate_half 部分旋转链（slice 96/split/neg/cat/mul×2/add，
-  外圈 slice/cat 保留，npu_rotary_mul 只旋转 96 通道部分）。**注册在 wan_residual_gate 之前**
-  ——wan 的 residual+gate pattern 会误匹配 MiniMax 的 rope 子图（`x_rot*cos+rotated*sin` 被当
-  `x+y*gate`，4D 走 fallback 造成 ~0.26ms 负收益，AB 证实）。
-  **dtype 提升 bug（2026-08-22 修复）**：replacement 收到 pattern 匹配的 fp32 cos/sin
-  （pattern 内 `_to_copy(bf16)` 节点被消费），rope.py `x.to(cos.dtype)` 把 bf16 x 提升到
-  fp32 再 `type_as(x)` 降回 → 每处 rope 两个大张量 Cast（50+67us，4 处 ≈0.47ms 纯浪费），
-  导致 RoPE 收益 ≈0。修复：replacement 显式 `_to_copy(cos, dtype=x.dtype)` → Cast 4+4us，
-  RotaryV2 本体 113→35.5us，**RoPE 收益 ≈0 → -0.68ms**（both 25.76ms）。
-  剩余：`RotaryV2_Slice` 81us×4 ≈0.33ms（x_rot 切片物化）——优化方向见
-  `refs/minimax_profiles/bf16_compile_ab_report.md` §7（npu_rotary_mul slice 变体
-  支持 full-head 输入的可行性调研）。
-- **AdaLN 调制 / SwiGLU（未实现，2026-08 probe 结论）**：
-  - AdaLN 调制链 `x*(1+scale_idx)+shift_idx`：`ops.adaln/adaln_v2`(weight=None 纯调制)实测
-    **CheckShape failed**(aclnnAdaLayerNorm 要求 weight/bias 非 None 或特定 shape),不可复用;
-    现有 `muls_add` 仅标量 scale。需 tensor-scale 融合算子(收益 ~0.3-0.5ms)。
-  - SwiGLU：`npu_swiglu` 存在(CANN 25.7)但语义是 **`gate*silu(hidden)`**,与 diffusers
-    SwiGLU 的 `silu(gate)*hidden` **gate/hidden 顺序相反**,不可直接替换;
-    `npu_ffn(act="swiglu")` 权重方向要求 w1 的 k 维 = x 的 k 维(与图不符)。
-  - 两者均无现成算子,列为后续项。
-- **注意**：`enable_wan_residual_gate` 对 MiniMax 图的 3D 残差子图也会匹配但 fallback
-  （y 为 2D），存在轻微负收益；可通过收紧 pattern 锚定或注册顺序消除（当前 RoPE 已消除
-  rope 部分，3D 残差部分保留）。
+## 8. 其余融合（H3 侧坐标）
 
-## 9. 4 卡 Context Parallel + 通信掩盖（2026-08 实测）
+> **方法真源 → `../../pattern-dev/references/fusion-graph-forms-and-semantics.md`**（RoPE `rotate_half`
+> 部分旋转链形态、dtype 提升 R1 的识别与修复）+ `../../pattern-dev/SKILL.md` Phase 2/5（注册顺序防误匹配）。
 
-### 方案
+- **RoPE（已实现）**：`patterns/minimax_h3_rope_pattern.py`（`register_replacement`，bf16/fp32 双变体）。
+  H3 侧形态：匹配 rotate_half 部分旋转链（slice 96 / split / neg / cat / mul×2 / add，外圈 slice/cat 保留，
+  `npu_rotary_mul` **只旋转 96 通道部分**）；**必须注册在 `wan_residual_gate` 之前**——wan 的
+  residual+gate pattern 会误匹配 H3 的 rope 子图（`x_rot*cos+rotated*sin` 被当 `x+y*gate`，4D 走 fallback
+  造成轻微负收益，AB 证实）。剩余 `RotaryV2_Slice` ×4（x_rot 切片物化）未消。
+- **AdaLN 调制 / SwiGLU 的算子探针结论（H3 侧事实，2026-08 probe）**：
+  - AdaLN 链 `x*(1+scale_idx)+shift_idx`：`ops.adaln/adaln_v2`（weight=None 纯调制）实测
+    **CheckShape failed**（`aclnnAdaLayerNorm` 要求 weight/bias 非 None 或特定 shape），不可复用；
+    现有 `muls_add` 仅标量 scale。
+  - SwiGLU：`npu_swiglu` 存在（CANN 25.7）但语义是 **`gate*silu(hidden)`**，与 diffusers SwiGLU 的
+    **`silu(gate)*hidden` 顺序相反**，不可直接替换；`npu_ffn(act="swiglu")` 权重方向要求 w1 的 k 维 = x 的 k 维
+    （与 H3 图不符）。
+- **`enable_wan_residual_gate`** 对 H3 图的 **3D 残差**子图也会匹配但 fallback（y 为 2D），存在轻微负收益；
+  RoPE 注册顺序已消除 rope 部分，3D 残差部分保留。
 
-- **CP 机制**：diffusers 0.40 自带 `_cp_plan`(Ulysses-anything,seq 分片)+
-  `apply_context_parallel`(hooks)。runner 用 torchrun 4 进程,`device_start + local_rank`
-  映射到 NPU 4-7。seq 不可被 4 整除时启用 `ulysses_anything=True`(PartitionAnythingSharder,
-  否则 EquipartitionSharder 断言 size%mesh==0 失败)。
-- **⚠️ 关键：attention 需手动 wire `_parallel_config`**：`apply_context_parallel` 只挂
-  分片/聚合 hook,**不设置 attention processor 的 `_parallel_config`**(类属性默认 None) →
-  `dispatch_attention_fn(parallel_config=None)` 走非 CP 路径,只有 seq 分片+输出 gather
-  (profile 只有 allGather 无 allToAll)。必须给每个 `attn.processor._parallel_config`
-  设 `ParallelConfig(context_parallel_config=cp_cfg)`(注意是 ParallelConfig 包装,不是
-  ContextParallelConfig),才会触发 Ulysses 的 all_to_all FA 切头路径。
-- **掩盖**：`mindiesd/parallel/`（自 framework 仓库移植）的 HCCL ctypes + 独立 comm stream
-  (compute 记录 ready 事件 → comm stream 等 → HCCL 集合 → 记录 done → compute 等) 实现
-  通信与计算重叠。monkey-patch `funcol.all_to_all_single` / `funcol.all_gather_tensor`
-  为 masked 版(见 `examples/dummy_run/masking.py`),零 diffusers 源码改动。
-- **正确性**：masked all_to_all(等分)/all_gather 与 torch.distributed **逐字节一致(err=0.0)**。
+## 9. 4 卡 Context Parallel + 通信掩盖（H3 侧并行配置事实）
 
-### 效果(4 卡, 256×384×124, 2 layers, bf16, 910B NPU 4-7)
+> **方法真源 → `../../dit-parallel-opt/references/comm-masking-method.md` 与
+> `../../dit-parallel-opt/SKILL.md` 的 CP·掩盖节**（CP 机制、掩盖注入点与 comm stream 姿势、正确性判据、
+> 掩盖率上限 `1-1/n` 与 c/f、「改了并行但不报错也没生效」的判定、host-bound 剩余瓶颈与下一步方向）；
+> 取数口径归 `../../perf-gate/`。本节只留 **H3 侧并行配置事实**，绝对耗时/加速比归档于
+> `{run_results_dir}/archive/minimax-h3-notes-numbers.md`。
 
-#### A. 非 USP(仅 seq 分片,attention 未 wire)
-
-| 指标 | unmasked CP | masked CP | 改善 |
-|---|---|---|---|
-| transformer wall | 27.7ms | 28.1ms | ~持平(host-bound) |
-| kernel 总耗时 | 37.5ms | **12.1ms** | **-67.7%** |
-| Communication(未掩盖) | **31.4ms** | **1.5ms** | **-95.2%** |
-| Stage(profiler 设备时间线) | **71.5ms** | **35.5ms** | **-50.3%** |
-
-#### B. USP4(ulysses=4,FA 切头,wire 后)
-
-| 指标 | USP unmasked | USP full-mask (ag+a2a) | 改善 |
-|---|---|---|---|
-| transformer wall | 42.9/83.5ms(rank 不均) | **36.8ms(均衡)** | 显著 |
-| kernel 总耗时 | 22.19ms | **19.45ms** | -12.3% |
-| Communication(未掩盖) | 8.34ms | **5.43ms** | **-35%** |
-| Free(设备空闲) | 24.3ms | 28.7ms | ~持平(host-bound) |
-
-### 结论与剩余瓶颈
-
-1. **通信掩盖有效**：非 USP 的 KV all-gather 从 25.7ms → 0.66ms(comm stream);
-   USP 下 all_gather + all_to_all 掩盖使 wall 42.9→36.8ms(均衡)、通信 -35%。
-2. **FA 切头(all_to_all)掩盖完成(2026-08)**:`HcclAlltoAllV`(split 路径)在本 CANN 9.1.0
-   环境 **SIGSEGV**(等分 HcclAlltoAll 正常)。**解决方案(pad+等分)**:Ulysses-anything 的
-   all_to_all 里 input 按 in_sizes 等分块、output 按 out_sizes 组装(s_local 各 rank 可
-   不同);把每个 input 块 pad 到 S_PAD(128 倍数,由全局 max(out_sizes) 推导,全 rank 一致),
-   用等分 HcclAlltoAll(count=S_PAD×row_elems)交换,再 slice 各块前 out_sizes[j] 行。
-   实测 err=0.0(最小复现),kernel 名从 hcom_alltoallv 变为 hcom_alltoall(等分)。
-3. **剩余瓶颈是 host-bound**：Free 24-29ms(设备等 host)+ DAVID_EVENT_WAIT(跨流事件同步)
-   595 kernels 的 Python enqueue + Ulysses-anything 每次 attention 的
-   `gather_size_by_comm` 冗余 broadcast ×8。
-4. **下一步方向**：① host 预取/软件流水(提前 enqueue 下一层通信,与当前层计算重叠);
-   ② 缓存 `gather_size_by_comm`(静态 seq);③ 减少事件同步(批量发起 → 一次等待);
-   ④ compile+CP 兼容性。
-5. **脚本**：`examples/dummy_run/minimax_h3_parallel.py`(runner) +
-  `examples/dummy_run/masking.py`(掩盖注入,含 pad+等分 all_to_all) +
-  `mindiesd/parallel/`(comm stream 基础设施,从 framework 仓库移植;AlltoAllV 缺陷已绕过)。
+- **档位形态（本组合实测过的两种，换形态 = 重判）**：
+  - **非 USP**：仅 seq 分片、attention **未 wire** `_parallel_config` → profile 只有 allGather、无 allToAll；
+  - **USP4**：`ulysses=4`、FA 切头（all_to_all）参与掩盖。
+- **world size / rank 布局**：`torchrun` **4 进程**；`device_start + local_rank` 映射到 **NPU 4-7**
+  （单 UB 岛 4 卡组）；`dit_world = 4`。
+- **seq 可整除性**：seq 不可被 4 整除时必须开 **`ulysses_anything=True`**（`PartitionAnythingSharder`；
+  否则 `EquipartitionSharder` 断言 `size % mesh == 0` 失败）。
+- **H3 侧的 wire 前置（易静默降级）**：`apply_context_parallel` 只挂分片/聚合 hook，**不设置 attention
+  processor 的 `_parallel_config`**（类属性默认 None）→ 必须给每个 `attn.processor._parallel_config` 设
+  `ParallelConfig(context_parallel_config=cp_cfg)`（是 `ParallelConfig` **包装**，不是
+  `ContextParallelConfig`），才会触发 Ulysses 的 all_to_all FA 切头路径。
+- **脚本（H3 侧坐标）**：`examples/dummy_run/minimax_h3_parallel.py`（runner）+
+  `examples/dummy_run/masking.py`（掩盖注入，含 pad+等分 all_to_all）+
+  `mindiesd/parallel/`（comm stream 基础设施，自 framework 仓库移植）。
+- **方向（本组合观测）**：掩盖把 comm stream 上的未掩盖通信从**主导项**压到**几乎可忽略**；
+  USP 下 wall 由 **rank 间不均衡转为均衡**。该 4 卡档仍为 **host-bound**（Free 与设备等待与墙钟同量级，
+  即设备等 host）——下一步方向见方法真源。
 
 ## 10. 验证结果（远端 910B NPU，2 layers，diffusers 0.40.0 隔离安装，256×384×124）
+
+> 参数量与 latents 形状属**结构契约**，保留；**绝对耗时 / 峰值显存 / 加速比已归档**
+> （`{run_results_dir}/archive/minimax-h3-notes-numbers.md`），下表只留**档位关系与方向**。
 
 ```text
 transformer params: 1.75 B | text_encoder: 2.73 B | vae: 2.60 B | audio_vae: 0.15 B | Total: 7.24 B
 
-| 配置 | transformer (timed) | 总推理 | 峰值显存 | 编译图验证 |
-|---|---|---|---|---|
-| eager fp32 | 319.8 ms | 338.3 ms | 21.90 GB | — |
-| eager bf16（默认） | 30.9 ms | 50.7 ms | 13.50 GB | — |
-| compile bf16 | 31.0 ms | 51.5 ms | 13.50 GB | PASSED（无 fp32/int32 计算节点） |
-| eager w8a8（FFN 融合默认开启） | 21.77 ms | — | — | — |
-| compile w8a8（同） | 15.65 ms | — | — | PASSED（-28.1% vs eager） |
+| 配置 | 相对其它档的关系 | 编译图验证 |
+|---|---|---|
+| eager fp32 | 基线（最慢档） | — |
+| eager bf16（默认） | 前向与总推理较 fp32 大幅下降（约一个数量级），峰值显存明显下降 | — |
+| compile bf16 | 与 eager bf16 同量级（差异在噪声内） | PASSED（无 fp32/int32 计算节点） |
+| eager w8a8（FFN 融合默认开启） | 低于 eager bf16（量化单点为正） | — |
+| compile w8a8（同） | **本表最优档**（量化 × compile 叠加仍为正，明显优于 eager） | PASSED |
 
 Video latents: (1, 24, 37, 16, 24) | Audio latents: (2, 32, 207) | Verification: PASSED
 ```
 
-> w8a8 行为 2026-09-06 于 A310-50（A5 → MXFP8）复测，FFN hidden 站点融合
-> （`mindiesd::mm_swiglu_mxquant`）已**默认开启**（无 MMX_FFN_FUSION 开关）；数值
-> 位级一致（同 seed latents mean_rel=0.0）。kernel 级报表见
-> `tmp/mmx_w8a8/dummy_ab_reports_mmx_fusion_default_on.md`。
+> w8a8 行为 2026-09-06 于 A310-50（A5 → MXFP8）复测：FFN hidden 站点融合（`mindiesd::mm_swiglu_mxquant`）
+> 已**默认开启**（无 MMX_FFN_FUSION 开关）；数值**位级一致**（同 seed latents mean_rel=0.0）。
 
-## 11. SwiGLU + AdaLN + gate 融合（2026-08 实现,全模型验证完成,总收益 -1.86ms）
+- **质量变化度**（本表口径，同 seed latents 对拍）：`compile` 相对 `eager`（同精度档）**位级一致
+  （mean_rel=0.0）** ⇒ compile 档不引入质量变化；`w8a8` 档 vs `bf16` 的变化度**未在本 dummy 口径下测**。
 
-### 目标与算子验证
+## 11. SwiGLU + AdaLN + gate 融合（H3 侧实现坐标与实测细节）
 
-- **SwiGLU**：MiniMax FFN 的 `split->silu(gate)->mul(hidden,silu)` 链 →
-  `npu_swiglu`(需把 chunk 顺序对调为 [gate,hidden],因为 npu_swiglu 语义是
-  `first_half*silu(second_half)`)；**swapped-order err=1e-4(bf16)** ✓
-- **AdaLN**：`x*(1+scale)+shift`(scale/shift 是 index_select 表行 [S,D]) →
-  新增 triton 算子 `mindiesd/layers/scale_shift.py`
-  (`mindiesd::gather_scale_shift`, 吸收 2 个 index_select; 表 [3,D] L2 驻留),
-  **三种 shape err=0.0039(bf16)** ✓
-- 演进: 初版 plain `scale_shift`(1D flatten) 负收益 +0.64ms → BS8192 +0.26ms
-  → **gather 融合(行内核)转正 -0.24ms**, 详见下方分析
+> **方法真源 → `../../pattern-dev/references/fusion-graph-forms-and-semantics.md` +
+> `../../pattern-dev/SKILL.md` Phase 2/5**（三算子图形态与语义、融合边界（免 cat / 表 L2 驻留 / gather 行内核）、
+> i32 索引与多行并行）；**收益归因 → `../../pattern-dev/references/benefit-rootcause-guide.md` §3 R5 与案例 4**。
 
-### 实现文件
+### H3 侧实现坐标
 
-- `mindiesd/layers/scale_shift.py`：triton 算子族——`gather_scale_shift`(AdaLN,
-  表+索引)、`gather_residual_gate`(gate 融合)、`swiglu`(免 cat)、`scale_shift`
-  (plain 兜底)；均 i32 索引 + 3 行/program
-- `mindiesd/compilation/patterns/minimax_h3_swiglu_pattern.py`(register_replacement,
-  bf16/fp32 双变体,split_size=14336 精确匹配; replacement=triton swiglu 免 cat)
-- `mindiesd/compilation/patterns/minimax_h3_adaln_pattern.py`(register_replacement,
-  匹配 index_select×2 + add/mul/add 链)
-- `mindiesd/compilation/patterns/minimax_h3_gate_pattern.py`(register_replacement,
-  匹配 index_select(gate) + mul + add; 注册在 wan_residual_gate 之前)
-- 四段注册 + `enable_minimax_h3_swiglu/adaln/gate` 开关
-- 单测:`test_minimax_h3_swiglu_pattern.py` / `test_minimax_h3_adaln_pattern.py` /
-  `test_minimax_h3_gate_pattern.py`(**均 1 passed**)
+- `mindiesd/layers/scale_shift.py`：triton 算子族——`gather_scale_shift`(AdaLN，表+索引)、
+  `gather_residual_gate`(gate 融合)、`swiglu`(免 cat)、`scale_shift`(plain 兜底)；均 i32 索引 + 3 行/program
+- `mindiesd/compilation/patterns/minimax_h3_swiglu_pattern.py`（bf16/fp32 双变体，`split_size=14336` 精确匹配）
+- `mindiesd/compilation/patterns/minimax_h3_adaln_pattern.py`（匹配 index_select×2 + add/mul/add 链）
+- `mindiesd/compilation/patterns/minimax_h3_gate_pattern.py`（匹配 index_select(gate) + mul + add；
+  **注册在 `wan_residual_gate` 之前**防误匹配）
+- 四段注册 + 开关 `enable_minimax_h3_swiglu/adaln/gate`（默认 True）；单测三份（均 1 passed）
 
-### 真实图形态(verified by dump, before-freezing)
+### H3 真实图形态（verified by dump, before-freezing）
 
 ```text
 SwiGLU: matmul_4 [1,1,28672] -> split.Tensor(matmul_4,14336,-1)
@@ -268,181 +223,71 @@ AdaLN:  index_select(scale_table) -> add(·,1.0) -> mul(x,·)
         -> index_select(shift_table) -> add(mul,·)
 ```
 
-### ✅ 全模型验证 + AdaLN 负收益根因与转正（2026-08-23 完成）
+### H3 侧实测事实（只留计数与形态，绝对数归归档）
 
-环境解封后（0-3 卡可用）完成逐 pass AB 与 kernel diff（compile bf16, device 0,
-transformer timed）：
+- **算子验收值（H3 接口事实）**：SwiGLU 需把 chunk 顺序对调为 `[gate,hidden]`（`npu_swiglu` 语义是
+  `first_half*silu(second_half)`），swapped-order err=1e-4(bf16)；AdaLN 三种 shape err=0.0039(bf16)；
+  调制表仅 `[3,D]`=64KB（**L2 驻留**，故行内核能一次吸收 2 个 index_select）。
+- **最终 kernel 构成（all on，315 kernels vs baseline 339）**：`gather_scale_shift_kernel` ×10、
+  `gather_residual_gate_kernel` ×8、`swiglu_kernel` ×3；IndexSelect_GatherV2 **28→2**、Silu 仅剩 4 个小实例。
+- **多时长验证（5s/10s/15s = 124/243/345 帧）**：5 个 pattern（rmsnorm/rope/adaln/swiglu/gate）
+  all_on vs all_off 全部 PASSED + compute-precision PASSED；**收益比例在各时长稳定在同一量级
+  （不随时长漂移）**，而绝对耗时随规模**超线性**增长（FA O(seq²)）。
+- **帧数 snap 到 `17n+5`**：传 120/240/360 会被 diffusers 向上取整；**15s 不能传 360**
+  （取整 362 超上限 360），**合法上限 345**。
+- ⚠️ `patterns/__init__.py` 含他人工作区改动（QwenRope/DropoutZero 等），推送时勿覆盖。
 
-| 配置 | transformer ms |
-| --- | --- |
-| baseline（both off） | 25.83~25.96 |
-| SwiGLU on（cat+npu_swiglu 旧方案） | 25.42~25.48（-0.35ms）✓ |
-| AdaLN on（plain BS1024 初版） | 26.47（+0.64ms）✗ |
-| AdaLN on（plain BS8192 调优） | 26.22（+0.26ms）✗ |
-| AdaLN on（gather 1 行） | 25.72（-0.24ms）✓ |
-| AdaLN on（gather 3 行 + i32） | 25.51（-0.45ms）✓ |
-| both on（gather + npu_swiglu） | 24.96（-1.00ms）✓ |
-| **both on（+ triton swiglu 免 cat + gate 融合）** | **24.10（-1.86ms）✓** |
+## 12. qk_norm + RoPE 大融合：**负面结论归档（防重复实验）**
 
-**最终 kernel 构成（all on, 315 kernels vs baseline 339）**:
+> **方法真源 → `../../pattern-dev/references/fusion-graph-forms-and-semantics.md` +**
+> **`../../pattern-dev/SKILL.md` Phase 2/5**（融合边界判据、大段一次匹配的 pattern 写法、短行 triton 形态天花板）。
 
-- `gather_scale_shift_kernel` ×10（AdaLN, 326us）
-- `gather_residual_gate_kernel` ×8（**gate 融合**, 349us, 每 site 43.6us vs 原链 ~124us）
-- `swiglu_kernel` ×3（**triton swiglu 免 cat**, 518us vs cat+npu_swiglu 1068us）
-- IndexSelect_GatherV2 28→2；Silu 仅剩 4 个小实例
+- **结论（一行，勿重复实验）**：qk_norm + RoPE 结构上**可行**（norm 输出 cast 后直接进
+  `_apply_rotary_emb`、无 GEMM 间隔、单站点 norm 输出无第三消费者），但 **triton 版模型级净负**：
+  v1 标量行循环模型级最慢、v2 2D tile + partner gather 仍慢（gather 被标量化）、v3 对齐半块重载
+  在 BR=128 最快但 **fused 4 站点合计仍约为旧链的 1.7 倍量级** → **默认关**，2026-09 **整体移除代码**。
+  Ascend C 侧复核后**收益上限也仅为个位数百分比**（读流量减半只换来个位数百分比改善 ⇒ 瓶颈是短行
+  D=128 的**行内归约指令/延迟**，不是读带宽，Ascend C 的流量经验无法进一步传导）。
+- **H3 侧站点事实**：站点 = transformer block×2 ×(q,k) = **4/step**；refiner 的 qk_norm 无 rope，**不纳入**。
+  单站点现链 = RmsNorm + RotarySlice + RotaryV2 + ConcatD + cast/tensorMove（各几十微秒量级、合计亚毫秒量级）。
+- **已移除清单（勿按清单复原）**：`mindiesd/layers/norm_rope.py`、`patterns/minimax_h3_norm_rope_pattern.py`、
+  `FusionPatterns.enable_minimax_h3_norm_rope`、注册条目与对应单测。
+- **该模型测出的三条留档判据**：① pattern 输出 cast 的 `_to_copy` **只写 dtype+layout（省略 device）**
+  ——inductor matcher 对 device kwarg 宽容，带 device 会在 pattern trace 时 `_to_copy` 解包递归爆栈；
+  ② 注册必须**最先**（`passes/__init__.py` 字典首项，先于 rmsnorm/rope 单点 pattern）；
+  ③ 单测必须**隔离**（仅启用本 pattern），全开会让单点 pattern 抢跑成"假通过"。
+- **收益池定位（本组合观测）**：GEMM 约四分之三 / FA 约一成半，norm+rope 区仅几个百分点。
 
-**AdaLN 负收益根因与转正（kernel diff 实证，详见 compilation-dev skill
-`benefit-rootcause-guide.md` R5 + 案例 4）**:
+## 13. w8a8(MXFP8) 编译图：**H3 侧图节点清单**
 
-1. 初版 plain scale_shift 负收益根因：triton 1D kernel（BS1024, 230us/site,
-   0.74TB/s）比 3 个 aclnn 逐元素 kernel（117us/site）慢 ~2x；且 2 个
-   index_select gather（33us/site）在 pattern 外，[S,D] scale/shift 物化+重读
-   170MB 冗余流量；
-2. **转正关键①（gather 融合）**：调制表只有 [3,D]=64KB（3 模态，L2 驻留）→
-   pattern 扩展匹配 2 个 index_select 节点，triton 行内核（grid=(S,)）单 kernel
-   吸收全部 → 150us/site → 94.7us/site，-0.24ms；
-3. **转正关键②（cannbot-skills 指导）**：i64→i32 索引（Avoid 标量降级）+
-   每 program 3 行（`tl.static_range(3)`, 3×5376<UB 16384, 尾部 ROWS=1 微
-   kernel）→ 94.7→66us/site，-0.24→-0.45ms；
-4. **SwiGLU 免 cat**：原 cat([gate,hidden])+npu_swiglu 的 cat 拼 [1,S,2F]
-   大张量 ~190us/site；triton 行 kernel 直接读 proj（hidden*silu(gate)）
-   → 单 kernel 172.5us/site（bench 276 vs 550us），省 ~0.5ms；
-5. **gate 融合**：`hidden + gate_table[idx]*attn/ff` 每 block 3 处，gate 表
-   [3,D] L2 驻留 → triton `gather_residual_gate`（i32+3行, 43.6us/site vs
-   原链 ~124us），省 ~0.4ms；注册在 wan_residual_gate 之前防误匹配；
-6. 结论修正：**"triton 打不过 aclnn" 是伪结论**，真实瓶颈是 kernel 形态
-   （流量冗余 + 融合边界 + i64 降级 + 并行度）；外部技能库
-   `cannbot-skills/ops/triton-latency-optimizer`（discrete_memory_access /
-   avoid_scalar_lowering / vector_core_partition）直接指导了 i32 与多行并行；
-7. `enable_minimax_h3_adaln/swiglu/gate` 默认 True，总收益 -1.86ms
-   （25.96→24.10ms, -7.2%）；warmup 仍有 triton JIT（~1-2s）。
+> **契约真源 → `../../quantization-dev/references/online-quant-contract.md`**（编码公式、舍入、scale 粒度、退化块、布局）；
+> **选档语义 → `../../dit-perf-opt/references/quant-tier-device-mapping.md`**；
+> **graph-entry 改图机制 → `../../pattern-dev/references/graph-pattern-rewrite-guide.md`**。本节只留 H3 侧图节点清单。
 
-### 多时长视频验证（5s/10s/15s，2026-08-23）
-
-5 个 pattern（rmsnorm/rope/adaln/swiglu/gate）在 3 个时长全验证通过
-（device 0，compile bf16，256×384，all_on vs all_off）：
-
-| 时长(帧数) | all_on | all_off | 收益 |
-| --- | --- | --- | --- |
-| 5s (124=17×7+5) | 24.18ms | 30.95ms | **-6.77ms（-21.9%）** |
-| 10s (243=17×14+5) | 51.32ms | 67.94ms | **-16.62ms（-24.5%）** |
-| 15s (345=17×20+5) | 77.83ms | 101.59ms | **-23.76ms（-23.4%）** |
-
-- 全部 PASSED + compute-precision PASSED（无 fp32/tf32/int32 计算节点）
-- 帧数 snap 到 17n+5：传 120/240/360，diffusers 向上取整；**15s 不能传 360**
-  （取整 362 超上限 360），合法上限 345
-- 收益百分比稳定（~22-24%），时长增长超线性（FA O(seq²)，24→51→78ms）
-
-- 注意:`patterns/__init__.py` 含他人工作区改动(QwenRope/DropoutZero 等),
-  推送时勿覆盖;远端部署需确认不引入他人 pattern 冲突
-
-## 12. qk_norm + RoPE 大融合（2026-09-04 实现 → triton 版本净负默认关 → 2026-09 整体移除；本节为负面结论归档，防重复实验）
-
-### 背景与结构可行性
-
-- 真实图（before-freezing dump）：qk_norm（`rms_norm(x,[1,S,56,128],w[128],eps)` 分解链
-  → 输出 `_to_copy(bf16, layout, device)`）**直接**进入 `_apply_rotary_emb`（前 96/128
-  rotate_half：slice→split/neg/cat→mul cos/sin→cat 透传），无 GEMM 间隔、norm 输出无
-  第三消费者 → 融合边界干净。站点 = transformer block×2 ×(q,k) = **4/step**（refiner
-  qk_norm 无 rope，不纳入）。
-- 单站点现链成本（5s/256×384×124，kernel_details）：RmsNorm ~55-86us + RotarySlice ~82us +
-  RotaryV2 ~35us + ConcatD ~60-77us + cast/tensorMove ≈ **~250-300us**；4 站点 ≈ 1.1ms。
-- **pattern 匹配要点（已实证）**：rms_norm 分解链 + 输出 cast + rope 链 + cat 整段一次匹配。
-  输出 cast 的 `_to_copy` **只写 dtype+layout（省略 device）**——inductor matcher 对 device
-  kwarg 宽容（实测命中），而带 device 会在 pattern trace 时 `_to_copy` 解包递归爆栈。
-  注册必须最先（`passes/__init__.py` 字典首项，先于 rmsnorm/rope 单点 pattern）。
-
-### 实现（已整体移除 2026-09；下述清单与调优历程仅作负面归档，勿按清单复原）
-
-> 代码已删除：`mindiesd/layers/norm_rope.py`（custom op + triton kernel）、
-> `patterns/minimax_h3_norm_rope_pattern.py`、`FusionPatterns.enable_minimax_h3_norm_rope`
-> 开关、注册条目与 `tests/compilation/patterns/test_minimax_h3_norm_rope_pattern.py`。
-
-- `mindiesd/layers/norm_rope.py`：custom op `mindiesd::norm_rope` + triton kernel + eager
-  兜底 + register_fake。
-- `mindiesd/compilation/patterns/minimax_h3_norm_rope_pattern.py`（bf16 rank4 变体）+ `patterns/__init__.py`
-  导出 + `FusionPatterns.enable_minimax_h3_norm_rope`（默认 False）+ 注册字典首项。
-- UT：`tests/compilation/patterns/test_minimax_h3_norm_rope_pattern.py`（隔离验证：仅启用
-  本 pattern，S=8 与 S=3967 两档，数值 sim > 2^-7 通过）。⚠️ 若不断言隔离（其它 minimax
-  pattern 全开），单测可能被单点 pattern 抢跑成"假通过"——隔离是必需。
-
-### triton kernel 调优历程（910B 类平台，rows=222152, 每 site 数据 57MB r/w）
-
-| 版本 | 形态 | 实测 |
-|---|---|---|
-| v1 标量行循环（每 program 串行 ~9k 行） | grid=rows | 模型级 **111ms/site**（coreDim 还超 65535 崩溃） |
-| v2 2D tile + axis=1 归约 + partner **gather** | BR=16 | 模型级 ~46ms/site（gather 被标量化） |
-| v3 对齐半块重载（无 gather，rstd 复用重归一） | BR=16 | standalone **1558us**；BR=32→1022us；BR=64→703us；**BR=128→473us**（multi-tile/BR>128 无增益/编译失败） |
-
-- 教训复现 cannbot `triton-latency-optimizer`：标量行循环与跨 lane gather 是本平台 triton
-  两大杀手；短行（D=128）+ 行内归约使 triton 远低于 vendor 算子。
-- 模型级 AB（compile bf16, 5s, 同会话同卡）：**OFF 24.65ms（现状 split 融合）vs
-  ON（BR=128）25.45ms → +0.80ms 净负**（PASSED，sim 0.999995）。fused 4×473us≈1.9ms
-  未跑赢旧链 ~1.1ms；省下的 norm 输出 57MB/site 往返被 kernel 低效抵消。
-
-### 结论与下一步
-
-- 结构可行、pattern/UT 闭环完成；**triton 实现当前净负 → 默认 False 保留代码**。
-- 继续方向：Ascend C 原生 kernel（vendor 级 ~150-200us/site 则 4 站点可省 ~0.3-0.5ms），
-  或 triton 针对短行的进一步优化（如 bf16 旋转 + fp32 统计混合精度、多行 L1 复用）。
-
-### Ascend C 经验反哺 triton v2（2026-09-05，结论：收益上限 ~1%，不建议默认开）
-
-- 动机：Ascend C 侧验证（sentinel）确认"整行 128 拷贝+尾列透传"布局正确、HALF=前 96
-  按 48/48 旋转（`out0=lo*cos0−hi*sin0; out1=hi*cos1+lo*sin1`），并把"读一次+写一次"定为
-  流量下限；用该结构重写 triton kernel（v2）：48/48/32 单趟分段读（去全行重读 256→128
-  元素/行、去列掩码、fp32 统计来自 3 个分段和）。
-- 实测（1×3967×56×128 bf16, device 0）：cosim 0.999995 ✓；**443us/site（v1 473us → −6%）**。
-  读流量减半仅 −6% ⇒ kernel 瓶颈非读带宽，而是短行（D=128）行内归约的指令/延迟开销，
-  Ascend C 流量经验无法进一步传导。
-- 结论：triton 版（v1/v2）模型级仍净负（v1 +0.80ms AB）；vendor 级效率（~85us rmsnorm 基准）
-  在 triton 短行场景不可达 → **默认保持 False**；Ascend C 版 partial HALF 仍卡 Gather 语义
-  （D=8 对拍：第二半恒取 x[0]），且修对后收益上限 ~−1%（≤24.0ms 物理不可达）。收益池在
-  GEMM(~74%)/FA(~12.5%)，不在 ~4.5% 的 norm/rope 区。
-
-## 13. w8a8(MXFP8) 编译图与数据格式事实（2026-09-06；仅收录可复现的结构/格式事实）
-
-> 会话级性能/融合收益数字（单设备观察、可能为特例）**不收录**；完整实验记录见会话工作区
-> `tmp/mmx_w8a8/mmx_h3_w8a8_ffn_fusion_analysis.md`（含 kernel 执行序等）。
-
-- **量化档位（可复现，代码逻辑决定）**：`--quant w8a8` 按设备选算法——A5 → **W8A8-MXFP8**、
-  A2/A3 → W8A8-DYNAMIC(INT8)（见 `model/common/quantization.py`）；dummy 下 transformer 的
-  `nn.Linear` 全量化（28/28、0 残留）。
-- **w8a8 编译图节点集（torch_npu API 事实）**：每个量化 Linear 展开为
-  `npu_dynamic_mx_quant`（激活按 k 分块 32 出 fp8e4m3 + e8m0 scale）+ `npu_quant_matmul`
-  （V5/QuantBatchMatmulV3）出 bf16；FFN 为 diffusers 0.40 `SwiGLU`（单 `Linear(D→2F)`，
-  chunk→`hidden*silu(gate)`）。
-- **torch↔catlass MXFP8 数据格式一致（实测于 m=128/k=512 档）**：`npu_dynamic_mx_quant`
-  的 scale 布局（A: `[m,ceil(k/32)/2,2]`；W 按 k 量化: `[n,ceil(k/32)/2,2]`，e8m0 字节）
-  与 catlass 例程（53/65）输入布局字节一致，可直接喂入；解码对拍相对误差 ~2%（e4m3 量化级，
-  测试范围 m=128/k=512/N=2048，其它 shape 未验证）。
-- **量化语义核验建议**：以 fp32 真实输出例程（catlass 53）或量化输出解码对拍作语义基准，
-  勿只依赖量化输出的自比对（其敏感性未经证实，勿据此下语义正确结论）。
-- **FFN 融合接线（可复现结构，2026-09-06 更新：graph-entry 真图命中）**：
-  算子 `mindiesd::mm_swiglu_mxquant`（`mindiesd/layers/mm_swiglu_mxquant.py`，catlass 65 语义
-  单 problem、model-order W、kernel 内缓存列序调换）；融合**不接入 dummy eager 代码**
-  （`examples/dummy_run/model/common/quantization.py` 无 layer-route patch，`minimax_h3_infer.py`
-  w8a8 分支只做量化）。compile 侧默认开启（`enable_minimax_h3_ffn_fusion=True`），真图命中走
-  **graph-entry 方案**（参考 `torch/_inductor/fx_passes/mkldnn_fusion.py`）：真实图
-  `Qmm([S,2F])→view[1,S,2F]→split→silu→mul→view[S,-1]→DxQ→Qmm` 的 view 尺寸带动态 S
-  （同图 S=1/3967），trace 式 pattern 无法命中；改为手写 CallFunction 树（全 Arg 叶子、
-  view 尺寸 Ignored、共享子节点 `_users=MULTIPLE`）+ handler 手动改图（mkldnn `_recover_linear`
-  同款），由 `register_ffn_fusion_graph_entries()` 注册进 pattern_pass；
-  fusion on 时同步禁 triton swiglu pattern（fusion 拥有 FFN 站点）。
-  实测：compile 图 3 个 fused op、eager/compile 同 seed latents 位级一致
-  （mean_rel=0.0）、transformer 15.7-15.9ms（与历史 eager-layer-route 最佳持平）。
-  踩坑（复现用）：pattern 列 kwargs 会致不匹配（全用 Arg/Ignored）；共享子节点必须复用
-  同一 PatternExpr 实例并 `_users=MULTIPLE`；handler 从 match.output_node 反向走 producer
-  取链节点、`mm_swiglu_mxquant` 需传 aic_num。收益数字见分析文档 §5i。
-- **适用边界（为何 wan/flux 无 mm_swiglu_mxquant，2026-09-06 对照 diffusers 0.40 源码核实）**：
-  mm_swiglu_mxquant 只匹配 **MiniMax-H3 特有 FFN hidden 形态**——单个 `Linear(D→2F)` 输出
-  直接 `chunk→hidden*silu(gate)`（SwiGLU 两半）+ 输出 MX 量化直供 out-proj。Wan2.2
-  （`WanTransformerBlock.ffn = FeedForward(activation_fn="gelu-approximate")`）与 FLUX
-  （`FluxTransformerBlock.ff/ff_context = FeedForward(gelu-approximate)`）的 FFN 均为
-  **GELU 单分支 MLP**（无 [hidden|gate] 两半、无 SwiGLU、无 out==2F 配对），结构判定
-  （hidden out==2F + out in==F 容器内唯一）天然不命中 → 融合为 0 站点，属预期而非缺陷；
-  它们的 compile 收益走 rms/rope/gate/adaln pattern + 小 kernel 消减（-11~-12%）。若未来
-  要对 GELU-FFN 模型做同类融合，需另起 GELU 语义 kernel（本项目无此诉求）。
+- **量化档位**：`--quant w8a8` 按设备选算法——A5 → **W8A8-MXFP8**、A2/A3 → W8A8-DYNAMIC(INT8)
+  （`model/common/quantization.py`）；dummy 下 transformer 的 `nn.Linear` 全量化（**28/28、0 残留**）。
+- **每个量化 Linear 展开为**：`npu_dynamic_mx_quant`（激活按 k 分块 32 出 fp8e4m3 + e8m0 scale）
+  - `npu_quant_matmul`（V5 / QuantBatchMatmulV3）出 bf16。
+- **FFN 形态（diffusers 0.40 `SwiGLU`）**：单个 `Linear(D→2F)` → `chunk` → `hidden*silu(gate)`；
+  真图 `Qmm([S,2F]) → view[1,S,2F] → split → silu → mul → view[S,-1] → DxQ → Qmm`，view 尺寸带**动态 S**
+  （同图 S=1/3967）⇒ trace 式 pattern 无法命中。
+- **FFN 融合算子（H3 侧接线事实）**：`mindiesd::mm_swiglu_mxquant`（`mindiesd/layers/mm_swiglu_mxquant.py`，
+  catlass 65 语义、单 problem、model-order W、kernel 内缓存列序调换）；**不接入 dummy eager 代码**，
+  compile 侧默认开启（`enable_minimax_h3_ffn_fusion=True`），真图命中走 **graph-entry 手写 CallFunction 树
+  - handler 手动改图**（参考 `torch/_inductor/fx_passes/mkldnn_fusion.py` 的 `_recover_linear`）：
+  全 Arg 叶子、view 尺寸 `Ignored`、共享子节点 `_users=MULTIPLE`，由 `register_ffn_fusion_graph_entries()`
+  注册进 pattern_pass；**fusion on 时同步禁 triton swiglu pattern**（fusion 拥有 FFN 站点）。
+  实测 compile 图 3 个 fused op、eager/compile 同 seed latents **位级一致（mean_rel=0.0）**。
+- **适用边界（为何 wan/flux 无 mm_swiglu_mxquant）**：该算子只匹配 **H3 特有 FFN hidden 形态**
+  （单个 `Linear(D→2F)` 输出直接 `chunk→hidden*silu(gate)` + 输出 MX 量化直供 out-proj）。Wan2.2 与
+  FLUX 的 FFN 均为 **GELU 单分支 MLP**（无 `[hidden|gate]` 两半、无 SwiGLU、无 out==2F 配对）→
+  结构判定（hidden out==2F + out in==F 容器内唯一）天然不命中、融合为 **0 站点**，属**预期而非缺陷**；
+  它们的 compile 收益走 rms/rope/gate/adaln pattern + 小 kernel 消减。若未来要对 GELU-FFN 模型做同类
+  融合，需另起 GELU 语义 kernel（本项目无此诉求）。
+- **跨栈数据格式一致性（实测于 m=128/k=512 档，其它 shape 未验证）**：`npu_dynamic_mx_quant` 的
+  scale 布局（A: `[m,ceil(k/32)/2,2]`；W 按 k 量化: `[n,ceil(k/32)/2,2]`，e8m0 字节）与 catlass
+  例程（53/65）输入布局**字节一致**，可直接喂入；解码对拍相对误差 ~2%（e4m3 量化级）。
+  **语义核验建议**：以 fp32 真实输出例程（catlass 53）或量化输出解码对拍作基准，**勿只依赖量化输出的自比对**。
 
 ## 维护与更新
 

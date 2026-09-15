@@ -1,7 +1,7 @@
 ---
 name: mindie-sd-community-governance
 compatibility: 无（assets/mr_ruleset_*.xlsx 随 skill 内置）
-description: "Handle MindIE-SD documentation, governance, contributor workflow, commit or PR conventions, history cleanup, template changes, and version-policy updates with minimal context, fixed review steps, and deterministic output."
+description: "Handle MindIE-SD documentation, governance, contributor workflow, commit or PR conventions, history cleanup, template changes, and version-policy updates with minimal context, fixed review steps, and deterministic output. Use this skill whenever the task touches docs/ 或文档站点内容与配置（Sphinx / Read the Docs / conf.py / index.md / 目录导航 / 首页）、中英文双语配套、治理文档、贡献流程说明、PR/MR 模板或标题正文规范、提交历史整理、版本策略与发布规则。即使用户只说「改个文档」「双语要同步」「commit message 怎么写」「PR 模板加一项」「把提交压一下」「rebase 冲突怎么理」而未提治理规范，也应触发。不负责通用工程实现与仓库默认工作流定义（后者以 AGENTS.md 为准）；Python 格式见 code-standards，Markdown 格式见 markdown-lint。"
 ---
 
 # MindIE-SD Community Governance Skill

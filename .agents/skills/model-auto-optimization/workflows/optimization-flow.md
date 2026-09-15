@@ -1,4 +1,4 @@
-﻿# 模型自动优化执行流程（workflow）
+# 模型自动优化执行流程（workflow）
 
 > 由 `model-auto-optimization/SKILL.md` 入口分流后 Read 本文件，按阶段模板与门禁严格执行；
 > 本文件只承载「流程怎么推进」，各阶段支撑技能的知识点仍在对应 SKILL.md / references 单点维护。
@@ -31,11 +31,12 @@
 - **有损路径必测组合（L1 契约，detail-report §C.2 禁区）**：`量化×稀疏` / `稀疏×Cache` /
   `量化×Cache` / 三元 `Cache+量化(w8a8f8)+稀疏`——每行必须实测或登记豁免（带证据），不得以
   预算/排序跳入"未尝试"。
-- **条件触发**：S0 `env-install`+`dummy-run`（环境未就绪）；S1 融合 `framework-feature-enablement`
-  与 profiling 回路、compilation/operator（使能/融合/开发）；S3 `parallelism-strategy`（多卡）；S4 `combination-search` /
+- **条件触发**：S0 `env-install`+`dummy-run`（环境未就绪）；S1 融合 `framework-integration`
+  与 profiling 回路、compilation/operator（使能/融合/开发）；S3 `dit-parallel-opt`（多卡）；S4 `combination-search` /
   `seam_check` / `post-enable-review` / 质量门禁（quality-gate + `runs/{task_id}/profiles/{model}.toml`（gen_profile.py 生成不入库） +
   quality_compare 现算）。
-- **既有 case 文件非必触发**：framework×model 专属 case（vllm-omni-*/lightx2v-*）仅在同
+- **框架×模型专属经验文件非必触发**：framework×model 专属的开启方式 / 底座文件
+  （`{framework}-{主题}-enablement.md` / `{主题}-notes.md`，如 vllm-omni 与 lightx2v 两族）仅在同
   框架×同模型时命中；必触发的是上表机制与模板（机制在 L1/L2，判据在 L3）。
 
 ## 执行波次与并发（单特性 ∥ → 组合后置）
@@ -93,8 +94,8 @@
 1. 采集：`profiling-collect`（自家脚本 scripts/collect_profile.py；三方框架入口用补丁 + torchrun）
    → ASCEND_PROFILER_OUTPUT；Warmup 在 profiler 外（默认 5 步，compile ≥10）。
 2. 分析：`profiling-analyze`（scripts/analyze_trace.py 5 层管道 → 瓶颈/融合候选）。
-3. 方案：`performance-optimization`（mindiesd-features.md 选档）；框架侧开关/使能由
-   framework-feature-enablement 执行；差距 <3% 视为噪声（阈值单点维护于 performance-optimization）。
+3. 方案：`performance-optimization`（按 `docs/zh/features/*` 选档）；框架侧开关/使能由
+   framework-integration 执行；差距 <3% 视为噪声（阈值单点维护于 performance-optimization）。
 4. 复验：重新采集 + scripts/compare_traces.py kernel diff + 锚点行实测 e2e（同窗口同卡组，
    rank0/p50）；中间行可用首步耗时辅助对比（见下）。
 
@@ -138,9 +139,9 @@
    **首步 block 占比 <0.5% = 收益小可不执行**（签名 no-gain，进 A.1.3/§C）；≥0.5% 才进入采纳
    评估（三层证据复验；<3% 噪声不宣称；**最终采纳行全量步数实测 e2e，作为结论锚点**）。
 4. **接入方式判定**：查框架是否支持算子接入（是否有抽象接口）：
-   - 有抽象接口（rope/norm 类）→ 通过 **mindiesd 接口接入**（framework-feature-enablement
+   - 有抽象接口（rope/norm 类）→ 通过 **mindiesd 接口接入**（framework-integration
      运行时注册表替换 = `kernel融合` 特性 · API 接入方式）；
-   - 无抽象接口 → 尝试 **compile 接入**（pattern / GraphPatternEntry，compilation-dev）。
+   - 无抽象接口 → 尝试 **compile 接入**（pattern / GraphPatternEntry，pattern-dev）。
    - 若融合算子本身**不存在** → **operator-dev 开发**（路由外部 cannbot + 本仓经验）；
      若算子已存在 → 直接接入。
 5. **初成验证与 compile 决策**：算子初次开发完成可**先经 API 接入确认可用**；随后**依据框架
@@ -151,8 +152,8 @@
 7. 归属与记录：内容属 `kernel融合` 特性（子项/方法 compile 或 API 接入进说明列与细分 A.1，
    不派生特性名）；每候选迭代表 retain/reject + 签名。
 
-- 支撑技能：`profiling-collect`、`profiling-analyze`、`framework-feature-enablement`、
-  `compilation-dev`、`operator-dev`、`dummy-run`。
+- 支撑技能：`profiling-collect`、`profiling-analyze`、`framework-integration`、
+  `pattern-dev`、`operator-dev`、`dummy-run`。
 - 方案确认点：候选集排序与时间盒（effort-estimation）向用户确认；接入方式（API/compile）与
   "是否 compile"按上述判定链与用户确认后再实施。
 - 验收证据：三层证据（图命中 → kernel diff → 锚点行实测 e2e）+ 数值核验 + 精度结论；API 接入项另
@@ -161,15 +162,15 @@
 
 ## 阶段 S3：无损 · 并行通信
 
-- 支撑技能：`parallelism-strategy`、`profiling-collect`、`profiling-analyze`（带宽/掩盖测量）。
-- **卡组前提（强制）**：选卡必须先满足 parallelism-strategy「卡组拓扑规则」（2 卡 ∈ {0-1,2-3,4-5,6-7} /
+- 支撑技能：`dit-parallel-opt`、`profiling-collect`、`profiling-analyze`（带宽/掩盖测量）。
+- **卡组前提（强制）**：选卡必须先满足 dit-parallel-opt「卡组拓扑规则」（2 卡 ∈ {0-1,2-3,4-5,6-7} /
   4 卡 ∈ {0-3,4-7} / 8 卡 = 0-7）；非法卡组不采纳；卡组变更 = 契约变更，锚点行须新卡组重测。
 - 执行逻辑（按序推进）：
   1. **卡组健康与拓扑核验**：`npu-smi -t topo` + `npu-smi info`（Health/Alarm/占用）；多卡
-     4 步 smoke 验证 per-step 时长（43s/步 = SIGKILL 残留态，须驱动复位/换组）；
+     4 步 smoke 验证 per-step 时长（数十秒/步量级 = SIGKILL 残留态，须驱动复位/换组）；
   2. **带宽探针**：先测**不同卡数**下的通信带宽（如 4 / 8 / 16 卡；hccl/集合通信带宽基准，
      同拓扑同窗、固定 rank 口径；等价工具 torchrun + torch_npu 姿势见
-     parallelism-strategy ascend-topology-bandwidth-diag §3）；
+     dit-parallel-opt ascend-topology-bandwidth-diag §3）；
   3. **拓扑决策**：若明显发现 **4 卡带宽高于 8 卡** → **仅在 4 卡内做 USP**、两个 4 卡之间做
      **CP**（USP4CP2 场景；该场景的**稀疏须依赖并行稀疏**）——候选与理由入迭代表/说明列；
   4. **默认序**：优先 **USP** → 再看是否有 **CFG** → 然后 **CP**（allgather KV、Q 切分）；
@@ -186,7 +187,7 @@
 
 ## 阶段 S4：有损优化
 
-- 支撑技能：`performance-optimization`（特性选档）、`framework-feature-enablement`（开关）、
+- 支撑技能：`performance-optimization`（特性选档）、`framework-integration`（开关）、
   `benchmark-dev`（稀疏度/量化档选型证据）。
 - 方案确认点：目标档（经验默认 8bit + 80% 稀疏 + Cache）与组合边界向用户确认；确认内容含
   **组合覆盖清单必测集**（两两 + 三元 Cache+量化+稀疏，量化档以 `w8a8f8` 为代表档参与组合），
@@ -224,10 +225,10 @@
   ada_bsa、量化档按档位链推进/降档、compile ↔ API 换载体）→ 与其它已采纳特性 seam 组合试叠
   （[MUST] 必测行优先）→ 质量/计数门禁 → 迭代表 retain/签名 → **收口该特性最佳策略**（采纳档进
   overview/detail 对应行 + §E 质量证据登记）。判据/选项在 L3（support-matrix 档位、
-  mindiesd-features、profiles `[domain]`），**执行链与回退裁决在本 L2 + 迭代表**（一次一候选、
+  `docs/zh/features/*` 特性真源、profiles `[profile].domain`），**执行链与回退裁决在本 L2 + 迭代表**（一次一候选、
   带签名）。
-- 执行纪律：单特性开启 + 精度校验 → 组合试验按 `performance-optimization/references/
-  combination-search.md`（seam 静态判定 / 单变量叠加 / frontier 保留 / 层回退）→ 每档落地后
+- 执行纪律：单特性开启 + 精度校验 → 组合试验按
+  `dit-perf-opt/references/combination-search.md`（seam 静态判定 / 单变量叠加 / frontier 保留 / 层回退）→ 每档落地后
   **post-enable-review 六面复核**（references/post-enable-review.md）→ 无损项叠加复核；
   每档/每组合先入迭代表（推进规则 7/8），否决必须带签名。
 - **组合覆盖清单（S4-2 必测，防静默缺行）**：凡 `量化`/`稀疏`/`Cache` 中 ≥2 个维度有通过
@@ -270,6 +271,28 @@
 - 支撑技能：预留（训练侧流程/能力待 case 回填；仓库能力技能按需补充）。
 - 验收证据（骨架）：S5 baseline + 每候选质量-速度权衡表 + 迭代表裁决。
 - 门禁：`stage_gate.py --stage S5`（案例回填后细化验收点；无案例跳过本阶段，run-state 不登记 S5 行即可）。
+
+## 阶段 S6：VAE + host（条件进入 · 非 DiT 段）
+
+> **进入条件（先判后做）**：S0 阶段账测得 `非DiT-解码段` / `非DiT-host段` 占比 **≥10%**
+> （分母 / 测点 / **步数档**的口径见 `../references/bottleneck-labels.md`）。
+> **未达门限**：在 run-state 推进表登记 `S6 = skipped` + 理由（**登记 ≠ 缺失**；闭环时特性覆盖清单
+> 须无未裁决项），继续闭环——**不得静默跳过而不登记**。
+
+- **定位**：非 DiT 段优化独立为 S6——**VAE 全部归本阶段**（计算 + 通信同技能），host 段做固定开销优化。
+- **手段链（VAE 侧，按序）**：**无损优先**（分片等价 / 等价替换 / tile / 编译启用）→ 无损达不到目标时
+  才启用**换权重**（有损：换入外部训练的小型自编码器替换原生解码器）；换权重档须与原生解码器
+  **同 latent 对拍** SSIM + 灰度相关 + 钳位占比，并声明画质档位（保画质档 / 预览档并列）。
+- **host 侧**：交付与搬运（编码 / worker→API 通路 / 落盘 / 异步化）+ 装载与预热（权重加载 /
+  编译与图下发预热 / 镜像预热）；**不含并发与吞吐**（会改变所有性能口径与 SLO 语义 → 另立项）。
+- **支撑技能**：`vae-opt`、`host-opt`（本阶段专属模块）；需要新 pattern/算子时按 S1 的路径走
+  `pattern-dev` / `operator-dev`，框架侧开关/缺口走 `framework-integration`。
+- **验收证据**：VAE 方案 + 一致性证据（**未使用有损特性时按 `accuracy-gate` 三级验收强制**）；
+  host 固定开销账（分段耗时 + 占 e2e 比 + 测点口径 + 步数档）；数字入库按 `perf-gate`（**只有验收态可入表**）。
+- **报表**：本阶段行按 overview-report 白名单归组——VAE **无损**优化按其**手段**计 `并行` 或
+  `kernel融合`（说明列标注作用对象 = 解码段），**有损换权重**计 `VAE解码替换`；同时须在总览报表的
+  **「非 DiT 段耗时账」**登记该段耗时与占比（见 `../references/overview-report.md` §1.2）。
+- **门禁**：`stage_gate.py --stage S6`（未过不得推进/宣称）。
 
 ## 闭环复验（close）
 

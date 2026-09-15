@@ -7,17 +7,17 @@ description: NPU 图批量下发能力（aclgraph / aclgraph_ex 家族）的开�
              当用户需要减少 host launch 开销、静态 shape 大 batch 场景加速、
              或排查 NPUGraph replay 输入不匹配问题时使用此 skill。
              即使用户只提"批量下发""graph capture""图捕获"而未说 aclgraph，也应触发；
-             pattern/Inductor 融合（default 后端）见 compilation-dev，算子本体见 operator-dev，
+             pattern/Inductor 融合（default 后端）见 pattern-dev，算子本体见 operator-dev，
              本技能只覆盖图批量下发。由 dev-workflow 的编译开发阶段与 model-auto-optimization 的
              图下发场景指引加载。
 ---
 
 # ACLGraph 批量下发
 
-## 边界：与 compilation-dev 的分工
+## 边界：与 pattern-dev 的分工
 
 ```text
-compilation-dev（pattern matcher + Inductor）      aclgraph-dev（批量下发）
+pattern-dev（pattern matcher + Inductor）      aclgraph-dev（批量下发）
 ├─ PatternBase / register_replacement              ├─ torch.npu.NPUGraph 静态 capture
 ├─ 三段注册 / 单测 / mismatch 调试                 ├─ graph pool / lazy capture / replay
 ├─ default 后端: aot_autograd + Inductor codegen   ├─ 专用 copy stream + event 管线

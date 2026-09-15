@@ -3,36 +3,46 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "性能分析报告说 MatMul 占 DiT 58%，优化方向是量化，具体选哪个方案？",
-      "expected_output": "按 performance-optimization Step 3：查 mindiesd-features.md §MatMul量化（唯一真相源），考虑硬件约束/模型兼容/精度权衡，选具体 API（如 W8A8_MXFP8）；优先 MindIE-SD Pattern > 量化 > 稀疏 > 通信 > 通用",
+      "prompt": "profile 分析出来了：DiT 里 MatMul 占 62%，通信没有暴露。接下来怎么走？",
+      "expected_output": "按 performance-optimization §2 分发：锚点（kernel 占比 62%）对应标签 DiT-计算受限 → 分发到 dit-perf-opt（DiT 计算模块）做档位选型与实施；分发时把锚点随行；标签枚举与门限口径引 model-auto-optimization/references/bottleneck-labels.md，本入口只消费不定义；回流验收按同窗 A/B（perf-gate），有损档另过 accuracy-gate 的三级精度验收",
       "files": [],
       "expectations": [
-        "引用 mindiesd-features.md 作为唯一真相源",
-        "给出方案优先级（Pattern > 量化 > 稀疏 > 通信 > 通用）",
-        "提到硬件约束与精度权衡检查"
+        "按瓶颈标签分发到 dit-perf-opt，而不是在入口内直接选档实施",
+        "引用 model-auto-optimization/references/bottleneck-labels.md 作为标签的单一真源（只引用不重定义）",
+        "说明分发时锚点随行，并按 perf-gate 的同窗口径验收"
       ]
     },
     {
       "id": 2,
-      "prompt": "优化方案实施后怎么确认没破坏正确性？",
-      "expected_output": "按 Step 4/5 复验：重新跑相同 benchmark 与 5 层分析；正确性用 cosine similarity 不下降验证；差距 <3% 视为噪声",
+      "prompt": "我们这个模型解码段太慢了，帮我把 VAE 解码切到 8 卡上跑。",
+      "expected_output": "按 §4 锚点要求：用户声明瓶颈（解码段）但没给实测锚点 → 退回 model-auto-optimization 先定位（真实案例：用户认为解码慢、实测 DiT 占 89%）；有锚点且确认是解码段（非DiT-解码段）时，分发到 vae-opt 并做未用有损手段时的一致性强制验收",
       "files": [],
       "expectations": [
-        "提到复验相同配置（profiling-collect + profiling-analyze）",
-        "提到 cosine similarity 正确性门槛",
-        "提到 3% 噪声阈值",
-        "有损场景另过端到端质量门禁（定量指标 + 视觉伪影 + off-identity，见 quality-gate.md 与仓库 evals/）"
+        "指出用户声明缺少实测锚点，按 §4 退回 model-auto-optimization 定位",
+        "不凭用户主观描述直接分发或选档（防优化错对象）",
+        "给出有条件分支：锚点确认后标签为 非DiT-解码段 → vae-opt，且未用有损手段时一致性验收强制调用 accuracy-gate"
       ]
     },
     {
       "id": 3,
-      "prompt": "建议的 API 在远端环境里不存在或签名不一样，怎么办？",
-      "expected_output": "按特性映射刷新规则：触发 mindiesd-features.md 更新检查，用 scripts/refresh_features.py 从 docs/zh/features 重新生成",
+      "prompt": "帮我看看这个模型怎么加速，随便给个方案就行。",
+      "expected_output": "识别为瓶颈未明的任务 → 不属本入口，先走 model-auto-optimization（唯一有分析权）定位并发标签，再回到本入口分发；本入口不接受未定位的任务，也不代做占比分析",
       "files": [],
       "expectations": [
-        "识别为 features.md 过期信号",
-        "给出 refresh_features.py 更新命令",
-        "提到版本号不一致/支持矩阵矛盾也是更新信号"
+        "判定为瓶颈未明，路由 model-auto-optimization 先定位",
+        "明确本入口不接受未定位任务、不做占比分析",
+        "说明定位出标签后再由本入口分发"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "环境刚装好还没跑通模型，先帮我把量化开起来省点时间吧。",
+      "expected_output": "按 §3 最小前置集：环境可用 + 模型已跑通一轮 + 有 baseline 数字，三项缺一即退回 model-auto-optimization 走 S0（安装/权重准备归 env-install，本入口不代做）；且「怎么开量化/开哪一档」的内容归 dit-perf-opt",
+      "files": [],
+      "expectations": [
+        "按最小前置集判定：模型未跑通 / 无 baseline → 退回 model-auto-optimization 走 S0",
+        "说明安装与权重准备归 env-install，本入口不含 S0 内容",
+        "指出量化档位选择（怎么开、开哪一档）属 dit-perf-opt，不在入口内完成"
       ]
     }
   ]

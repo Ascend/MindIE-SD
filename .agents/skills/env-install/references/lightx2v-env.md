@@ -2,15 +2,16 @@
 
 > 定位：LightX2V 的部署形态与 vLLM-Omni 不同——**editable 源码 + `PLATFORM` 环境变量驱动**，
 > 无独立服务进程。本文记录把该环境从零复现/更新到就绪的姿势（Ascend 950PR 实测）。
-> 边界：止于「环境就绪」（import 成功、版本配套、权重就位）；运行/使能姿势见
-> `framework-feature-enablement/references/lightx2v-mindiesd-case.md`。
+> 边界：止于「环境就绪」（import 成功、版本配套、权重就位）；**运行入口与 `--config_json` 档位**见
+> `framework-integration/references/run-entry-and-request-tiers.md` §2，
+> 使能姿势见 `framework-integration/references/lightx2v-enablement.md`。
 
 ## 1. 环境形态（先理解再动手）
 
 | 项 | 形态 |
 |---|---|
 | 代码 | 源码目录 + `pip install -e`（editable），远端常非 git 部署 |
-| 运行时 | `docker exec` 进容器 → source CANN env → `torchrun` 启动推理 |
+| 运行时 | `docker exec` 进容器 → source CANN env → `torchrun` 启动推理（命令与档位见 §4 指针） |
 | 模型 | 共享模型目录（容器与宿主机挂载一致） |
 
 ## 2. 版本配套（950PR 实测）
@@ -42,27 +43,17 @@ docker exec {container} bash -c 'source /usr/local/Ascend/ascend-toolkit/set_env
   mindiesd 同理
 - `npu-smi info` 检查卡 Health（避开 Alarm 卡）；性能对比必须固定同卡组
 
-## 4. 运行入口（环境侧）
+## 4. 运行入口（不属本技能）
 
-```bash
-docker exec {container} bash -c '
-  source /usr/local/Ascend/ascend-toolkit/set_env.sh
-  export PLATFORM=ascend_npu
-  export ASCEND_RT_VISIBLE_DEVICES={cards}
-  export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
-  export HCCL_NPU_SOCKET_PORT_RANGE=20000-21000   # 端口 16666 冲突时
-  export PYTHONPATH={repo}/lightx2v:$PYTHONPATH
-  cd {repo}/lightx2v
-  torchrun --standalone --nproc_per_node={n} -m lightx2v.infer \
-    --model_cls minimax_h3 --task t2av \
-    --model_path {model_dir}/MiniMax-H3 \
-    --config_json {repo}/lightx2v/configs/platforms/ascend_npu/minimax_h3_t2av_sp_compile_5s.json \
-    --save_result_path {out}.mp4
-'
-```
+**止于环境就绪**：本技能不登记运行入口与档位。`torchrun` 运行命令、`--config_json` 档位语义
+（并行 × compile × 时长/分辨率档）、请求/配置切换与档位报错回退 →
+`framework-integration/references/run-entry-and-request-tiers.md` §2；
+并行档位**形态怎么选**归 `dit-parallel-opt`（`parallel-form-selection-method.md`）；
+使能细节（`compile_backend`、`hccl_eager`、kernel diff 方法）→
+`framework-integration/references/lightx2v-enablement.md`。
 
-运行/配置细节（compile_backend、`hccl_eager`、kernel diff 方法）→
-`framework-feature-enablement/references/lightx2v-mindiesd-case.md`。
+环境侧**就绪判据**（本技能负责）：§3 的 `PLATFORM=ascend_npu` 下 `import lightx2v, mindiesd, torch_npu`
+成功 + §2 版本配套就位 + §5 权重分区与完整性。
 
 ## 5. MiniMax-H3 权重（LightX2V t2av 视角）
 
@@ -74,10 +65,18 @@ docker exec {container} bash -c '
 - 校验：`{root}/transformer/model.safetensors.index.json`、`{root}/text_encoder/...` 存在，
   `find {root} -name '*.incomplete'` 为空
 
-## 6. 共享机注意
+## 6. 共享机与卡组（不属本技能，只留判据）
 
-调优机常有多租户：其他服务的推理进程可能占用部分卡（vllm / rtp_llm 等）。实验前：
+调优机常有多租户：其他服务的推理进程可能占用部分卡（vllm / rtp_llm 等）。选卡、占用与进程归属
+**不属本技能**：选空闲卡与进程查询姿势 → `remote-access/SKILL.md`「空闲卡选择」；
+卡组可用性（`Health=OK` ≠ 组可用）、拓扑判定与**不要 kill 他人进程**的共享机纪律 →
+`dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` §1/§4。
 
-- `npu-smi info` 与 `npu-smi info -t proc-mem` 查看卡占用与进程归属，**不要 kill 他人进程**
-- 4 卡（USP4）实验需要 4 张 Health=OK 的空闲卡；凑不齐时先与占用方协调，或改用可用卡组
-  并保持对比同卡组（口径一致性优先于卡编号）
+> 对安装侧的唯一要求：装完/验证时就近记录**本次可用的卡组与卡状态**，供后续实验沿用同一卡组
+> （口径一致性优先于卡编号）。
+
+## 维护与更新
+
+当 LightX2V 部署形态（editable + `PLATFORM` 环境变量）、版本配套或权重分区口径变化时，
+按 dev-workflow 的复盘流程更新本文件；运行入口与档位更新到
+`framework-integration/references/run-entry-and-request-tiers.md`，本文件只留环境就绪判据。

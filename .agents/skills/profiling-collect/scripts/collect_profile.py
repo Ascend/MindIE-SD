@@ -45,18 +45,25 @@ def _parse_args():
     parser.add_argument("--workspace", default=DEFAULT_WORKSPACE)
     parser.add_argument("--project", default=DEFAULT_PROJECT)
     parser.add_argument(
-        "--script-subdir", default=DEFAULT_SCRIPT_SUBDIR, help="Remote subdirectory containing the inference script"
+        "--script-subdir",
+        default=DEFAULT_SCRIPT_SUBDIR,
+        help="Remote subdirectory containing the inference script",
     )
     parser.add_argument("--script", required=True, help="Inference script name on remote")
     parser.add_argument("--device-id", type=int, default=DEFAULT_DEVICE_ID)
-    parser.add_argument("--profile-dir", default=DEFAULT_PROFILE_DIR, help="Profile output directory name on remote")
-    parser.add_argument("--output-dir", default=None, help="Local directory to save downloaded results (default: cwd)")
-    parser.add_argument("--compile", action="store_true", help="Enable MindieSDBackend compilation")
     parser.add_argument(
-        "--warmup-steps", type=int, default=5, help="Number of warmup steps before profiling (default: 5)"
+        "--profile-dir", default=DEFAULT_PROFILE_DIR, help="Profile output directory name on remote"
     )
     parser.add_argument(
-        "--skip-profiling", action="store_true", help="Skip profiling run (compress+download existing results)"
+        "--output-dir",
+        default=None,
+        help="Local directory to save downloaded results (default: cwd)",
+    )
+    parser.add_argument("--compile", action="store_true", help="Enable MindieSDBackend compilation")
+    parser.add_argument(
+        "--skip-profiling",
+        action="store_true",
+        help="Skip profiling run (compress+download existing results)",
     )
     return parser.parse_args()
 

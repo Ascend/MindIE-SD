@@ -10,7 +10,7 @@
       ],
       "expectations": [
         "先做任务判定区分主轴与侧轨",
-        "路由到 S0 准备阶段并列出支撑技能（env-install / framework-feature-enablement / dummy-run）",
+        "路由到 S0 准备阶段并列出支撑技能（env-install / framework-integration / dummy-run）",
         "给出 S0 验收点（import mindiesd / 权重完整 / dummy run 出结果）",
         "按阶段顺序推进，每阶段核对产物与验收点"
       ]
@@ -18,7 +18,7 @@
     {
       "id": 2,
       "prompt": "LightX2V 上 MiniMax-H3 想无损优化到只剩融合算子，怎么走",
-      "expected_output": "路由 S1（有 rms_type/rope_type 抽象接口 → 运行时接入 mindiesd 单算子，kernel diff 验收）→ S1 融合链内 profiling 采集 profiling-collect → profiling-analyze 识别融合机会 → 核查 mindiesd kernel 接口/pattern，无 pattern 时经 compilation-dev 新增并在 dummy run 快验）→ 三层证据（图命中/kernel diff/墙钟 rank0）确认收益，无收益回退",
+      "expected_output": "路由 S1（有 rms_type/rope_type 抽象接口 → 运行时接入 mindiesd 单算子，kernel diff 验收）→ S1 融合链内 profiling 采集 profiling-collect → profiling-analyze 识别融合机会 → 核查 mindiesd kernel 接口/pattern，无 pattern 时经 pattern-dev 新增并在 dummy run 快验）→ 三层证据（图命中/kernel diff/墙钟 rank0）确认收益，无收益回退",
       "files": [
         "SKILL.md"
       ],
@@ -32,7 +32,7 @@
     {
       "id": 3,
       "prompt": "4 卡跑扩散模型要多卡并行，怎么选 USP 还是 CP",
-      "expected_output": "路由 S3：parallelism-strategy 优先 USP，结合拓扑带宽差异评估 CP/其他；少量 step 执行后分析多 rank 数据确认特性正确开启且通信掩盖充分；固定 rank 口径比较通信耗时占比与墙钟后选定策略",
+      "expected_output": "路由 S3：dit-parallel-opt 优先 USP，结合拓扑带宽差异评估 CP/其他；少量 step 执行后分析多 rank 数据确认特性正确开启且通信掩盖充分；固定 rank 口径比较通信耗时占比与墙钟后选定策略",
       "files": [],
       "expectations": [
         "提到 USP 优先与拓扑带宽差异下 CP 的取舍",
@@ -43,7 +43,7 @@
     {
       "id": 4,
       "prompt": "量化+稀疏+缓存怎么组合才稳，目标 8bit 和 80% 稀疏",
-      "expected_output": "路由 S4：performance-optimization（mindiesd-features.md 特性真相源）+ framework-feature-enablement（三方框架特性开关）逐个开启并做精度校验（单特性影响）→ 组合试验矩阵 → 目标档 8bit + 80% 稀疏 + 缓存；精度不达标的层做层回退并记录名单",
+      "expected_output": "路由 S4：performance-optimization（按 docs/zh/features/* 特性真源选档）+ framework-integration（三方框架特性开关）逐个开启并做精度校验（单特性影响）→ 组合试验矩阵 → 目标档 8bit + 80% 稀疏 + 缓存；精度不达标的层做层回退并记录名单",
       "files": [],
       "expectations": [
         "单特性先开并做精度校验，再组合试验",
@@ -80,14 +80,14 @@
     {
       "id": 7,
       "prompt": "帮我把模型 X 在框架 Y 上做接入和优化，但我不知道框架缺不缺关键路径（比如有没有通信掩盖、缓存、量化 kernel），怎么开始",
-      "expected_output": "任务判定为主轴 → 先做启动确认（§0）：按 framework-support-matrix 预扫该框架关键路径支持面与缺口清单 → 与用户确认目标/验收与缺口补齐策略（开关使能 / framework-extension-dev 框架侧补齐 / fork-monkey-patch / 绕过 / 仅记录）+ 实现边界（mindiesd 仓内走 dev-workflow 子任务，编排层不直接改代码）→ 记录进 manifest scope 节后再进 S0",
+      "expected_output": "任务判定为主轴 → 先做启动确认（§0）：按 framework-support-matrix 预扫该框架关键路径支持面与缺口清单 → 与用户确认目标/验收与缺口补齐策略（开关使能 / framework-integration 框架侧补齐 / fork-monkey-patch / 绕过 / 仅记录）+ 实现边界（mindiesd 仓内走 dev-workflow 子任务，编排层不直接改代码）→ 记录进 manifest scope 节后再进 S0",
       "files": [
         "SKILL.md"
       ],
       "expectations": [
         "先查 framework-support-matrix 预扫支持面与缺口清单",
         "启动时与用户确认补齐策略（5 选）与验收口径",
-        "框架自身缺口指向 framework-extension-dev，mindiesd 仓内改动走 dev-workflow 子任务",
+        "框架自身缺口指向 framework-integration，mindiesd 仓内改动走 dev-workflow 子任务",
         "确认记录进产物（manifest scope 节）后才开始 S0"
       ]
     },

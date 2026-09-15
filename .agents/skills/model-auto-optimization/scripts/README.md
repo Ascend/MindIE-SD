@@ -32,14 +32,16 @@ python manifest_dryrun.py --manifest {plan}.toml
 ```bash
 # 证据按任务隔离（task_id = runs 目录名）；校验 evidence/{task_id}/ 前缀（防旧残留冒充）
 python stage_gate.py --stage S3 --task-id 20260908_minimax-h3_optimization --run-dir {工作目录}/agentic
-# close 自动联动：report_lint.py（总览表结构）+ evals/scripts/check_profile.py（profile 强校验）
+# close 自动联动：report_lint.py（主表写法）+ audit_report.py（表结构+数值自洽）
+#              + evals/scripts/check_profile.py（profile 强校验）
 python stage_gate.py --stage close --task-id 20260908_minimax-h3_optimization --run-dir {工作目录}/agentic
 ```
 
 做：解析 run-state.md（`references/run-state.md`）「阶段推进表」→ 校验目标阶段 status=done 且
 声明的验收证据路径存在；提供 `--task-id` 时校验证据落 `evidence/{task_id}/`（任务隔离，2026-09-08
 起强制——防旧任务残留文件充当本轮证据）；close 额外强制声明 overview_report.md / detail_report.md
-（缺任一视为未闭环）并自动跑报表 lint 与 profile 校验（`_run_close_tools`）。
+（缺任一视为未闭环）并自动跑主表 lint + 表结构/数值审计 + profile 校验（`_run_close_tools`）；
+三者任一非 0 ⇒ close 不通过。
 退出码 0=通过（可推进/可宣称闭环），1=存在 error（不得推进）。零 NPU、零数据。
 
 ## report_lint.py —— 总览表结构校验（close 前置 · 机器校验）
@@ -50,10 +52,37 @@ python report_lint.py ../runs/20260908_minimax-h3_optimization/overview_report.m
 ```
 
 校验 overview_report.md 主表：8 列表头（优化类型|特性名|e2e 耗时|首步耗时|步数|加速比|质量数据|
-说明）精确匹配；每行优化类型枚举/特性名非空/e2e·首步·步数·加速比单值；锚点行（基线/三元/最强/
-最终推荐）e2e 禁 [估算]；质量列无损=输出一致、有损=数值非空。自测样例 `report_lint_cases.md`。
+说明）精确匹配；每行优化类型枚举/特性名非空/e2e·首步·步数·加速比单值；**锚点行 e2e 禁
+`[估算]`**（判定两路：① 结构——基线行，或特性名为 §2.2 三元固定名词「同时含 `Cache`+`量化`+`稀疏`」；
+② 标记——整行文本含 `三元`/`最强组合`/`最终推荐`。**标记只可能落在说明列**：§2.1/§7 禁这些词进
+特性名列，故只查特性名会漏判三元/最终推荐两类锚点）；质量列无损=输出一致、有损=数值非空。
+自测样例 `report_lint_cases.md`（违规样例 6 项检项逐项被触发，合规样例 error=0）。
 背景：2026-09-08 报表曾以旧 6 列经验交付（列不符缺口）——本 lint 强制报表结构与
 `references/overview-report.md` §2/§7 契约一致，禁止凭人肉对照交付。
+
+## audit_report.py —— 表格结构 + 数值自洽审计（改表后 / 复核他人报表）
+
+```bash
+python audit_report.py {overview_report.md}                 # 结构与数值一起跑
+python audit_report.py {overview_report.md} --only structure # 只查结构（渲染类事故）
+python audit_report.py {report.md} --baseline {baseline}      # 细分报表只给相对值时补分母
+python audit_report.py {overview_report.md} --selftest      # 负样本自测：审计器本身是否有效
+```
+
+做：① **结构**——逐表核对"表头列数 = 分隔行列数 = 每个数据行列数"（按**未转义**竖线
+`(?<!\\)\|` 切分）、"表头 → 数据行连续"（空行后的孤立表行报错）、加粗成对性（**跨行成对合法**，
+按段落/表行分块配对）；② **数值**——`分母 ÷ e2e ≈ 加速比`、`diffuse ÷ 每步` 为整数、
+`实测 ÷ 连乘 ≈ 比值`、"相对上一行"的百分比/倍数与参照行（上一行 or 行 0）、同一测量跨两表的
+逐字段一致（契约 §4）。
+
+关键判据（都踩过）：**加速比的分母是"报告级基线"，不是"表内那条叫基线的参考行"**（参考行自身也是
+相对报告基线，例如 CP2USP4 参考行在同表内是 0.90×）；加粗单元格 `**34.32**（实测）` 必须剥标记后
+判读，否则整片检查被静默跳过；"见 §6"这类文字单元格必须排除，否则会被抽出 `6` 造成假阳性。
+每张表所用分母、未参与核算的行都**逐条打印**，跳过原因可见。
+
+退出码：0 = 干净（error=0）；1 = 有 error（改表后不得交付）；2 = 前置条件缺失（无合法表格 /
+无法定分母）。**close 阶段由 `stage_gate.py` 强制调用**（与 `report_lint.py` 同级）：非 0 ⇒ 不得宣称闭环。
+零 NPU、零数据、只读、幂等（同样输入永远同样结论）。
 
 ## 维护
 

@@ -1,6 +1,6 @@
 # Install/verify cannbot-skills (external operator skill library used by operator-dev).
 # Usage: powershell -File install_cannbot.ps1
-#        $env:CANNBOT_SKILLS_DIR = "D:\somewhere\cannbot-skills"; powershell -File install_cannbot.ps1
+#        $env:CANNBOT_SKILLS_DIR = "<skills-dir>\cannbot-skills"; powershell -File install_cannbot.ps1
 #        $env:CANNBOT_UPDATE = "1"; powershell -File install_cannbot.ps1   # git pull when already cloned
 $ErrorActionPreference = "Stop"
 

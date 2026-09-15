@@ -3,6 +3,9 @@
 > dummy-run §C 强制项配套模板。每次 compile vs eager 收益对比必须按 §C 口径产出
 > overview + detail 两张表。本文件给出命令、口径与 MiniMax-H3 示例（示例数值为
 > kernel_details 家族聚合的**示意近似 ✻**，正式报表按站点映射精确填写；数据源见文末）。
+>
+> ⚠️ **本文件是报告模板 / 校验夹具**：其中的耗时与百分比是**示例行与断言所必需的数字**，
+> 属**模板示例**而非本仓实测收益；引用时不得当作本组合的实测加速比。
 
 ## 0. 采集与聚合命令（口径统一）
 
@@ -15,32 +18,39 @@
 
 ## 1. 总览表（overview：按融合算子一行）
 
-| 序号 | 融合算子 | 融合前组成（eager 被替代链） | 是否完成融合 | 融合前耗时(ms) | 融合后耗时(ms) | 相对融合前 block 耗时的收益 |
-|---:|---|---|:--:|---:|---:|---:|
-| 1 | npu_rms_norm | Pow+Mean+Rsqrt+Add/Mul 分解链（eager 多 kernel 聚合 ✻1.9） | Y | 1.90 | 0.46 | -6.5% ✻ |
-| 2 | npu_rotary_mul（RoPE 融合） | Slice/neg/cat/Mul/Add + Copy 物化链 ✻1.2 | Y | 1.20 | 0.46 | -3.3% ✻ |
-| 3 | gather_scale_shift（AdaLN） | index_select + Mul/Add 调制链 ✻1.5 | Y | 1.50 | 0.68 | -3.7% ✻ |
-| 4 | gather_residual_gate | index_select + Mul/Add ✻1.2 | Y | 1.20 | 0.36 | -3.8% ✻ |
-| 5 | FFN act（swiglu）并入 FUSED | split/chunk→silu→mul ✻0.3 | Y（并入 mm_swiglu_mxquant） | 0.30 | 0.00 | -1.4% ✻ |
-| 6 | mm_swiglu_mxquant（FFN hidden：mm+swiglu+mxquant） | Qmm([S,2F])→swiglu→DxQ ✻2.03 | Y | 2.03 | 1.85 | -0.8% ✻ |
-| 7 | out-proj 输入 DxQ 消减 | DynamicMxQuant（FFN out A 量化）✻0.25 | Y | 0.25 | 0.00 | -1.1% ✻ |
-| 8 | —（占位示例：预期可融合未实现） | 示例：AdaLN 调制与 FFN 同 kernel 化 | N（预期可融合：epilogue 侧） | 0.00 | 0.00（=融合前） | 0（未实现不虚填） |
+| 序号 | 融合算子 | 融合前组成（eager 被替代链） | 是否完成融合 | 融合前耗时(ms) | 融合后耗时(ms) | 相对融合前 block 耗时的收益 | 预期上限 | 质量变化度 |
+|---:|---|---|:--:|---:|---:|---:|:--:|---|
+| 1 | npu_rms_norm | Pow+Mean+Rsqrt+Add/Mul 分解链（eager 多 kernel 聚合 ✻1.9） | Y | 1.90 | 0.46 | -6.5% ✻ | 8.6%（区域占比 1.90/22.19）✻ | 位级一致（变化度 0） |
+| 2 | npu_rotary_mul（RoPE 融合） | Slice/neg/cat/Mul/Add + Copy 物化链 ✻1.2 | Y | 1.20 | 0.46 | -3.3% ✻ | 5.4%（区域占比 1.20/22.19）✻ | 位级一致（变化度 0） |
+| 3 | gather_scale_shift（AdaLN） | index_select + Mul/Add 调制链 ✻1.5 | Y | 1.50 | 0.68 | -3.7% ✻ | 6.8%（区域占比 1.50/22.19）✻ | 位级一致（变化度 0） |
+| 4 | gather_residual_gate | index_select + Mul/Add ✻1.2 | Y | 1.20 | 0.36 | -3.8% ✻ | 5.4%（区域占比 1.20/22.19）✻ | 位级一致（变化度 0） |
+| 5 | FFN act（swiglu）并入 FUSED | split/chunk→silu→mul ✻0.3 | Y（并入 mm_swiglu_mxquant） | 0.30 | 0.00 | -1.4% ✻ | 1.4%（区域占比 0.30/22.19，=区域 100% 免费）✻ | 位级一致（变化度 0） |
+| 6 | mm_swiglu_mxquant（FFN hidden：mm+swiglu+mxquant） | Qmm([S,2F])→swiglu→DxQ ✻2.03 | Y | 2.03 | 1.85 | -0.8% ✻ | 9.1%（区域占比 2.03/22.19）✻ | 位级一致（变化度 0） |
+| 7 | out-proj 输入 DxQ 消减 | DynamicMxQuant（FFN out A 量化）✻0.25 | Y | 0.25 | 0.00 | -1.1% ✻ | 1.1%（区域占比 0.25/22.19，=区域 100% 免费）✻ | 位级一致（变化度 0） |
+| 8 | —（占位示例：预期可融合未实现） | 示例：AdaLN 调制与 FFN 同 kernel 化 | N（预期可融合：epilogue 侧） | 0.00 | 0.00（=融合前） | 0（未实现不虚填） | —（未实现，不虚填） | 无变化（未实现） |
 
 > ✻ 示例数值为 kernel_details 家族聚合近似；正式报表必须按「图 dump 站点→kernel」映射后
 > 以站点口径填写，并附聚合脚本与数据文件路径。收益分母 = eager transformer timed（22.19ms）。
+> **质量变化度列**（dummy-run §C 口径）= **整体 compile vs eager 同 seed latents 对拍**的
+> 变化度结论（**不逐算子拆分**，故各行通常相同）、**只写变化度不写绝对分值**；未测标 ❓。
+> **预期上限列** = 该行区域的**理论上限**（区域占 block 耗时比，或该区域**带宽下限**）；
+> **fail-closed**：实测收益**超过**该上限即说明记账有误（分母 / 归因 / 测量范围）——**停止上报、
+> 先修记账**，见 `../../pattern-dev/references/benefit-rootcause-guide.md` §4.x（收益自洽核对 Amdahl）。
 
 ## 2. 明细表（detail：按 block 算子执行序列行）
 
-| 算子归属（Attn/FFN(MoE)） | 融合后所属算子 | 未融合时的组成 | 融合后性能(ms) | 未融合性能(ms) | 相对未 compile block 耗时的收益 |
-|---|---|---|---:|---:|---:|
-| FFN | mm_swiglu_mxquant（FFN hidden） | DxQ→Qmm([S,2F])→swiglu→DxQ→Qmm(out) | 1.85 ✻ | 2.03 ✻ | -0.8% ✻ |
-| FFN | npu_quant_matmul（out-proj，输入已 fp8） | 同上行末 Qmm（原 out DxQ 已消减） | 0.83 ✻ | 0.95 ✻ | -0.5% ✻ |
-| Attn | npu_dynamic_mx_quant + QuantMatmulV5（q/k/v） | 同左（GEMM 未融合，compile 不变） | 1.25 ✻ | 1.25 ✻ | 0% |
-| Attn | FlashAttentionScoreV4 | 同左（FA 未融合） | 2.56 ✻ | 2.56 ✻ | 0% |
-| Attn | npu_rms_norm（qk_norm/norm1） | Pow+Mean+Rsqrt+Add/Mul 分解链 | 0.13 ✻ | 0.55 ✻ | -1.9% ✻ |
+| 算子归属（Attn/FFN(MoE)） | 融合后所属算子 | 未融合时的组成 | 融合后性能(ms) | 未融合性能(ms) | 相对未 compile block 耗时的收益 | 预期上限 |
+|---|---|---|---:|---:|---:|:--:|
+| FFN | mm_swiglu_mxquant（FFN hidden） | DxQ→Qmm([S,2F])→swiglu→DxQ→Qmm(out) | 1.85 ✻ | 2.03 ✻ | -0.8% ✻ | 9.1%（区域占比 2.03/22.19）✻ |
+| FFN | npu_quant_matmul（out-proj，输入已 fp8） | 同上行末 Qmm（原 out DxQ 已消减） | 0.83 ✻ | 0.95 ✻ | -0.5% ✻ | 4.3%（区域占比 0.95/22.19）✻ |
+| Attn | npu_dynamic_mx_quant + QuantMatmulV5（q/k/v） | 同左（GEMM 未融合，compile 不变） | 1.25 ✻ | 1.25 ✻ | 0% | 5.6%（区域占比 1.25/22.19）✻ |
+| Attn | FlashAttentionScoreV4 | 同左（FA 未融合） | 2.56 ✻ | 2.56 ✻ | 0% | 11.5%（区域占比 2.56/22.19）✻ |
+| Attn | npu_rms_norm（qk_norm/norm1） | Pow+Mean+Rsqrt+Add/Mul 分解链 | 0.13 ✻ | 0.55 ✻ | -1.9% ✻ | 2.5%（区域占比 0.55/22.19）✻ |
 
 > detail 行按 block 内算子执行序排列（可合并同单元连续实例并标注 ×N）；GEMM/FA 等未融合
 > 行"未融合时的组成=原算子名"、收益 0。收益分母 = eager block 耗时（22.19ms）。
+> 收益**超过「预期上限」**同样判 **fail-closed**（记账有误，停止上报），口径见
+> `../../pattern-dev/references/benefit-rootcause-guide.md` §4.x。
 
 ## 3. 数据来源（示例）
 
@@ -52,7 +62,7 @@
 - diffusers 0.40 全模型 wall（三模型并行，一模型一卡，2026-09-06）：Wan2.2 951.49→841.76
   （-11.5%）、MiniMax-H3 21.77→15.65（-28.1%）、FLUX.1-dev 17.2→15.14（-12.0%）。
 - 收益归因方法论（GEMM/FA 不变、小 kernel 融合）：
-  `../compilation-dev/references/pattern-dev-notes.md` §5。
+  `../../pattern-dev/references/pattern-dev-notes.md` §5。
 
 ## 维护与更新
 

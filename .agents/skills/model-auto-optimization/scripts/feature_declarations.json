@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "MindIE-SD 特性声明（跨模型）：每特性声明作用的 seam / 互斥 / 依赖模型能力 / 激活窗口 / 验证计数。命名对齐 docs/zh/features；模型只提供能力子集适配（见 models），不按模型重复维护。证据码：V1=vllm-omni-minimax-h3-case、V2=diffsynth-engine-case、L1=lightx2v-mindiesd-case、G=framework-feature-enablement、DOC=docs/zh/features。",
+  "description": "MindIE-SD 特性声明（跨模型）：每特性声明作用的 seam / 互斥 / 依赖模型能力 / 激活窗口 / 验证计数。命名对齐 docs/zh/features；模型只提供能力子集适配（见 models），不按模型重复维护。证据码：V1=vLLM-Omni 0.28 × MiniMax-H3-FL2VA 实测（能力面见 framework-integration/references/framework-support-matrix.md，开启方式见 vllm-omni-enablement.md，实测数字归档于会话产物目录 {run_results_dir}/archive/）、V2=diffsynth-engine-enablement（能力面见 framework-support-matrix.md，开启方式见该文件，实测数字归档于 {run_results_dir}/archive/）、L1=lightx2v-enablement（能力面见 framework-support-matrix.md，开启方式见 lightx2v-enablement.md，实测数字归档于 {run_results_dir}/archive/lightx2v-mindiesd-case.md）、G=framework-integration、DOC=docs/zh/features。",
   "exclusive_seams": ["precision", "attention_backend", "attention_precision", "step_decision", "token_semantics"],
   "window_conflict_warning_seams": ["step_decision", "token_semantics"],
   "features": [
@@ -60,7 +60,7 @@
     "minimax-h3-lightx2v": {
       "capabilities": ["has_linear_layers", "has_attention_layers", "has_rope", "has_norm_layers",
                        "has_ffn_gate", "has_transformer_blocks", "has_spatiotemporal_layout", "video"],
-      "notes": "LightX2V（L1，H3-FL2VA）能力与 vllm-omni H3 相同，别名登记供 seam_check 直接引用；接线姿势差异在 lightx2v-mindiesd-case"
+      "notes": "LightX2V（L1，H3-FL2VA）能力与 vllm-omni H3 相同，别名登记供 seam_check 直接引用；接线姿势差异在 lightx2v-enablement"
     },
     "qwen-image-diffsynth": {
       "capabilities": ["has_linear_layers", "has_attention_layers", "has_rope", "has_norm_layers", "image"],

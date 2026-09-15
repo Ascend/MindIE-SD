@@ -1,6 +1,9 @@
 # 三方框架性能分析方法论（MindIE-SD 适配实战经验）
 
 > 来源：LightX2V MiniMax-H3 接入 mindiesd 全流程（2026-08，Ascend 950PR ×4，USP4）。
+> 该框架链的**开启方式**见 `framework-integration/references/lightx2v-enablement.md`；
+> **绝对耗时 / 绝对加速比与质量数值**已归档到会话产物目录
+> `{run_results_dir}/archive/lightx2v-mindiesd-case.md`，**不可跨模型 / 框架 / 规模 / 窗口引用**。
 > 目标：把"算子级性能分析"从凭感觉变成可复现、可审计的流程。
 
 ## 0. 单次结果不迁移（最重要的原则）
@@ -28,14 +31,14 @@
 LightX2V/多卡 torchrun 日志中，同一指标每个 rank 打印一条，**值各不相同**：
 
 ```text
-Run DiT cost  Rank1=148.8s  Rank2=149.2s  Rank3=150.1s  Rank0=152.4s   (compile_full1)
-Run DiT cost  Rank2=145.3s  Rank1=147.4s  Rank3=147.6s  Rank0=152.0s   (compile_full2)
-Run DiT cost  Rank2=149.5s  Rank3=150.2s  Rank1=150.3s  Rank0=155.2s   (runtime)
+Run DiT cost  Rank1=…  Rank2=…  Rank3=…  Rank0=…   (compile_full1)
+Run DiT cost  Rank2=…  Rank1=…  Rank3=…  Rank0=…   (compile_full2)
+Run DiT cost  Rank2=…  Rank3=…  Rank1=…  Rank0=…   (runtime)
 ```
 
-- rank 间差异可达 **5-10s**（同步/打印时序）
+- rank 间差异可达**秒级**（同步 / 打印时序），且各 run 的 rank 排序还会变
 - `head -1` 取最先打印的 rank，跨 run 对比时两边 rank 不一致 → **收益被夸大**
-  （实例：真实 -2% 被误报成 -6.5%）
+  （实例：小幅真实收益被误报成数倍于真值的收益）
 
 ### 2.2 正确口径
 
@@ -81,6 +84,20 @@ with torch_npu.profiler.profile(
 - `compare_traces.py`：两次 run 的 kernel diff（baseline vs target）
   - New/Removed/Common 三表 + 自动 verdict
 
+### 3.3 kernel 级 diff 怎么读（判定表）
+
+diff 输出不是"看有没有新 kernel"，而是**三类读数逐条判**：
+
+| 读数 | 看什么 | 判定含义 |
+|---|---|---|
+| **新增融合 kernel** | New 表：每个新 kernel 的**调用次数 × 单次耗时** | 次数应与模型站点数**对齐**（站点数对不上 = 覆盖不全或误命中）；单次耗时为同几何量级才可信 |
+| **消除的算子链** | Removed 表：按**类别**看降幅（Mul / Add / Silu / IndexSelect / Cast / Copy 等） | 分解链**成规模消失**才算真融合；只降几个百分点 = 被别处吸收或没命中 |
+| **退化 kernel 是否消失** | 变长/动态形态的 collective（如 `hcom_alltoallv`）应**完全消失**，被固定等分形态取代 | 该 kernel 仍在 = 图内 collective 未留 eager，融合收益会被通信退化吃掉 |
+| **总量与占比** | kernel 总数、kernel 总耗时、**通信占 kernel 总耗时的比例** | 总量降幅**可能被通信占比稀释**：序列越长通信占比越高，融合的端到端收益越被摊薄——**长序列档的 diff 必须同时报占比** |
+
+- 判据顺序：**New 次数对齐 → Removed 类别降幅 → 退化 kernel 消失 → 总量/占比解释**；
+  任何一步不成立，先回查**路径归属**（图命中 ≠ 运行期生效），再谈收益。
+
 ## 4. 算子级归因（收益从哪来）
 
 ### 4.1 三层证据（可靠性递增）
@@ -91,18 +108,19 @@ with torch_npu.profiler.profile(
 
 ### 4.2 反例：kernel 改善 ≠ 墙钟收益
 
-gate-msa 残差 2D 融合：kernel 级 -0.7%（新增 2D kernel 15ms、消除 mul+add 19.8ms），
-但墙钟 p50 3.673s vs 3.564s（+0.1s）——2D kernel 的 `.contiguous()` 拷贝 + triton
-启动开销抵消了融合收益。**决策必须以墙钟为准，kernel 级只作解释**。
+gate-msa 残差 2D 融合：kernel 级为正（新增 2D kernel 替换 mul+add 链），但**墙钟反而略升**
+——2D kernel 的 `.contiguous()` 拷贝 + triton 启动开销抵消了融合收益。
+**决策必须以墙钟为准，kernel 级只作解释**（读数见归档
+`{run_results_dir}/archive/lightx2v-mindiesd-case.md`）。
 
 ### 4.3 归因框架
 
 | 收益类别 | 识别方法 | 实例 |
 |---|---|---|
-| 算子融合 | 新增单算子替代分解链 | RmsNorm 替代 pow+mean+rsqrt（-74% kernel 时间） |
-| 通信重叠 | 通信总耗时下降（非 kernel 减少） | a2a 留 eager → 通信 -35% |
-| 数据移动 | Cast/InplaceCopy 数量下降 | Cast 650→250（-99%，被单算子吸收） |
-| 长序列瓶颈 | 分类占比随序列变长 | 15s 通信占 57.6%（vs 5s 17%） |
+| 算子融合 | 新增单算子替代分解链 | RmsNorm 替代 pow+mean+rsqrt（该链 kernel 时间大幅下降） |
+| 通信重叠 | 通信总耗时下降（非 kernel 减少） | a2a 留 eager 后通信段耗时明显下降（额外红利） |
+| 数据移动 | Cast / InplaceCopy 数量下降 | Cast / InplaceCopy 计数大幅下降（被单算子吸收） |
+| 长序列瓶颈 | 分类占比随序列变长 | 长序列档通信占 kernel 总耗时**过半**（短序列档仅十数个百分点） |
 
 ## 5. 常见陷阱清单
 
@@ -115,9 +133,9 @@ gate-msa 残差 2D 融合：kernel 级 -0.7%（新增 2D kernel 15ms、消除 mu
 | profiler 步数不匹配 | 无 CANN 输出 | 确认 profiled step ≤ infer_steps |
 | 其他容器占卡 | OOM / 性能漂移 | 跑前 npu-smi 确认空闲 |
 | 同步事件计入 kernel | NOTIFY_WAIT 占比虚高 | 从 kernel 统计中剔除 |
-| 热降频污染长跑 | 30 步 run 后段步长 4→7-8s（~14-17 步起，83-86°C，与代码无关） | 用 **clean-window（steps 2-14）avg/p50** 或 p50；同窗口同卡组 |
-| kernel-sum 跨流多计数 | head-parallel kernel-sum 2.1× bulk 但墙钟更快 | **墙钟/clean-window 为准**，kernel-sum 只解释（重叠流会重复计数） |
-| 卡组/端口环境劣化 | 全组 ~10× 慢 / HCCL 端口 bind 泄漏（见 parallelism-strategy `ascend-topology-bandwidth-diag.md`） | 换卡组；确认 init 前 `set_device`；避免 SIGKILL 进行中多卡任务 |
+| 热降频污染长跑 | 长跑**后段**步长自发抬高（约在十数步后起；与代码 / 编译档 / 租户无关） | 用 **clean-window（steps 2-14）avg/p50** 或 p50；同窗口同卡组 |
+| kernel-sum 跨流多计数 | head-parallel 的 kernel-sum 明显高于 bulk 但墙钟更快 | **墙钟/clean-window 为准**，kernel-sum 只解释（重叠流会重复计数） |
+| 卡组/端口环境劣化 | 全组 ~10× 慢 / HCCL 端口 bind 泄漏（见 dit-parallel-opt `ascend-topology-bandwidth-diag.md`） | 换卡组；确认 init 前 `set_device`；避免 SIGKILL 进行中多卡任务 |
 
 ## 6. 决策规则
 

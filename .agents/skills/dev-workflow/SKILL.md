@@ -14,12 +14,12 @@ description: MindIE-SD 仓库开发总入口（侧轨）。当用户进行 MindI
 
 - 本入口是 **MindIE-SD 仓库开发入口（侧轨）**：改 pattern / 算子 / 图下发 / 测试 / 文档等本仓代码。
 - 对一个**三方框架托管的模型**做接入、无损/有损优化、并行调优或性能收益确认（不指向本仓代码改动）
-  → 先读 `model-auto-optimization/SKILL.md`，按 S0–S4 流水线路由到 env-install、framework-feature-enablement、
-  profiling-collect、profiling-analyze、parallelism-strategy、performance-optimization
+  → 先读 `model-auto-optimization/SKILL.md`，按 **S0–S6** 流水线路由到 env-install、framework-integration、
+  profiling-collect、profiling-analyze、dit-perf-opt、dit-parallel-opt、vae-opt、host-opt、performance-optimization
   等能力技能。
 - 优化流程需要新增 pattern / 算子 / 部署代码时，由 model-auto-optimization 指向本入口承接开发子任务。
 - 三方框架自身结构性缺口补齐（comm-stream / 缓存 / 稀疏/量化消费者等，经 model-auto-optimization §0
-  用户确认）→ 先加载 `../framework-extension-dev/SKILL.md`（框架差异/注入点/合入姿势），
+  用户确认）→ 先加载 `../framework-integration/SKILL.md`（框架差异/注入点/合入姿势），
   实现仍按本入口开发子任务执行（Test-First → 部署 → 验证 → 复盘）。
 
 ### 0.1 开发子任务路由（按代码落点定侧）
@@ -29,9 +29,8 @@ description: MindIE-SD 仓库开发总入口（侧轨）。当用户进行 MindI
 
 | 改动落点 | 路由 | 流程/说明 |
 |---|---|---|
-| mindiesd 本仓（pattern / kernel / 图下发 / 测试 / `mindiesd/parallel` 等） | 本入口 + compilation-dev / operator-dev / aclgraph-dev（按实现类型） | 本 SKILL 主流程：Test-First → 部署 → pytest → 复盘 |
-| 三方框架仓 · 框架**已有**特性接线/开关/小修 | framework-feature-enablement | enablement 使能回路验证（计数契约 + 三层证据） |
-| 三方框架仓 · 框架**未支持**特性的结构性开发 | framework-extension-dev（先加载，差异表/注入点/合入姿势） | 实现仍按本入口子任务执行 |
+| mindiesd 本仓（pattern / kernel / 图下发 / 测试 / `mindiesd/parallel` 等） | 本入口 + pattern-dev / operator-dev / aclgraph-dev（按实现类型） | 本 SKILL 主流程：Test-First → 部署 → pytest → 复盘 |
+| 三方框架仓（框架**已有**特性接线/开关/小修 → 分支 A；框架**未支持**的结构性开发 → 分支 B） | framework-integration（先加载：差异表 / 注入点 / 合入姿势） | 分支 A = 使能回路验证（计数契约 + 三层证据）；分支 B 实现按本入口子任务执行 |
 | 跨侧重叠（同一特性 mindiesd + 框架两侧都改） | **按文件拆两侧子任务**：mindiesd 侧走本入口开发技能；框架侧按上两行路由 | 对接点联调收口（输出一致 + 计数契约 + 三层证据）；接口差异记录 `framework-support-matrix.md` |
 | 环境 / 权重 / 部署 | env-install + remote-access | 非代码开发 |
 
@@ -45,14 +44,14 @@ description: MindIE-SD 仓库开发总入口（侧轨）。当用户进行 MindI
 - 复盘检查（§6.3）在本轮全部功能点收尾后执行；发现流程偏离（如计划并行实际串行）先在复盘
   记录原因，再进入下一轮工作。
 - 被 `model-auto-optimization` 指向的模型优化子任务，遵守其 run-state 推进表与
-  `scripts/stage_gate.py` 门禁（见 `model-auto-optimization/references/run-state.md`），
+  `model-auto-optimization/scripts/stage_gate.py` 门禁（见 `model-auto-optimization/references/run-state.md`），
   本入口按 dev-workflow 复盘与提交流程承接代码改动侧。
 
 ### 0.3 交付件契约（L1 编排协议：开发任务必交）
 
 > 三层定位：本 SKILL 是 **L1 编排入口**——负责分流/路由、**顺序契约**（Test-First、并行、
 > 复盘时机）与**交付件契约**；单任务的"最佳实现路径/回退"（pattern 生命周期、算子 DSL 选择、
-> mismatch 回退）由 **L3 能力自身工作流纪律**承载（compilation-dev / operator-dev / …）；
+> mismatch 回退）由 **L3 能力自身工作流纪律**承载（pattern-dev / operator-dev / …）；
 > L2 为内联轻量（本节即 L1 契约，暂不拆独立 workflow 文件）。
 
 **顺序契约（引用）**：功能点走 §1 Test-First（先测试后实现）；独立模块按 §3 并行、共享文件后
@@ -90,14 +89,14 @@ L1 协议（迭代表/证据行/stage_gate），并把本节契约改为引用�
 ### 1.1 Pattern 开发专项
 
 若任务是新增或调试 MindIE-SD compilation pattern（RMSNorm / RoPE / AdaLayerNorm / GELU 融合），
-路由到 `compilation-dev` skill 获取全生命周期指导：模型代码分析 → pattern 创建 → 注册 → 单元测试 → mismatch 调试 → 集成验证 → Copy 消减。
+路由到 `pattern-dev` skill 获取全生命周期指导：模型代码分析 → pattern 创建 → 注册 → 单元测试 → mismatch 调试 → 集成验证 → Copy 消减。
 算子本体（triton kernel 编写/调优）→ `operator-dev`；批量下发（aclgraph）→ `aclgraph-dev`。
 
 ## 2. 模型验证
 
 写实现前，在 NPU 上用 dummy-run 的 Dummy Run 方法快速验证模型架构兼容性，
 不必下载完整权重。如果已通过验证则跳过。
-部署完成后，使用 framework-feature-enablement 验证已部署模型在框架侧的推理正确性（1 步推理/特性开关）。
+部署完成后，使用 framework-integration 验证已部署模型在框架侧的推理正确性（1 步推理/特性开关）。
 
 ## 3. 并行开发策略
 
@@ -117,10 +116,10 @@ L1 协议（迭代表/证据行/stage_gate），并把本节契约改为引用�
 ## 5. 性能评估与优化
 
 功能验证通过后，用 profiling-collect 采集真实 NPU 数据、profiling-analyze 分析并建立性能基线。
-Benchmark 计时方法论（L2-flush 放计时区外、warm/cold 双档）见 compilation-dev/references/benchmark-guide.md。
+Benchmark 计时方法论（warmup / 同步 / 编译预热排除 / **L2-flush 放计时区外 + warm·cold 双档** / 多场景对照）见 benchmark-dev/references/benchmark-guide.md。
 
-采集完成后用 profiling-analyze 定位瓶颈，用 performance-optimization 选择优化方案。
-多卡场景参考 parallelism-strategy 选择并行策略。
+采集完成后用 profiling-analyze 定位瓶颈，用 dit-perf-opt 选择优化方案（瓶颈未明时先走 model-auto-optimization 的分析）。
+多卡场景参考 dit-parallel-opt 选择并行策略。
 
 ## 6. 复盘归档
 
@@ -163,11 +162,14 @@ case 模板 → SKILL.md 接线（Reference Files + 加载时机）→ evals 增
 
 ## Reference Files
 
-- `../compilation-dev/SKILL.md` — 加载时机: 编写或修改 compilation pattern 时
+- `../pattern-dev/SKILL.md` — 加载时机: 编写或修改 compilation pattern 时
 - `../aclgraph-dev/SKILL.md` — 加载时机: 静态 shape 大 batch 需要批量下发时
 - `../operator-dev/SKILL.md` — 加载时机: 算子本体开发/调优（复用 cannbot-skills）时
-- `../framework-feature-enablement/SKILL.md` — 加载时机: 三方框架特性使能/验证（vLLM-Omni 等）时
-- `../framework-extension-dev/SKILL.md` — 加载时机: 承接三方框架侧特性补齐开发子任务时（框架差异/合入姿势）
+- `../framework-integration/SKILL.md` — 加载时机: 三方框架特性使能/验证（分支 A）或框架侧缺口补齐开发（分支 B）时
+- `../env-install/SKILL.md` — 加载时机: 部署/编译安装、权重准备与远端环境就绪时
+- `../remote-access/SKILL.md` — 加载时机: 需要在远端昇腾执行命令、选空闲卡或传文件时
+- `../dummy-run/SKILL.md` — 加载时机: 实现前做模型架构/算子接入快验时
+- `../code-standards/SKILL.md` — 加载时机: Python 编码与 lint 规范（Ruff / pre-commit）时
 - `references/ascend-ops.md` — 加载时机: 涉及 NPU 算子调用或环境诊断时
 - `references/cross-platform.md` — 加载时机: 跨平台部署或遇到 PowerShell/编码兼容问题时
 - `references/rework-lessons.md` — 加载时机: 每次复盘归档时，或遇到相似问题需查历史教训时
@@ -188,10 +190,11 @@ case 模板 → SKILL.md 接线（Reference Files + 加载时机）→ evals 增
 - **description 要 pushy**：明确写清触发条件（what + when-to-trigger），覆盖 near-miss 边界
   （"看似相关但不应触发"的场景），避免 undertrigger 与误触发
 - **必须建 `evals/evals.json`**：≥2 条真实用户 prompt（`prompt` / `expected_output` / `expectations`，
-  格式遵循 skill-creator `references/schemas.md`）；新增或大改 skill 后必须同步增补
+  格式遵循**外部** skill-creator 仓的 `references/schemas.md`）；新增或大改 skill 后必须同步增补
 - **references 必须全部接线**：在 SKILL.md 列出 Reference Files + 加载时机；**>300 行的 reference 必须带目录**
 - **references 必须含"维护与更新"章节**，写明更新触发条件
 - **单 skill 单职责**：不同模块/领域的内容拆分为独立 skill
-- **模型/框架专属知识放 `references/{variant}/` 子目录**（如 `references/models/minimax-h3.md`），避免平铺
+- **模型/框架专属知识放 `references/{variant}/` 子目录**（如 `dummy-run/references/minimax-h3-notes.md`
+  是「模型底座」类，平铺也合法；**新拆的模型子目录**才用 `references/models/<模型名>/`），避免平铺
 - **命名**：小写连字符，业界通用名（如 `env-install`、`dummy-run`）
 - **新 skill 必须包含"维护与更新"章节**

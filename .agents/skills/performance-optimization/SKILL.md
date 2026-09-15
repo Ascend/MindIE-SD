@@ -1,112 +1,113 @@
 ---
 name: performance-optimization
-compatibility: 已安装 mindiesd, docs/zh/features 文档（refresh_features.py 数据源）, NPU 复验
+compatibility: 环境可用（`import mindiesd` 成功或目标框架可 serve）, 模型已跑通一轮, 有 baseline 数字, NPU 复验
 description: >
-  针对 profiling-analyze 发现的性能瓶颈，从 mindiesd-features.md（唯一真相源）
-  中选取最优 MindIE-SD 解决方案（量化/稀疏/并行/通信掩盖/缓存等）；在多模态解决方案
-  （model-auto-optimization）中承担 S4 有损优化的特性库与开启依据（单特性开启 + 精度校验 +
-  组合试验支撑）。
-  5步闭环: baseline→分析→根因→修补→复验。
-  即使用户只提到"这个模型怎么加速"而未说 benchmark，也应触发。
-  当用户需要将分析结论转化为具体优化操作时使用此 skill。
-  单算子实现级实测选型（mindie_bench）请走 benchmark-dev；monkey-patch 通信掩盖/多卡选型
-  请走 parallelism-strategy；框架侧开关使能请走 framework-feature-enablement。
-  由 model-auto-optimization 的 S4 阶段触发，亦由 dev-workflow 的优化阶段触发。
+  优化域入口（L2）：拿到**已明确的瓶颈点 / 瓶颈标签**后，按标签把任务**分发**到四个优化模块
+  （DiT 计算 `dit-perf-opt` / DiT 通信 `dit-parallel-opt` / VAE `vae-opt` /
+  host `host-opt`），并给出域内**最小前置集**与**域级验收口径**（性能入库口径引
+  `perf-gate`、精度判据引 `accuracy-gate`）。
+  **本技能不再承载选档与实施内容**（Step 2–4 闭环、特性档位选择、组合试验已全部归
+  `dit-perf-opt`）。
+  入口信号（任一即可触发）：① 用户或编排层已给出**瓶颈点/瓶颈标签**（"瓶颈已经明确，按这个点优化"）；
+  ② **框架侧特性没落地**（该开的开关/特性没开，需要先判走哪个模块）。
+  near-miss（看似相关但不属本技能）：
+  - **瓶颈未明**（"这个模型怎么加速""怎么跑通""采个 profile"，还要先定位）→ 先走
+    `model-auto-optimization`（唯一有分析权的一方），本入口**不接受未定位的任务**。
+  - 问"要不要开量化、开哪一档""量化/稀疏/Cache 怎么选怎么开" → `dit-perf-opt`（选档与实施在模块层）。
+  - 多卡并行形态 / 通信掩盖 / TP·offload → `dit-parallel-opt`；VAE·TAE 解码段 →
+    `vae-opt`；交付搬运 / 装载预热等固定开销 → `host-opt`。
+  - 需要改本仓代码（pattern / 算子 / 测试 / 文档）→ `dev-workflow`。
+  由 model-auto-optimization 的阶段路由与用户直接声明瓶颈两条路径触发。
 ---
 
-# 性能优化
+# 优化域入口（分发与前置）
 
-## 优化闭环
+## 定位
 
-```text
-建立基线 → 瓶颈分析 → 根因定位 → 保守修补 → 复验
-   ↑                                              │
-   └──────────────────────────────────────────────┘
-```
+本技能是**优化域入口（L2）**：唯一职责是**把已明确的瓶颈点分发给正确的模块**，并把域内的
+**前置集**与**验收口径**固定下来。层级依据：L3 模块不放"业务顺序 / 门禁节奏 / 走哪个模块的姿势
+决策"，这些正归 L2 入口；"选哪个特性档"是能力选择，归 L3 模块。
 
-### Step 1: 建立基线
+**本技能不做的事**：不定位瓶颈（归 `model-auto-optimization`）、不做占比与门限分析（归
+`model-auto-optimization` 的阶段账）、不选特性档位 / 不开特性 / 不做组合试验（全部归各模块）、
+不定义验收标准（归两个验收标准技能）。
 
-使用 profiling-collect 采集 + profiling-analyze 分析建立基线，记录模型 / 分辨率 / 帧数 / 精度 / NPU 数等配置。
+## 0. 入口信号
 
-### Step 2: 获取分析诊断
+进入本入口（任一）：
 
-从 profiling-analyze 的 5 层分析报告中获取：
+| # | 信号 | 说明 |
+|---|---|---|
+| ① | **瓶颈点已明确** | 用户带一句实测锚点声明，或编排层已交付瓶颈标签 |
+| ② | **框架侧特性没落地** | 该开/该验的特性开关未使能，需先判"走哪个模块把它落地" |
 
-- Layer 1: 瓶颈阶段（DiT vs VAE）
-- Layer 2: 算子分类占比（FA/MatMul/Vector/Comm）
-- Layer 3: Host Bound / 通信暴露 / 融合机会
-- Layer 5: 优化方向（P0-P2 优先级 + 引用 features.md 章节）
+**不进入本入口**（先做别的）：
 
-分析报告给出的是**优化方向**（如"量化方向"、"通信掩盖方向"），具体方案在本 Step 选取。
+- **瓶颈未明** → `model-auto-optimization`（编排层是**唯一有分析权**的一方）
+- **要改本仓代码** → `dev-workflow`
+- **只要单算子实现级实测对比** → `benchmark-dev`
 
-### Step 3: 选取具体方案
+## 1. 输入：瓶颈标签（只消费，不定义）
 
-基于分析报告的优化方向，查 mindiesd-features.md 确定具体 API 和参数：
+唯一输入是**瓶颈标签**。标签枚举（`DiT-计算受限` / `DiT-通信受限` / `非DiT-解码段` /
+`非DiT-host段` / `一致性不达标`）与门限口径（含 10% 门限的分母 / 测点 / **步数档**）**单一真源**为
+`model-auto-optimization/references/bottleneck-labels.md`。
 
-```text
-正例: "分析报告显示 MatMul 占 DiT 58%，优化方向→量化。
-       查 mindiesd-features.md §MatMul量化，选取 W8A8_MXFP8"
-反例: "感觉矩阵乘法比较慢，试试量化"
-```
+本技能**只引用不复制**：不在本文件另列标签表、不另写门限数字——两处定义必然漂移。
+标签之外的细分类（MatMul / Attention / Norm / 生效判据…）由对应模块在域内自行映射。
 
-选择时需考虑：
+## 2. 分发路由（入口核心动作）
 
-- 硬件约束（features.md 中的硬件列）
-- 模型兼容性（features.md 中的模型支持矩阵）
-- 精度 vs 速度权衡
-- 多方案时按优先级：MindIE-SD Pattern > 量化 > 稀疏 > 通信 > 通用
+按标签 → 模块 → 产物 → 验收判据查 `references/dispatch-table.md`。
 
-方案划界（避免与相邻能力重叠）：
+| 瓶颈标签 | 分发目标 |
+|---|---|
+| `DiT-计算受限` | `dit-perf-opt`（需要新能力时再走 `pattern-dev` / `operator-dev`） |
+| `DiT-通信受限` | `dit-parallel-opt` |
+| `非DiT-解码段` | `vae-opt` |
+| `非DiT-host段` | `host-opt` |
+| `一致性不达标` | `accuracy-gate`（判据）→ 排障 |
 
-- features.md 中列为官方特性的并行/通信掩盖类方案 → 按 features 选取（本 skill）
-- monkey-patch comm-stream masking、拓扑/带宽选型、HcclAlltoAllV 绕过等手工实测类方案 → parallelism-strategy
-- 框架侧特性开关/compile 使能与验证 → framework-feature-enablement
-- 多候选实现需要实测对比（同 peak 口径）时 → 用 benchmark-dev / mindie_bench 做单算子实现级选型；
-  本 skill 的「选型」指 features.md 特性级选档，benchmark 实测结果作为 Step 4 实施与复验依据回填
+分发后由**模块**负责实施与自证生效；本入口不重复模块内的步骤，只在模块回流"需要新能力 /
+需要改框架 / 瓶颈判定有误"时改道或退回编排层。
 
-### Step 4: 实施 + 验证
+**标签缺失或与实测不符**（模块复工发现真正瓶颈在别处）→ 退回 `model-auto-optimization`
+重新定位，**不得**在本入口内改判标签。
 
-优化方案从 mindiesd-features.md 中选取，详见 references/optimization-dimensions.md 的决策树。
+## 3. 最小前置集
 
-| ✅ 允许 | ❌ 禁止 |
-|---------|---------|
-| 启用已有的、经验证的 kernel | 削弱输出正确性（cosine similarity 下降） |
-| 修复遗漏的 fast path | 改变测试负载后宣称优化有效 |
-| 减少不必要的同步/warmup | 仅为单框架/单硬件优化而破坏兼容性 |
-| 添加有证据支撑的启发式配置 | 从单一 trace 数据得出普适结论 |
+三项全满足才可开工，缺任一 → 退回 `model-auto-optimization` 走 S0：
 
-多特性组合试验（叠加顺序/seam 冲突/层回退）见 `references/combination-search.md`。
+1. **环境可用**：`import mindiesd` 成功，或目标框架可 serve；
+2. **模型已跑通一轮**：端到端可产出结果（不是"能 import"就算）；
+3. **有 baseline 数字**：同口径的端到端 / 阶段账基线（无基线则后续任何收益都不可归因）。
 
-### Step 5: 复验
+**不含** S0 的安装与权重准备（那归 `env-install`）；本入口不代做环境安装。
 
-- 重新运行 profiling-collect + profiling-analyze 复验相同配置
-- 重新运行 profiling-analyze 确认 5 层分析指标变化
-- 差距 < 3% 视为噪声
-- 有损方案另过**端到端质量门禁**（quantitative + visual + off-identity），
-  见 `references/quality-gate.md` 与仓库 `evals/`；只过墙钟不过门禁不得宣称有损加速
+## 4. 锚点要求（防"优化错对象"）
 
-## 优化维度
+用户直接声明瓶颈时**必须带一句实测锚点**——阶段账某一行、或某 kernel 的占比读数。
+理由：声明与实测常不符（真实案例：用户认为"解码慢"，实测 DiT 占 89%）。
 
-→ references/optimization-dimensions.md（决策树）
-→ references/mindiesd-features.md（API/算法映射表，唯一真相源）
+- **有锚点** → 按锚点映射标签（映射口径见 `bottleneck-labels.md`），进入 §2 分发；
+- **无锚点** → **退回 `model-auto-optimization`** 做定位，**不由本入口自己猜**，也不凭"感觉慢"选档。
 
-## 特性映射刷新规则
+编排层交付的标签同样附锚点，便于复核与回溯。
 
-当性能优化过程中发现以下信号时，需检查 mindiesd-features.md 是否需要更新：
+## 5. 域级验收口径
 
-- 用户提到 MindIE-SD 新版本号（与 features.md 中记录的版本不一致）
-- 建议的 API 在远端环境中不存在或签名不同
-- 建议的量化/稀疏算法在目标硬件上不可用（与支持矩阵矛盾）
+分发出去的任务，回流时按本节口径收口（口径本身归各标准技能，本入口只固定"必须过哪几关"）：
 
-更新方式：
+- **性能**：库内数字一律按 `perf-gate` 的**同窗 A/B** 口径取；跨窗口绝对值不可比；
+  **只有验收结果才能写入总览表**（报表契约见 `model-auto-optimization/references/report-contract.md`）。
+- **噪声门限**：与基线差距 **< 3%** 视为噪声，不下结论（阈值在本技能**单点维护**，其它技能只引用）。
+- **精度**：**未使用有损特性时一致性验收强制调用** `accuracy-gate`（三级：逐位 →
+  跨配置数值门 + md5 → 质量门）；有损项另过质量门
+  （`../accuracy-gate/references/quality-gate.md` + 仓库 `evals/`）。
+- **一致性不达标**（标签 `一致性不达标`）→ 由 `accuracy-gate` 给判据，再转对应对象的
+  `troubleshooting-{对象}.md` 排障流程。
 
-```bash
-python scripts/refresh_features.py \
-    --docs-dir <path/to/MindIE-SD/docs/zh/features> \
-    --output references/mindiesd-features.md
-```
-
-## 停止条件
+### 停止条件（域级口径，单点维护于本技能）
 
 满足任一条件即停止优化循环：
 
@@ -115,20 +116,28 @@ python scripts/refresh_features.py \
 3. **外部瓶颈**: 根因在 CANN / TorchNPU / HCCL 而非 MindIE-SD 代码
 4. **硬件瓶颈**: 已改善但受限于 NPU 物理显存 / 带宽上限
 
+## 6. 独立触发时的交付物
+
+用户直接给瓶颈点、不经编排层时，本入口产出**域级优化报告**：瓶颈锚点 + 分发结论 + 各模块产物
+指针 + 验收结论。若要进 `model-auto-optimization` 的总览表，按编排层契约（报表结构 / 白名单 /
+`[profile].domain` 记法）回填，收口方写清。
+
 ## Reference Files
 
-- `references/optimization-dimensions.md` — 加载时机: 选择优化方向和决策逻辑时
-- `references/mindiesd-features.md` — 加载时机: 确定具体 API/算法/硬件约束时（唯一真相源）
-- `references/quality-gate.md` — 加载时机: S4 有损项/闭环端到端质量判定时
-  （定量 + 视觉伪影 + off-identity；判定标准与工具在仓库 `evals/`）
-- `references/combination-search.md` — 加载时机: S4 需同时开启 ≥2 个有损维度时
-  （seam 静态判定 + 单变量叠加 + frontier 保留 + 层回退）
-
-## Bundled Scripts
-
-- `scripts/refresh_features.py` — 从 MindIE-SD docs 自动生成 mindiesd-features.md
+- `references/dispatch-table.md` — 加载时机: 拿到瓶颈标签、决定分发目标与验收判据时
+  （标签 → 模块 → 产物 → 验收口径；路由含域外标准技能）
+- `../model-auto-optimization/references/bottleneck-labels.md`（跨技能，**单一真源**）— 加载时机:
+  需要标签枚举原文或 10% 门限口径时（**只引用，不复制**）
+- `../accuracy-gate/references/quality-gate.md`（跨技能，质量门本体归属精度验收标准）—
+  加载时机: 有损项 / 闭环端到端质量判定时（定量 + 视觉伪影 + off-identity；判定标准与工具在
+  仓库 `evals/`）
+- `../perf-gate/SKILL.md`（跨技能）— 加载时机: 报数、入库与验收口径核对时
+- `dit-perf-opt/SKILL.md`（域内模块，非本 skill 文件）— 加载时机: 确认"DiT 计算侧选档/组合试验/
+  5 步闭环"的具体内容时（入口不再复述）
 
 ## 维护与更新
 
-当新的优化维度经验证有效、硬件平台升级或发现新的优化模式时，
-按 dev-workflow 的复盘流程更新本 skill。
+- 触发：优化模块增减 / 改名、瓶颈标签枚举或门限口径调整、验收标准接线变化时更新本 skill 与
+  `references/dispatch-table.md`；改名时本入口的模块名清单与 `dispatch-table.md` 必须同步。
+- 校验：新增标签须同时出现在 `bottleneck-labels.md`、本入口分发表与 `dispatch-table.md`，否则视为孤儿标签。
+- 与 `dit-perf-opt` 的 description 必须互斥：入口只讲**分发/前置/锚点/验收**，选档与实施描述只在模块侧出现。

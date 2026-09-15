@@ -35,8 +35,8 @@ examples/dummy_run/model/
 
 | 函数 | 解决的问题 |
 |---|---|
-| `replace_zero_dropout(module)` | `dropout(p=0)` → `nn.Identity`（compile 图残留 `aten.dropout` → DropoutV3 kernel 空跑 ~1.43ms/step） |
-| `replace_pos_embed_with_buffers(...)` | qwen pos_embed 输出预计算为 buffer（AiCpu freqs 生成链 ~1.70ms/step；qwen rope pattern 的 freqs 绑定 buffer 不受影响） |
+| `replace_zero_dropout(module)` | `dropout(p=0)` → `nn.Identity`（compile 图残留 `aten.dropout` → DropoutV3 kernel 空跑，每步为 ms 量级无用开销；本组合观测） |
+| `replace_pos_embed_with_buffers(...)` | qwen pos_embed 输出预计算为 buffer（AiCpu freqs 生成链每步为 ms 量级开销、与上项同量级；qwen rope pattern 的 freqs 绑定 buffer 不受影响） |
 
 **共性**：eager 无开销、compile 图保留无意义节点/热点 → 用模型层模块替换解决（曾尝试 pattern matcher 方案触发死循环，故走模型层）。
 
@@ -50,11 +50,13 @@ examples/dummy_run/model/
 | `report_quant_layers(pipe, attrs)` | 汇总量化命中（quant linear / remaining nn.Linear） |
 | `_align_bias_dtype(module, dtype)` | 兜底：量化层 bias 对齐 bf16（防 Dynamo guard 失败重编译） |
 
-**设备映射**（`--quant w8a8`）：A5（950PR）→ MXFP8；A2/A3（910B/910C）→ INT8。
-INT8 路径（`W8A8_DYNAMIC` → `W8A8OnlineQuantLinear`）实现完毕但需在真实 910B/910C 上验证。
+**设备映射（选档语义单点）**：A5（950PR）→ MXFP8；A2/A3（910B/910C）→ INT8。
+**档位名 ≠ 实际算法**的完整语义（同一档名在不同设备代际的映射、以及"该不该开、开哪一档"）
+见 `../../dit-perf-opt/references/quant-tier-device-mapping.md`——本处不展开。
 
-**量化范围**（kernel 实证）：只有 `nn.Linear` 被替换；GroupMatmul 仅走 MoE 路径（dummy 无 MoE）；
-FA 不量化；图中无 fp32 计算节点。
+**量化范围与契约**（只有 `nn.Linear` 被替换 / GroupMatmul 仅走 MoE 路径 / FA 不量化 /
+图中无 fp32 节点 / INT8 路径尚需真机验证）见
+`../../quantization-dev/references/online-quant-contract.md`——**该契约的单点在那里**；本技能只提供载体。
 
 ## 脚本接入方式
 
@@ -83,7 +85,7 @@ else:
 
 - 复用 `mindiesd.quantize()` 在线路径，**mindiesd quantization 模块零改动**（唯一例外：修复
   guard 稳定性 bug 时改了 `mindiesd/quantization/layer.py` 的 bias 就地变异，见
-  compilation-dev/references/pattern-dev-notes.md §4）
+  pattern-dev/references/pattern-dev-notes.md §4）
 - 设备识别用 `mindiesd.utils.get_platform.get_npu_device()`（soc 版本映射）
 
 ## 维护与更新
