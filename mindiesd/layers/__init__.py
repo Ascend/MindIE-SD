@@ -19,7 +19,7 @@ from .activation import get_activation_layer
 from .norm import RMSNorm, fast_layernorm
 from .adalayernorm import layernorm_scale_shift
 from .muls_add import muls_add
-from .residual_gate_add import residual_gate_add
+from .residual_gate_add import qwen_residual_gate_add, residual_gate_add
 from .rope import rotary_position_embedding
 from .fused_moe import fused_moe
 from .eagle_ffn_linear import eagle_ffn_linear
@@ -37,6 +37,7 @@ __all__ = [
     "get_activation_layer",
     "layernorm_scale_shift",
     "muls_add",
+    "qwen_residual_gate_add",
     "residual_gate_add",
     "rotary_position_embedding",
     "sparse_attention",

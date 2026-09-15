@@ -76,11 +76,11 @@ def create_aclgraph_backend():
     suitable for wrapping a ``torch.compile``-processed graph module.
 
     Implements P0/P1/P3 optimizations:
-      A1 - synchronize before replay
+      A1 - device-side stream ordering before replay
       B1 - global graph memory pool
       C1 - skip copy_ on same data_ptr
       C2 - safe_output_mode to control clone
-      C3 - async copy_ on dedicated stream with event pipeline
+      C3 - async copy_ on a dedicated stream with event pipeline
       C4 - GC disable during graph capture
       D1 - shape/dtype assert before copy_
       D2 - input address debug validation
@@ -202,17 +202,18 @@ def create_aclgraph_backend():
                     )
                 needs_copy.append((static_buf, new_inp))
 
-            # C3: issue async copy_ on a dedicated stream and record an event
-            # for the default stream to wait on before replay.
-            # A1: synchronize default stream only when copy_ is needed.
+            # C3: issue async copy_ on a dedicated stream and record events
+            # for device-side producer/copy ordering before replay.
             if needs_copy:
-                torch.npu.current_stream().synchronize()
+                current_stream = torch.npu.current_stream()
                 entry.ensure_copy_stream()
+                input_ready_event = current_stream.record_event()
+                entry.copy_stream.wait_event(input_ready_event)
                 with torch.npu.stream(entry.copy_stream):
                     for static_buf, new_inp in needs_copy:
                         static_buf.copy_(new_inp)
                 copy_event = entry.copy_stream.record_event()
-                torch.npu.current_stream().wait_event(copy_event)
+                current_stream.wait_event(copy_event)
 
             entry.aclgraph.replay()
 
