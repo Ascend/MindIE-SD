@@ -133,6 +133,43 @@ def _residual_gate_add_fallback(x: torch.Tensor, y: torch.Tensor, gate: torch.Te
     return (x + y.float() * gate.float()).to(x.dtype)
 
 
+def _validate_qwen_residual_gate_inputs(
+    residual: torch.Tensor, branch: torch.Tensor, gate: torch.Tensor
+) -> None:
+    if residual.dim() != 3 or branch.dim() != 3:
+        raise ValueError(
+            "Qwen residual and branch must both be [B,S,D]; "
+            f"got residual={tuple(residual.shape)} branch={tuple(branch.shape)}"
+        )
+    if residual.shape != branch.shape:
+        raise ValueError(
+            "Qwen residual and branch must have identical [B,S,D] shapes; "
+            f"got residual={tuple(residual.shape)} branch={tuple(branch.shape)}"
+        )
+    batch, _, dim = residual.shape
+    if gate.dim() != 3 or gate.shape != (batch, 1, dim):
+        raise ValueError(
+            "Qwen gate must be exactly [B,1,D] for token-dimension broadcast; "
+            f"got residual={tuple(residual.shape)} gate={tuple(gate.shape)}"
+        )
+    if residual.dtype != branch.dtype or residual.dtype != gate.dtype:
+        raise ValueError(
+            "Qwen residual, branch, and gate must share a dtype; "
+            f"got residual={residual.dtype} branch={branch.dtype} gate={gate.dtype}"
+        )
+
+
+@torch.library.custom_op("mindiesd::qwen_residual_gate_add", mutates_args=())
+def qwen_residual_gate_add(
+    residual: torch.Tensor, branch: torch.Tensor, gate: torch.Tensor
+) -> torch.Tensor:
+    """Qwen-Image fused ``residual + gate * branch`` with gate ``[B,1,D]``."""
+    _validate_qwen_residual_gate_inputs(residual, branch, gate)
+    if _TRITON_ON_ASCEND:
+        return _residual_gate_add_triton(residual, branch, gate)
+    return _residual_gate_add_fallback(residual, branch, gate).contiguous()
+
+
 @torch.library.custom_op("mindiesd::residual_gate_add", mutates_args=())
 def residual_gate_add(x: torch.Tensor, y: torch.Tensor, gate: torch.Tensor) -> torch.Tensor:
     """Fused residual + gate: out = x + y.float() * gate.float().
@@ -149,3 +186,9 @@ def residual_gate_add(x: torch.Tensor, y: torch.Tensor, gate: torch.Tensor) -> t
 @residual_gate_add.register_fake
 def _(x: torch.Tensor, y: torch.Tensor, gate: torch.Tensor) -> torch.Tensor:
     return torch.empty_like(x)
+
+
+@qwen_residual_gate_add.register_fake
+def _(residual: torch.Tensor, branch: torch.Tensor, gate: torch.Tensor) -> torch.Tensor:
+    _validate_qwen_residual_gate_inputs(residual, branch, gate)
+    return torch.empty(residual.shape, dtype=residual.dtype, device=residual.device)
