@@ -19,18 +19,14 @@ import torch.nn.functional as F
 import torch_npu
 from torch import nn
 
-from ..layers.flash_attn.common import AttentionParam, lru_cache_by_attn_param
-from ..layers.flash_attn.fused_infer_attention_score import fused_infer_attention_score_v2
+from ..layers.flash_attn.quant_attention_mxfp4 import (
+    _reshape_mxfp4_v_scale_for_fa as _reshape_mxfp4_v_scale_for_fa,  # RFv3 compatibility import.
+)
 from .config import QuantConfig, TimestepPolicyConfig
 from .mode import FP8FAMode, normalize_fp8_fa_mode
 from .utils import get_mxfp4_quant_kwargs, get_quant_weight, TimestepManager
 
 
-MXFP4_Q_QUANT_MODE = 3
-MXFP4_K_QUANT_MODE = 3
-MXFP4_V_QUANT_MODE = 3
-MXFP4_FA_SEQ_PAD_BASE = 512
-MXFP4_FA_SEQ_CACHE_MAX_SIZE = 512
 MXFP4_GROUP_SIZES_W4A4 = [1, 1, 32]
 MXFP4_GROUP_SIZES_W4A8 = [0, 0, 32]
 MXFP4_SCALE_ALG_C7 = 2
@@ -115,15 +111,6 @@ def _dynamic_mx_quant(input_tensor, dst_type, quant_config=None, **kwargs):
     return result[0], result[1]
 
 
-def _dynamic_mx_quant_fa(input_tensor, axis, quant_config=None):
-    return _dynamic_mx_quant(
-        input_tensor,
-        dst_type=torch_npu.float4_e2m1fn_x2,
-        quant_config=quant_config,
-        axis=axis,
-    )
-
-
 def _get_fa_shape(query, layout):
     if layout == "BNSD":
         _, n, s, d = query.shape
@@ -132,75 +119,6 @@ def _get_fa_shape(query, layout):
     else:
         raise ValueError(f"Unsupported layout: {layout}, expected 'BNSD' or 'BSND'.")
     return n, s, d
-
-
-def _pad_fa_seq_before_quant(input_tensor, base, layout):
-    if layout == "BNSD":
-        _, _, s, _ = input_tensor.shape
-        padding_length = (base - s % base) % base
-        pad = (0, 0, 0, padding_length)
-    elif layout == "BSND":
-        _, s, _, _ = input_tensor.shape
-        padding_length = (base - s % base) % base
-        pad = (0, 0, 0, 0, 0, padding_length)
-    else:
-        raise ValueError(f"Unsupported layout: {layout}, expected 'BNSD' or 'BSND'.")
-
-    if padding_length != 0:
-        input_tensor = F.pad(input_tensor, pad)
-    return input_tensor, s, s + padding_length
-
-
-def _get_fa_seq_axis(layout):
-    if layout == "BNSD":
-        return 2
-    if layout == "BSND":
-        return 1
-    raise ValueError(f"Unsupported layout: {layout}, expected 'BNSD' or 'BSND'.")
-
-
-def _reshape_mxfp4_v_scale_for_fa(v_scale, layout):
-    if layout == "BNSD":
-        scale_blocks = v_scale.shape[2]
-        if v_scale.dim() == 5:
-            return v_scale
-        if scale_blocks % 2 != 0:
-            raise ValueError(f"V scale S blocks must be even for layout BNSD, got {scale_blocks}.")
-        return (
-            v_scale.reshape(v_scale.shape[0], v_scale.shape[1], scale_blocks // 2, 2, v_scale.shape[3])
-            .transpose(-1, -2)
-            .contiguous()
-        )
-    if layout == "BSND":
-        scale_blocks = v_scale.shape[1]
-        if v_scale.dim() == 5:
-            return v_scale
-        if scale_blocks % 2 != 0:
-            raise ValueError(f"V scale S blocks must be even for layout BSND, got {scale_blocks}.")
-        return (
-            v_scale.reshape(v_scale.shape[0], scale_blocks // 2, 2, v_scale.shape[2], v_scale.shape[3])
-            .permute(0, 1, 3, 4, 2)
-            .contiguous()
-        )
-    raise ValueError(f"Unsupported layout: {layout}, expected 'BNSD' or 'BSND'.")
-
-
-@lru_cache_by_attn_param(maxsize=MXFP4_FA_SEQ_CACHE_MAX_SIZE)
-def _get_qfa_seqused(param):
-    device = torch.device(param.head_first)
-    seqused_q = torch.full((param.batch_size,), param.q_seqlen, dtype=torch.int32, device=device)
-    seqused_kv = torch.full((param.batch_size,), param.kv_seqlen, dtype=torch.int32, device=device)
-    return seqused_q, seqused_kv
-
-
-def _crop_fa_output(output, seq_len, layout):
-    if layout == "BNSD":
-        if output.shape[2] != seq_len:
-            output = output[:, :, :seq_len, :]
-    elif layout == "BSND":
-        if output.shape[1] != seq_len:
-            output = output[:, :seq_len, :, :]
-    return output
 
 
 class WeightQuantLinear(nn.Module):
@@ -532,12 +450,6 @@ class MXFP4QuantFA(nn.Module):
         else:
             self.k_rot = None
 
-    def _apply_rotate(self, query, key):
-        if self.q_rot is not None:
-            query = torch.matmul(query, self.q_rot)
-        if self.k_rot is not None:
-            key = torch.matmul(key, self.k_rot)
-        return query, key
 
     def _forward_float(self, query, key, value, **kwargs):
         layout = kwargs.get("layout", "BNSD")
@@ -555,122 +467,26 @@ class MXFP4QuantFA(nn.Module):
         return output
 
     def _forward_fp8(self, query, key, value, **kwargs):
-        query, key = self._apply_rotate(query, key)
-        layout = kwargs.get("layout", "BNSD")
-        n, s, d = _get_fa_shape(query, layout)
-
-        from ..layers.quant.block_quant import fa_block_quant_preprocess
-
-        q, q_scale = fa_block_quant_preprocess(query, block_size=128, dst_type=torch_npu.float8_e4m3fn, layout=layout)
-        k, k_scale = fa_block_quant_preprocess(key, block_size=256, dst_type=torch_npu.float8_e4m3fn, layout=layout)
-        v, v_scale = fa_block_quant_preprocess(value, block_size=256, dst_type=torch_npu.float8_e4m3fn, layout=layout)
-
-        output = fused_infer_attention_score_v2(
-            q,
-            k,
-            v,
-            input_layout="BNSD",
-            num_query_heads=n,
-            softmax_scale=kwargs.get("softmax_scale", 1.0 / math.sqrt(d)),
-            pre_tokens=kwargs.get("pre_tokens", 2147483647),
-            next_tokens=kwargs.get("next_tokens", 2147483647),
-            query_quant_mode=7,
-            key_quant_mode=7,
-            value_quant_mode=7,
-            dequant_scale_query=q_scale,
-            dequant_scale_key=k_scale,
-            dequant_scale_value=v_scale,
-            out_dtype=query.dtype,
-        )[0]
-        output = _crop_fa_output(output, s, "BNSD")
-        if layout == "BSND":
-            output = output.transpose(1, 2)
-        return output
+        return quant_attention(
+            query, key, value, precision="fp8", q_rot=self.q_rot, k_rot=self.k_rot,
+            layout=kwargs.get("layout", "BNSD"), scale=kwargs.get("softmax_scale"),
+            pre_tokens=kwargs.get("pre_tokens", 2147483647), next_tokens=kwargs.get("next_tokens", 2147483647),
+        )
 
     def _forward_mxfp4(self, query, key, value, **kwargs):
-        query, key = self._apply_rotate(query, key)
-        layout = kwargs.get("layout", "BNSD")
-        layout_kv = kwargs.get("layout_kv", layout)
-        layout_out = kwargs.get("layout_out", layout)
-        n, s, d = _get_fa_shape(query, layout)
-        n_kv, kv_s, _ = _get_fa_shape(key, layout_kv)
-
-        query, s, padded_s = _pad_fa_seq_before_quant(query, MXFP4_FA_SEQ_PAD_BASE, layout)
-        key, kv_s, padded_kv_s = _pad_fa_seq_before_quant(key, MXFP4_FA_SEQ_PAD_BASE, layout_kv)
-        value, _, _ = _pad_fa_seq_before_quant(value, MXFP4_FA_SEQ_PAD_BASE, layout_kv)
-        batch_size = query.shape[0]
-        seq_param = AttentionParam(batch_size, n, d, padded_s, padded_kv_s, torch.int32, str(query.device))
-        seqused_q, seqused_kv = _get_qfa_seqused(seq_param)
-
-        v_seq_axis = _get_fa_seq_axis(layout_kv)
-        q, q_scale = _dynamic_mx_quant_fa(query, axis=-1, quant_config=self.quant_config)
-        k, k_scale = _dynamic_mx_quant_fa(key, axis=-1, quant_config=self.quant_config)
-        v, v_scale = _dynamic_mx_quant_fa(value, axis=v_seq_axis, quant_config=self.quant_config)
-        v_scale = _reshape_mxfp4_v_scale_for_fa(v_scale, layout_kv)
-
-        qfa_metadata = kwargs.get("metadata", None)
-        if qfa_metadata is None:
-            qfa_metadata = torch.ops.mindiesd.quant_flash_attn_metadata(
-                num_heads_q=n,
-                num_heads_kv=kwargs.get("num_key_value_heads", n_kv),
-                head_dim=d,
-                q_quant_mode=MXFP4_Q_QUANT_MODE,
-                k_quant_mode=MXFP4_K_QUANT_MODE,
-                v_quant_mode=MXFP4_V_QUANT_MODE,
-                cu_seqlens_q=None,
-                cu_seqlens_kv=None,
-                seqused_q=seqused_q,
-                seqused_kv=seqused_kv,
-                batch_size=query.shape[0],
-                max_seqlen_q=kwargs.get("max_seqlen_q", -1),
-                max_seqlen_kv=kwargs.get("max_seqlen_kv", -1),
-                q_dtype=torch_npu.float4_e2m1fn_x2,
-                k_dtype=torch_npu.float4_e2m1fn_x2,
-                v_dtype=torch_npu.float4_e2m1fn_x2,
-                mask_mode=kwargs.get("mask_mode", 0),
-                win_left=kwargs.get("win_left", kwargs.get("pre_tokens", 2147483647)),
-                win_right=kwargs.get("win_right", kwargs.get("next_tokens", 2147483647)),
-                layout_q=layout,
-                layout_kv=layout_kv,
-                layout_out=layout_out,
-            )
-
-        output, _ = torch.ops.mindiesd.quant_flash_attn(
-            q,
-            k,
-            v,
-            q_scale,
-            k_scale,
-            v_scale,
-            q_quant_mode=MXFP4_Q_QUANT_MODE,
-            k_quant_mode=MXFP4_K_QUANT_MODE,
-            v_quant_mode=MXFP4_V_QUANT_MODE,
-            block_table=kwargs.get("block_table", None),
-            cu_seqlens_q=None,
-            cu_seqlens_kv=None,
-            seqused_q=seqused_q,
-            seqused_kv=seqused_kv,
-            sinks=kwargs.get("sinks", None),
-            attn_mask=kwargs.get("attn_mask", None),
-            metadata=qfa_metadata,
-            q_dtype=torch_npu.float4_e2m1fn_x2,
-            k_dtype=torch_npu.float4_e2m1fn_x2,
-            v_dtype=torch_npu.float4_e2m1fn_x2,
-            q_descale_dtype=torch_npu.float8_e8m0fnu,
-            k_descale_dtype=torch_npu.float8_e8m0fnu,
-            v_descale_dtype=torch_npu.float8_e8m0fnu,
-            softmax_scale=kwargs.get("softmax_scale", 1.0 / math.sqrt(d)),
-            mask_mode=kwargs.get("mask_mode", 0),
-            win_left=kwargs.get("win_left", kwargs.get("pre_tokens", 2147483647)),
-            win_right=kwargs.get("win_right", kwargs.get("next_tokens", 2147483647)),
-            max_seqlen_q=kwargs.get("max_seqlen_q", -1),
-            max_seqlen_kv=kwargs.get("max_seqlen_kv", -1),
-            layout_q=layout,
-            layout_kv=layout_kv,
-            layout_out=layout_out,
+        quant_options = get_mxfp4_quant_kwargs(self.quant_config)
+        return quant_attention(
+            query, key, value, precision="mxfp4", q_rot=self.q_rot, k_rot=self.k_rot,
+            layout=kwargs.get("layout", "BNSD"), layout_kv=kwargs.get("layout_kv"), layout_out=kwargs.get("layout_out"),
+            scale=kwargs.get("softmax_scale"), pre_tokens=kwargs.get("pre_tokens", 2147483647),
+            next_tokens=kwargs.get("next_tokens", 2147483647),
+            mxfp4_scale_alg=quant_options.get("scale_alg"), mxfp4_dst_type_max=quant_options.get("dst_type_max"),
+            metadata=kwargs.get("metadata"), num_key_value_heads=kwargs.get("num_key_value_heads"),
+            max_seqlen_q=kwargs.get("max_seqlen_q", -1), max_seqlen_kv=kwargs.get("max_seqlen_kv", -1),
+            mask_mode=kwargs.get("mask_mode", 0), win_left=kwargs.get("win_left"), win_right=kwargs.get("win_right"),
+            block_table=kwargs.get("block_table"), sinks=kwargs.get("sinks"), attn_mask=kwargs.get("attn_mask"),
             return_softmax_lse=kwargs.get("return_softmax_lse", 0),
         )
-        return _crop_fa_output(output, s, layout_out)
 
     def forward(self, query, key, value, **kwargs):
         t_idx = TimestepManager.get_timestep_idx()

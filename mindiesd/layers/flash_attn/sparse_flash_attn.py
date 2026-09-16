@@ -195,9 +195,7 @@ def sparse_attention(
         if sparse_type not in ("rf_v2", "rf_v3"):
             raise ParametersInvalid("video_spans requires sparse_type='rf_v2' or sparse_type='rf_v3'.")
         if txt_len != 0 or latent_shape_q is not None or latent_shape_k is not None:
-            raise ParametersInvalid(
-                "video_spans cannot be combined with txt_len, latent_shape_q, or latent_shape_k."
-            )
+            raise ParametersInvalid("video_spans cannot be combined with txt_len, latent_shape_q, or latent_shape_k.")
     sparse_type, inner_precise = _resolve_sparse_type_for_a5(sparse_type, inner_precise)
     batch, head_dim = q.shape[0], q.shape[-1]
     scale = head_dim**-0.5 if scale is None else scale

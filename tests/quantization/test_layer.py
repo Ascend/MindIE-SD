@@ -12,17 +12,14 @@
 # pylint: disable=no-member,redefined-outer-name
 import importlib
 import os
-import sys
 import unittest
-from itertools import product
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import torch
 from torch import nn
 import torch_npu
 
-from mindiesd import quant_attention
 from mindiesd.quantization.layer import (
     W8A8QuantLinear,
     WeightQuantLinear,
@@ -1111,188 +1108,98 @@ class TestFaBlockQuantPreprocess(unittest.TestCase):
         self.assertEqual(captured_kwargs['row_block_size'], 256)
 
 
-class TestQuantAttentionMxfp8(unittest.TestCase):
+class TestLegacyMXFP4Attention(unittest.TestCase):
     def setUp(self):
         self.q = torch.randn(1, 2, 17, 64)
 
-    def test_unequal_lengths_and_heads_preserve_tnd_inputs_and_query_output(self):
-        cases = product(("BNSD", "BSND"), (1, 2), ((17, 8, 2, 2), (8, 17, 4, 2), (128, 256, 4, 2)))
-        for layout, batch, (q_len, kv_len, q_heads, kv_heads) in cases:
-            q = torch.randn(batch, q_heads, q_len, 64)
-            k = torch.randn(batch, kv_heads, kv_len, 64) + 10
-            v = torch.randn_like(k) + 20
-            packed_q = (2 * q).transpose(1, 2).reshape(batch * q_len, q_heads, 64)
-            packed_k = k.transpose(1, 2).reshape(batch * kv_len, kv_heads, 64)
-            packed_v = v.transpose(1, 2).reshape(batch * kv_len, kv_heads, 64)
-            if layout == "BSND":
-                q, k, v = (tensor.transpose(1, 2) for tensor in (q, k, v))
-            with (
-                self.subTest(layout=layout, batch=batch, lengths=(q_len, kv_len), heads=(q_heads, kv_heads)),
-                patch.object(
-                    torch_npu, "npu_dynamic_mx_quant", create=True, side_effect=lambda t, **kw: (t, torch.ones(1))
-                ) as quantize,
-                patch.object(
-                    torch_npu,
-                    "npu_fused_infer_attention_score_v2",
-                    create=True,
-                    side_effect=lambda t, *args, **kw: (t + 1,),
-                ) as execute,
-            ):
-                output = quant_attention(q, k, v, precision="mxfp8", layout=layout, q_rot=2 * torch.eye(64))
-                torch.testing.assert_close(output, 2 * q + 1)
-                for call, packed, axis in zip(quantize.call_args_list, (packed_q, packed_k, packed_v), (-1, -1, 0)):
-                    torch.testing.assert_close(call.args[0], packed)
-                    self.assertEqual(call.kwargs["axis"], axis)
-                for actual, expected in zip(execute.call_args.args, (packed_q, packed_k, packed_v)):
-                    torch.testing.assert_close(actual, expected)
-                options = execute.call_args.kwargs
-                self.assertEqual(options["input_layout"], "TND")
-                self.assertEqual(options["num_query_heads"], q_heads)
-                self.assertEqual(options["num_key_value_heads"], kv_heads)
-                self.assertEqual(options["actual_seq_qlen"], [q_len] if batch == 1 else [q_len, 2 * q_len])
-                self.assertEqual(options["actual_seq_kvlen"], [kv_len] if batch == 1 else [kv_len, 2 * kv_len])
+    def test_bsa_scale_helper_import_remains_compatible(self):
+        from mindiesd.quantization.layer import _reshape_mxfp4_v_scale_for_fa
 
-    def test_options_are_rejected_before_rotation_or_quantization(self):
-        with (
-            patch.object(torch, "matmul") as rotate,
-            patch.object(torch_npu, "npu_dynamic_mx_quant", create=True) as quant,
-        ):
-            for options in ({"fp8_fa_mode": None}, {"softmax_scale": 0.5}, {"mxfp4_scale_alg": 2}, {"unknown": 1}):
-                with self.subTest(options=options), self.assertRaisesRegex(TypeError, next(iter(options))):
-                    quant_attention(self.q, self.q, self.q, precision="mxfp8", q_rot=torch.eye(64), **options)
-            rotate.assert_not_called()
-            quant.assert_not_called()
+        scale = torch.arange(32).reshape(1, 2, 4, 4)
+        paired = _reshape_mxfp4_v_scale_for_fa(scale, "BNSD")
+        torch.testing.assert_close(paired[..., 0], scale[:, :, 0::2, :])
+        torch.testing.assert_close(paired[..., 1], scale[:, :, 1::2, :])
+        self.assertIs(_reshape_mxfp4_v_scale_for_fa(paired, "BNSD"), paired)
 
-    def test_module_import_without_optional_mx_dtypes(self):
-        impl = importlib.import_module("mindiesd.layers.flash_attn.fused_infer_attention_score")
-        with patch.dict(sys.modules, {"torch_npu": ModuleType("torch_npu")}):
-            spec = importlib.util.spec_from_file_location(impl.__name__ + "_probe", impl.__file__)
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            self.assertTrue(callable(module._mxfp8_attention_forward))
-
-    def test_mxfp8_tnd_sequence_metadata(self):
-        q = self.q.expand(2, -1, -1, -1)
-        with (
-            patch.object(torch_npu, "npu_dynamic_mx_quant", create=True) as quantize,
-            patch.object(torch_npu, "npu_fused_infer_attention_score_v2", create=True) as execute,
-        ):
-            quantize.side_effect = lambda tensor, **kwargs: (tensor, torch.ones(1))
-            execute.side_effect = lambda query, *args, **kwargs: (query,)
-            out = quant_attention(q, q, q, precision="mxfp8")
-            self.assertEqual(out.shape, q.shape)
-            self.assertEqual(execute.call_args.kwargs["input_layout"], "TND")
-            self.assertEqual(execute.call_args.kwargs["actual_seq_qlen"], [17, 34])
-            self.assertEqual(execute.call_args.kwargs["value_quant_mode"], 8)
-
-    def test_layout_rotation_scales_and_dtype_at_operator_boundary(self):
-        for layout in ("BNSD", "BSND"):
-            q = self.q.expand(2, -1, -1, -1)
-            if layout == "BSND":
-                q = q.transpose(1, 2)
-            scales = [torch.tensor([index]) for index in range(3)]
-            with (
-                self.subTest(layout=layout),
-                patch.object(torch_npu, "npu_dynamic_mx_quant", create=True) as quantize,
-                patch.object(torch_npu, "npu_fused_infer_attention_score_v2", create=True) as execute,
-            ):
-                quantize.side_effect = lambda t, **kw: (t, scales[quantize.call_count - 1])
-                execute.side_effect = lambda t, *args, **kw: (t,)
-                output = quant_attention(
-                    q,
-                    q,
-                    q,
-                    precision="mxfp8",
-                    layout=layout,
-                    k_rot=2 * torch.eye(64),
-                    scale=0.5,
-                    pre_tokens=7,
-                    next_tokens=0,
-                )
-                torch.testing.assert_close(output, q)
-                packed = (q.transpose(1, 2) if layout == "BNSD" else q).reshape(34, 2, 64)
-                for call, factor, axis in zip(quantize.call_args_list, (1, 2, 1), (-1, -1, 0)):
-                    torch.testing.assert_close(call.args[0], factor * packed)
-                    self.assertEqual(call.kwargs, {"axis": axis, "dst_type": torch.float8_e4m3fn})
-                options = execute.call_args.kwargs
-                for tensor, mode, descale in zip(("query", "key", "value"), (6, 6, 8), scales):
-                    self.assertEqual(options[tensor + "_quant_mode"], mode)
-                    self.assertIs(options["dequant_scale_" + tensor], descale)
-                    self.assertEqual(options["dequant_scale_" + tensor + "_dtype"], torch_npu.float8_e8m0fnu)
-                    self.assertEqual(options[tensor + "_dtype"], torch.float8_e4m3fn)
-                self.assertEqual(options["actual_seq_kvlen"], [17, 34])
-                self.assertEqual(options["out_dtype"], q.dtype)
-                self.assertEqual((options["softmax_scale"], options["pre_tokens"], options["next_tokens"]), (0.5, 7, 0))
-
-    def test_invalid_rotation_fails_before_quantization(self):
-        for options in (
-            {"q_rot": torch.ones(64, 32)},
-            {"k_rot": torch.eye(64, dtype=torch.float16)},
-        ):
-            with (
-                self.subTest(options=options),
-                patch.object(torch_npu, "npu_dynamic_mx_quant", create=True) as quantize,
-            ):
-                with self.assertRaises(ValueError):
-                    quant_attention(self.q, self.q, self.q, precision="mxfp8", **options)
-                quantize.assert_not_called()
-
-    def test_operator_exception_is_not_retried(self):
-        with (
-            patch.object(
-                torch_npu, "npu_dynamic_mx_quant", create=True, side_effect=lambda t, **kw: (t, torch.ones(1))
-            ),
-            patch.object(
-                torch_npu, "npu_fused_infer_attention_score_v2", create=True, side_effect=RuntimeError("native failure")
-            ) as execute,
-        ):
-            with self.assertRaisesRegex(RuntimeError, "native failure"):
-                quant_attention(self.q, self.q, self.q, precision="mxfp8")
-            execute.assert_called_once()
-
-    def test_legacy_class_delegates_and_preserves_historical_options(self):
+    def test_legacy_mxfp4_timestep_fallback_filters_kernel_options(self):
         layer = importlib.import_module("mindiesd.quantization.layer")
-        weights = SimpleNamespace(keys=lambda: ("a.q_rot", "a.k_rot"), get_tensor=lambda _: torch.eye(64))
-        model = layer.MXFP8RotateQuantFA(prefix="a", weights=weights)
-        with (
-            patch.object(layer, "quant_attention", wraps=quant_attention) as entry,
-            (
+        fp8 = importlib.import_module("mindiesd.layers.flash_attn.fused_infer_attention_score")
+        model = layer.MXFP4QuantFA()
+        for strategy in ("FP8", "FLOAT"):
+            with (
+                self.subTest(strategy=strategy),
+                patch.object(model.timestep_config, "get_strategy", return_value=strategy),
+                patch.object(fp8, "_fa_block_quant_preprocess", side_effect=lambda t, **kw: (t, torch.ones(1))),
                 patch.object(
-                    torch_npu, "npu_dynamic_mx_quant", create=True, side_effect=lambda t, **kw: (t, torch.ones(1))
+                    torch.ops.mindiesd, "fused_infer_attention_score_v2", create=True, return_value=(self.q,)
+                ) as execute,
+                patch.object(torch_npu, "npu_fusion_attention", return_value=(self.q,), create=True) as floating,
+            ):
+                output = model(
+                    self.q,
+                    self.q,
+                    self.q,
+                    metadata=object(),
+                    layout_out="BSND",
+                    mask_mode=0,
+                    return_softmax_lse=1,
+                    softmax_scale=0.5,
                 )
-            ),
-            patch.object(
-                torch_npu, "npu_fused_infer_attention_score_v2", create=True, side_effect=lambda t, *a, **kw: (t,)
-            ) as execute,
+                torch.testing.assert_close(output, self.q)
+                if strategy == "FP8":
+                    self.assertEqual(execute.call_args.kwargs["softmax_scale"], 0.5)
+                    self.assertNotIn("metadata", execute.call_args.kwargs)
+                    floating.assert_not_called()
+                else:
+                    execute.assert_not_called()
+                    self.assertEqual(floating.call_args.kwargs["scale"], 0.5)
+
+    def test_legacy_quant_config_is_resolved_before_shared_quantization(self):
+        layer = importlib.import_module("mindiesd.quantization.layer")
+        config = SimpleNamespace(mxfp4_scale_alg=2, mxfp4_dst_type_max=7.25)
+        with patch.object(
+            torch_npu,
+            "npu_dynamic_mx_quant",
+            create=True,
+            return_value=(self.q, torch.ones(1)),
+        ) as quantize:
+            layer._dynamic_mx_quant(
+                self.q,
+                torch_npu.float4_e2m1fn_x2,
+                quant_config=config,
+                dst_type_max=8.0,
+            )
+            self.assertEqual(
+                quantize.call_args.kwargs,
+                {
+                    "dst_type": torch_npu.float4_e2m1fn_x2,
+                    "scale_alg": 2,
+                    "dst_type_max": 8.0,
+                },
+            )
+            layer._dynamic_mx_quant(self.q, torch_npu.float8_e4m3fn, quant_config=config)
+            self.assertEqual(quantize.call_args.kwargs, {"dst_type": torch_npu.float8_e4m3fn})
+
+    def test_legacy_classes_use_function_and_timestep_policy(self):
+        layer = importlib.import_module("mindiesd.quantization.layer")
+        model = layer.MXFP4QuantFA(mxfp4_scale_alg=2, mxfp4_dst_type_max=7.25)
+        with (
+            patch.object(layer, "quant_attention", return_value=self.q) as execute,
+            patch.object(torch_npu, "npu_fusion_attention", return_value=(self.q,), create=True) as floating,
         ):
-            output = model(self.q, self.q, self.q, softmax_scale=0.75, metadata=object(), precision="unused")
-            torch.testing.assert_close(output, self.q)
-            self.assertEqual(entry.call_args.kwargs["precision"], "mxfp8")
-            self.assertIs(entry.call_args.kwargs["q_rot"], model.q_rot)
-            self.assertEqual(execute.call_args.kwargs["softmax_scale"], 0.125)
-
-
-class TestQuantAttentionMxfp8Npu(unittest.TestCase):
-    @unittest.skipUnless(hasattr(torch, "npu"), "Requires TorchNPU on an A5 device.")
-    def test_real_npu_unequal_lengths_and_gqa(self):
-        if not torch.npu.is_available() or not is_a5_device():
-            self.skipTest("Requires an available A5 device.")
-        # Constant V per batch/head has a known attention result for any Q/K.
-        # Distinct values detect batch/head mixing without a quantization-error baseline.
-        head_values = torch.tensor([[1.0, -1.0], [0.5, -0.5]], device="npu", dtype=torch.bfloat16)
-        for layout, (q_len, kv_len) in product(("BNSD", "BSND"), ((128, 256), (256, 128))):
-            with self.subTest(layout=layout, lengths=(q_len, kv_len)):
-                q = torch.randn(2, 4, q_len, 64, device="npu", dtype=torch.bfloat16) * 0.1
-                k = torch.randn(2, 2, kv_len, 64, device="npu", dtype=torch.bfloat16) * 0.1
-                v = head_values.reshape(2, 2, 1, 1).expand(2, 2, kv_len, 64).contiguous()
-                expected = head_values.repeat_interleave(2, dim=1).reshape(2, 4, 1, 1).expand_as(q)
-                if layout == "BSND":
-                    q, k, v = (tensor.transpose(1, 2).contiguous() for tensor in (q, k, v))
-                    expected = expected.transpose(1, 2)
-                output = quant_attention(q, k, v, precision="mxfp8", layout=layout)
-                actual = output.cpu()
-                self.assertTrue(torch.isfinite(actual).all().item())
-                torch.testing.assert_close(actual, expected.cpu(), rtol=0.02, atol=0.02)
+            for strategy in ("FLOAT", "FP8", "MXFP4"):
+                execute.reset_mock()
+                floating.reset_mock()
+                with patch.object(model.timestep_config, "get_strategy", return_value=strategy):
+                    self.assertIs(model(self.q, self.q, self.q), self.q)
+                    if strategy == "FLOAT":
+                        execute.assert_not_called()
+                        floating.assert_called_once()
+                    else:
+                        floating.assert_not_called()
+                        self.assertEqual(execute.call_args.kwargs["precision"], strategy.lower())
+                        if strategy == "MXFP4":
+                            self.assertEqual(execute.call_args.kwargs["mxfp4_dst_type_max"], 7.25)
 
 
 if __name__ == '__main__':

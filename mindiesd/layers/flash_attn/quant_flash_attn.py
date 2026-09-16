@@ -15,10 +15,11 @@
 
 import torch
 from .common import _get_bnsd_shape
+from .quant_attention_mxfp4 import _mxfp4_attention_forward
 from .fused_infer_attention_score import _fp8_attention_forward, _mxfp8_attention_forward
 
 
-_SUPPORTED_PRECISIONS = ("fp8", "mxfp8")
+_SUPPORTED_PRECISIONS = ("fp8", "mxfp8", "mxfp4")
 
 
 def quant_attention(
@@ -47,16 +48,16 @@ def quant_attention(
         key (torch.Tensor):
             Unquantized key, shaped [B, Nkv, Skv, D] for BNSD or
             [B, Skv, Nkv, D] for BSND. Must share query's batch size,
-            head dimension, device and dtype. FP8 and MXFP8 permit Skv to
-            differ from Sq.
+            head dimension, device and dtype. Skv may differ from Sq.
+            MXFP4 interprets K/V using layout_kv when provided.
         value (torch.Tensor):
             Unquantized value with the same shape, device and dtype as key.
         precision (str, optional, defaults to "fp8"):
-            Quantization precision. Supported values are "fp8" and "mxfp8".
+            Quantization precision. Supported values are "fp8", "mxfp8" and "mxfp4".
             Other values, including "float", raise ValueError. For
             non-quantized attention use mindiesd.attention_forward instead.
         layout (str, optional, defaults to "BNSD"):
-            Shared Q/K/V and output layout: "BNSD" or "BSND". B is batch,
+            Q layout; also the default K/V and output layout: "BNSD" or "BSND". B is batch,
             N is head count, S is sequence length and D is head dimension.
         scale (float, optional, defaults to None):
             Multiplier applied to Q @ K.transpose(-1, -2) before softmax.
@@ -86,9 +87,27 @@ def quant_attention(
                 blocks 64 and FIA inner_precise=4. The corresponding FP8FAMode
                 enum values are also accepted; hardware support is required.
 
+            MXFP4 options (only with precision="mxfp4"):
+                Q/K/V sequence lengths are padded to multiples of 512 before
+                    quantization. Native seqused_q/seqused_kv use these padded
+                    lengths, including zero-padded KV positions in softmax.
+                    The returned output is cropped to the original Q length.
+                layout_kv/layout_out: BNSD or BSND; None uses layout.
+                mxfp4_scale_alg/mxfp4_dst_type_max: explicit MX quantization
+                    parameters; None retains the installed operator defaults.
+                metadata: precomputed QFA metadata; None generates it.
+                num_key_value_heads: must match K/V heads if provided.
+                max_seqlen_q/max_seqlen_kv: native length bounds, default -1.
+                mask_mode: native mask mode, default 0.
+                win_left/win_right: None uses pre_tokens/next_tokens.
+                block_table/sinks/attn_mask: optional native inputs, default None.
+                return_softmax_lse: native LSE flag, default 0. This function
+                    returns only the attention output; LSE is discarded.
+                Optional inputs must satisfy the installed QFA contract.
+
     Returns:
-        torch.Tensor: Floating-point attention output with query's layout,
-        shape and dtype. Internal sequence padding is cropped from the output.
+        torch.Tensor: Floating-point output with query's dimensions and dtype,
+        using layout_out for MXFP4 or query's layout otherwise. Internal sequence padding is cropped from the output.
 
     Raises:
         ValueError: Unsupported precision/layout, invalid
@@ -106,9 +125,30 @@ def quant_attention(
             "Use mindiesd.attention_forward for non-quantized attention."
         )
     fp8_fa_mode = kwargs.pop("fp8_fa_mode", None) if precision == "fp8" else None
+    layout_kv = layout
+    if precision == "mxfp4":
+        layout_kv = kwargs.pop("layout_kv", None)
+        layout_kv = layout if layout_kv is None else layout_kv
+        layout_out = kwargs.pop("layout_out", None)
+        layout_out = layout if layout_out is None else layout_out
+        if layout_out not in ("BNSD", "BSND"):
+            raise ValueError("layout_out must be BNSD or BSND.")
+        mxfp4_scale_alg = kwargs.pop("mxfp4_scale_alg", None)
+        mxfp4_dst_type_max = kwargs.pop("mxfp4_dst_type_max", None)
+        metadata = kwargs.pop("metadata", None)
+        num_key_value_heads = kwargs.pop("num_key_value_heads", None)
+        max_seqlen_q = kwargs.pop("max_seqlen_q", -1)
+        max_seqlen_kv = kwargs.pop("max_seqlen_kv", -1)
+        mask_mode = kwargs.pop("mask_mode", 0)
+        win_left = kwargs.pop("win_left", None)
+        win_right = kwargs.pop("win_right", None)
+        block_table = kwargs.pop("block_table", None)
+        sinks = kwargs.pop("sinks", None)
+        attn_mask = kwargs.pop("attn_mask", None)
+        return_softmax_lse = kwargs.pop("return_softmax_lse", 0)
     if kwargs:
         raise TypeError(f"Unexpected options for {precision} quantized attention: {', '.join(sorted(kwargs))}.")
-    _, _, _, head_dim = _validate_quant_attention_inputs(query, key, value, layout=layout)
+    _, _, _, head_dim = _validate_quant_attention_inputs(query, key, value, layout=layout, layout_kv=layout_kv)
     _validate_rotation(query, q_rot, "q_rot")
     _validate_rotation(key, k_rot, "k_rot")
     scale = head_dim**-0.5 if scale is None else scale
@@ -124,6 +164,37 @@ def quant_attention(
             q_rot=q_rot,
             k_rot=k_rot,
         )
+    if precision == "mxfp4":
+        actual_kv_heads = key.shape[1 if layout_kv == "BNSD" else 2]
+        if num_key_value_heads is not None and (
+            isinstance(num_key_value_heads, bool)
+            or not isinstance(num_key_value_heads, int)
+            or num_key_value_heads != actual_kv_heads
+        ):
+            raise ValueError("num_key_value_heads must be an integer matching K/V tensor head count.")
+        return _mxfp4_attention_forward(
+            query,
+            key,
+            value,
+            layout=layout,
+            layout_kv=layout_kv,
+            layout_out=layout_out,
+            scale=scale,
+            q_rot=q_rot,
+            k_rot=k_rot,
+            win_left=pre_tokens if win_left is None else win_left,
+            win_right=next_tokens if win_right is None else win_right,
+            mxfp4_scale_alg=mxfp4_scale_alg,
+            mxfp4_dst_type_max=mxfp4_dst_type_max,
+            metadata=metadata,
+            max_seqlen_q=max_seqlen_q,
+            max_seqlen_kv=max_seqlen_kv,
+            mask_mode=mask_mode,
+            block_table=block_table,
+            sinks=sinks,
+            attn_mask=attn_mask,
+            return_softmax_lse=return_softmax_lse,
+        )
     return _fp8_attention_forward(
         query,
         key,
@@ -138,11 +209,12 @@ def quant_attention(
     )
 
 
-def _validate_quant_attention_inputs(query, key, value, *, layout):
+def _validate_quant_attention_inputs(query, key, value, *, layout, layout_kv=None):
     """Validate floating-point Q/K/V before rotation and block quantization."""
+    layout_kv = layout if layout_kv is None else layout_kv
     batch, heads, sequence, dim = _get_bnsd_shape(query, layout)
-    kv_batch, kv_heads, _, kv_dim = _get_bnsd_shape(key, layout)
-    _get_bnsd_shape(value, layout)
+    kv_batch, kv_heads, _, kv_dim = _get_bnsd_shape(key, layout_kv)
+    _get_bnsd_shape(value, layout_kv)
     for tensor in (query, key, value):
         if tensor.dtype not in (torch.float16, torch.bfloat16, torch.float32):
             raise ValueError("Q/K/V must be floating-point inputs, not pre-quantized tensors.")
