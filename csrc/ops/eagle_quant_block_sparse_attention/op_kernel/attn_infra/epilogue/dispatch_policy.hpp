@@ -14,21 +14,18 @@
 #include "../../attn_infra/base_defs.hpp"
 #include "../../attn_infra/arch/arch.hpp"
 
-namespace NpuArch::Epilogue 
-{
+namespace NpuArch::Epilogue {
 
-enum class LseMode {NONE = 0, OUT_ONLY = 1};
+enum class LseMode { NONE = 0, OUT_ONLY = 1 };
 // For AtlasA2, FA Infer online Softmax
-template <LseMode LSE_MODE_, typename SM_DTYPE_>
-struct EpilogueAtlasA2OnlineSoftmax {
+template <LseMode LSE_MODE_, typename SM_DTYPE_> struct EpilogueAtlasA2OnlineSoftmax {
     using ArchTag = Arch::AtlasA2;
     using IntermPrec = SM_DTYPE_;
     static constexpr LseMode LSE_MODE = LSE_MODE_;
 };
 
 // For AtlasA2, FA Infer RescaleO
-template <LseMode LSE_MODE_, typename SM_DTYPE_>
-struct EpilogueAtlasA2RescaleO {
+template <LseMode LSE_MODE_, typename SM_DTYPE_> struct EpilogueAtlasA2RescaleO {
     using ArchTag = Arch::AtlasA2;
     using IntermPrec = SM_DTYPE_;
     static constexpr LseMode LSE_MODE = LSE_MODE_;
@@ -40,14 +37,14 @@ struct EpilogueBsaMask2Idx {
     using ArchTag = Arch::AtlasA5;
 };
 
-struct EpilogueOnlineSoftmaxBsa {
+struct EpilogueOnlineSoftmaxBsaQMode1 {
     using ArchTag = Arch::AtlasA5;
 };
 
-struct EpilogueAtlasA5BsaRescaleO {
+struct EpilogueAtlasA5BsaQMode1RescaleO {
     using ArchTag = Arch::AtlasA5;
 };
 
-}  // namespace NpuArch::Epilogue
+} // namespace NpuArch::Epilogue
 
-#endif  // EPILOGUE_DISPATCH_POLICY_HPP
+#endif // EPILOGUE_DISPATCH_POLICY_HPP

@@ -17,10 +17,11 @@
 2. **走的是哪一个**：同名算子可能与 CANN 内建重名（见 `mindiesd-fusion-notes.md` §2）⇒
    用 sentinel 法（临时加可观测的语义改动）或计数证据确认实际执行的是自研产物，
    **不要假设**"改了源码跑的就是我的"。
-3. **数值对不对**：跑该 op 的 golden
-   （`tests/ops/{op}/…_golden.py`，如 `eagle_quant_block_sparse_attention_golden.py`）。
-   **通过标准 = 该 golden 文件内声明的阈值**（EB / 容差逐 op 不同，以文件为准，不在此复制）；
-   golden 过 + 数值冒烟过才算部署通过——**只看"编译过"或只查 shape 不算**
+3. **数值对不对**：跑该 op 的精度套件（`tests/ops/{op}/`）。eqbsa 为三层套件：小 shape
+   `pytest tests/ops/eagle_quant_block_sparse_attention/test_eagle_quant_block_sparse_attention_accuracy.py -s`，
+   大 shape 见同目录 README；其它 op 仍可能是 `…_golden.py`。
+   **通过标准 = 该套件/golden 文件内声明的阈值**（容差逐 op 不同，以文件为准，不在此复制）；
+   精度套件过 + 数值冒烟过才算部署通过——**只看"编译过"或只查 shape 不算**
    （口径见 `mindiesd-fusion-notes.md` §1「数值冒烟」）。
 
 ## 2. 症状 → 落点判定表

@@ -44,46 +44,17 @@ struct Mm2L1TileHelper {
     uint32_t pL1BufNum;
     uint32_t vL1BufNum;
 
-    __aicore__ inline
-    Mm2L1TileHelper() {}
+    __aicore__ inline Mm2L1TileHelper() {}
 
-    __aicore__ inline
-    Mm2L1TileHelper(
-        uint32_t m,
-        uint32_t n,
-        uint32_t kl,
-        uint32_t kr,
-        uint32_t pbn,
-        uint32_t vbn) :
-        mm2L1TileM(m),
-        mm2L1TileN(n),
-        mm2L1TileKLeft(kl),
-        mm2L1TileKRight(kr),
-        pL1BufNum(pbn),
-        vL1BufNum(vbn) {}
+    __aicore__ inline Mm2L1TileHelper(uint32_t m, uint32_t n, uint32_t kl, uint32_t kr, uint32_t pbn, uint32_t vbn)
+        : mm2L1TileM(m), mm2L1TileN(n), mm2L1TileKLeft(kl), mm2L1TileKRight(kr), pL1BufNum(pbn), vL1BufNum(vbn) {}
 };
 
-template <
-    class L1TileShape_,
-    class L0TileShape_,
-    class ElementA_,
-    class ElementB_,
-    class ElementC_,
-    class ElementBias_,
-    class TileCopy_,
-    class TileMmad_>
-struct BlockMmadTla<
-    MmadAtlasA5BsaPV,
-    L1TileShape_,
-    L0TileShape_,
-    ElementA_,
-    ElementB_,
-    ElementC_,
-    ElementBias_,
-    TileCopy_,
-    TileMmad_>
-{
-public:
+template <class L1TileShape_, class L0TileShape_, class ElementA_, class ElementB_, class ElementC_, class ElementBias_,
+    class TileCopy_, class TileMmad_>
+struct BlockMmadTla<MmadAtlasA5BsaPV, L1TileShape_, L0TileShape_, ElementA_, ElementB_, ElementC_, ElementBias_,
+    TileCopy_, TileMmad_> {
+  public:
     using DispatchPolicy = MmadAtlasA5BsaPV;
     using ArchTag = typename DispatchPolicy::ArchTag;
     using TileCopy = TileCopy_;
@@ -114,13 +85,12 @@ public:
 
     static constexpr uint32_t MAX_L1_STAGES = 3; // 编译期常量，为静态L1Tensor数组开辟准备。取一个buffer份数的极大值
     static constexpr uint32_t V0_V1_FLAG_ID_OFFSET = 16; // 核间同步mode4，AIC侧需要两个flagId分别对应两个AIV
-    static constexpr uint32_t VSDB_BUF_NUM = 2; 
-    static constexpr uint32_t VSDB_BUF_SIZE = 256 * sizeof(uint64_t); 
+    static constexpr uint32_t VSDB_BUF_NUM = 2;
+    static constexpr uint32_t VSDB_BUF_SIZE = 256 * sizeof(uint64_t);
     static constexpr bool enFixpipeDequant = false;
 
-    __aicore__ inline
-    BlockMmadTla(Arch::Resource<ArchTag> &resource, uint32_t l1BufAddrStart, Mm2L1TileHelper &mm2L1TileHelper)
-    {
+    __aicore__ inline BlockMmadTla(
+        Arch::Resource<ArchTag> &resource, uint32_t l1BufAddrStart, Mm2L1TileHelper &mm2L1TileHelper) {
         l1ATileM = mm2L1TileHelper.mm2L1TileM;
         l1BTileN = mm2L1TileHelper.mm2L1TileN;
         l1ATileK = mm2L1TileHelper.mm2L1TileKLeft;
@@ -132,33 +102,25 @@ public:
                 l1BufAddrStart + l1ATileM * l1ATileK * sizeof(ElementA) * i);
         }
         for (uint32_t i = 0; i < l1BBufNum; i++) {
-            l1BTensor[i] = resource.l1Buf.template GetBufferByByte<ElementB>(
-                l1BufAddrStart + l1ATileM * l1ATileK * sizeof(ElementA) * l1ABufNum +
-                l1BTileK * l1BTileN * sizeof(ElementB) * i);
+            l1BTensor[i] = resource.l1Buf.template GetBufferByByte<ElementB>(l1BufAddrStart +
+                l1ATileM * l1ATileK * sizeof(ElementA) * l1ABufNum + l1BTileK * l1BTileN * sizeof(ElementB) * i);
         }
         for (uint32_t i = 0; i < L0_STAGES; i++) {
-            l0ATensor[i] = resource.l0ABuf.template GetBufferByByte<ElementA>(
-                L0A_PINGPONG_BUF_SIZE * i);
-            l0BTensor[i] = resource.l0BBuf.template GetBufferByByte<ElementB>(
-                L0B_PINGPONG_BUF_SIZE * i);
+            l0ATensor[i] = resource.l0ABuf.template GetBufferByByte<ElementA>(L0A_PINGPONG_BUF_SIZE * i);
+            l0BTensor[i] = resource.l0BBuf.template GetBufferByByte<ElementB>(L0B_PINGPONG_BUF_SIZE * i);
             l0CTensor[i] = resource.l0CBuf.template GetBufferByByte<ElementAccumulator>(
                 L0C_HALF_BUF_SIZE + L0C_PINGPONG_BUF_SIZE * i);
         }
         uint32_t vsdbL1AddrStart = ArchTag::L1_SIZE - VSDB_BUF_NUM * VSDB_BUF_SIZE;
         for (uint32_t i = 0; i < VSDB_BUF_NUM; i++) {
-            l1VSDBTensor[i] = resource.l1Buf.template GetBufferByByte<uint64_t>(
-                vsdbL1AddrStart + VSDB_BUF_SIZE * i);
+            l1VSDBTensor[i] = resource.l1Buf.template GetBufferByByte<uint64_t>(vsdbL1AddrStart + VSDB_BUF_SIZE * i);
         }
     }
 
     /// Destructor
-    __aicore__ inline
-    ~BlockMmadTla() {}
+    __aicore__ inline ~BlockMmadTla() {}
 
-    template <uint32_t MODE, pipe_t PIPE>
-    __aicore__ inline
-    void SetCrossCoreSync(Arch::CrossCoreFlag &crossCoreFlag)
-    {
+    template <uint32_t MODE, pipe_t PIPE> __aicore__ inline void SetCrossCoreSync(Arch::CrossCoreFlag &crossCoreFlag) {
         // in mode 4, AIC set for 2 AIVs seperately
         if constexpr (MODE == 4U) {
             uint16_t flagIdV0 = crossCoreFlag.id;
@@ -169,10 +131,7 @@ public:
         }
     }
 
-    template <uint32_t MODE, pipe_t PIPE>
-    __aicore__ inline
-    void WaitCrossCoreSync(Arch::CrossCoreFlag &crossCoreFlag)
-    {
+    template <uint32_t MODE, pipe_t PIPE> __aicore__ inline void WaitCrossCoreSync(Arch::CrossCoreFlag &crossCoreFlag) {
         // in mode 4, AIC wait for 2 AIVs seperately
         if constexpr (MODE == 4U) {
             uint16_t flagIdV0 = crossCoreFlag.id;
@@ -182,22 +141,16 @@ public:
             Arch::CrossCoreWaitFlag<MODE, PIPE>(crossCoreFlagV1);
         }
     }
-    
-    __aicore__ inline
-    uint32_t GetCurLoopCounter(uint32_t outterLoopItr, uint32_t curLoopNum, uint32_t curLoopItr)
-    {
+
+    __aicore__ inline uint32_t GetCurLoopCounter(uint32_t outterLoopItr, uint32_t curLoopNum, uint32_t curLoopItr) {
         return outterLoopItr * curLoopNum + curLoopItr;
     }
-    
+
     template <class TensorB, class TensorL1B>
-    __aicore__ inline
-    void SparseVBaseTileL1FullLoad(TensorB &gBTensor, TensorL1B &l1BTensorTla,
-                                   AscendC::GlobalTensor<int32_t> gSparseBlockIdx,
-                                   uint32_t gatheredKvSTileIdx, uint32_t kvSeqlen,
-                                   uint32_t kvSBaseTile, uint32_t blockShapeY,
-                                   uint32_t yBlockNumAval, uint32_t yBlockNumRsvd,
-                                   uint32_t curBaseTileSize, uint32_t embed)
-    {
+    __aicore__ inline void SparseVBaseTileL1FullLoad(TensorB &gBTensor, TensorL1B &l1BTensorTla,
+        AscendC::GlobalTensor<int32_t> gSparseBlockIdx, uint32_t gatheredKvSTileIdx, uint32_t kvSeqlen,
+        uint32_t kvSBaseTile, uint32_t blockShapeY, uint32_t yBlockNumAval, uint32_t yBlockNumRsvd,
+        uint32_t curBaseTileSize, uint32_t embed) {
         using CopyGmToL1B = typename TileCopy_::template CopyGmToL1B<TensorB>;
         CopyGmToL1B copyGmToL1B;
         uint32_t baseTileStartOffset = gatheredKvSTileIdx * kvSBaseTile;
@@ -216,24 +169,22 @@ public:
         // 逐稀疏block搬移填充基本块过程中，已处理的累积序列长度
         uint32_t dealtLenAccum = 0;
 
-        while (dealtLenAccum < curBaseTileSize && gatheredYBlockIdx < yBlockNumRsvd &&
-               oriYBlockIdx < yBlockNumAval && oriStartOffset < kvSeqlen) {
+        while (dealtLenAccum < curBaseTileSize && gatheredYBlockIdx < yBlockNumRsvd && oriYBlockIdx < yBlockNumAval &&
+            oriStartOffset < kvSeqlen) {
             uint32_t curYBlockSize = blockShapeY;
             if (oriYBlockIdx == yBlockNumAval - 1) {
                 curYBlockSize = kvSeqlen - oriYBlockIdx * blockShapeY;
             }
-            uint32_t gatheredEndOffset =
-                min(gatheredYBlockIdx * blockShapeY + curYBlockSize,
-                    baseTileEndOffset);
+            uint32_t gatheredEndOffset = min(gatheredYBlockIdx * blockShapeY + curYBlockSize, baseTileEndOffset);
             // 当前循环处理的序列长度
             uint32_t curDealtLen = gatheredEndOffset - gatheredStartOffset;
             if (curDealtLen == 0) {
                 break;
             }
-            auto l1BTensorTlaTile = GetTile(l1BTensorTla,
-                tla::MakeCoord(dealtLenAccum, 0), tla::MakeShape(curDealtLen, embed));
-            auto gBTensorTlaTile = GetTile(gBTensor,
-                tla::MakeCoord(oriStartOffset, 0), tla::MakeShape(curDealtLen, embed));
+            auto l1BTensorTlaTile =
+                GetTile(l1BTensorTla, tla::MakeCoord(dealtLenAccum, 0), tla::MakeShape(curDealtLen, embed));
+            auto gBTensorTlaTile =
+                GetTile(gBTensor, tla::MakeCoord(oriStartOffset, 0), tla::MakeShape(curDealtLen, embed));
             copyGmToL1B(l1BTensorTlaTile, gBTensorTlaTile);
             // 为下一次循环刷新循环变量
             dealtLenAccum += curDealtLen;
@@ -248,50 +199,25 @@ public:
         }
     }
 
-    
-
-    template <
-        int staticML0LoopNum = Arch35MmadOpt::DYNAMIC_LOOP,
-        int staticNL0LoopNum = Arch35MmadOpt::DYNAMIC_LOOP,
-        class TensorB,
-        class TensorC>
-    __aicore__ inline
-    void operator()(TensorB &gBTensor, TensorC &ubCTensor,
-                    AscendC::GlobalTensor<int32_t> gSparseBlockIdx,
-                    GemmCoord actualOriShape,
-                    uint32_t gatheredKvSTileIdx, uint32_t kvSeqlen,
-                    uint32_t kvSBaseTile, uint32_t blockShapeY,
-                    uint32_t yBlockNumAval, uint32_t yBlockNumRsvd,
-                    uint64_t prefixSumL0AStages, uint64_t prefixSumL0BStages,
-                    Arch::CrossCoreFlag smToMm2Flag, Arch::CrossCoreFlag mm2ToReFlag)
-    {
+    template <int staticML0LoopNum = Arch35MmadOpt::DYNAMIC_LOOP, int staticNL0LoopNum = Arch35MmadOpt::DYNAMIC_LOOP,
+        class TensorB, class TensorC>
+    __aicore__ inline void operator()(TensorB &gBTensor, TensorC &ubCTensor,
+        AscendC::GlobalTensor<int32_t> gSparseBlockIdx, GemmCoord actualOriShape, uint32_t gatheredKvSTileIdx,
+        uint32_t kvSeqlen, uint32_t kvSBaseTile, uint32_t blockShapeY, uint32_t yBlockNumAval, uint32_t yBlockNumRsvd,
+        uint32_t &l0ABufId, uint32_t &l0BBufId, Arch::CrossCoreFlag smToMm2Flag, Arch::CrossCoreFlag mm2ToReFlag) {
         struct EmptyTensor {};
         EmptyTensor dummyVS;
-        this->operator()<0, staticML0LoopNum, staticNL0LoopNum>(
-                            gBTensor, ubCTensor, dummyVS, gSparseBlockIdx,
-                            actualOriShape, gatheredKvSTileIdx, kvSeqlen,
-                            kvSBaseTile, blockShapeY, yBlockNumAval, 
-                            yBlockNumRsvd, prefixSumL0AStages, prefixSumL0BStages, smToMm2Flag, mm2ToReFlag);
+        this->operator()<0, staticML0LoopNum, staticNL0LoopNum>(gBTensor, ubCTensor, dummyVS, gSparseBlockIdx,
+            actualOriShape, gatheredKvSTileIdx, kvSeqlen, kvSBaseTile, blockShapeY, yBlockNumAval, yBlockNumRsvd,
+            l0ABufId, l0BBufId, smToMm2Flag, mm2ToReFlag);
     }
 
-
-    template <
-        int quant_mode,
-        int staticML0LoopNum = Arch35MmadOpt::DYNAMIC_LOOP,
-        int staticNL0LoopNum = Arch35MmadOpt::DYNAMIC_LOOP,
-        class TensorB,
-        class TensorC,
-        class TensorVS>
-    __aicore__ inline
-    void operator()(TensorB &gBTensor, TensorC &ubCTensor, TensorVS &gVSTensor,
-                    AscendC::GlobalTensor<int32_t> gSparseBlockIdx,
-                    GemmCoord actualOriShape,
-                    uint32_t gatheredKvSTileIdx, uint32_t kvSeqlen,
-                    uint32_t kvSBaseTile, uint32_t blockShapeY,
-                    uint32_t yBlockNumAval, uint32_t yBlockNumRsvd,
-                    uint64_t prefixSumL0AStages, uint64_t prefixSumL0BStages,
-                    Arch::CrossCoreFlag smToMm2Flag, Arch::CrossCoreFlag mm2ToReFlag)
-    {
+    template <int quant_mode, int staticML0LoopNum = Arch35MmadOpt::DYNAMIC_LOOP,
+        int staticNL0LoopNum = Arch35MmadOpt::DYNAMIC_LOOP, class TensorB, class TensorC, class TensorVS>
+    __aicore__ inline void operator()(TensorB &gBTensor, TensorC &ubCTensor, TensorVS &gVSTensor,
+        AscendC::GlobalTensor<int32_t> gSparseBlockIdx, GemmCoord actualOriShape, uint32_t gatheredKvSTileIdx,
+        uint32_t kvSeqlen, uint32_t kvSBaseTile, uint32_t blockShapeY, uint32_t yBlockNumAval, uint32_t yBlockNumRsvd,
+        uint32_t &l0ABufId, uint32_t &l0BBufId, Arch::CrossCoreFlag smToMm2Flag, Arch::CrossCoreFlag mm2ToReFlag) {
         using CopyL0CToDst = typename TileCopy_::template CopyL0CToDst<TensorC>;
         CopyL0CToDst copyL0CToDst;
 
@@ -309,9 +235,8 @@ public:
         auto l1ATensorTla = tla::MakeTensor(l1ATensor[l1ABufId], l1ALayoutTla, Arch::PositionL1{});
         // load V full base tile to L1 before crossCoreSync
         AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(l1BEventId);
-        SparseVBaseTileL1FullLoad(
-            gBTensor, l1BTensorTla, gSparseBlockIdx, gatheredKvSTileIdx, kvSeqlen, kvSBaseTile, blockShapeY,
-            yBlockNumAval, yBlockNumRsvd, curBaseTileSize, embed);
+        SparseVBaseTileL1FullLoad(gBTensor, l1BTensorTla, gSparseBlockIdx, gatheredKvSTileIdx, kvSeqlen, kvSBaseTile,
+            blockShapeY, yBlockNumAval, yBlockNumRsvd, curBaseTileSize, embed);
         AscendC::SetFlag<AscendC::HardEvent::MTE2_MTE1>(l1BEventId);
         AscendC::WaitFlag<AscendC::HardEvent::MTE2_MTE1>(l1BEventId);
         // fwd crossCoreSync from online sm to mm2
@@ -338,32 +263,26 @@ public:
             auto l0CLayoutTla = tla::MakeLayoutL0C(rowNum, l0TileNAct);
             auto l0CTensorTla = tla::MakeTensor(l0CTensor[l0CBufId], l0CLayoutTla, Arch::PositionL0C{});
             uint32_t mOffset = 0;
-            uint32_t l0ALoopBase = static_cast<uint32_t>(prefixSumL0AStages);
-            uint32_t l0BLoopBase = static_cast<uint32_t>(prefixSumL0BStages) + nL0Itr * kL0LoopNum;
             for (uint32_t mL0Itr = 0; mL0Itr < Arch35MmadOpt::LoopBound<staticML0LoopNum>(mL0LoopNum); mL0Itr++) {
                 uint32_t l0TileMAct = (mL0Itr == mL0LoopNum - 1) ? (rowNum - mOffset) : L0_TILE_M;
                 // uint32_t mLoopCounter = GetCurLoopCounter(gatheredKvSTileIdx, mL0LoopNum, mL0Itr);
                 // different m chunks will be concated in the same piece of l0C buffer
-                auto l0CTensorTlaTile = GetTile(l0CTensorTla,
-                    tla::MakeCoord(mOffset, 0), tla::MakeShape(l0TileMAct, l0TileNAct));
-                uint32_t l0ALoopCounter = l0ALoopBase;
-                uint32_t l0BLoopCounter = l0BLoopBase;
+                auto l0CTensorTlaTile =
+                    GetTile(l0CTensorTla, tla::MakeCoord(mOffset, 0), tla::MakeShape(l0TileMAct, l0TileNAct));
                 uint32_t kOffset = 0;
                 for (uint32_t kL0Itr = 0; kL0Itr < kL0LoopNum; kL0Itr++) {
-                    uint32_t l0TileKAct = (kL0Itr == kL0LoopNum - 1) ?
-                        (curBaseTileSize - kOffset) : L0_TILE_K;
-                    uint32_t l0ABufId = Arch35MmadOpt::StageId<L0_STAGES>(l0ALoopCounter);
-                    // l0ABufId = (mLoopCounter % 2 == 0) ? (1 - l0ABufId) : l0ABufId;
-                    uint32_t l0BBufId = Arch35MmadOpt::StageId<L0_STAGES>(l0BLoopCounter);
-                    uint32_t l0AEventId = l0ABufId;
-                    uint32_t l0BEventId = l0BBufId + 2;
+                    uint32_t l0TileKAct = (kL0Itr == kL0LoopNum - 1) ? (curBaseTileSize - kOffset) : L0_TILE_K;
+                    uint32_t curL0ABufId = l0ABufId;
+                    uint32_t curL0BBufId = l0BBufId;
+                    uint32_t l0AEventId = curL0ABufId;
+                    uint32_t l0BEventId = curL0BBufId + 2;
                     // when L0B buffers wouldn't be reused across the k loop
                     // redundant L0B load caused by m loop can be avoided
-                    auto l1BTensorTlaTile = GetTile(l1BTensorTla,
-                        tla::MakeCoord(kOffset, nOffset), tla::MakeShape(l0TileKAct, l0TileNAct));
+                    auto l1BTensorTlaTile =
+                        GetTile(l1BTensorTla, tla::MakeCoord(kOffset, nOffset), tla::MakeShape(l0TileKAct, l0TileNAct));
                     auto l0BLayoutTla = tla::MakeLayout<ElementB, LayoutTagL0B>(l0TileKAct, l0TileNAct);
-                    auto l0BTensorTla = tla::MakeTensor(l0BTensor[l0BBufId], l0BLayoutTla, Arch::PositionL0B{});
-                    
+                    auto l0BTensorTla = tla::MakeTensor(l0BTensor[curL0BBufId], l0BLayoutTla, Arch::PositionL0B{});
+
                     AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(l0BEventId);
                     copyL1ToL0B(l0BTensorTla, l1BTensorTlaTile);
                     AscendC::SetFlag<AscendC::HardEvent::MTE1_M>(l0BEventId);
@@ -372,10 +291,10 @@ public:
                         AscendC::SetFlag<AscendC::HardEvent::MTE1_MTE2>(l1BEventId);
                     }
 
-                    auto l1ATensorTlaTile = GetTile(l1ATensorTla,
-                        tla::MakeCoord(mOffset, kOffset), tla::MakeShape(l0TileMAct, l0TileKAct));
+                    auto l1ATensorTlaTile =
+                        GetTile(l1ATensorTla, tla::MakeCoord(mOffset, kOffset), tla::MakeShape(l0TileMAct, l0TileKAct));
                     auto l0ALayoutTla = tla::MakeLayout<ElementA, LayoutTagL0A>(l0TileMAct, l0TileKAct);
-                    auto l0ATensorTla = tla::MakeTensor(l0ATensor[l0ABufId], l0ALayoutTla, Arch::PositionL0A{});
+                    auto l0ATensorTla = tla::MakeTensor(l0ATensor[curL0ABufId], l0ALayoutTla, Arch::PositionL0A{});
 
                     AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(l0AEventId);
                     copyL1ToL0A(l0ATensorTla, l1ATensorTlaTile);
@@ -388,7 +307,7 @@ public:
                     bool initMmad = (kL0Itr == 0);
                     uint32_t l0TileMAligned = Arch35MmadOpt::AlignUpPow2<16>(l0TileMAct);
                     AscendC::WaitFlag<AscendC::HardEvent::MTE1_M>(l0AEventId);
-                    
+
                     AscendC::WaitFlag<AscendC::HardEvent::MTE1_M>(l0BEventId);
 
                     if (mL0Itr == 0 && kL0Itr == 0) {
@@ -396,21 +315,14 @@ public:
                     }
 
                     tileMmad(
-                        l0CTensorTlaTile,
-                        l0ATensorTla,
-                        l0BTensorTla,
-                        l0TileMAligned,
-                        l0TileNAct,
-                        l0TileKAct,
-                        initMmad);
+                        l0CTensorTlaTile, l0ATensorTla, l0BTensorTla, l0TileMAligned, l0TileNAct, l0TileKAct, initMmad);
                     AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(l0AEventId);
                     AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(l0BEventId);
-                    l0ALoopCounter++;
-                    l0BLoopCounter++;
+                    l0ABufId ^= 1U;
+                    l0BBufId ^= 1U;
                     kOffset += L0_TILE_K;
                 }
                 mOffset += L0_TILE_M;
-                l0ALoopBase += kL0LoopNum;
             }
             // fixpipe
             if (nL0Itr == 0) {
@@ -424,8 +336,8 @@ public:
             // valid rows in AIV0: [0, mFixPAligned8 / 2 - 1]
             // valid rows in AIV1: [mFixPAligned8 / 2, rowNum - 1]
             uint32_t nFixPAligned8 = Arch35MmadOpt::AlignUpPow2<8>(l0TileNAct);
-            auto ubCTensorTlaTile = GetTile(ubCTensor,
-                tla::MakeCoord(0, nOffset), tla::MakeShape(mFixPAligned8, nFixPAligned8));
+            auto ubCTensorTlaTile =
+                GetTile(ubCTensor, tla::MakeCoord(0, nOffset), tla::MakeShape(mFixPAligned8, nFixPAligned8));
             copyL0CToDst(ubCTensorTlaTile, l0CTensorTla);
             AscendC::SetFlag<AscendC::HardEvent::FIX_M>(l0CEventId);
             nLoopCounter++;
@@ -435,7 +347,7 @@ public:
         SetCrossCoreSync<4, PIPE_FIX>(mm2ToReFlag);
     }
 
-protected:
+  protected:
     /// Data members
     AscendC::LocalTensor<ElementA> l1ATensor[MAX_L1_STAGES];
     AscendC::LocalTensor<ElementB> l1BTensor[MAX_L1_STAGES];
@@ -458,5 +370,5 @@ protected:
 };
 ////////////////////////////////////////////////////////////////////
 
-}  // namespace NpuArch::Gemm::Block
+} // namespace NpuArch::Gemm::Block
 #endif

@@ -29,7 +29,7 @@
   **不会自动装进运行 CANN**；运行期靠 `import mindiesd`（env.py）设置
   `ASCEND_CUSTOM_OPP_PATH={repo}/mindiesd/ops/vendors/…`——**必须先 import mindiesd 再初始化 NPU/
   建任何张量**，否则 GE 加载不到自研算子（`aclnnXxx … inferShape function does not exist`，
-  如 EagleQBSA，见 §4.6）。部署校验跑对应 `tests/ops/*/…_golden.py`。
+  如 EagleQBSA，见 §4.6）。部署校验跑对应 `tests/ops/<op>/` 三层套件（eqbsa 见 `test_eagle_quant_block_sparse_attention_accuracy.py` 与同目录 README）。
 - **diffusers 0.38 无 MiniMaxH3 pipeline 类** → dummy-run harness 不可用，必须以 vllm-omni 托管；
   请求**必须带 `aspect_ratio=16:9`**（缺失 500）。
 - **vllm-omni 补丁 2 处**（editable，.bak 留存，默认关）：① `regionally_compile` 加 `backend`
@@ -138,8 +138,8 @@ cached 步 317 kernels（FA 54→7、Matmul 208→20、RMSNorm 110→16）vs eag
 - mindiesd 自研算子（`csrc/ops/eagle_quant_block_sparse_attention` 全链 op_host/op_api/infershape；
   Q/K per-block INT8 + V per-channel FP8 + block_sparse mask，一 op 内 mask+BSA 融合）。
 - **部署坑（本案例踩到）**：op 包只构建不安装进运行 CANN → GE `inferShape function does not exist`；
-  修复 = `import mindiesd`（设 `ASCEND_CUSTOM_OPP_PATH`）**先于任何 NPU 张量/初始化**；golden
-  （`tests/ops/eagle_quant_block_sparse_attention/…_golden.py`，EB≤1e-2）通过为校验标准。
+  修复 = `import mindiesd`（设 `ASCEND_CUSTOM_OPP_PATH`）**先于任何 NPU 张量/初始化**；算子精度
+  以 `tests/ops/eagle_quant_block_sparse_attention/` 三层套件为准（小 shape pytest + 大 shape NPU 对照）。
 - **op 级微基准（同 serve 几何 S=21767/block128/sp0.8，1 卡）**：dense FA 为基准 → EagleQBSA(0.8)
   **约为其六分之一（快约 6 倍）**；EagleQBSA 全保留 mask（只量化不稀疏）也 **约为其六成**（INT8/FP8 计算即快，
   量化级精度）；rf_v3 eager 路径约 1.2 倍（最慢）。

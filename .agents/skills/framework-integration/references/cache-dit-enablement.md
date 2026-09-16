@@ -68,7 +68,8 @@ vllm serve {model_weight_dir}/MiniMax-H3/FL2VA --omni --num-gpus 4 \
   `import mindiesd`（`env.py`）设置 `ASCEND_CUSTOM_OPP_PATH={repo}/mindiesd/ops/vendors/…`。
 - ⚠️ **必须先 `import mindiesd` 再初始化 NPU / 建任何张量**，否则 GE 加载不到自研算子
   （`aclnnXxx … inferShape function does not exist`，如 EagleQBSA）。
-- 部署校验：跑对应 `tests/ops/*/…_golden.py`（可见性 → 走的是哪一个 → 数值的**判据单点**在
+- 部署校验：跑对应 `tests/ops/<op>/` 精度套件（eqbsa 见 `test_eagle_quant_block_sparse_attention_accuracy.py`
+  与同目录 README；可见性 → 走的是哪一个 → 数值的**判据单点**在
   `../../operator-dev/references/custom-op-runtime-deploy-verify.md`；本文件 §2.2 只给该框架的顺序约束）。
 
 ### 2.3 启动偶发（非配置错）
@@ -144,8 +145,8 @@ vllm serve {model_weight_dir}/MiniMax-H3/FL2VA --omni --num-gpus 4 \
   `precision=mix`）⇒ 本链只能用 eager 路径；融合 op 的收益只能先在 **op 级微基准**拿到
   （同几何对拍 dense FA，op 级显著更快；只量化不稀疏的变体亦有明显加速，量化精度在该 op 的量化级
   容差内）。**接线（框架侧结构性开发，见 `../SKILL.md` §2 分支 B）后测 e2e 组合为待决项**。
-- 部署前置见 §2.2（`import mindiesd` 顺序）；golden（`tests/ops/eagle_quant_block_sparse_attention/…`）
-  通过为校验标准。
+- 部署前置见 §2.2（`import mindiesd` 顺序）；算子精度以
+  `tests/ops/eagle_quant_block_sparse_attention/` 三层套件为准（小 shape pytest + 大 shape NPU 对照）。
 
 #### 组合方向与宣称纪律
 
