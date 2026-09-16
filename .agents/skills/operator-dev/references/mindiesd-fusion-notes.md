@@ -26,8 +26,9 @@
 
 ## 2. 同名算子与 CANN 内建冲突
 
-- CANN 会**内建同名算子**（案例：CANN 9.1 内建 `NormRopeConcat`，repo `csrc/ops/` 是其
-  backport，tiling-key 哈希一致）。运行时实际执行哪个（builtin vs 自定义 OPP）不显然 →
+- CANN 会**内建同名算子**（案例：`NormRopeConcat` 在某 CANN 版本中已被内建，repo `csrc/ops/` 是
+  其 backport，tiling-key 哈希一致；命中该情形的具体版本见归档 `{run_results_dir}/archive/`）。
+  运行时实际执行哪个（builtin vs 自定义 OPP）不显然 →
   用 §1 sentinel 实证，不要假设。
 - **不要用"整算子改名"规避同名冲突**：本仓自定义 op 的 op 名/目录名/文件基名与 CANN
   autogen（`aclnn_{op}.cpp`、proto autogen、kernel config）**强绑定**；改名会触发
@@ -57,21 +58,15 @@
   模型级耗时大幅上升；绝对数字见归档 `{run_results_dir}/archive/`；该融合已整体移除）→ **fusion pattern 需按图 dtype 门控**，默认对
   量化路径关闭。
 
-## 5. 融合收益前置评估（写 kernel 之前先判"值不值"）
+## 5. 融合收益前置评估 → 已迁出（本文件只留指针）
 
-- 先给目标区域**带宽下限**：`(读+写字节) / 实测有效带宽` 得理论最小耗时；
-  再算**区域占比**（案例：GEMM 占大头、FA 次之、目标区只有个位数百分比）。
-- ⚠️ **作用域提示**：上面的**有效带宽量级**与**区域占比排序**（案例中的 GEMM / FA / 目标区三档），是**那台机器、
-  那个模型（且那个序列长度/负载）**的实测值，**必须本地重新测量**。可迁移的是**方法**——
-  「带宽下限 + 区域占比 + 收益天花板论证」这套前置判断流程，**不是这些数字**。
-- **统一口径再比**：per-site vs per-block vs 模型级要写清；旧链用 profile 多 kernel
-  device 时间求和，新核用 standalone event 计时（含 launch）——两者严格不可比，最终以
-  **模型级 AB** 为准（案例：per-site 口径下融合核读数反而更高，**模型级 AB 判为回退**；
-  两种口径的幅度不可互相换算，绝对值见归档 `{run_results_dir}/archive/`）。
-- 收益天花板法：若"目标区域 100% 免费"也只有 ~1% 级收益（案例：**即便目标区耗时降到 0，
-  带宽下限仍高于它当前的耗时**，即上限本身已越过天花板）→ 直接判定不可达，省掉实现轮次。
-- 负面结论同样要归档（实测结论已入 `dummy-run/references/minimax-h3-notes.md §12`），
-  供后续不做重复实验。
+> **判据与流程的单点已迁至** `../../fusion-scope-analyze/references/fusion-benefit-method.md`
+> （带宽下限 / 区域占比 / 天花板法 / 地板先行 / 传导校验 / 口径纪律）；
+> **融合边界**的单点在 `../../fusion-scope-analyze/references/fusion-unit-method.md`。
+> 实现前/中调用 `fusion-scope-analyze` 取结论，本文件不再复制判据与阈值。
+>
+> 保留在本文件的只有**集成侧事实与坑**：dtype 门控（量化路径 fp32 中间岛使 bf16 融合核失效）、
+> 同名内建算子冲突、AscendC 语义坑、装载 API 坑，以及"负面结论同样要归档、避免重复实验"这条纪律。
 
 ## 6. catlass 复用边界与语义核验（2026-09 MiniMax-H3 FFN 融合研究；仅收录已验证/非特例项）
 

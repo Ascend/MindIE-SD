@@ -8,13 +8,13 @@
 > 口径：状态仅对「框架版本 + 模型」成立（案例结论单点不迁移）；`❓` 表示未核验，禁止当作支持。
 >
 > 状态图例：`✅` 案例实证支持 · `🟡` 可配置但有已知限制/负面 · `❌` 不支持或阻塞 · `❓` 未核验。
-> 证据码：V1 = vLLM-Omni 0.28 × MiniMax-H3-FL2VA 实测（950PR / 576p 视频；**能力面=本矩阵各格，
+> 证据码：V1 = vLLM-Omni 0.28 × MiniMax-H3-FL2VA 实测（576p 视频；机型/卡数坐标见归档；**能力面=本矩阵各格，
 > 开启方式见 `references/vllm-omni-enablement.md`，实测数字归档于会话产物目录 `{run_results_dir}/archive/`**）、
 > V2 = `references/diffsynth-engine-enablement.md`（Qwen-Image / DiffSynth-Engine；原 `-case.md` +
 > `-notes.md` 两件已合并为本件，绝对数字归档于 `{run_results_dir}/archive/`）、
-> V3 = vLLM-Omni 0.28 × **Qwen-Image-2512 图像 1024² 20 步**（950PR）实测（**能力面=本矩阵各格，
+> V3 = vLLM-Omni 0.28 × **Qwen-Image-2512 图像 1024² 20 步**实测（**能力面=本矩阵各格，
 > 开启方式见 `references/vllm-omni-enablement.md`，实测数字归档于 `{run_results_dir}/archive/`**）、
-> V4 = `references/vllm-omni-train-aware-enablement.md`（950PR / MiniMax-H3-FL2VA **视频 15s 768P** /
+> V4 = `references/vllm-omni-train-aware-enablement.md`（MiniMax-H3-FL2VA **视频 15s 768P** /
 > vLLM-Omni 0.28 **USP4**；**通用方法见 `references/train-aware-lossy-method.md`**）、
 > L1 = `references/lightx2v-enablement.md`（MiniMax-H3 / LightX2V #1471；**能力面=本矩阵各格，
 > 开启方式见该文件，实测数字归档于 `{run_results_dir}/archive/lightx2v-mindiesd-case.md`**）、
@@ -27,8 +27,8 @@
 > L1 列 last-checked：2026-09-05（对照 `lightx2v-enablement.md` §3.4/§3.5 新增锚点 + 远端源码复核修订：
 > 量化阻塞表述、TP/RSP/offload/缓存/时间步格与 §二 姿势段；修订明细见归档
 > `{run_results_dir}/archive/lightx2v-mindiesd-case.md` §10「并行形态/显存/量化阻塞表述」三条）。
-> vLLM-Omni 列 last-checked：2026-09-06（0.28 disable-vllm-ascend；V1=H3-FL2VA 576p 视频 950PR×4；
-> **V3=Qwen-Image-2512 1024²/20 步 950PR×1-2（2026-09-05/06）：量化✅/Cache✅/2 卡 TP1×USP2 采纳（无损最优
+> vLLM-Omni 列 last-checked：2026-09-06（0.28 disable-vllm-ascend；V1=H3-FL2VA 576p 视频（机型/卡数坐标见归档）；
+> **V3=Qwen-Image-2512 1024²/20 步（机型/卡数坐标见归档；2026-09-05/06）：量化✅/Cache✅/2 卡 TP1×USP2 采纳（无损最优
 > 形态）、TP2=S4 有损基底、rf_v2 图像不可用（0.4/0.8 档位无关）、4-rank（TP4/USP2）短任务通信病态回退、
 > compile 输出非无损**；图像质量域（同 seed 像素对比）显著高于
 > 视频，有损阈值不可跨域迁移；绝对耗时/加速比见归档 `{run_results_dir}/archive/`）。
@@ -48,7 +48,7 @@
 > 质量分值**（二者只在本次环境成立）；**要写**大致加速比（量级/约数）与质量变化度（相对基线的
 > 差值/降幅）；比例关系（排序/独立性/协同强度/能否完全解释/是否节省的全部来源/线性或反转）与
 > 方向选择（标「本组合观测」）保留；策略与方向**以最近一次实测为准**，历史结论只作参照。
-> env A（2026-09-07 闭环，950PR×2 TP2，**显式 TORCH_SDPA 基线**，editable mindiesd 双树并存）：
+> env A（2026-09-07 闭环，TP2（机型/卡数坐标见归档），**显式 TORCH_SDPA 基线**，editable mindiesd 双树并存）：
 > FA / 稀疏 rf_v2 / Cache 单点逐个递增、组合最强（**单点排序与协同强度见 §二 env A 段**）；
 > 数值口径与双树选树规则同上；**绝对耗时与绝对加速比归档于 `{run_results_dir}/archive/`**。
 
@@ -94,13 +94,13 @@
 | W8A8_DYNAMIC（INT8 online） | ✅ V1（576p 视频档：单点为正（约 1.2 倍量级），vs 显式 SDPA 基线更大；**质量变化度**：vs lossless 的 SSIM **降约三成**（差值约 0.3），视觉门 inconclusive；绝对数字见归档 `{run_results_dir}/archive/vllm-omni-minimax-h3-case.md`）；✅ V3（Qwen-Image 1024²/20 步：单点为正（约一成多）、**质量变化度**：**质量基本无感**（SSIM 降约 0.01；读数见归档）；🟡 V4（**长视频档单点收益最低**：序列变长后注意力 O(S²) 主导、线性层量化占比被稀释 ⇒ 单点收益远小于削注意力/缓存的维度——**但边际收益随注意力被压缩单调上升**（稀疏之上更大、稀疏+缓存之上最大）⇒ 量化应与稀疏同部署（正协同），**勿按单点收益否定它**；⚠️ 单点收益与协同强度均**不可跨规模引用**） | ❓ | ❌ L1（框架未接线 mindiesd quantize；仅 `dit_quantized` 预量化 ckpt 路 + triton int8 GEMM 本机编译失败——非「本 NPU 无 kernel」，见 `lightx2v-enablement.md` §3.4 与归档 §10/§11 P1） |
 | W8A8_MXFP8 | 🟡 V1（2026-09-06 修复闭环：mindiesd dev `mm_swiglu_mxquant`（catlass 集成）与 vllm-omni 0.28 **mxfp8 档接线打通**——compile 侧 FFN-MX 融合对 vLLM-Omni H3 真图**命中 52/52**（vLLM 变体 GraphPatternEntry + C++ 布局自适应 vLLM GEMM-ready (K,N)/scale (c,N,2)）；单点为正（绝对数字见归档）；质量门=**量化级容差**（单层 rel 与输出差异 ≤ mxfp8 相对 bf16 的量化分散度同量级）；仅适用 SwiGLU/MoE（H3），Qwen-Image 无 SwiGLU 不适用；int8 档仍不适用（i8 域 ≠ MX e4m3，须 `method:mxfp8`）。见 runs/20260906_minimax-h3_mmxfp8_compile_fusion/evidence/fix_validation.md） | ❓ | 🟡 L1（**原生 scheme `npu-w8a8-mxfp8` 已实现**（内部 mindiesd MXFP8/npu_quant_matmul），质量近无损档，见 `lightx2v-enablement.md` §3.4；非 docs `quantize()` 接口，DYNAMIC 未接） |
 | W8A16 / W4A16 / W4A4_MXFP4_* 等其余档 | ❓ | ❓ | ❓ |
-| FA 量化（FP8，`FP8RotateQuantFA`） | ❓ V4（0.28 侧**无全注意力 FA 8bit 接线**——只有稀疏块路径的框架案例实现（见 V1 EagleQBSA）；故 V4 的 15s 档三元 `Cache + 量化(w8a8f8) + 稀疏` 无实测路径，按 ❓ 登记、不作锚点不宣称） | ❓ | ❌ L1（框架未接线；kernel 侧 mindiesd FP8/MXFP8 FA（v2 op）**A5 档 kernel 级微测可用**（量化级精度）2026-09，端到端质量/收益未验证，见 `lightx2v-enablement.md` §3.5） |
+| FA 量化（FP8，`FP8RotateQuantFA`） | ❓ V4（0.28 侧**无全注意力 FA 8bit 接线**——只有稀疏块路径的框架案例实现（见 V1 EagleQBSA）；故 V4 的 15s 档三元 `Cache + 量化(w8a8f8) + 稀疏` 无实测路径，按 ❓ 登记、不作锚点不宣称） | ❓ | ❌ L1（框架未接线；kernel 侧 mindiesd FP8/MXFP8 FA（v2 op）**目标代际 kernel 级微测可用**（量化级精度）2026-09，端到端质量/收益未验证，见 `lightx2v-enablement.md` §3.5） |
 
 ### 稀疏（docs: `sparse.md`；接口 `sparse_attention(q,k,v, sparse_type=…)`）
 
 | docs 特性 | vLLM-Omni 0.28 | DiffSynth-Engine | LightX2V #1471 |
 |---|---|---|---|
-| rf_v2（RainFusion2.0） | ✅ V1（视频档 sparsity=0.8 实测；另 EagleQBSA mix）；env A 2026-09-07（950PR×2 TP2）：单点为正、量级居前（绝对数字见归档）；⚠️ `end_step` 语义=末 N 步保留 dense，误设=全程 dense 则 fail-closed；🟡 V3（**Qwen-Image 图像形态不可用**：staying dense——层未声明 qkv_layout，rf_v2 需 BSND video 段，图像 2D 无视频段；**大档与 <60% 小档均 staying dense（档位无关）**；输出=lossless 逐字节；经验：图像若未来有 2D 稀疏路径应从 <60% 起试、视频可大稀疏） | ❓ | ❓（平台 rf 系只试过 rf3/video_spans（下行）；rf_v2 在 950PR npu FA 可用性未核） |
+| rf_v2（RainFusion2.0） | ✅ V1（视频档 sparsity=0.8 实测；另 EagleQBSA mix）；env A 2026-09-07（TP2；机型/卡数坐标见归档）：单点为正、量级居前（绝对数字见归档）；⚠️ `end_step` 语义=末 N 步保留 dense，误设=全程 dense 则 fail-closed；🟡 V3（**Qwen-Image 图像形态不可用**：staying dense——层未声明 qkv_layout，rf_v2 需 BSND video 段，图像 2D 无视频段；**大档与 <60% 小档均 staying dense（档位无关）**；输出=lossless 逐字节；经验：图像若未来有 2D 稀疏路径应从 <60% 起试、视频可大稀疏） | ❓ | ❓（平台 rf 系只试过 rf3/video_spans（下行）；rf_v2 在目标机型 npu FA 可用性未核） |
 | ada_bsa | ❓ | ❓ | ❓ |
 | rf_v3 / video_spans（平台扩展，**非 docs 主表**） | ❓ | ❓ | 🟡 L1（可接入；eager 质量梯度**平滑单调**（近无损→良好→激进档，同 seed 门禁 2026-09）；采纳档 sp≤0.5；compile×rf3 trace 待解；历史「某区间质量平台化」**证伪**，见 `lightx2v-enablement.md` §3.5 与归档 §10） |
 
@@ -116,7 +116,7 @@
 
 | docs 特性 | vLLM-Omni 0.28 | DiffSynth-Engine | LightX2V #1471 |
 |---|---|---|---|
-| 异步 CPU Offload | ✅ V1（框架侧 DLO 解锁原本因单卡容量不可行的高序列并行 BF16 形态；普通 layerwise 950PR 会 OOM）；❓ V3（Qwen-Image 单卡显存足 → offload 未测 N/A） | ❓ | ❓（框架自有 vae_cpu_offload/VAE 并行已启用、model/block offload 支持（model.py:62，`*_block_offload` 配置在）；mindiesd `enable_offload` 异步档未核，见 `lightx2v-enablement.md` §3.6 与归档 §10） |
+| 异步 CPU Offload | ✅ V1（框架侧 DLO 解锁原本因单卡容量不可行的高序列并行 BF16 形态；普通 layerwise 在部分代际会 OOM（须逐代际验证））；❓ V3（Qwen-Image 单卡显存足 → offload 未测 N/A） | ❓ | ❓（框架自有 vae_cpu_offload/VAE 并行已启用、model/block offload 支持（model.py:62，`*_block_offload` 配置在）；mindiesd `enable_offload` 异步档未核，见 `lightx2v-enablement.md` §3.6 与归档 §10） |
 
 ### 并行 / 通信（docs: `parallelism.md` / `usp.md`）
 
@@ -132,7 +132,7 @@
 
 | docs 特性 | vLLM-Omni 0.28 | DiffSynth-Engine | LightX2V #1471 |
 |---|---|---|---|
-| DiTCache（method=`"dit_block_cache"`） | ✅ V1（组合内为主导演进项；S4-2 frontier 由它主导；**别名**：曾记 Cache-DiT/DiTBlockCache）；✅ **V1b**（2026-09-07 env A，950PR×2 TP2，SDPA 基线）：**单点降幅居首**、组合最强；**质量变化度**：单点 vs lossless SSIM **降约三成**，叠加稀疏/量化后进一步降到**降约五成**（绝对数字见归档 `{run_results_dir}/archive/`）；✅ V3（Qwen-Image **单独 Cache 单点为正**（默认档，约一成多）；+量化(w8a8) 组合更大（约两成多）；**质量变化度**：图像档 SSIM 降约 0.04（叠加档同级，视觉门 inconclusive）；步跳过随图双峰） | ✅ V2（DiTBlockCache；双缓存互斥、CFG-on shape 约束） | ❌ L1（feature_caching NotImplemented → 按新规 **Cache 与框架对齐、mindiesd 不额外适配**；原 cache_agent 接入 P0 转为探针观察，不沉淀推荐姿势） |
+| DiTCache（method=`"dit_block_cache"`） | ✅ V1（组合内为主导演进项；S4-2 frontier 由它主导；**别名**：曾记 Cache-DiT/DiTBlockCache）；✅ **V1b**（2026-09-07 env A，TP2（机型/卡数坐标见归档），SDPA 基线）：**单点降幅居首**、组合最强；**质量变化度**：单点 vs lossless SSIM **降约三成**，叠加稀疏/量化后进一步降到**降约五成**（绝对数字见归档 `{run_results_dir}/archive/`）；✅ V3（Qwen-Image **单独 Cache 单点为正**（默认档，约一成多）；+量化(w8a8) 组合更大（约两成多）；**质量变化度**：图像档 SSIM 降约 0.04（叠加档同级，视觉门 inconclusive）；步跳过随图双峰） | ✅ V2（DiTBlockCache；双缓存互斥、CFG-on shape 约束） | ❌ L1（feature_caching NotImplemented → 按新规 **Cache 与框架对齐、mindiesd 不额外适配**；原 cache_agent 接入 P0 转为探针观察，不沉淀推荐姿势） |
 | AttentionCache（method=`"attention_cache"`） | ❓ | ✅ V2（与 DiTCache 互斥） | ❌ L1（同 DiTCache：框架未接线；按新规不做 mindiesd 额外适配，原 bench 侧 CacheAgent 备选转探针观察） |
 
 ### 时间步优化（docs: cache 章「时间步优化」）
@@ -145,15 +145,15 @@
 
 | 特性 | vLLM-Omni 0.28 | DiffSynth-Engine | LightX2V #1471 |
 |---|---|---|---|
-| 少步蒸馏（换入蒸馏适配器） | ✅ V4（服务侧 `--task-type fl2va --lora-backend peft --lora-path …` + 请求 `num_inference_steps=4` + `lora={…scale}`；**仅 0.28 有此链**；两条前置契约——`model_index.json` 不得 pin `base_schedule`、适配器 metadata 的 `base_schedule` 使步数语义 = **denoiser 评估次数**（4 ≠ 5 个 sigma 点）；装载计数契约 `num_modules=259` / rank `0→64` / 各 worker 激活，防 no-op 假加速；收益呈**线性于步数**、不随负载规模变） | ❓ | ❓（框架侧 LoRA/蒸馏权重链未核） |
+| 少步蒸馏（换入蒸馏适配器） | ✅ V4（服务侧 `--task-type fl2va --lora-backend peft --lora-path …` + 请求 `num_inference_steps=4` + `lora={…scale}`；**仅 0.28 有此链**；两条前置契约——`model_index.json` 不得 pin `base_schedule`、适配器 metadata 的 `base_schedule` 使步数语义 = **denoiser 评估次数**（4 ≠ 5 个 sigma 点）；装载计数契约 = 计数行与实际适配器模块数一致（rank 递进 + 各 worker 激活），防 no-op 假加速；收益呈**线性于步数**、不随负载规模变） | ❓ | ❓（框架侧 LoRA/蒸馏权重链未核） |
 | VAE解码替换（换入外部训练的小型自编码器） | ❌（**待开发**：框架未提供该接口）；V4 已以 **fork 探针** `[探针]` 验证可行性（新增解码器模块 + pipeline env 分派，**默认关 + `.bak` 保留、未合入上游**）。要点：换入前先核**参考实现的判定契约**（末层 `12 = 3×patch²` 通道 + `pixel_shuffle` + 因果记忆块 + 时序 ×4 ⇒ 逐帧 2D 网络是**架构级错配**，扫参不可补）；latent 须**原样喂入**（上游已自行 `*std+mean`，重复归一化会过驱动头部非线性）；末层无激活 ⇒ 输出无界，照抄 `clamp(0,1)` 会把大比例像素钉成纯黑白（观感=块状），后处理须权重相关重验。收益：**端到端节省全部来自 decode 阶段**（diffuse 不变）；质量须与原生解码器**同 latent 对拍**（灰度相关 + 钳位占比 + 输出 std）+ SSIM，并声明画质档位（本例属**预览级**——依 `quality-gate.md` 给保画质档 / 预览档两条并列建议） | ❓ | ❓ |
 
 ## 二、姿势与坑（关键格；机制细节见各框架 enablement 文件，实测数字见会话产物归档）
 
-- **vLLM-Omni（V1）**：compile 注入 = `OMNI_MINDIE_COMPILE=1` 门控 + backend 单例，52 block 编译成功、pattern 注册、输出逐字节一致但 kernel 级为负 → 默认关；offload 用 DLO（`--enable-distributed-layerwise-offload`），普通 layerwise 在 950PR 触发 OOM；量化/稀疏/缓存叠加实测组合见归档 `{run_results_dir}/archive/vllm-omni-minimax-h3-case.md` §4 表（开启方式见 `references/vllm-omni-enablement.md` §3）；无 comm-stream 掩盖机制（0.28，单步 Overlapped=0；未重叠通信占比随并行策略 **USP2 > TP4 > USP4(int8)**，见 `vllm-omni-enablement.md` §2.4 / 归档 §7 / 报表 §2.3——掩盖收益上限 = 该占比，步时占比随策略变化）。
+- **vLLM-Omni（V1）**：compile 注入 = `OMNI_MINDIE_COMPILE=1` 门控 + backend 单例，52 block 编译成功、pattern 注册、输出逐字节一致但 kernel 级为负 → 默认关；offload 用 DLO（`--enable-distributed-layerwise-offload`），普通 layerwise 在部分代际触发 OOM（须逐代际验证）；量化/稀疏/缓存叠加实测组合见归档 `{run_results_dir}/archive/vllm-omni-minimax-h3-case.md` §4 表（开启方式见 `references/vllm-omni-enablement.md` §3）；无 comm-stream 掩盖机制（0.28，单步 Overlapped=0；未重叠通信占比随并行策略 **USP2 > TP4 > USP4(int8)**，见 `vllm-omni-enablement.md` §2.4 / 归档 §7 / 报表 §2.3——掩盖收益上限 = 该占比，步时占比随策略变化）。
 - **vLLM-Omni compile×FFN-MX 融合（**V1a**，2026-09-06 修复闭环，首个正向 compile pattern 案例）**：H3 FFN hidden 站点 `mm_swiglu_mxquant`（Qmm+swiglu+输出量 三合一 catlass kernel）经 **vLLM 变体 GraphPatternEntry + C++ 布局自适应** 在 vLLM-Omni 真图命中 **52/52**（fused 0→52，Qmm/DxQ 各 -52），端到端为**正收益**（绝对数字见归档 `{run_results_dir}/archive/`）。关键：① 必须 `method:mxfp8`（MX e4m3 域）非 int8；② vLLM-Omni 权重 GEMM-ready (K,N) fp8 + scale (c,N,2)、行序 gate-first → C++ `AdaptLayoutCached` 检测 `w.size(0)==k` 缓存 `w^T`（免 row-swap）；③ npu_swiglu 单融合 op → 独立 pattern 变体（无 view/split 形态）；④ kernel launch 前需 `aclrtSynchronizeStream`（裸 aclrtLaunch 与异步转置拷贝跨流竞态 → AI Core 507015）；⑤ 输出为量化级近似非位级（单层 rel 与视频差异均 ≤ mxfp8 相对 bf16 的量化分散度同量级）。证据 runs/20260906_minimax-h3_mmxfp8_compile_fusion/evidence/。
 - **vLLM-Omni H3 完整重跑闭环（**V1b**，2026-09-07，env A 新基线 + MAO 规范 run-state/stage_gate/双报表）**：基线 = **env A TP2×2 卡 SDPA（TORCH_SDPA 显式）**。⚠️ 环境修正：env A mindiesd editable 常驻（MindIE-SD-028）→ 无显式 attention config 时默认 FLASH_ATTN，**基线须 TORCH_SDPA 显式**；CMP 树（MindIE-SD-CMP，mm_swiglu v5）与 028 树并存——**CMP sparse 缺 `video_spans`（rf_v2 不兼容）→ 稀疏档须 028 树**，融合档须 CMP 树。结果（同窗 r1 稳定对，异常窗剔除；**绝对耗时与绝对质量分值见归档**）：FA 单点为正；compile bf16 无正收益回退；mxfp8+FFN-MX 单点为正（fused=52）；稀疏 rf_v2 0.8 单点为正（⚠️ `end_step` 语义=保留末 N 步 dense，误设=全程 dense fail-closed——配置后须输出对比确认参与）；**Cache 单点降幅居首**；**最强组合 = 量化(mxfp8)+FFN-MX+Cache（由 Cache 主导）**，**质量变化度**：缓存单点 vs lossless SSIM 降约三成、叠加稀疏/量化后降约五成（**阈值内但视觉 inconclusive，未宣称通过**；阈值见运行 profile、读数见归档）。共享宿主热节流/多租户使同档热窗值高 20-100%（r2/s 异常剔除留痕）。产物 `{run_results_dir}/` 下 runs/20260907_minimax-h3_optimization/（overview/detail/final/evidence）+ 编排产物目录（run-state/stage_gate S0-S4+close error=0）。
-- **vLLM-Omni（V3，Qwen-Image-2512 图像）**：稀疏 rf_v2 使能前置判据 = 层须声明 `qkv_layout='BSND'`（视频轴）——图像 2D 无 → **staying dense 兜底（输出=lossless 逐字节，fail-closed 判未生效；0.4/0.8 档位无关）**；短任务（20 步）并行方向 **2 卡 TP1×USP2 优于 TP2（TP2 = S4 有损基底）**，4-rank（TP4/USP2）通信病态回退（**本组合观测，绝对耗时见归档**）；compile 对 qwen-image 输出**非逐字节**（compiled FA 数值/seed 语义）→ 双重否决；TP2 单步未重叠通信占比约三成（Overlapped=0）→ 掩盖空间上限 = 该占比（框架结构性缺口）；图像同 seed 像素质量域**远高于**视频档（无轨迹混沌）→ 有损阈值不可跨域迁移；拓扑先查 UB 岛（npu-smi -t topo，0-3/4-7 各为岛，跨岛 SYS）同岛选卡；多进程残留需 `pkill -9 -f 'vLLM-Omni::DiffusionWorker'`；JSON 型 CLI 参数经多层 shell 丢引号 → 走文件传递（细节见 `references/vllm-omni-enablement.md` §1/§2/§3/§5，实测数字见归档 `{run_results_dir}/archive/`）。
+- **vLLM-Omni（V3，Qwen-Image-2512 图像）**：稀疏 rf_v2 使能前置判据 = 层须声明 `qkv_layout='BSND'`（视频轴）——图像 2D 无 → **staying dense 兜底（输出=lossless 逐字节，fail-closed 判未生效；0.4/0.8 档位无关）**；短任务（20 步）并行方向 **2 卡 TP1×USP2 优于 TP2（TP2 = S4 有损基底）**，4-rank（TP4/USP2）通信病态回退（**本组合观测，绝对耗时见归档**）；compile 对 qwen-image 输出**非逐字节**（compiled FA 数值/seed 语义）→ 双重否决；TP2 单步未重叠通信占比约三成（Overlapped=0）→ 掩盖空间上限 = 该占比（框架结构性缺口）；图像同 seed 像素质量域**远高于**视频档（无轨迹混沌）→ 有损阈值不可跨域迁移；拓扑先查 `npu-smi -t topo`（同域 = UB/HCCS 全互联、跨域 = SYS/PCIe）并按同域选卡；多进程残留需 `pkill -9 -f 'vLLM-Omni::DiffusionWorker'`；JSON 型 CLI 参数经多层 shell 丢引号 → 走文件传递（细节见 `references/vllm-omni-enablement.md` §1/§2/§3/§5，实测数字见归档 `{run_results_dir}/archive/`）。
 - **vLLM-Omni（V4，MiniMax-H3 长视频 15s/768P/USP4，2026-09-12）**：**单点收益排序随时长反转**——
   长序列档 **削注意力的维度 > 缓存维度 > 线性层量化维度**（注意力 O(S²) 成为主项后线性层量化占比
   被稀释），短序列档则是缓存维度主导 ⇒ **单点结论不跨规模迁移**（换规模 = 新对照）。
@@ -220,7 +220,7 @@
 - **P2 长序列通信重估 — 待重估**：comm masking 的收益上限 = 未重叠通信占比，而该占比**随序列变长
   上升** ⇒ 短序列档的否决结论**不迁移**到长序列档，须按目标负载重估（口径见
   `dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` §7）。
-- **P3（硬前置 / 负证据）**：FA 量化（mindiesd FP8/MXFP8 FA 在 A5 档 **kernel 级微测可用**，
+- **P3（硬前置 / 负证据）**：FA 量化（mindiesd FP8/MXFP8 FA 在**目标代际** **kernel 级微测可用**，
   端到端质量/收益**未验证**、框架未接线）；RSP（Ring 不支持 attn_mask，属上游限制）；
   CFG 并行（未核）。
 - **移植纪律**：同一能力在不同框架的收益方向**可以相反**（例：compile 在一框架为负收益、在另一框架

@@ -147,7 +147,7 @@ dev, usage = pick_free_device(ssh, container="{容器名}", num_cards=8)
 - 选卡前先健康预检：`npu-smi info -l`（卡状态）与 `npu-smi info -t health`；Alarm / Warning / ERROR 状态卡不是空闲卡，直接避开。
 - 解析按行结构进行：首列非设备号、末列无法解析为数值的异常行会被跳过，不进入候选。
 - 占用对比须在同一卡组内：命令在指定容器内执行，`npu-smi` 只能看到该容器映射的设备，
-  `--num-cards` 需与容器映射的设备数一致；不同容器、不同平台（如 910B vs A3）的占用数值不可直接对比。
+  `--num-cards` 需与容器映射的设备数一致；不同容器、不同平台（不同机型/代际）的占用数值不可直接对比。
 - 多人共享环境可结合 `npu-smi info proc` 确认进程占用后再定卡。
 - 安全提示：import 复用连接的路径沿用 ssh_helper 的主机密钥策略（未知主机拒绝）；独立 CLI 内部采用 AutoAddPolicy，仅适合可信环境。
 

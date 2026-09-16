@@ -2,8 +2,7 @@
 
 适用：网络含“上一帧反馈”的记忆块（`MemBlock` / `past` / `state`），候选轴为时间轴。目标：**在 CPU 上与整段解码逐位等价**，同时把每次算子调用的 batch 降下来（省显存、绕开大 batch 设备缺陷）。
 
-> **作用域（强制）**：文中耗时 / 显存 / 帧级读数的来源环境为 Ascend 950PR 8 卡 · CANN 25.7.rc1.6 ·
-> torch_npu · 容器内 vLLM-Omni 0.28 + MindIE-SD（离线单卡 fp32 口径见 §6 表注）。推导与骨架可迁移，
+> **作用域（强制）**：文中耗时 / 显存 / 帧级读数的**来源环境坐标（机型 / 卡数 / 软件栈版本与输入档）见会话产物归档**（离线单卡 fp32 口径见 §6 表注）。推导与骨架可迁移，
 > **数字换环境即重测**。
 
 ## 1. 为什么只有记忆块需要状态
@@ -95,7 +94,7 @@ else:  ...整段路径...
 | CPU 等价性 | 整段 vs 2 段 vs 4 段 **max\|d\| = 0（bitwise）** |
 | NPU 正确性 | 2 段后尾段塌陷消失，16 个 24 帧桶的 hf/均值/块方差与 CPU 真值逐桶一致 |
 | NPU 耗时/峰值显存 | 耗时降到约四成、峰值显存约减半；段数继续增加只带来小幅耗时收益与更低的显存（该耗时为单卡离线 fp32 口径；绝对数字见归档 `{run_results_dir}/archive/`） |
-| 与设备缺陷的关系 | 该网络第 3 次 `Upsample` 单次 batch = 潜帧数×2 = 220，触发 CANN 缺陷；2 段后降到 110 ⇒ 干净 |
+| 与设备缺陷的关系 | 时间维解码器里某次 `Upsample` 的**单次调用 batch = 潜帧数 × 时间上采样倍率**；一旦越过该 kernel 的干净区上限即触发缺陷。分段 ⇒ 单次 batch 按段长成比例下降 ⇒ 回到干净区（**干净区上限与首坏索引须按现场形状重扫**：`troubleshooting-cann-upsample.md` §2 第 3 条；本文不承载该案例读数） |
 
 ## 7. 何时不用状态携带切分
 
@@ -117,6 +116,6 @@ else:  ...整段路径...
 ## 9. 维护与更新
 
 - **触发（潜帧边界 / 状态块几何变）**：`decoder_time_upscale` 变化（本文案例 `(False,True,True)` ⇒ `time_upscale = 2^2 = 4`）、出现 stride 非整数倍的时间层（§4 要求取最小公倍数对齐或改用最粗级边界）、记忆块位置或个数变化（§1 表与 §3 的 `state[i]` 定义）⇒ §4 的边界推导与 §3 骨架都要重推，切分点必须重新落回潜帧边界。
-- **触发（版本与数字类）**：§6 的「第 3 次 `Upsample` 单次 batch = 潜帧数×2 = 220 触发缺陷、2 段后降到 110」随 CANN / torch_npu 版本与形状变化，须按 `troubleshooting-cann-upsample.md` §2 重扫；§6 的耗时/显存读数（Ascend 950PR 8 卡 · CANN 25.7.rc1.6，单卡离线 fp32 口径）换环境即失效——骨架与推导可迁移，数字不可照抄。
+- **触发（版本与数字类）**：§6 的「某次 `Upsample` 单次 batch 越过 kernel 干净区上限」这一对应关系随 CANN / torch_npu 版本与形状变化，须按 `troubleshooting-cann-upsample.md` §2 重扫；§6 的耗时/显存读数与来源环境（设备代际 · CANN 版本，单卡离线 fp32 口径）换环境即失效——骨架与推导可迁移，数字不可照抄。
 - **触发（门控侧）**：§5 的 `MY_DECODER_SLICES` 改名或读取点移动、`pieces >= 2 and world >= 2 and n_frames >= 2 * pieces` 退化条件变化时，§3 的 `slices < 2 or n_t < 2 * slices` 退化分支要一起改，并重做「与 rank 无关」自查。
 - **复核方法**：先 `python scripts/sliced_state_decode.py --demo` 自证骨架可跑，再用 `scripts/shard_equivalence_check.py --model-spec <module>:build --pieces 2 4` 做 CPU 整段 vs 2/4 段对拍，必须 `max|d| = 0`（不为 0 先查 §3 的三条要点）；上卡后按 §8 第 4 步比 md5 并用 `scripts/frame_health.py --input <产物>` 看尾段是否仍有塌陷。

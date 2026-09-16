@@ -10,7 +10,7 @@ L1 编排入口（2）：model-auto-optimization / dev-workflow——任务分�
                 交付件契约与编排机制所有权（run-state / stage_gate / 迭代表 / 覆盖清单 / 双报表）
 L2 业务 workflow（按业务线）：特定业务线下的阶段化执行与单任务深挖——把 L3 能力组合成该业务的
                 流程与"姿势/优化选择"（含单特性策略与组合回退裁决）；厚度因业务线而异（见「架构速览」）
-L3 能力（20）：可复用的单一能力/知识/工具（含能力自身工作流纪律），可被任意 L2 编排或独立直达
+L3 能力（21）：可复用的单一能力/知识/工具（含能力自身工作流纪律），可被任意 L2 编排或独立直达
 预留槽位（8）：流程自动化所需但经验尚空的位置（§4），复盘回填
 ```
 
@@ -111,9 +111,9 @@ run-state（推进表/迭代表/覆盖清单）→ 逐阶段回写并跑 `stage_
 | **[model-auto-optimization](skills/model-auto-optimization/SKILL.md)** | 模型自动优化流程：**S0 环境准备 → S1 DiT·融合 → S3 DiT·并行 → S4 DiT·有损 → S5 DiT·训练感知 → S6 VAE + host**（非 DiT 段占比 ≥10% 才启动；门限口径见 `references/bottleneck-labels.md`）**→ 闭环复验**（内含 采集→分析→复验 标准回路；**闭环必列输出「优化总览报表 + 优化细分报表」**——总览基线=TP 多卡未优化，细分=融合算子/并行/稀疏/量化/cache 与步数/组合 构成口径，见 `references/overview-report.md` 与 `references/detail-report.md`；框架未提供的特性须明确标注「未提供」）。流程执行按 `workflows/optimization-flow.md` 阶段模板，阶段验收以 run-state 推进表 + `scripts/stage_gate.py` 门禁为准（见 `references/run-state.md`）；**瓶颈点标签表的单一真源 = `references/bottleneck-labels.md`**（域入口据它分发） | 模型名 + 优化/加速/跑通/采profile 等流程型目标 |
 | **[dev-workflow](skills/dev-workflow/SKILL.md)** | 仓库开发流程：Test-First → 编码 → 部署 → pytest → 复盘（轻量内联，暂不拆 workflow 文件；流程门禁见其 §0.2） | MindIE-SD 代码改动 |
 
-## 2. 优化域入口与能力层（21）
+## 2. 优化域入口与能力层（22）
 
-> **分类**：优化域入口（L2，可独立触发）**1** · 优化域模块（L3）**4** · 能力供给（L3）**6** · 标准与方法（L3）**2** · 采集分析（L3）**3** · 环境与运行通道（L3）**2** · 规范（L3）**3**。
+> **分类**：优化域入口（L2，可独立触发）**1** · 优化域模块（L3）**4** · 能力供给（L3）**7** · 标准与方法（L3）**2** · 采集分析（L3）**3** · 环境与运行通道（L3）**2** · 规范（L3）**3**。
 > **命名分层**：**入口用全称**；**模块 `{对象}[-{维度}]-opt`**；**验收标准 `-gate`**；其余角色词限定为 `-collect` / `-analyze` / `-dev` / `-lint` / `-standards` + 名词短语。**新增技能不得另造角色词**，例外须在本表标注理由。
 > 另有**预留分类**：AR 优化（条件编码器 / 自回归模型）——本次只占位，不建技能。
 
@@ -132,7 +132,7 @@ run-state（推进表/迭代表/覆盖清单）→ 逐阶段回写并跑 `stage_
 | **[vae-opt](skills/vae-opt/SKILL.md)** | VAE/TAE 解码段优化（**计算 + 通信同技能**）：解码器能否沿某轴切到多卡、怎么切才逐位精确、切了值不值；含跨轴耦合审计、潜帧边界切分＋末帧状态携带、与 rank 无关的判定、交换预算、已知静默陷阱、有损分片的精确性前置条件与自动修复；范围**含 VAE encode（待补，暂不纳入正文）** | 对象 |
 | **[host-opt](skills/host-opt/SKILL.md)** | host / 辅助段优化：**交付与搬运**（mp4/图片编码、worker→API 通路、落盘、异步化）+ **装载与预热**（权重加载、编译与图下发预热、镜像/容器预热）；**明确不含并发与吞吐**（未来独立立项） | 对象 |
 
-### 2.3 能力供给（6，阶段无关）
+### 2.3 能力供给（7，阶段无关）
 
 | 能力 | 一句话界面 | 域标签 |
 |------|-----------|--------|
@@ -142,6 +142,7 @@ run-state（推进表/迭代表/覆盖清单）→ 逐阶段回写并跑 `stage_
 | **[quantization-dev](skills/quantization-dev/SKILL.md)** | 量化**格式契约**与位级对齐：从设备字节反推 MXFP8/int8 契约（编码公式/舍入/scale 粒度/退化块）并逐字节复现；含**除数须载入**、**8-bit 回绕非饱和**、组尺度耦合、位级对拍 SOP、**量化前移的字节精确条件** | 算子 |
 | **[dummy-run](skills/dummy-run/SKILL.md)** | **能力供给的配套验收载体**：随机权重/精简代码快验（架构兼容性、算子先接入、融合可行性），提升开发效率；**非通用验证载体** | 验证 |
 | **[framework-integration](skills/framework-integration/SKILL.md)** | 三方框架特性落地（**原 framework-feature-enablement ＋ framework-extension-dev 合并**）：一个入口信号「框架侧特性没落地」，内部分两分支——**分支 A 框架已有 → 使能与验证**（计数契约 + 三层证据 + 异常回修）；**分支 B 框架缺失 → 补齐开发**（注入点 + 注册机制 + 合入姿势：平台注册/上游 PR 优先，fork/monkey 备选） | 框架 |
+| **[fusion-scope-analyze](skills/fusion-scope-analyze/SKILL.md)** | **融合范围与收益分析**：判定"哪些计算该融进同一个融合单元、边界画在哪、融了值不值"——结构侧按**融合单元构造规则**切边界（函数边界即候选组；FA 及 BSA 等变体为**硬锚点**、不吸收也不跨越；以 norm / rope / FA 分界分区，**全 Vec 优先试融**；区内有 Cube 时以 **Cube 为首算子**向后包裹 Vec，**Σvec < Cube** 或遇下一 Cube 封口；纯 Vector 单元之间迭代再融；MLP / MoE 以 MatMul / BatchMatMul / GroupedMatmul 为界）；收益侧按计算单元利用率**判型**（`memory_bound`、`*_vec / *_mac / *_mte2 / *_mte3` 的 ratio 与 time、`cube_utilization`）+ 带宽下限 / 区域占比 / 天花板法 / 地板先行 / Amdahl 传导校验给出 go-no-go；**只出判定与建议**（选点与派活归 `dit-perf-opt`，采集与瓶颈定位归 profiling 管道） | 分析 |
 | **[env-install](skills/env-install/SKILL.md)** | 环境安装与准备：mindiesd + 三方框架全栈安装、权重确认/下载（部署时先与用户确认是否已存在） | 安装准备 |
 | **[remote-access](skills/remote-access/SKILL.md)** | 远程昇腾访问工具：SSH 连接复用 / 容器执行 / 空闲卡选择 / 传输 | 工具 |
 
@@ -181,8 +182,8 @@ run-state（推进表/迭代表/覆盖清单）→ 逐阶段回写并跑 `stage_
 | S0-1 | S0 | 各模型/任务权重分区与下载经验（Qwen-Image / Wan2.2 / H3…） | **modelscope 优先 + 分区约定已立；H3 已填，其余待回填**：下载源优先级 = **默认 modelscope**（`modelscope download` / `snapshot_download` + `--local_dir` 直落、国内可达、HF gated 仓库在 modelscope 镜像通常免鉴权）→ **次选 HuggingFace / gated**（需 token，走 `hf`/`huggingface-cli login` 或 `--token`，镜像回退 hf-mirror）；分区约定 = `{model_weight_dir}/{模型名}/{任务变体}`（模型根目录直接 serve）；落位表（模型 / 目录落位 / 任务变体 / 仓库 id / 依据）见 `env-install/references/weights-prep.md` §2.2（源优先级见同文件 §2.1）——**H3 全列已填**（`MiniMax/MiniMax-H3`：根 diffusers + `FL2VA/`、`Ref2VA/` 子分区），Qwen-Image / Wan2.2 / FLUX 的**仓库 id 与任务变体列标 `待回填`**；权重确认纪律（先确认远端已存在、无 `.incomplete`、分片齐全/文件数一致、有校验和则逐文件核对）保留于同文件 §5 |
 | S1-1 | S1 | 无抽象接口框架的算子注入方法（多框架泛化） | **已回填（2026-09-13，两阶段法）**：**① API 优先**（runtime 注入——配置注册表 / 框架侧 dispatch / **直接改模型代码 `import mindiesd` 并替换调用点**）→ 验证接口可行 + 同 seed 数值对拍 → **② 再走 compile 机制**做图级适配（pattern 图形态变体 / `_compiled_call_impl` 写入 / 平台注册 backend）。三组判据齐备：「为何 API 先行」（改动面小、失败早暴露、先拿到可归因的单点收益与对拍基线）、「为何 API 不替代 compile」（层内单算子 vs 整链融合 + 图级拷贝消除）、「**何时停在 API 阶段即可**」（eager 已覆盖热路径/compile 无正收益/输出非逐字节/适配落探针 ⇒ 按证据回退，不留半开）；含**收益量级对照**（API vs compile 的相对贡献，各标「本组合观测」，不记绝对耗时）与**各框架注入点差异表**（注册表替换 / 模型层直接改写 / 框架侧 dispatch / `_compiled_call_impl` 原地写入 / 平台注册表 / env 门控 fork）。落点：`framework-integration/SKILL.md` §②「两阶段顺序纪律」+ §运行时算子接入（阶段 1）/ §compile 融入（阶段 2）；**compile 阶段适配动作**落 `pattern-dev/references/fusion-enablement-notes.md` §4（1→7 顺序，与该 SKILL §② 路由成对） |
 | S2-1 | **S1**（原 S2，已并入 S1） | mindiesd 融合 kernel 能力清单（接口 → pattern → 验证过框架，唯一真相源） | 分散于各 case，已按新分层回填到**方法单点 + 框架开启方式**（H3×vllm-omni）：`model-auto-optimization/references/lossless-methodology-notes.md` §A/§D —— 融合候选工作流「执行序→候选列表→mindiesd/CANN 能力对照→独立验证」+ eager 已融合热路径判定 + 残余候选池对抵判定 + 量化后融合重审；`framework-integration/references/vllm-omni-enablement.md` §3.1/§5 —— 自动路由面核验（FA/AdaLN/RoPE/GELU eager 覆盖）+ 单步 kernel 采集 hook（`[探针]`）；**2026-09-06 图像第二案例**：同文件 §5.3 kprof 目标扩展 + §3.5 compile 输出非无损否决；实测数字归档于会话产物目录 `{run_results_dir}/archive/`） |
-| S3-1 | S3 | NPU 拓扑/带宽矩阵与并行选型决策 | 910B 单点 + 2026-09 增 950PR×4：并行矩阵/ring 不可用/offload 解锁并行与通算掩盖 step_trace 评估（见 `dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` §7 与 `dit-parallel-opt`「内存受限时的并行解锁」）；2026-09 实测增补：UB/HCCS 岛 vs SYS/PCIe 拓扑、bulk vs head-parallel 翻转、HCCL 带宽 bench 姿势与 set_device 陷阱、端口泄漏/卡组诊断 → 单源参考 `dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` + evals 4/5；**2026-09-06 图像案例（见 `ascend-topology-bandwidth-diag.md` §7 + `vllm-omni-enablement.md` §2.2/§3.3）**：UB 岛 0-3/4-7（跨岛 SYS）同岛选卡 + 同岛亦受他户干扰（探活前置）、**并行候选矩阵勿漏 2 卡 USP（图像 20 步短任务 TP1×USP2 优于 TP2，本组合观测）**、短任务 4-rank 病态回退 |
-| S3-2 | S3 | few-step 多 rank 验证协议（脚本 + 判据） | **已回填（2026-09-13）**，核心是确立 **DiT-only 口径**——并行对比**只取 DiT 去噪阶段**（`<Pipeline>.diffuse` 阶段墙钟，微秒级、每 rank 一行取 min），**VAE 解码 / 文本编码 / 权重装载 / warmup / 响应编码一律排除**；理由：少步档固定开销占比畸高、且**固定开销自身的波动远大于并行差异**（本组合观测：同配置相邻两次同参请求 DiT 阶段波动个位数百分比，VAE 解码波动数十个百分点）⇒ 计入 decode 量到的其实是 VAE 噪声。协议与判据落 `dit-parallel-opt/references/few-step-multirank-protocol.md`（口径边界与取数 → 矩阵设计「必须含同卡数不同切分的一对」+ 形态是启动级参数/步数是请求级参数 ⇒ 少步与锚点可同 serve 交错 → 噪声纪律 ≥3 rep 取中位、**离散度 >3% 该格不可用** → **外推判据** `r = DiT单步(锚点) ÷ DiT单步(少步)`：`\|r−1\|≤5%` 且两档排序一致才可外推，**排序翻转一律以锚点档为准** → 必回较高步复验的 7 个触发条件 → 通信占比随步数漂移与 profiler 膨胀口径 → 9 条踩坑清单）；SKILL.md 新增「少步 × 多 rank 验证协议」节为摘要并接线；采集脚本 `dit-parallel-opt/scripts/fewstep_multirank_probe.py`（跑矩阵 + 出 DiT-only 证据包，`--parse-only` 零 NPU 复盘）。实测数字归档于会话产物目录 |
+| S3-1 | S3 | NPU 拓扑/带宽矩阵与并行选型决策 | 跨代设备的拓扑/带宽矩阵与并行可行性（ring 可用性、offload 解锁并行、通算掩盖 step_trace 评估）→ 单源参考 `dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` §7 与 `dit-parallel-opt`「内存受限时的并行解锁」；拓扑分域（域内/跨域、SYS/PCIe）、bulk vs head-parallel 翻转条件、HCCL 带宽 bench 姿势与 set_device 陷阱、端口泄漏/卡组诊断 → 同上文件 + evals 4/5；**图像案例（见 `ascend-topology-bandwidth-diag.md` §7 + `vllm-omni-enablement.md` §2.2/§3.3）**：同域选卡 + 同域亦受他户干扰（探活前置）、**并行候选矩阵勿漏 2 卡 USP（短任务下 TP×USP 组合需实测取舍）**、短任务低 rank 数病态回退。**设备型号 / 卡数 / 实测数字归档于会话产物，不进本索引** |
+| S3-2 | S3 | few-step 多 rank 验证协议（脚本 + 判据） | **已回填（2026-09-13）**，核心是确立 **DiT-only 口径**——并行对比**只取 DiT 去噪阶段**（`<Pipeline>.diffuse` 阶段墙钟，微秒级、每 rank 一行取 min），**VAE 解码 / 文本编码 / 权重装载 / warmup / 响应编码一律排除**；理由：少步档固定开销占比畸高、且**固定开销自身的波动远大于并行差异**（DiT 阶段与 VAE 解码的波动量级差异见会话产物归档）⇒ 计入 decode 量到的其实是 VAE 噪声。协议与判据落 `dit-parallel-opt/references/few-step-multirank-protocol.md`（口径边界与取数 → 矩阵设计「必须含同卡数不同切分的一对」+ 形态是启动级参数/步数是请求级参数 ⇒ 少步与锚点可同 serve 交错 → 噪声纪律 ≥3 rep 取中位、**离散度 >3% 该格不可用** → **外推判据** `r = DiT单步(锚点) ÷ DiT单步(少步)`：`\|r−1\|≤5%` 且两档排序一致才可外推，**排序翻转一律以锚点档为准** → 必回较高步复验的 7 个触发条件 → 通信占比随步数漂移与 profiler 膨胀口径 → 9 条踩坑清单）；SKILL.md 新增「少步 × 多 rank 验证协议」节为摘要并接线；采集脚本 `dit-parallel-opt/scripts/fewstep_multirank_probe.py`（跑矩阵 + 出 DiT-only 证据包，`--parse-only` 零 NPU 复盘）。实测数字归档于会话产物目录 |
 | S4-1 | S4 | 精度校验与单特性影响评估方法（端到端质量门禁：定量 + 视觉伪影 + off-identity） | 部分回填：方法见 `accuracy-gate/references/quality-gate.md`，工具与判定标准在仓库 `evals/`（契约/rubric/_template/quality_compare.py + gen_profile/check_profile）；单特性影响矩阵首个真实案例已回填（H3×vllm-omni V1：阈值校准见 quality-gate.md，实测数字归档于会话产物目录 `{run_results_dir}/archive/`；运行时 profile 由 `evals/scripts/gen_profile.py` 生成到 `runs/{task_id}/profiles/`，不入库）；**2026-09-06 图像第二案例**：`accuracy-gate/references/quality-gate.md`「图像第二案例」校准段 + `framework-integration/references/vllm-omni-enablement.md` §3.2–§3.4（21-seed 同 seed 像素对口径；图像质量域 >> 视频 → 阈值不跨域迁移）。**待办（缺什么，未闭环）**：① **视觉门=待判（按需触发）**——两案例均为 `visual_artifact inconclusive`，且**成因须分开标注**：①-1 无图像输入能力 / ①-2 用户未要求判别（本仓默认不主动判、不催促判）/ ①-3 已判但结论不明确（判据见 `accuracy-gate/references/quality-gate.md`「判定要点」三成因）；**判卷材料与待判卷提示已就绪**（同 seed/同帧号并排对比图 + 抽帧蒙太奇 + ASCII 亮度机读存证，落会话产物目录 `{run_results_dir}/s41_visual_gate/`，**不入库**），**待具备图像输入的人或工具**按 `evals/rubrics/visual-artifact-gate.md` **回填 `pass` / `fail` / `inconclusive` 后**才可宣称质量通过；未判时报表质量列照常给定量结论与变化度但**不得写「质量通过」**、须与说明列 `视觉门=待判（用户未要求判别）` 标注同时出现（口径见 `model-auto-optimization/references/overview-report.md` §2/§4）；② **跨模型覆盖缺**——单特性影响矩阵只有 H3×vllm-omni（V1）+ Qwen-Image×vllm-omni（V3）两条 vLLM-Omni 链，LightX2V / DiffSynth-Engine / cache-dit 列无单特性质量矩阵；③ **图像域阈值未固化进 profile 模板**——图像档阈值（同 seed 像素对口径）仍写在 quality-gate.md 文字里，尚未落到 `gen_profile.py` 的 profile 模板字段（跨域阈值不可迁移，缺模板字段就会默认套视频阈值） |
 | S4-2 | S4 | 组合试验设计与层回退策略 | 已回填协议 + **seam 表首案例已校准**（2026-09-05 H3×vllm-omni V1：precision×attention 跨 seam 可叠、attention 同 seam 取最强档、cache×稀疏同 step 窗口可叠、稀疏档质量非线性、frontier 以同窗相邻对为准；见 combination-search.md 校准节；该案例实测数字归档于会话产物目录 `{run_results_dir}/archive/`） |
 | S5-1 | S5 | 训练感知案例（少步蒸馏 4/8 步 + VAE解码替换 + SLA/QAT 叠加；蒸馏权重 modelscope 下载；质量-速度权衡口径） | **已回填（2026-09-12）**，且按「**方法与产物隔离**」拆两件：① **通用方法** `framework-integration/references/train-aware-lossy-method.md`（分类与归组判据 / 三条前置契约 / 协同定位比值法 / 质量分层「接口正确性→画质档位」/ 归因链 / **数字纪律：不写绝对耗时与绝对质量分值，大致加速比与质量变化度照写**）；② **框架差异** `references/vllm-omni-train-aware-enablement.md`（vLLM-Omni 开启方式 + 该模型侧契约 + 并行负载前提 + 产物坐标指针） |
@@ -220,7 +221,7 @@ python skills/profiling-analyze/scripts/compare_traces.py \
 ├── scripts/                      # 门禁脚本（说明在同目录 README.md：规则/豁免/历史/盲区/积压）
 │   ├── kb_lint.py                # 知识层结构门禁（13 条规则，CI 强制）
 │   └── run_evals.py              # 技能 evals 裁定覆盖度门禁（会话内跑）
-└── skills/                       # 23 个技能；每个 = SKILL.md + references/ scripts/ evals/
+└── skills/                       # 24 个技能；每个 = SKILL.md + references/ scripts/ evals/
     ├── model-auto-optimization/  # L1 编排 · 模型自动优化流程
     ├── dev-workflow/             # L1 编排 · 仓库开发流程
     ├── performance-optimization/ # L2 优化域入口（只分发不选档）
@@ -234,6 +235,7 @@ python skills/profiling-analyze/scripts/compare_traces.py \
     ├── quantization-dev/         # L3 能力 · 量化契约与位级对齐
     ├── dummy-run/                # L3 能力 · 快验载体（非通用验证）
     ├── framework-integration/    # L3 能力 · 三方框架特性落地（使能 / 补齐两分支）
+    ├── fusion-scope-analyze/     # L3 能力 · 融合范围与收益分析（边界判定 + 收益前置评估）
     ├── accuracy-gate/            # L3 标准 · 精度验收标准
     ├── perf-gate/                # L3 标准 · 性能验收标准（入库门 + 双态）
     ├── profiling-collect/        # L3 采集分析 · 统一采集
@@ -253,7 +255,7 @@ python skills/profiling-analyze/scripts/compare_traces.py \
 
 ### 技能准入与命名判据（新增技能前必读）
 
-**准入判据**（四条全满足才允许新建技能）：
+**准入判据**（五条全满足才允许新建技能）：
 
 1. **独立耦合结构 / 几何契约**：换模型即失效的结构（如潜帧边界、状态前缀依赖）——通用手段不算。
    **例外（规范类）**：`-lint` / `-standards` / 治理类**不以结构耦合为判据**（通用规范天然无此结构），
@@ -282,6 +284,15 @@ python skills/profiling-analyze/scripts/compare_traces.py \
 
 ### case 回填规范（实验 → skill 刷新）
 
+> **⚠️ 先读 · 可迁移性（强制）**：沉淀到 skill 正文（`SKILL.md` 与 `references/*.md`）的
+> **只能是可以换设备、换模型、换框架仍然成立的判据 / 方法 / 契约**。**四类不进正文**：
+> **设备身份**（型号 / 代际 / SKU / `soc_version` / 芯片代号）、**代际常量**（核数 / UB 容量 /
+> grid 上限 / 单卡显存 / 拓扑成员编号）、**单案例绝对读数**（绝对耗时 / 带宽 / 占比 / 计数 / 形状
+> 含模型几何）、**把版本号当规则前提的版本钉**（CANN / torch / torch_npu / 框架版本）——
+> 它们落会话产物或 `-case.md`。正文只写三件：**判据 + 现场取数方式 + 归档指针**。
+> 豁免：契约类事实（CSV 列名 / 文件布局 / 错误码 / API / 格式名 / dtype）、与设备无关的比值门限、
+> 模板与断言夹具数字。细则见下文「落位四分类 → **可迁移性**」与「数字纪律」；**提炼完成后跑 `kb_lint`**。
+>
 > 标题沿用旧称。**`-case.md` 政策（2026-09-14 重新裁定）**：案例类文件**可保留但受限**——必须在所属技能
 > 的 Reference Files 登记并标注「**不作为推荐加载入口**」，且**实测数字按数字纪律一律出库**
 > （`{run_results_dir}/archive/`，skill 内只留判据）。**回填仍优先按下述四分类**（新建 `-case.md` 非首选）。
@@ -348,7 +359,17 @@ python skills/profiling-analyze/scripts/compare_traces.py \
        案例里的历史结论只作参照，**不得替代本任务复测**。
      - **豁免**：`model-auto-optimization/references/effort-estimation.md` 是**耗时/成本估计模型**，其预算与耗时样本属**规划输入**（非性能宣称），可保留；但其中引用的**模型实测加速比**仍须去掉。
      - **同属豁免**：**报告模板与校验夹具**（如 `overview-report.md` 的示例行、`report_lint_cases.md`、`compile-ab-report-template.md`）中为演示/断言所必需的数字。这两类**不清数字**，但引用它们时须标明其性质（模板示例 / 断言夹具），**不得当作本仓实测收益引用**。
-   - **数字必带环境作用域（强制 · 防跨环境照抄）**：**写进 skill 的每个数字、阈值与「最佳参数」都必须带上它的
+   - **可迁移性（强制 · skill 正文只放可迁移信息）**：skill 正文（`SKILL.md` 与 `references/*.md`）**只承载可迁移的
+     判据、方法与契约**。下面四类**不进正文**，落会话产物或 `-case.md`：
+     - **设备身份**：型号 / 代际 / SKU / `soc_version` / 芯片代号；
+     - **代际常量**：核数、UB 容量、grid 上限、单卡显存、拓扑分域的具体成员编号；
+     - **单案例绝对读数**：绝对耗时 / 带宽 / 占比 / 计数 / 形状（含模型几何）；
+     - **版本钉**：CANN / torch / torch_npu / 框架版本被当作**规则前提**时。
+     正文取而代之写三件：**判据** + **现场取数方式**（`npu-smi -t topo` / `-t memory` / 设备属性 / 算子 UT）+
+     **归档指针**（case 记录坐标）。**不受此限**：契约类事实（CSV 列名 / 文件布局 / 错误码 / API / 格式名 /
+     dtype 名）、与设备无关的比值门限（噪声地板、占比门限、`1-1/n` 上界）、模板与断言夹具数字。
+     `-method.md` 本就要求「**不含产品名**」，同此办理；`-notes.md` 只放平台/模型**几何契约**，不重复放代际常量。
+   - **数字必带环境作用域（强制 · 防跨环境照抄）**：**凡按上条保留在正文里的数字、阈值与「最佳参数」都必须带上它的
      作用域**——它们是**一次「硬件 + 拓扑 + 软件栈 + 模型」组合的快照**，不是普适事实：
      - **来源环境必写**：skill 须写明其来源环境（芯片/代际、卡数与拓扑、关键版本、模型），并**明确要求读者
        本地重测**；无作用域的数字会被直接抄到别的硬件上，**这是已知失败模式**，须按此拦截；

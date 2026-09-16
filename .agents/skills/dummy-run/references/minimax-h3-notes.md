@@ -13,7 +13,7 @@
 > | §B' profile 目录隔离 | `../../profiling-collect/references/profile-dir-isolation.md` |
 > | §C compile vs eager 双报表口径 | `../../profiling-analyze/references/eager-vs-compile-report.md` |
 >
-> **目录** · [1. 仓库双格式](#1-仓库双格式最易踩坑) · [2. 配置获取（gated → modelscope）](#2-配置获取gated--modelscope) · [3. 依赖版本](#3-依赖版本) · [4. 组件清单](#4-组件清单) · [5. 关键适配点](#5-关键适配点) · [6. BF16 计算精度](#6-bf16-计算精度--compute-precision默认-bf16) · [7. RMSNorm 融合（H3 侧坐标）](#7-rmsnorm-融合h3-侧坐标) · [8. 其余融合（H3 侧坐标）](#8-其余融合h3-侧坐标) · [9. CP + 通信掩盖（H3 侧配置事实）](#9-4-卡-context-parallel--通信掩盖h3-侧并行配置事实) · [10. 验证结果](#10-验证结果远端-910b-npu2-layersdiffusers-0400-隔离安装256384124) · [11. SwiGLU + AdaLN + gate（H3 侧坐标）](#11-swiglu--adaln--gate-融合h3-侧实现坐标与实测细节) · [12. qk_norm + RoPE 大融合（负面结论归档）](#12-qk_norm--rope-大融合负面结论归档防重复实验) · [13. w8a8(MXFP8) 编译图（H3 侧图节点清单）](#13-w8a8mxfp8-编译图h3-侧图节点清单)
+> **目录** · [1. 仓库双格式](#1-仓库双格式最易踩坑) · [2. 配置获取（gated → modelscope）](#2-配置获取gated--modelscope) · [3. 依赖版本](#3-依赖版本) · [4. 组件清单](#4-组件清单) · [5. 关键适配点](#5-关键适配点) · [6. BF16 计算精度](#6-bf16-计算精度--compute-precision默认-bf16) · [7. RMSNorm 融合（H3 侧坐标）](#7-rmsnorm-融合h3-侧坐标) · [8. 其余融合（H3 侧坐标）](#8-其余融合h3-侧坐标) · [9. CP + 通信掩盖（H3 侧配置事实）](#9-4-卡-context-parallel--通信掩盖h3-侧并行配置事实) · [10. 验证结果](#10-验证结果远端-npu隔离安装口径来源环境与输入形状见归档指针) · [11. SwiGLU + AdaLN + gate（H3 侧坐标）](#11-swiglu--adaln--gate-融合h3-侧实现坐标与实测细节) · [12. qk_norm + RoPE 大融合（负面结论归档）](#12-qk_norm--rope-大融合负面结论归档防重复实验) · [13. w8a8(MXFP8) 编译图（H3 侧图节点清单）](#13-w8a8mxfp8-编译图h3-侧图节点清单)
 >
 > MiniMax-H3（33B 全模态生成模型，T2VA / FL2VA / Ref2VA 工作流）在 `examples/dummy_run/` 的
 > dummy run 适配要点。依据：`examples/dummy_run/minimax_h3_infer.py` 与
@@ -140,9 +140,9 @@ snapshot_download(
   - AdaLN 链 `x*(1+scale_idx)+shift_idx`：`ops.adaln/adaln_v2`（weight=None 纯调制）实测
     **CheckShape failed**（`aclnnAdaLayerNorm` 要求 weight/bias 非 None 或特定 shape），不可复用；
     现有 `muls_add` 仅标量 scale。
-  - SwiGLU：`npu_swiglu` 存在（CANN 25.7）但语义是 **`gate*silu(hidden)`**，与 diffusers SwiGLU 的
-    **`silu(gate)*hidden` 顺序相反**，不可直接替换；`npu_ffn(act="swiglu")` 权重方向要求 w1 的 k 维 = x 的 k 维
-    （与 H3 图不符）。
+  - SwiGLU：`npu_swiglu` 的**存在性与语义须在目标 CANN 上先复核**（换版本即重核）——若其语义为
+    **`gate*silu(hidden)`**，则与 diffusers SwiGLU 的 **`silu(gate)*hidden` 顺序相反**，不可直接替换；
+    `npu_ffn(act="swiglu")` 权重方向要求 w1 的 k 维 = x 的 k 维（与 H3 图不符）。
 - **`enable_wan_residual_gate`** 对 H3 图的 **3D 残差**子图也会匹配但 fallback（y 为 2D），存在轻微负收益；
   RoPE 注册顺序已消除 rope 部分，3D 残差部分保留。
 
@@ -157,8 +157,8 @@ snapshot_download(
 - **档位形态（本组合实测过的两种，换形态 = 重判）**：
   - **非 USP**：仅 seq 分片、attention **未 wire** `_parallel_config` → profile 只有 allGather、无 allToAll；
   - **USP4**：`ulysses=4`、FA 切头（all_to_all）参与掩盖。
-- **world size / rank 布局**：`torchrun` **4 进程**；`device_start + local_rank` 映射到 **NPU 4-7**
-  （单 UB 岛 4 卡组）；`dit_world = 4`。
+- **world size / rank 布局**：`torchrun` **4 进程**；每进程按 `device_start + local_rank` 映射到本组卡
+  （**起始卡号与是否落在同一 UB 岛须现场用 `npu-smi info -t topo` 确认**，勿照抄历史号段）；`dit_world = 4`。
 - **seq 可整除性**：seq 不可被 4 整除时必须开 **`ulysses_anything=True`**（`PartitionAnythingSharder`；
   否则 `EquipartitionSharder` 断言 `size % mesh == 0` 失败）。
 - **H3 侧的 wire 前置（易静默降级）**：`apply_context_parallel` 只挂分片/聚合 hook，**不设置 attention
@@ -173,10 +173,11 @@ snapshot_download(
   USP 下 wall 由 **rank 间不均衡转为均衡**。该 4 卡档仍为 **host-bound**（Free 与设备等待与墙钟同量级，
   即设备等 host）——下一步方向见方法真源。
 
-## 10. 验证结果（远端 910B NPU，2 layers，diffusers 0.40.0 隔离安装，256×384×124）
+## 10. 验证结果（远端 NPU，隔离安装口径；来源环境与输入形状见归档指针）
 
-> 参数量与 latents 形状属**结构契约**，保留；**绝对耗时 / 峰值显存 / 加速比已归档**
-> （`{run_results_dir}/archive/minimax-h3-notes-numbers.md`），下表只留**档位关系与方向**。
+> 参数量与 latents 形状属**结构契约**，保留；**来源设备代际 / 框架版本 / 输入分辨率 / 绝对耗时 /
+> 峰值显存 / 加速比已归档**（`{run_results_dir}/archive/minimax-h3-notes-numbers.md`），
+> 下表只留**档位关系与方向**。
 
 ```text
 transformer params: 1.75 B | text_encoder: 2.73 B | vae: 2.60 B | audio_vae: 0.15 B | Total: 7.24 B
@@ -192,7 +193,8 @@ transformer params: 1.75 B | text_encoder: 2.73 B | vae: 2.60 B | audio_vae: 0.1
 Video latents: (1, 24, 37, 16, 24) | Audio latents: (2, 32, 207) | Verification: PASSED
 ```
 
-> w8a8 行为 2026-09-06 于 A310-50（A5 → MXFP8）复测：FFN hidden 站点融合（`mindiesd::mm_swiglu_mxquant`）
+> w8a8 行为于目标环境复测（**来源设备代际 / 日期**见归档 `{run_results_dir}/archive/minimax-h3-notes-numbers.md`；
+> 该环境 w8a8 落到 MXFP8 路径）：FFN hidden 站点融合（`mindiesd::mm_swiglu_mxquant`）
 > 已**默认开启**（无 MMX_FFN_FUSION 开关）；数值**位级一致**（同 seed latents mean_rel=0.0）。
 
 - **质量变化度**（本表口径，同 seed latents 对拍）：`compile` 相对 `eager`（同精度档）**位级一致
@@ -265,8 +267,9 @@ AdaLN:  index_select(scale_table) -> add(·,1.0) -> mul(x,·)
 > **选档语义 → `../../dit-perf-opt/references/quant-tier-device-mapping.md`**；
 > **graph-entry 改图机制 → `../../pattern-dev/references/graph-pattern-rewrite-guide.md`**。本节只留 H3 侧图节点清单。
 
-- **量化档位**：`--quant w8a8` 按设备选算法——A5 → **W8A8-MXFP8**、A2/A3 → W8A8-DYNAMIC(INT8)
-  （`model/common/quantization.py`）；dummy 下 transformer 的 `nn.Linear` 全量化（**28/28、0 残留**）。
+- **量化档位**：`--quant w8a8` 的**代际 → 实际算法映射不在此复制**（**该映射没有单一真源文档**：`docs/zh/features/quantization.md` 只给档位语义；
+  现场用 `npu-smi info` 确认目标代际后**取证**，选档语义见
+  `../../dit-perf-opt/references/quant-tier-device-mapping.md`）；dummy 下 transformer 的 `nn.Linear` 全量化（**28/28、0 残留**）。
 - **每个量化 Linear 展开为**：`npu_dynamic_mx_quant`（激活按 k 分块 32 出 fp8e4m3 + e8m0 scale）
   - `npu_quant_matmul`（V5 / QuantBatchMatmulV3）出 bf16。
 - **FFN 形态（diffusers 0.40 `SwiGLU`）**：单个 `Linear(D→2F)` → `chunk` → `hidden*silu(gate)`；

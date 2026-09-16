@@ -1,6 +1,6 @@
 # 三方框架性能分析方法论（MindIE-SD 适配实战经验）
 
-> 来源：LightX2V MiniMax-H3 接入 mindiesd 全流程（2026-08，Ascend 950PR ×4，USP4）。
+> 来源：LightX2V MiniMax-H3 接入 mindiesd 全流程（2026-08；机型 / 卡数 / 软件栈版本与并行形态坐标见会话产物归档）。
 > 该框架链的**开启方式**见 `framework-integration/references/lightx2v-enablement.md`；
 > **绝对耗时 / 绝对加速比与质量数值**已归档到会话产物目录
 > `{run_results_dir}/archive/lightx2v-mindiesd-case.md`，**不可跨模型 / 框架 / 规模 / 窗口引用**。

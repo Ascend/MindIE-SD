@@ -35,7 +35,7 @@
 
 - 版本锚点：**cache-dit trunk `51979f0`**（fork main 已 reset 对齐）× **vllm-omni 0.26.0（editable）** +
   vllm 0.26.0+empty + diffusers 0.38.0 + torch 2.11.0+cpu / torch_npu 2.11.0 + mindiesd（dev 同步重建，
-  editable）；硬件 Ascend 950PR ×4（128 GB/卡）；模型 `{model_weight_dir}/MiniMax-H3/FL2VA`（BF16；
+  editable）；硬件坐标（机型/卡数/显存）见归档；模型 `{model_weight_dir}/MiniMax-H3/FL2VA`（BF16；
   transformer 50 层 / hidden 5376，13 分片）。**使能结论只在该框架版本 + 该模型 + 该环境成立**。
 - cache-dit 侧：本地 fork main reset 对齐 trunk（`git -c http.sslBackend=openssl fetch`）；本地旧 NPU
   提交已上游 PR **#1004** 合入并重构 → **勿再保留本地残留**；远端以
@@ -47,7 +47,7 @@
 
 ## 2. 启动与并行前置
 
-### 2.1 启动 recipe（4×950PR，0–3 卡）
+### 2.1 启动 recipe（同域 4 卡组）
 
 ```bash
 vllm serve {model_weight_dir}/MiniMax-H3/FL2VA --omni --num-gpus 4 \
@@ -121,8 +121,8 @@ vllm serve {model_weight_dir}/MiniMax-H3/FL2VA --omni --num-gpus 4 \
 
 **路径 1：eager `rf_v3`（0.26 后端现走路径）——「能生效但收益有限」**
 
-- 路由事实：0.26 后端只调 `mindiesd.sparse_attention(sparse_type="rf_v2")`；950PR（`soc_version=260`，
-  属 mindiesd A5 类）→ **`rf_v2` 被自动路由到 `rf_v3`**（`aclnnBlockSparseAttentionV2`，
+- 路由事实：0.26 后端只调 `mindiesd.sparse_attention(sparse_type="rf_v2")`；**路由由目标 `soc_version`
+  对应的分支决定**（用 `npu-smi` / 设备属性取，勿按机型硬记）→ 本栈实测 **`rf_v2` 被自动路由到 `rf_v3`**（`aclnnBlockSparseAttentionV2`，
   `inner_precise` 强制 4）。
 - 配置语义：`sparsity` = 每 query block **丢弃** key block 的**名义**比例（mindiesd
   `keep_len=ceil(cols×(1-sparsity))`；内容相关 mask：pooled q/k 相似度 softmax→topk→阈值，

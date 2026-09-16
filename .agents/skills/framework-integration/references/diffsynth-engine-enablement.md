@@ -159,9 +159,8 @@ key_mapping = {
 - **收益结构（比例关系，必须留存）**：MatMul / addmm 占 kernel 总耗时**约三分之二**、FA **约一成半**
   ——两者都不参与 pattern 融合 ⇒ **无损融合的绝对上限就是「norm / rope / 激活 / 元素级」区段**
   （本模型为**个位数百分比量级**）。
-- **单点收益排序**（逐 pass 单变量 disable 相对 all-on 的变慢幅度，量级）：
-  **qwen_rope（最大单项，约 5–7%）> adaln×3（约 2–3%）> fast_gelu / rms_norm ≈ wan_residual_gate
-  （各约 1–2%）**；
+- **单点收益排序**（顺序是方法，具体占比须现场实测；读数见归档）：
+  **qwen_rope（最大单项）> adaln×3 > fast_gelu / rms_norm ≈ wan_residual_gate**；
   **逐项均净正、无负贡献** ⇒ 无损融合已近 floor（本组合观测）。
 - **收益来源单一**：单卡无通信 ⇒ 端到端收益**完全来自算子融合**，没有 LightX2V 那条链的
   通信重叠红利；kernel diff 可见融合 kernel 出现且逐元素 `Mul`/`Stack`/`Cat` 大幅减少。
@@ -246,7 +245,7 @@ key_mapping = {
   （collective 留 eager），单卡路径放行进图。
 - 结果：kernel 级**仅边界 copy 微减**（噪声内），FA 本体 kernel 不变（eager 与图内均为同一
   fused FA）；交错 A/B 墙钟**中性偏慢**。
-- ⚠️ **附加风险**：Ascend950 上 `npu_fusion_attention` 被 compile 后 seed / offset 可能被优化，
+- ⚠️ **附加风险**：`npu_fusion_attention` 被 compile 后 seed / offset 可能被优化（**在目标代际上用最小复现探针确认**），
   固定 seed 时结果可能偏离 eager（torch_npu 官方警告）⇒ 编译变更**不得宣称无损**。
 - **结论（方向选择）**：**单卡 attention 进图无收益且引入 seed 语义风险 → 回退（不启用）**；
   FA 区段的收益应找 **FA 算子侧 / 布局侧**，不是「把它编进 compile 图」。

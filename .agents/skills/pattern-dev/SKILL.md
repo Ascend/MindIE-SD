@@ -158,7 +158,8 @@ Phase 7: Copy 消减 → 检测 ViewCopy 翻倍 → 后端选择
 > ⛔ **禁止：自定义 FX Graph Pass（手写 graph traversal pass）**。曾有一份 `custom-graph-pass-guide.md`
 > 记录"get_attr 权重无法用 register_replacement → 手写
 > 遍历 FX graph 节点改图"，该方案**已废弃**——该文件本身亦已 `git rm`（仅历史留档于
-> `dev-workflow/references/rework-lessons.md` §24/§25）：torch 2.11 下 `nn.Module` 权重在 freeze 前仍是
+> `dev-workflow/references/rework-lessons.md` §24/§25）：**在目标 torch 版本上复核 freeze 窗口形态
+> （以真图 dump 为准，勿沿用跨版本结论）** —— 若 `nn.Module` 权重在 pattern 运行窗口仍是
 > placeholder，用 `register_replacement` 双参数 pattern（weight 作输入）即可命中，无需绕过
 > pattern matcher；确需手动改图的场景走 **GraphPatternEntry**（pattern matcher 原生 API，
 > 规则见 `references/graph-pattern-rewrite-guide.md`）。
@@ -212,7 +213,8 @@ FX graph traversal pass（已禁止，见 Phase 2 ⛔）**。正确修法：
 
 1. **weight 作 pattern 输入参数**：把 `nn.Module` 的 weight/bias 放进 `inputs()` 与
    `pattern()/replacement()` 参数（meta tensor 输入），freeze 前窗口可命中——
-   torch 2.11 下权重 freeze 前是 placeholder 而非 get_attr（参考
+   **先在目标 torch 版本上复核 freeze 窗口形态（真图 dump 为准）**：权重在 pattern 运行窗口
+   是 placeholder 而非 get_attr 时即按此写（参考
    `patterns/rms_norm_pattern.py` / `patterns/minimax_h3_rmsnorm_pattern.py`）。
 2. **若确需手动改图**（如 pattern 中间夹动态 shape 节点）→ 走 GraphPatternEntry
    （见 `references/graph-pattern-rewrite-guide.md`），**不手写 pass**。

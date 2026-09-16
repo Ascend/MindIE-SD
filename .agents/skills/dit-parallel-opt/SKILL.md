@@ -2,11 +2,11 @@
 name: dit-parallel-opt
 compatibility: 无额外工具（参考数据来自 dummy-run/references/minimax-h3-notes.md §9）；多卡需 HCCL 环境
 description: 分布式并行策略选型与实测（USP / CP 通信掩盖 / CFG / TP/RSP/PP 概览；含拓扑相关选型
-             （UB 岛 bulk vs SYS 跨岛 head-parallel 翻转）与 AlltoAllV 缺陷绕过）。在
+             （按实测拓扑分域条件化：域内 bulk vs 跨域 head-parallel 翻转）与 AlltoAllV 缺陷绕过）。在
              model-auto-optimization 中承担 S3：优先 USP、结合拓扑带宽差异选 CP，少量 step +
              多 rank 验证特性开启与掩盖（产物：并行方案 + 多 rank 证据）。当用户需要多卡并行
              策略选择、**序列并行形态抉择**（纯 Ulysses vs 复合 AllGather-KV×Ulysses：按 GQA /
-             跨岛带宽 / 形态 plumbing 条件化定胜负）、**并行 × 稀疏叠加**（seam 契约：先汇聚后稀疏、
+             跨域带宽 / 形态 plumbing 条件化定胜负）、**并行 × 稀疏叠加**（seam 契约：先汇聚后稀疏、
              窗口偏移、块对齐、per-head 掩码；含「稀疏看似生效实则未生效」判定）、通信掩盖调优
              （含**掩盖率上限**：1-1/n 何时成立、c/f 决定的真实上限、没生效的排查）、**并行方案
              差异归因**（阶段 Δ 分解 / 集合通信按 communicator 归属 / 4→8 卡线性度），或排查多卡
@@ -24,18 +24,19 @@ description: 分布式并行策略选型与实测（USP / CP 通信掩盖 / CFG 
 
 # 并行策略选择
 
-## 卡组拓扑规则（强制 · 选卡前提，2026-09-08 起）
+## 卡组拓扑规则（强制 · 选卡前提）
 
 > 任何多卡运行（含 S3 并行验证、S4 组合、质量补测、复验）的卡组选择必须先满足本规则；
-> 违反拓扑的卡组不采纳。判据来自 npu-smi -t topo 的 UB 岛结构（950PR 单机：0-3 / 4-7 各为
-> UB 全互联岛，跨岛为 SYS）。
+> 违反拓扑的卡组不采纳。判据来自 `npu-smi info -t topo` 的**互连分域**（同域 = UB/HCCS 全互联，
+> 跨域 = SYS/PCIe；文中「同岛 / 跨岛」是同一概念的历史用词，**等同「同域 / 跨域」**）——
+> **具体成员编号以现场 topo 输出为准，本文件不写死卡号**。
 
-- **合法卡组（按卡数）**：
-  - **2 卡** ∈ {0-1, 2-3, 4-5, 6-7}（同岛 UB 对）；
-  - **4 卡** ∈ {0-3, 4-7}（整 UB 岛）；
-  - **8 卡** = {0-7}；
-  - 其余（如 2 卡用 5-6、0-5 等跨 pair/跨组）**不合法**——不采纳、不得用于正式运行；
-    若因卡健康/占用需跨组，必须显式注明「非 UB 对/跨组，带宽次优」并在对比纪律中同组对比。
+- **合法卡组（按卡数，成员按现场 topo 判定）**：
+  - **2 卡** = 一对**同域**相邻卡（topo 显示同 UB/HCCS 域）；
+  - **4 卡** = 一个**完整同域**组（topo 显示整组同域）；
+  - **8 卡** = 全部卡；
+  - 其余（跨域拼组、跨 pair）**不合法**——不采纳、不得用于正式运行；
+    若因卡健康/占用需跨域，必须显式注明「非同一互连域、带宽次优」并在对比纪律中同域对比。
 - **执行要点**：
   1. 选卡前 `npu-smi info -t topo` 核对目标组内互连为 UB（同岛）；
   2. `npu-smi info` 核 Health：Alarm 卡弃用；Warning 需探活确认；被其他租户占用（proc-mem
@@ -61,9 +62,9 @@ description: 分布式并行策略选型与实测（USP / CP 通信掩盖 / CFG 
 > 框架侧开启与生效验证走 framework-integration；框架自身无机制、需**结构性开发**
 > （非现成 patch 可注入）→ `framework-integration`（经 model-auto-optimization §0 确认）。
 
-## 已实测（910B NPU，2026-08，4 卡 CP + 通信掩盖）
+## 机制与触发条件（CP / 通信掩盖 / AlltoAllV 绕过 / 显存解锁）
 
-> 数据来源：`dummy-run/references/minimax-h3-notes.md` §9（MiniMax-H3 256×384×124, 2 layers, bf16）。
+> 实测读数与案例细节归档于 `dummy-run/references/minimax-h3-notes.md` §9 与会话产物；本节只写机制与判据。
 
 ### Ulysses USP 触发条件
 
@@ -90,17 +91,19 @@ HCCL 集合跑在独立 comm stream 上，
 | Stage（设备时间线） | 基线 | 降至约二分之一量级 | 明显下降（本组合观测） |
 
 > 边界：本节只覆盖「现成 `mindiesd.parallel` patch 的注入与实测」。若目标框架**自身无 comm-stream
-> 机制**（如 vLLM-Omni 0.28）且 monkey-patch 不可行、需要为框架结构性开发该机制 → 属框架侧补齐，
+> 机制**且 monkey-patch 不可行、需要为框架结构性开发该机制 → 属框架侧补齐，
 > 经 model-auto-optimization §0 用户确认后走 `framework-integration`（本 skill 不做框架结构性开发）。
 
 ### HcclAlltoAllV 缺陷与绕过（重要）
 
-CANN 9.1.0 环境 `HcclAlltoAllV`（split 路径）**SIGSEGV**（等分 `HcclAlltoAll` 正常）。
+部分 CANN 版本上 `HcclAlltoAllV`（split 路径）**SIGSEGV**（等分 `HcclAlltoAll` 正常）——
+**用前先按复核方法确认该缺陷是否仍存在**（症状→复核触发纪律见 `references/ascend-parallel-traps.md`）。
 绕过方案：**pad + 等分**——把 input 各块 pad 到 `S_PAD`（128 倍数，由全局 max(out_sizes)
 推导，全 rank 一致），用等分 `HcclAlltoAll(count=S_PAD×row_elems)` 交换，再 slice 各块前
-`out_sizes[j]` 行。实测 err=0.0，kernel 名从 `hcom_alltoallv` 变为 `hcom_alltoall`（等分）。
+`out_sizes[j]` 行。生效判据：kernel 名从 `hcom_alltoallv` 变为 `hcom_alltoall`（等分），
+且交换结果与参考实现逐位对齐。
 
-### 内存受限时的并行解锁（2026-09，H3 × vllm-omni 0.28 实测回填）
+### 内存受限时的并行解锁
 
 更优并行策略常因单卡显存不可行（例：BF16 单 rank 全量驻留超单卡容量，更高度序列并行不可行）：
 
@@ -108,18 +111,18 @@ CANN 9.1.0 环境 `HcclAlltoAllV`（split 路径）**SIGSEGV**（等分 `HcclAll
   "权重/激活出显存"：vllm-omni `--enable-cpu-offload` / `--enable-layerwise-offload` /
   `--enable-distributed-layerwise-offload`（DLO，host 存 1/DP + H2D/AllGather 重叠，官方支持叠加
   online INT8/FP8/MXFP8）；mindiesd `enable_offload`；PyTorch FSDP/CPU-offload 语义开关。
-  注意互斥与副作用：如 vllm-omni FastH3 拒绝任何 offload；950PR 上普通 layerwise offload 会触发
+  注意互斥与副作用（**逐框架、逐代际复核**）：部分框架/模型档拒绝任何 offload；**部分代际上普通 layerwise offload 会触发
   OOM killer（用 DLO 而非普通 layerwise）；DLO 的 no-AllGather 路径（rank-local H2D）
   **明显更慢（数倍量级）** → 选 AllGather 路径。
 - **有损（量化等）完成后复查被显存卡住的通信组合**：降显存会解锁新并行（量化后原本不可行的形态
   变为可行——收益读数见归档 `{run_results_dir}/archive/`）；每个量化档落地后回跑「并行×显存余量」
   候选快测。
 - 并行选型后做通算掩盖评估：用单步捕获的 step_trace（Computing/Communication(未重叠)/Free）量化暴露通信
-  （H3 USP2 单步实测未重叠通信占单步耗时的两位数百分比、Overlapped=0 → 掩盖空间上限 = 该**占比**，但需框架侧
+  ——有未重叠通信（`Overlapped=0`）时，**掩盖空间上限 = 未重叠通信占比**（读数见归档），但需框架侧
   comm-stream 支持；实现参照本仓 mindiesd/parallel + LightX2V `hccl_eager` 合入姿势；
   **占比随并行策略与负载规模变化**，compute-bound 时先长序列复测再投入）。
 
-### 少步 × 多 rank 验证协议（**DiT-only 口径**，2026-09 实测回填）
+### 少步 × 多 rank 验证协议（**DiT-only 口径**）
 
 > 问题：**用少步跑多 rank 验证并行配置，结论能否外推到全步长？** 答：能，但有闸门。
 > 完整协议 / 阈值 / 踩坑见 `references/few-step-multirank-protocol.md`；
@@ -129,8 +132,8 @@ CANN 9.1.0 环境 `HcclAlltoAllV`（split 路径）**SIGSEGV**（等分 `HcclAll
 - **口径（强制前置，不是可选优化）**：并行对比指标**只取 DiT 去噪阶段**
   （`<Pipeline>.diffuse` 阶段墙钟，微秒级、每 rank 一行取 min）；VAE 解码 / 文本编码 /
   权重装载 / warmup / 响应编码一律排除。理由：少步档固定开销占比畸高，且**固定开销自身的
-  波动远大于并行差异**——本组合观测：同配置相邻两次同参请求，DiT 阶段波动为个位数百分比，
-  而 VAE 解码阶段波动可达数十个百分点 ⇒ 把 decode 计入端到端，量到的其实是 VAE 噪声。
+  波动远大于并行差异**——同配置相邻两次同参请求里，DiT 阶段波动比 VAE 解码阶段小一个量级以上
+  （读数见归档）⇒ 把 decode 计入端到端，量到的其实是 VAE 噪声。
   （这正是「聚焦 DiT 优化即可不受 VAE 占比影响」的可执行化。）
 - **判据（只判一个量：DiT 单步耗时）**：`r = DiT单步(锚点档) ÷ DiT单步(少步档)`。
   `|r−1| ≤ 5%` 且各格离散度 `≤ 3%` 且两档**排序一致** ⇒ 少步排序可外推选型；
@@ -154,13 +157,13 @@ CANN 9.1.0 环境 `HcclAlltoAllV`（split 路径）**SIGSEGV**（等分 `HcclAll
   且有对照臂佐证）⇒ 该组合的「同卡数、不同切分」对取不到 2 卡版本，改报 4 卡对
   （`TP1×USP4` vs `TP2×USP2`）；**不得用跨卡数对比冒充形态对比**。
 
-### 拓扑相关选型（2026-09，950PR × LightX2V 实测回填）
+### 拓扑相关选型
 
 同一并行形态在不同互连拓扑下排名可能反转，**别无条件复用历史结论**（详见
 `references/ascend-topology-bandwidth-diag.md`）：
 
-- 读取 `npu-smi info -t topo`：UB=HCCS 同岛、SYS=跨 PCIe/NUMA；4 卡 a2a 优先单 UB 岛
-- 单 UB 岛 → USP4 **bulk** 最优（comm busy 最小、同步事件最少）；SYS 跨岛组 → **head-parallel**
+- 读取 `npu-smi info -t topo`：UB=HCCS 同域、SYS=跨 PCIe/NUMA；4 卡 a2a 优先单个同域组
+- 同域单组 → USP4 **bulk** 最优（comm busy 最小、同步事件最少）；跨域组 → **head-parallel**
   更优（本组合观测：rank0 clean-window 更快，2×2 复现；绝对值见归档
   `{run_results_dir}/archive/`）：逐头小 a2a 全异步重叠，bulk 大 alltoall
   跨岛串行暴露。判据墙钟/clean-window 为准——head-parallel kernel-sum 更高（跨流多计数）
@@ -288,8 +291,8 @@ CANN 9.1.0 环境 `HcclAlltoAllV`（split 路径）**SIGSEGV**（等分 `HcclAll
 
 ## WIP 待定内容
 
-- [ ] 各策略在昇腾 910B 上的完整实测性能对比表
-- [x] HCCL 拓扑感知的策略选择决策树（950PR UB/SYS 判据已回填：见上「拓扑相关选型」+ `references/ascend-topology-bandwidth-diag.md`）
+- [ ] 各策略在**目标代际**上的完整实测性能对比表
+- [x] HCCL 拓扑感知的策略选择决策树（同域/跨域判据已回填：见上「拓扑相关选型」+ `references/ascend-topology-bandwidth-diag.md`）
 - [ ] 混合并行策略的配置模板（如 USP + CFG 组合）
 - [x] 策略切换的性能对比方法论（**少步 × 多 rank 验证协议已回填**：见上「少步 × 多 rank 验证协议」，落点 `references/few-step-multirank-protocol.md` 与 `scripts/fewstep_multirank_probe.py`）
 
@@ -298,7 +301,7 @@ CANN 9.1.0 环境 `HcclAlltoAllV`（split 路径）**SIGSEGV**（等分 `HcclAll
 - `../dummy-run/references/minimax-h3-notes.md` §9 — 加载时机: 需要 CP/USP 实测细节、mask 注入代码或 AlltoAllV 绕过实现时
 - `references/scope-effectiveness-check.md` — 加载时机: **改了 SP/CP/Ulysses/AllGather-KV 后「不报错但没生效」（结果没变、性能没变、小规模能跑而大规模崩）时**（先证明分片是否发生：状态量探针 + 判读表、两侧对照、判别量逐层收窄；含 `sp_plan_hooks_applied` 误判与身份比较陷阱）
 - `references/ascend-parallel-traps.md` — 加载时机: **遇到具体报错码（`EE1003 coreDim` 超限、gloo 地址族、Q≠KV 守卫、`auto_pad` × 后端互斥）、或怀疑「某个配置被静默忽略」时**（逐条陷阱的 症状→原因→处置 + **「如何判定它仍存在」的复核触发** + 陷阱寿命纪律）
-- `references/ascend-topology-bandwidth-diag.md` — 加载时机: 950PR/多卡拓扑选型、HCCL 带宽验证（hccl_test 或 torchrun 等价工具）、端口 bind/卡组受损等环境诊断时
+- `references/ascend-topology-bandwidth-diag.md` — 加载时机: **多卡拓扑选型（同域/跨域）**、HCCL 带宽验证（hccl_test 或 torchrun 等价工具）、端口 bind/卡组受损等环境诊断时
 - `references/comm-masking-method.md` — 加载时机: **要做/要做完通信掩盖（分块流水掩 a2a）、判断「掩盖率为什么达不到 1-1/n」、估算掩盖上限、或掩盖开了却没生效时**（含上限公式、实现 recipe、生效判据、静默失效清单）
 - `references/parallel-plan-attribution-method.md` — 加载时机: **比较两个并行形态/特性档的耗时差、需要把差异拆成可归因分项、判断「通信慢是传输还是等待」、建模跨岛/同岛通信量下限、或做 4→8 卡线性度分析时**
 - `references/parallel-form-selection-method.md` — 加载时机: **要在纯序列并行与复合（AllGather-KV × Ulysses）等形态之间做抉择、判断「哪个形态更快」、或要写「若修好 X 则反超」的投影结论时**（七关流程 + 判据表 + 条件化结论模板 + 重判触发清单）

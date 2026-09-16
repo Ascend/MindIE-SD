@@ -27,7 +27,7 @@
 ### 1.3 日志契约（防 no-op，必须逐项核对）
 
 ```text
-Loaded LoRA model: num_modules=259      # 目标模块计数
+Loaded LoRA model: num_modules=<适配器模块数>   # 须与装载的适配器模块数一致
 Increasing max LoRA rank: 0 -> 64       # rank 生效
 <每个 worker> Activating adapter        # 各 worker 均激活
 ```

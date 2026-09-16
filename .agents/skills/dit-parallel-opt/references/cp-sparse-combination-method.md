@@ -1,9 +1,10 @@
 # 方法：序列并行与稀疏注意力的叠加（CP × 稀疏的 seam 契约）
 
-> **来源环境**：Ascend 950PR（A5 代际）× 单机 8 卡（跨岛为 SYS）× 扩散 DiT（无 GQA，56 头，
-> 50 层）× 某三方推理框架的 CP 形态（AllGather-KV × Ulysses 复合，`usp=4, allgather-degree=2`）
-> × 稀疏注意力后端（RainFusion 系列，sparsity 0.8，量化路径 `mix` = Q/K int8 每 64-token 一块 +
-> per-channel FP8 V）。**契约与判据可迁移；数字与倍率只作量级参照，换框架 / 模型 / 块尺寸必须重测。**
+> **来源环境（case 坐标）**：判据由「扩散 DiT × 某三方推理框架的 CP 形态（AllGather-KV × Ulysses 复合，
+> `usp=4, allgather-degree=2`）× 稀疏注意力后端（RainFusion 系列，sparsity 0.8，量化路径 `mix` =
+> Q/K int8 每 64-token 一块 + per-channel FP8 V）」这一组合的实测回填；芯片 / 卡数 / 拓扑与模型几何快照
+> 见会话产物归档与对应 case 记录。
+> **契约与判据可迁移；数字与倍率只作量级参照，换框架 / 模型 / 块尺寸必须重测。**
 > 隐私：不含主机名 / IP / 容器名 / 账号。
 >
 > 边界：seam 的**登记与裁决协议**（三态、必测集、覆盖清单）在

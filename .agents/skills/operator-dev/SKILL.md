@@ -41,11 +41,11 @@ VV（纯 vector elementwise）推荐 triton**（细则见「使用约束」）�
 | **kernel diff 方法论**：kernel_details.csv 聚合对比、**L2-flush bench 必须放计时区外**、warm/cold 双档测量 | 计时口径单点 `benchmark-dev/references/benchmark-guide.md`；聚合对比见 `pattern-dev/references/benefit-rootcause-guide.md` §2 |
 | **模型级验证闭环**（不只看单测）：双层测试与图验证、eager×compile kernel diff、远端 NPU 部署流程 | `pattern-dev/references/test-templates.md`、`pattern-dev/scripts/compare_profiles.py`、`env-install/SKILL.md`、`dummy-run/` |
 | MiniMax-H3 算子上下文（npu_swiglu 语义、表 [3,D] L2 驻留、真实图形态） | `dummy-run/references/minimax-h3-notes.md` §10 |
-| **MindIE-SD/CANN 集成侧经验**：kernel 改动"没生效"排障（tiling-key .o 缓存/全清重建/sentinel 法）、CANN 同名内建算子冲突与改名陷阱、AscendC bf16 Muls/Gather 语义坑、triton 短行地板判定、w8a8 与融合 pattern 冲突、**融合收益前置评估** | `references/mindiesd-fusion-notes.md` |
+| **MindIE-SD/CANN 集成侧经验**：kernel 改动"没生效"排障（tiling-key .o 缓存/全清重建/sentinel 法）、CANN 同名内建算子冲突与改名陷阱、AscendC bf16 Muls/Gather 语义坑、triton 短行地板判定、w8a8 与融合 pattern 冲突；**融合收益前置评估已归 `fusion-scope-analyze`**（实现前/中向它取收益评估结论），本文件只留集成侧事实与坑 | `references/mindiesd-fusion-notes.md` |
 | **自研算子运行期部署校验**：`inferShape function does not exist`（`import mindiesd` 顺序 / 算子包未进运行 CANN）、"跑的是不是我改的 kernel"（sentinel / 计数）、golden 通过判据（阈值以各 op 的 golden 文件为准） | `references/custom-op-runtime-deploy-verify.md`（顺序机制真源在 `framework-integration/SKILL.md` §1.5） |
 | **外部/三方 AscendC kernel 接入 mindiesd 内部**（catlass 类）：形态选型（单 .so ASC 混编为终态）、CMake/ASC 链接与静态运行时链接坑、torch custom op C++ 形态（tuple 返回/PrivateUse1/stream）、设备/运行时事实、集成侧数值验证（位级仅 h3 特例，一般融合为 fp8 量化级；接入 compile 图的约束与 compile 前后收益核验归 pattern-dev） | `references/catlass-kernel-integration.md` |
 | **只读 catlass 融合算子全链开发**（量化 matmul+激活+输出量化，vendored 头、standalone 对拍计时、mindiesd 集成、compile GraphPatternEntry 真图使能、开关治理）：六段流水线与决策，案例 mm_swiglu_mxquant/mm_gelu_mxquant | `references/catlass-ffn-fusion-guide.md` |
-| mm_gelu_mxquant（FLUX/Wan/Qwen）案例细节：真实图链/bias=0/装载 API 坑/计数与 AB/工程坑 | `references/mindiesd-fusion-notes.md` §7（原 `mmgelu-flux-wan-qwen-case.md` 已并入该节并删除） |
+| mm_gelu_mxquant（FLUX/Wan/Qwen）案例细节：真实图链/bias=0/装载 API 坑/计数与 AB/工程坑 | `references/mindiesd-fusion-notes.md` §7（集成侧要点）+ `references/mmgelu-flux-wan-qwen-case.md`（案例细节记录） |
 
 ## 使用约束
 
@@ -79,12 +79,12 @@ VV（纯 vector elementwise）推荐 triton**（细则见「使用约束」）�
 - 🗺️ `references/operator-optimization-skill-map.md` — 加载时机: 任何算子开发/优化任务开始前（场景路由）
 - 🔗 `../pattern-dev/references/benefit-rootcause-guide.md` — 加载时机: replacement kernel 命中但收益存疑时
 - 📝 `../dummy-run/references/minimax-h3-notes.md` — 加载时机: 涉及 MiniMax-H3 算子语义/图形态时
-- 🧩 `references/mindiesd-fusion-notes.md` — 加载时机: kernel 改动未生效/同名算子冲突/AscendC 集成调试/融合收益前置评估时（MindIE-SD/CANN 特有经验，与 cannbot 并行使用）
+- 🧩 `references/mindiesd-fusion-notes.md` — 加载时机: kernel 改动未生效/同名算子冲突/AscendC 集成调试时（MindIE-SD/CANN 特有经验，与 cannbot 并行使用）；**融合收益评估改由 `../fusion-scope-analyze/SKILL.md` 承担**（**可选**调用：本技能在用户输入下直接实现算子，不受融合交付件门禁约束），本文件不再承载该判据
 - 🚚 `references/custom-op-runtime-deploy-verify.md` — 加载时机: 自研算子运行期报 `aclnnXxx … inferShape function does not exist`、怀疑"跑的不是我改的算子"、或需要给出部署侧通过证据（可见性 → 走的是哪一个 → golden 数值）时
 - 🔌 `references/catlass-kernel-integration.md` — 加载时机: 把 catlass/类 catlass 外部 AscendC kernel 以标准算子形态接入 mindiesd（单 .so ASC 混编、ASC 链接/静态运行时、torch custom op C++ 形态、设备事实、集成侧验证）时；接入 compile 图的 fake/无状态约束与 compile 前后收益核验 → `../pattern-dev/references/pattern-dev-notes.md` §5
 - 🔗 `references/catlass-ffn-fusion-guide.md` — 加载时机: 开发/复刻「量化 matmul+激活+输出量化」catlass 类融合算子（vendored 头、bias、GraphPatternEntry 真图命中、开关治理）时（六段流水线；案例 mm_swiglu_mxquant/mm_gelu_mxquant）
 - 📋 `references/mindiesd-fusion-notes.md` §7 — 加载时机: 对照 mm_gelu_mxquant 案例（真实图链/bias 实况/装载 API 坑/工程坑）时（原 `mmgelu-flux-wan-qwen-case.md` 已并入该节并删除）
-- 🧱 `references/vertical-fusion-notes.md` — 加载时机: 评估/实施**垂直融合**（VV 融合、含逐元素/归一化/激活的融合内核）、写 Ascend 融合内核、或判断「站点级收益能否传导到阶段级」时（瓶颈判型、收益判定与已证伪清单；与 `mindiesd-fusion-notes.md` 的前置评估并行使用、非互斥）
+- 🧱 `references/vertical-fusion-notes.md` — 加载时机: 实施**垂直融合**（VV 融合、含逐元素/归一化/激活的融合内核）、写 Ascend 融合内核时（内核级陷阱与实现事实：UB/wave 硬约束、一 program 一行反模式等）；**边界判定、判型与收益判定归 `../fusion-scope-analyze/SKILL.md`**——实现前先向它取边界与收益结论
 
 ## Bundled Scripts
 

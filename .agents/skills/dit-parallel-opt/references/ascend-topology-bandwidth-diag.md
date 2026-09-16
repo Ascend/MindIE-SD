@@ -1,6 +1,7 @@
 # Ascend 多卡通信：拓扑 / 并行选型 / 带宽验证 / 环境诊断
 
-> 来源：MiniMax-H3 × LightX2V 实测（Ascend 950PR ×8 单机，2026-09）。结论在
+> 来源（case 坐标）：扩散 DiT × 某三方推理框架的多卡实测方法化；机型 / 卡数 / 拓扑与读数快照见
+> 会话产物归档与对应 case 记录。结论在
 > 「同拓扑、同卡组、同窗口」内成立；换机型/互联需按 §3 方法重验。
 > 隐私说明：本文件不含主机 IP / 口令 / 用户名；路径用占位符（`{model_weight_dir}`、`{container}` 等）。
 
@@ -11,7 +12,7 @@
 3. [HCCL 带宽验证（等价工具姿势与坑）](#3-hccl-带宽验证)
 4. [多卡环境诊断与恢复（端口泄漏 / 卡组健康）](#4-多卡环境诊断与恢复)
 5. [复现与对比纪律](#5-复现与对比纪律)
-6. [运行时通信分布采集（shim 法，无仓库改动）](#6-运行时通信分布采集shim-法无仓库改动h3-usp2-实测案例-2026-09-09)
+6. [运行时通信分布采集（shim 法，无仓库改动）](#6-运行时通信分布采集shim-法无仓库改动)
 7. [通信占比口径：按并行策略与特性叠加重估](#7-通信占比口径按并行策略与特性叠加重估方法增量-2026-09-12)
 8. [维护与更新](#8-维护与更新)
 
@@ -22,13 +23,13 @@ npu-smi info -t topo        # 全卡互连矩阵：UB / SYS / PXB / TBNA
 npu-smi info -m             # Slot/Chip 映射（同 Slot 相邻卡倾向同岛）
 ```
 
-- **UB** = HCCS 高速互连（同岛）；**SYS** = 跨 PCIe/NUMA（异岛）。异岛对带宽明显更低
-  （实测 2 卡 alltoall 64MB：SYS 对显著低于 UB 对，约低三成；绝对带宽读数见归档
+- **UB** = HCCS 高速互连（同域）；**SYS** = 跨 PCIe/NUMA（异域）。异域对带宽明显更低
+  （差值倍率须本地实测；读数与配置快照见归档
   `{run_results_dir}/archive/`）。
-- 单机常见形态：上半岛 {0..3}、下半岛 {4..7} 各自全 UB，跨岛为 SYS。
-- **判据**：4 卡 a2a 实验优先选**单 UB 岛**（如 {4,5,6,7} 或 {0,1,2,3}）；若某卡 Health
-  Warning/Alarm 或驱动受损，只能用跨岛组（如 {0,1,5,6}）时，预期通信带宽次优——对比必须
-  同组，勿跨组比绝对值。
+- 单机分域形态**以 `npu-smi info -t topo` 实测为准**（常见为两个全 UB 域 + 跨域 SYS 链路），不照抄卡号。
+- **判据**：4 卡 a2a 实验优先选**单个同域组**；若某卡 Health
+  Warning/Alarm 或驱动受损，只能用跨域组时，预期通信带宽次优——对比必须
+  同域，勿跨域比绝对值。
 
 ## 2. 并行选型依赖拓扑
 
@@ -36,7 +37,7 @@ npu-smi info -m             # Slot/Chip 映射（同 Slot 相邻卡倾向同岛�
 
 | 拓扑 | 实测结论 | 证据 |
 |---|---|---|
-| 单 UB 岛（4 卡全 UB） | USP4 **bulk** 最优：comm busy 占比最小（一成量级/block）、同步事件最少（数千/步）；head-parallel 单头拆分使 a2a 次数与同步事件各增一个数量级 → 回退 | CANN profile + 事件统计 |
+| 单个同域组（4 卡全同域） | USP4 **bulk** 最优：comm busy 占比与同步事件数都最小；head-parallel 单头拆分使 a2a 次数与同步事件各增一个数量级 → 回退 | CANN profile + 事件统计，读数见归档 |
 | SYS 跨岛组（两对 UB + 跨岛链路） | **head-parallel 更优**：eager 同窗口 2×2 复现，rank0 clean-window 明显更快（本组合观测，读数见归档 `{run_results_dir}/archive/`） | 墙钟 2×2 + 配对 CANN profile |
 
 **机制（配对 profile 解释反转）**：跨岛组里 bulk 的「单次大 alltoall」在 SYS 链路上串行暴露
@@ -48,13 +49,13 @@ npu-smi info -m             # Slot/Chip 映射（同 Slot 相邻卡倾向同岛�
 **compile × head-parallel 不兼容**（实测）：逐头 python 循环触发 Dynamo `recompile_limit`
 （日志 `[5/8]`）→ 部分帧静默回退 eager；组合不要用于生产，head-parallel 建议 eager 形态。
 
-**comm-stream masking（950PR + H3 bulk 形态）实测否决（2026-09）**：用真实 H3 shapes 的
+**comm-stream masking（bulk 形态）实测否决**：用真实 H3 shapes 的
 4 卡微基准测「a2a 与 block 计算重叠」（异步 all_to_all_single + 独立流/事件姿势）：
 单 block a2a 的耗时明显小于 block 计算耗时，重叠只隐藏其中一部分（**hidden_ratio 明显低于 0.5
 判据**），折算每步理论收益上限也只有个位数百分比且未计事件/流开销 → **低于阈值，不做**。机理：逐层数据依赖
-下可重叠的独立计算少 + a2a 占比小（5s 档步内 comm 占比仅一至两成，且 compile 出图已把 a2a 留 eager 拿过通信红利）。
+下可重叠的独立计算少 + a2a 占比小（步内 comm 占比读数见归档；compile 出图已把 a2a 留 eager 拿过通信红利）。
 **换场景才重估**：长序列档 comm 占 kernel 总耗时**过半**，序列更长时 masking/切分收益随占比放大。
-（910B dummy-run 曾报 masking 大幅削 comm——那是 funcol 层 monkey-patch + 不同序列结构，勿迁移。）
+（另一代际的 dummy-run 曾报 masking 大幅削 comm——那是 funcol 层 monkey-patch + 不同序列结构，**勿迁移**。）
 
 ## 3. HCCL 带宽验证
 
@@ -73,13 +74,13 @@ mpirun --allow-run-as-root -n 4 ./bin/alltoall_test -b 1M -e 512M -f 2 -p 4   # 
   缺 set_device 时 HCCL init 报「端口 already been bound」（各 rank 绑同端口），不是端口泄漏。
 - 同一进程组内可依次测 all_to_all_single / all_reduce / all_gather_into_tensor，多尺寸（1MB→64MB，
   factor 2）取中位数；带宽口径注明（alltoall 按 per-rank 收发字节/时间）。
-- 结果示例（4 卡跨岛组）：alltoall 64MB 为几十 GB/s 量级（1MB 时只有个位数 GB/s，随尺寸递增）；
-  allreduce 同尺寸约为 alltoall 的一半，allgather 更低。绝对带宽读数见归档
+- 结果形态（跨域组）：带宽随尺寸递增（小尺寸受启动/通知开销压制，量级须本地实测）；
+  同尺寸下 allreduce 明显低于 alltoall，allgather 更低。读数见归档
   `{run_results_dir}/archive/`；2 卡直连对比可量化 UB/SYS 差（见 §1）。
 
 **隐含带宽校验（无工具时的替代证据）**：由 kernel profile 的 comm 总耗时与模型 shape 推算
 per-call 载荷（seq-parallel a2a ≈ local_tokens × heads × head_dim × 2B），载荷/耗时 ≈ 隐含带宽；
-与上述实测量级自洽即可判定「无异常超时/重传」。本链参考值：5s USP4 档 a2a 每步数百次调用，
+与上述实测量级自洽即可判定「无异常超时/重传」。本链参考值：a2a 每步调用次数量级见归档，
 由此推算的隐含带宽**明显低于纯 alltoall 峰值**（差额为 per-call host/notify 开销，正常）。
 
 ## 4. 多卡环境诊断与恢复
@@ -107,7 +108,7 @@ per-call 载荷（seq-parallel a2a ≈ local_tokens × heads × head_dim × 2B�
 - 并行形态切换先 4 步 smoke + CANN profile 核验 a2a 形态未退化（`hcom_alltoall` 等分而非
   `hcom_alltoallv` 变长），再 30 步墙钟。
 
-## 6. 运行时通信分布采集（shim 法，无仓库改动；H3 USP2 实测案例 2026-09-09）
+## 6. 运行时通信分布采集（shim 法，无仓库改动）
 
 - **做法**：包装 `torch.distributed` 6 个 collective（all_reduce/all_gather/all_to_all_single/
   all_to_all/broadcast/reduce_scatter），逐 op 记 stage/op/shape/dtype/字节/world；阶段锚 = 各阶段
@@ -117,14 +118,14 @@ per-call 载荷（seq-parallel a2a ≈ local_tokens × heads × head_dim × 2B�
   请求不同 prompt**。
 - **字节口径**：tensor_bytes=op 本 rank 载荷；moved~ 估算（a2a/broadcast≈×(w-1)/w、all_reduce≈×2(w-1)/w、
   all_gather≈×(w-1)），非 HCCL 硬件计数；rank 对称则整簇移动≈2×per-rank（a2a 双方各半已计入）。
-- **实测参考（H3 T2VA USP2，12 步裁剪）**：DiT Ulysses a2a ≈182 次/步、每步载荷几十 GB 量级（载荷占比近乎全部，
-  通信主体）；text encoder TP all_reduce ~101 次/encode、载荷几十 MB 量级；VAE video all_gather 14 次/请求、
+- **实测参考（读数与配置快照见归档）**：DiT Ulysses a2a 是通信主体（每步调用次数与载荷量级远高于其余阶段）；
+  text encoder TP all_reduce 次数与载荷量级远小于 DiT；VAE video all_gather 每请求若干次、
   载荷 GB 量级；audio VAE 无并行（无 DistributedVaeMixin）→ 0 通信。方法与明细见
   framework-integration `cache-dit-enablement.md` §6（采集方法落 `profiling-collect`）。
 
 ## 7. 通信占比口径：按并行策略与特性叠加重估（方法增量 2026-09-12）
 
-> 本节为**追加的方法增量**（来源：vLLM-Omni 0.28 × 扩散模型实测的方法化）。下列占比排序与方向都是
+> 本节为**追加的方法增量**（来源：某三方推理框架 × 扩散模型实测的方法化）。下列占比排序与方向都是
 > **该框架 × 该模型 × 该规模下的观测**，不是执行序——换框架 / 模型 / 规模按 §2 与 §5 重测；
 > 绝对耗时与绝对加速比不入库（归档见会话产物目录 `{run_results_dir}/archive/`）。
 
@@ -164,7 +165,7 @@ per-call 载荷（seq-parallel a2a ≈ local_tokens × heads × head_dim × 2B�
 ## 8. 维护与更新
 
 - **触发条件**：机型 / 互联拓扑或卡数变化（§1 的 `npu-smi info -t topo` UB / SYS 判定与
-  「SYS 对约低三成」的读数；§2 表中「单 UB 岛 USP4 bulk 最优」与「SYS 跨岛组 head-parallel
+  异域带宽差须重测；§2 表中「同域组 USP4 bulk 最优」与「跨域组 head-parallel
   更优」的翻转关系）；CANN / 驱动版本变化（§3 `hccl_test` 的
   `HcclGetRootInfo failed / invalid data`、§4 的 `already been bound` 与
   `hcclCommInitRootInfoConfig error`、§2 的 compile × head-parallel `recompile_limit`

@@ -2,6 +2,10 @@
 
 三种常见模型的 pattern 代码模板，Phase 2 创建 pattern 时直接参考。
 
+> **形状约定**：模板中的张量形状一律写成**符号**（`B` = batch、`S` = token 数、`H` = hidden、
+> `N` = head 数、`D` = head_dim）；**具体取值按目标模型的真实图 dump 填**（真图 dump 为准），
+> 不要照抄任何单一模型的几何。
+
 ---
 
 ## 1. Wan 风格模板
@@ -21,8 +25,8 @@ def create(dtype, epsilon=1e-6):
         @staticmethod
         def inputs():
             # 模型 graph 中输入已是 fp32 (Wan 在之前做了 .float())
-            x = torch.empty(1, 75600, 5120, dtype=torch.float32, device="meta")
-            weight = torch.empty(5120, dtype=dtype, device="meta")
+            x = torch.empty(1, S, H, dtype=torch.float32, device="meta")
+            weight = torch.empty(H, dtype=dtype, device="meta")
             return [x, weight]
 
         @staticmethod
@@ -56,9 +60,9 @@ def create(dtype, epsilon=1e-6):
 
         @staticmethod
         def inputs():
-            x = torch.empty(1, 75600, 5120, dtype=torch.float32, device="meta")
-            scale = torch.empty(1, 1, 5120, dtype=torch.float32, device="meta")
-            shift = torch.empty(1, 1, 5120, dtype=torch.float32, device="meta")
+            x = torch.empty(1, S, H, dtype=torch.float32, device="meta")
+            scale = torch.empty(1, 1, H, dtype=torch.float32, device="meta")
+            shift = torch.empty(1, 1, H, dtype=torch.float32, device="meta")
             return [x, scale, shift]
 
         @staticmethod
@@ -97,9 +101,9 @@ def create(dtype):
 
         @staticmethod
         def inputs():
-            x = torch.empty(1, 75600, 40, 128, dtype=dtype, device="meta")
-            freqs_cos = torch.empty(1, 75600, 1, 128, dtype=dtype, device="meta")
-            freqs_sin = torch.empty(1, 75600, 1, 128, dtype=dtype, device="meta")
+            x = torch.empty(1, S, N, D, dtype=dtype, device="meta")
+            freqs_cos = torch.empty(1, S, 1, D, dtype=dtype, device="meta")
+            freqs_sin = torch.empty(1, S, 1, D, dtype=dtype, device="meta")
             return [x, freqs_cos, freqs_sin]
 
         @staticmethod
@@ -154,8 +158,8 @@ def create(dtype, epsilon=1e-6):
 
         @staticmethod
         def inputs():
-            x = torch.empty(1, 4096, 3584, dtype=dtype, device="meta")
-            weight = torch.empty(3584, dtype=dtype, device="meta")
+            x = torch.empty(1, S, H, dtype=dtype, device="meta")
+            weight = torch.empty(H, dtype=dtype, device="meta")
             return [x, weight]
 
         @staticmethod
@@ -187,9 +191,9 @@ def create(dtype, epsilon=1e-6):
 
         @staticmethod
         def inputs():
-            x = torch.empty(1, 4096, 3584, dtype=dtype, device="meta")
-            scale = torch.empty(1, 3584, dtype=dtype, device="meta")
-            shift = torch.empty(1, 3584, dtype=dtype, device="meta")
+            x = torch.empty(1, S, H, dtype=dtype, device="meta")
+            scale = torch.empty(1, H, dtype=dtype, device="meta")
+            shift = torch.empty(1, H, dtype=dtype, device="meta")
             return [x, scale, shift]
 
         @staticmethod

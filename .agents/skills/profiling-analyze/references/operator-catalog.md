@@ -31,8 +31,8 @@ DiT（Transformer）和 VAE 通过 kernel 名称/类别分离：
 
 | 问题 | 算子 | 硬件 | 影响 |
 |------|------|------|------|
-| GE error 4294967295 | Conv2D (ResBlock) | 910B | VAE 部分不可用 |
-| `expandable_segments:True` 误判 OOM | allocator | 910B | 移除此配置后恢复 |
+| GE error 4294967295 | Conv2D (ResBlock) | 目标代际须现场复核（`npu-smi info` 确认后重测） | VAE 部分不可用 |
+| `expandable_segments:True` 误判 OOM | allocator | 目标代际须现场复核（`npu-smi info` 确认后重测） | 移除此配置后恢复 |
 | triton vs triton-ascend 包名混淆 | triton | 全部 | `import triton` 成功但 0 active drivers |
 
 ## 维护与更新

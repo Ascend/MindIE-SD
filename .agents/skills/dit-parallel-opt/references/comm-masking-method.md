@@ -1,8 +1,9 @@
 # 方法：通信掩盖（分块流水）的设计、上限判定与生效验证
 
-> **来源环境**：Ascend 950PR（A5 代际）× 单机 8 卡（4+4 UB 岛，跨岛为 SYS）× 扩散 DiT
-> （无 GQA，56 头，head_dim 128，50 层）× 某三方推理框架 + 稀疏 FA 后端（int8 Q/K 每 64 token
-> 一块的 scale、per-channel FP8 V）× 序列并行（Ulysses）与复合（Ulysses+AllGather-KV）两种形态。
+> **来源环境（case 坐标）**：判据由「扩散 DiT × 某三方推理框架 + 稀疏 FA 后端
+> （int8 Q/K 每 64 token 一块的 scale、per-channel FP8 V）× 序列并行（Ulysses）与复合
+> （Ulysses+AllGather-KV）两种形态」这一组合的实测回填；芯片 / 卡数 / 拓扑 / 模型几何与版本快照
+> 见会话产物归档与对应 case 记录。
 > **本文的数字都是这一套「硬件 + 拓扑 + 软件栈 + 模型 + 负载」组合的快照**，换任一维都必须本地重测；
 > 判据与流程可迁移，常数不可照抄。隐私：不含主机名 / IP / 容器名 / 账号，路径用占位符。
 >
@@ -120,7 +121,7 @@
    `InplaceCopy_AsStrided` 一类算子，每步百毫秒量级）。
 2. **侧流上只放集合通信，所有 AI-core 算子留在计算流**（预置换、每块的逆置换、写回）。
    v1 把变换也放进 `with torch.npu.stream(comm)`，profile 显示侧流上出现了
-   1400 个 AI-core 核（换位 + as_strided 物化），直接和 FA 抢 vector core；
+   数量级可观的 AI-core 核（换位 + as_strided 物化），直接和 FA 抢 vector core；
    改成 v2 后侧流 AI-core 核数 = **0**，`InplaceCopy_AsStrided` 回到基线量级。
    **这条是最容易犯且最贵的错**：profile 里「新流」应当只承载通信算子。
 3. **用块级事件，不要 `wait_stream`**：`wait_stream` 会等到对端流上**所有已入队**的工作完成，

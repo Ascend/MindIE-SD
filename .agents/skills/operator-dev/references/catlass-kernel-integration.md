@@ -34,7 +34,7 @@
 - 编译接线：`csrc/CMakeLists.txt`
   - 可选依赖：构建机设 `MINDIESD_CATLASS_HOME=<catlass 树>` 才启用；catlass 仅作 include 只读依赖（0 改动）；未设置时整 op 禁用（`register_ops.cpp` 用宏包注册、python fake 条件跳过，import 不炸）。
   - 启用分支：`find_package(ASC REQUIRED)` + `enable_language(ASC)` + catlass include +
-    `target_compile_options`（ASC 专属 `--npu-arch=dav-3510` 等）+ `set_source_files_properties(... LANGUAGE ASC)` + `target_sources` 加 kernel 源。
+    `target_compile_options`（ASC 专属 `--npu-arch=<目标 arch>` 等）+ `set_source_files_properties(... LANGUAGE ASC)` + `target_sources` 加 kernel 源。
 - torch 入口：`csrc/plugin/mm_swiglu_mxquant.{h,cpp}` + `register_ops.cpp` 条件
   `m.def`/`m.impl`（`TORCH_LIBRARY_IMPL(..., PrivateUse1)`）；编译宏 `MINDIESD_CATLASS_FUSION_ENABLED` 由 csrc cmake 加。
   > ⚠️ 本节的 `mm_swiglu_mxquant` 路径是**案例示例**：该算子的产品代码属**产品侧/另一 MR，

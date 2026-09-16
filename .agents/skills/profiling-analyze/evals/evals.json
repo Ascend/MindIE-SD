@@ -4,7 +4,7 @@
     {
       "id": 1,
       "prompt": "帮我看看这份 kernel_details.csv 和 trace_view.json，模型为什么这么慢？",
-      "expected_output": "跑 5 层递进分析（analyze_trace.py --profile-dir/--output-dir）：Layer 1 DiT/VAE 分离 → Layer 2 分类占比 → Layer 3 Host Bound/通信/融合 → Layer 4 算子明细 → Layer 5 P0-P2 建议",
+      "expected_output": "跑 5 层递进分析（analyze_trace.py --profile-dir/--output-dir）：Layer 1 DiT/VAE 分离 → Layer 2 分类占比 → Layer 3 Host Bound/通信/融合机会候选（候选只做识别，边界与收益交 fusion-scope-analyze） → Layer 4 算子明细 → Layer 5 P0-P2 建议",
       "files": [],
       "expectations": [
         "输出 Layer 1（DiT vs VAE 阶段占比）",

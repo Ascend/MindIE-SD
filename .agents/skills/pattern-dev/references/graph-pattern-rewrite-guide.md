@@ -7,15 +7,17 @@
 > 出处：`torch/_inductor/fx_passes/mkldnn_fusion.py`（`_recover_linear`、
 > `linear_bias_pattern`、`register_graph_pattern`/`GraphPatternEntry`）。
 > 本仓案例 1：MiniMax-H3 w8a8 FFN hidden 融合（`mm_swiglu_mxquant`），
-> 2026-09 真图命中 3/3、位级一致、端到端转为净正（本组合观测；案例脉络见 `pattern-dev-notes.md` §5.2）。
-> 案例 2：FLUX/Wan/Qwen `mm_gelu_mxquant`（同范式 4/2/3 站点命中；**fp8 量化级近似非位级**）
+> 真图命中、位级一致、端到端转为净正（本组合观测；命中数、日期与案例脉络见
+> `pattern-dev-notes.md` §5.2 与 `{run_results_dir}/archive/`）。
+> 案例 2：FLUX/Wan/Qwen `mm_gelu_mxquant`（同范式，各模型站点数**逐模型实测**；**fp8 量化级近似非位级**）
 > ——kernel/工程细节见 operator-dev `../../operator-dev/references/mindiesd-fusion-notes.md` §7「FFN 融合（`mm_gelu_mxquant`）集成侧要点」，
 > 全链编排见 `../../operator-dev/references/catlass-ffn-fusion-guide.md`。
-> 案例 3（vLLM-Omni 跨框架变体，2026-09-06）：H3 FFN hidden 在 vLLM-Omni 0.28 真图是
+> 案例 3（vLLM-Omni 跨框架变体；框架版本与日期见归档）：H3 FFN hidden 在 vLLM-Omni 真图是
 > `Qmm → torch_npu.npu_swiglu（单融合 op，无 split/silu/mul）→ DxQ → Qmm`，权重为
 > GEMM-ready `(K,N)` + scale `(c,N,2)`（无独立 transpose 节点）——同融合 op 需**第二
 > pattern 变体** + C++ `AdaptLayoutCached` 布局自适应（检测 `w.size(0)==k` 缓存 `w^T`，
-> 免 row-swap），命中 52/52、60 步 e2e 转为净正（本组合观测）；另踩坑：裸 aclrtLaunch kernel 与异步
+> 免 row-swap），命中该框架图上的**全部站点**、少步 e2e 转为净正（本组合观测；命中数与步数见归档，
+> 按 §3 的计数契约现场复核）；另踩坑：裸 aclrtLaunch kernel 与异步
 > 转置拷贝跨流竞态（AI Core 507015）→ launch 前 `aclrtSynchronizeStream`；量化级近似
 > 非位级（单层相对偏差在亚百分点级）。证据见 `{run_results_dir}/archive/`。
 

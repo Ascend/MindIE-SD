@@ -1,9 +1,9 @@
 # 方法：序列并行形态抉择（纯 Ulysses vs 复合 AllGather-KV × Ulysses）
 
-> **来源环境**：Ascend 950PR（A5 代际）× 单机 8 卡（0-3 / 4-7 两个 UB 全互联岛，跨岛为 SYS）
-> × 扩散 DiT（无 GQA，Q/K/V 头数相同，50 层）× 某三方推理框架的三种形态：纯序列并行
-> （`usp=8`）、复合「AllGather-KV × Ulysses」（`usp=4, allgather-degree=2`，8 卡只用一半做
-> Ulysses、另一半做 KV 汇聚）、以及 4 卡下的 `usp=2, allgather-degree=2`。
+> **来源环境（case 坐标）**：判据由「扩散 DiT（Q/K/V 头数相同，无 GQA）× 某三方推理框架的三种形态：
+> 纯序列并行（`usp=8`）、复合「AllGather-KV × Ulysses」（`usp=4, allgather-degree=2`，卡数只用一半做
+> Ulysses、另一半做 KV 汇聚）、以及 `usp=2, allgather-degree=2`」这一组合的实测回填；
+> 芯片 / 卡数 / 拓扑与版本快照见会话产物归档与对应 case 记录。
 > **所有比例都是这一套组合的快照**，换拓扑 / 卡数 / 框架 / 模型（尤其是 GQA 比例）必须重判；
 > 方法与判据可迁移。隐私：不含主机名 / IP / 容器名 / 账号。
 >

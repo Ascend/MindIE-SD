@@ -13,7 +13,7 @@
 
 | 链 | 真实图形态（要点） |
 |---|---|
-| RMSNorm | `torch.rms_norm` 在 **torch 2.11 已被前置分解**：before-freezing 图直接是 `_to_copy(f32)→pow→mean→add.Scalar→rsqrt→mul→mul`，before-freezing 的 pattern matcher **一次运行即命中**（"必须 after_freezing 二次运行"的旧结论基于 torch 2.9：当时 aot 保留单节点、freeze 才分解） |
+| RMSNorm | `torch.rms_norm` 在部分版本**已被前置分解**：before-freezing 图直接是 `_to_copy(f32)→pow→mean→add.Scalar→rsqrt→mul→mul`，此时 before-freezing 的 pattern matcher **一次运行即命中**；若该版本 aot 仍保留单节点、到 freeze 才分解，则需 after_freezing 二次运行。**判据：以本环境真图 dump 为准，勿沿用跨版本结论** —— 先 dump 一张目标版本的真实 compile 图，再决定 pattern 挂在哪个窗口 |
 | SwiGLU | `matmul → split.Tensor(x, F, -1)` → `getitem`(hidden 前半) / `getitem`(gate 后半) → `silu(getitem_gate)` → `mul(getitem_hidden, silu)` |
 | AdaLN 调制 | `index_select(scale_table) → add(·, 1.0) → mul(x, ·) → index_select(shift_table) → add(mul, ·)`（调制表按模态索引取行） |
 | FFN hidden（量化） | `Qmm([S,2F]) → view([1,S,2F]) → split → silu → mul → view([S,-1]) → npu_dynamic_mx_quant → Qmm(out)`；两个 `view` 的 S 是**动态**的（同图并存多个 S）⇒ trace 式 pattern 固化常量后永不命中（正解见 `pattern-dev-notes.md` §5.2 与 `graph-pattern-rewrite-guide.md`） |

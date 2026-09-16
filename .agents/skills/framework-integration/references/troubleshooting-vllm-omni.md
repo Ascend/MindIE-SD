@@ -1,4 +1,4 @@
-# vLLM-Omni 全栈部署问题排查（950PR 源码构建）
+# vLLM-Omni 全栈部署问题排查（源码构建）
 
 ## P0. 运行最佳实践（前置预防）→ 编排层口径已单点化
 
@@ -65,17 +65,17 @@ staying-dense / no-op 检查链、并行形态可行性冒烟、同窗相邻对 
 │   └─ 权重分片缺失（对照 *.safetensors.index.json 的 weight_map 逐分片核对）
 │       → 缺失分片从 hf-mirror（https://hf-mirror.com/{org}/{model}/resolve/main/...）补下载
 ├─ 版本检测：get_device_type 报 soc_version 不支持
-│   └─ 950PR 需 SOC_VERSION=ascend950pr_9579（setup.py 自动从 npu-smi 识别，无需手设）
-└─ 950PR 上设置 MINDIE_SD_FA_TYPE 导致算子路由异常
-    └─ 950PR/950DT 不适用该变量，删除即可
+│   └─ 需按 `npu-smi` 识别的 soc_version 设置 `SOC_VERSION`（setup.py 会自动识别，通常无需手设）
+└─ 部分机型代际上设置 MINDIE_SD_FA_TYPE 导致算子路由异常
+    └─ 这些代际不适用该变量，删除即可（用 `npu-smi info -l` 确认目标代际）
 ```
 
 ## E3. 运行期
 
 ```text
 生成失败 / 输出异常
-├─ 请求超时（首图慢） → 950PR 首图含编译 warmup，Qwen-Image-2512 1024x1024 20 步首图约秒级（明显慢于后续步），后续更快
-├─ 显存不足 → 950PR 每卡 128GB；多卡用 --tensor-parallel-size 8 / --usp 8 分摊
+├─ 请求超时（首图慢） → 首图含编译 warmup（明显慢于后续步，量级见归档），后续更快
+├─ 显存不足 → 先 `npu-smi info -t memory` 读实际每卡容量；多卡用 --tensor-parallel-size 8 / --usp 8 分摊
 ├─ attention backend 未生效 → 确认日志 "Resolved diffusion attention backend 'FLASH_ATTN'"
 │   （mindiesd 已安装时平台默认 FLASH_ATTN；缺失则回退 SDPA，检查 mindiesd 是否 import 成功）
 ├─ POST /v1/images/generations → 500 "Missing preprocess images that should have been
@@ -92,9 +92,9 @@ staying-dense / no-op 检查链、并行形态可行性冒烟、同窗相邻对 
 
 - **E1 的条目都是「钉版修补」，随 vllm-omni / vllm-ascend 提交与基础镜像过期**：逐条按原命令重跑一次源码构建——`Expected PyTorch version 2.10.0, but found 2.11.0`（sed 放宽）、`Invalid version: 'dev+npu'`（`VLLM_OMNI_VERSION_OVERRIDE`）、`project.license must be valid exactly by one definition`（升级 setuptools）、`dependency catlass is missing`、`protobuf_25.1_change_version.patch: No such file or directory`、`No such file or directory: .../MindIE-SD/build`，哪条不再出现即已修，删掉该绕行。
 - **E1 的 rust / numpy / 磁盘三条是「可选依赖与网络」绕行**（`VLLM_REQUIRE_RUST_FRONTEND=0`、`pip download numpy==2.3.5` 走镜像、`pip cache purge` + 换 `PIP_CACHE_DIR`）：换源或换分区后重跑构建，若直接安装即成功，这三条降级为历史记录。
-- **E2 的 `hcclCommInitRootInfoConfig error code is 4` 绑容器挂载与单板**：重建容器后重跑 `vllm serve --omni` 看该错误码是否复现（复现 ⇒ ranktable 仍缺，按原命令 `docker cp` 补齐）；`get_device_type` 报 soc_version 不支持时用 `npu-smi info -l` 核对型号，型号一变则 `SOC_VERSION=ascend950pr_9579` 与 `MINDIE_SD_FA_TYPE` 两条的适用性都要重新核对。
+- **E2 的 `hcclCommInitRootInfoConfig error code is 4` 绑容器挂载与单板**：重建容器后重跑 `vllm serve --omni` 看该错误码是否复现（复现 ⇒ ranktable 仍缺，按原命令 `docker cp` 补齐）；`get_device_type` 报 soc_version 不支持时用 `npu-smi info -l` 核对型号，型号一变则 `SOC_VERSION` 与 `MINDIE_SD_FA_TYPE` 两条的适用性都要重新核对。
 - **E3 的两条结论绑版本默认值与模型类**：起服务后 grep 日志是否仍打印 `Resolved diffusion attention backend 'FLASH_ATTN'`（若回落 SDPA，先复核 mindiesd 是否 import 成功）；端点选型按服务实际加载的 pipeline 类重判——若 `QwenImageEditPlusPipeline` 不再报 `Missing preprocess images that should have been created by the preprocess function`，说明选型表已过期。
 
 ## 维护与更新
 
-当 vllm-omni 版本矩阵或 950PR 构建/启动行为变化时，按 dev-workflow 的复盘流程更新本文件。
+当 vllm-omni 版本矩阵或源码构建/启动行为变化时，按 dev-workflow 的复盘流程更新本文件。

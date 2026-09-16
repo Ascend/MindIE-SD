@@ -113,6 +113,20 @@ repos:
         language: system
         files: ^\.agents/scripts/run_evals\.py$
         pass_filenames: false
+      # 交付件门禁自身的回归（列内容洁净：名/明细/次数/收益必须可机判）
+      - id: fusion-scope-selftest
+        name: fusion-scope deliverable gate selftest (column cleanliness)
+        entry: python .agents/skills/fusion-scope-analyze/scripts/check_fusion_scope.py --selftest
+        language: system
+        files: ^\.agents/skills/fusion-scope-analyze/.*\.(py|md)$
+        pass_filenames: false
+      # 采集侧完成检查门禁自身的回归（缺列/全 N/A 必须能被抓住）
+      - id: check-output-selftest
+        name: profiling-collect output gate selftest (negative samples)
+        entry: python .agents/skills/profiling-collect/scripts/check_output.py --selftest
+        language: system
+        files: ^\.agents/skills/profiling-collect/scripts/check_output\.py$
+        pass_filenames: false
 
   # C++ 核心检查
   - repo: https://gitcode.com/pre-commit-clang/mirrors-clang-format

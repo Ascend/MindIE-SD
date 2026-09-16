@@ -9,6 +9,8 @@ description: 对 profiling 数据（kernel_details.csv / trace_view.json / step_
              profiling-collect，方案选档走 dit-perf-opt，实现/并行/基准走
              pattern-dev/dit-parallel-opt/benchmark-dev——本技能只做诊断与方向。
              由 model-auto-optimization 的 S1（融合分析）/S3（并行）阶段调用，亦由 dev-workflow 的分析阶段指引加载。
+             融合机会候选只做**识别**；候选的**边界与收益判定**（能不能融成一个单元、融多大、值不值）交
+             `fusion-scope-analyze`（本技能的辅助技能）——本技能不判融合边界。
 ---
 
 # 性能分析
@@ -26,6 +28,7 @@ Profiling 数据由 profiling-collect skill 在远端 NPU 环境采集产出（�
 | `trace_view.json` | Chrome Trace JSON | Host 端 + Device 端事件时间线 |
 | `step_trace_time.csv` | CANN Profiler CSV | Step 级汇总：Computing, Communication, Free, Bubble |
 | `communication.json` | JSON | 通信算子详情（若开启） |
+| 单元利用率档（`op_summary_*.csv`，PipeUtilization） | CANN Profiler CSV | `*_vec_ratio` / `*_mac_ratio` / `*_mte2_ratio` / `*_mte3_ratio` / `cube_utilization(%)`；**融合判型（`fusion-scope-analyze`）的必需输入是这四族 ratio**，缺列或全 `N/A` 即判该次采集不合格（口径与门禁单点见 `profiling-collect/scripts/check_output.py`）。`memory_bound` 是**可算字段**（`mte2_ratio / max(mac_ratio, vec_ratio)`），真实导出常不含该列，**不列为必需列**、按公式现算 |
 
 ## 分析管道
 
@@ -158,35 +161,22 @@ Exposed Ratio = 未与计算重叠的通信耗时 / 通信总耗时
 
 > 完整 HCCL 测试和带宽数据见 hccl-test（Ascend agent-skills）。
 
-#### Layer 3c: 融合机会分析
+#### Layer 3c: 融合机会分析（候选识别，不做边界与收益判定）
 
-优先检查 MindIE-SD 编译 Pattern（有开关可直接启用）：
+从执行序导出**融合机会候选**，逐条给出「模式名 + 区域坐标（起止算子）+ 相似度分级」，再**交棒**
+`../fusion-scope-analyze/SKILL.md`——由它按融合单元构造规则切边界、用计算单元利用率判型并估收益
+（本技能只出候选，不判「能不能融、融多大、值不值」）。**交棒必须带候选清单**（每条含区域坐标）；
+交付件的列契约与门禁见 `../fusion-scope-analyze/scripts/check_fusion_scope.py`。
 
-| 优先级 | 融合模式 | 对应开关 | 识别规则 |
-|:--:|---------|---------|---------|
-| 1 | RMSNorm | `enable_rms_norm` | RMSNorm + 相邻 MatMul |
-| 2 | RoPE | `enable_rope` | RoPE kernel 连续出现 |
-| 3 | AdaLayerNorm | `enable_adalayernorm` | AdaLN + 相邻 kernel |
-| 4 | fastGELU | `enable_fast_gelu` | MatMul → Add → GELU 连续 |
-| 5 | Mul+Add | `enable_mul_add` | Mul → Add 连续 |
+> 候选族与识别规则的单点已迁至 `../fusion-scope-analyze/references/fusion-unit-method.md` §3；
+> 编译侧开关名与启用方式见 `docs/zh/features/compilation.md` §Pattern 融合（开关真源）。
+> 「预期收益量级」属业内启发式（非本仓实测、非承诺），只用于排序取舍；本技能不再保留该列。
 
-补充建议（业内通用，需自行实现）：
+当没有精确匹配的模式时，标注相似度：**high / medium / low**
 
-| 融合模式 | 识别规则 | 预期收益 |
-|---------|---------|---------|
-| MatMul + BiasAdd + GELU | MatMul → Add → GELU | ~25-30% |
-| Scale + Softmax + MatMul | Mul → Softmax → MatMul | ~20-25% |
-| Element-wise 链 (≥3) | 3+ 连续 Mul/Add/Div | ~15-20% |
-| FlashAttention + MatMul | Attn → proj MatMul | ~5-10% |
-| Conv2D + GroupNorm | CNN → GN（VAE 专有） | ~10-15% |
-
-> ⚠️ 上表「预期收益」为业内通用启发式量级指引（非本仓实测值、非承诺），只用于排序与取舍；明细见 `references/heuristics.md`。
->
-> 当无明显精确匹配的融合模式时，标注相似度：**high / medium / low**
->
-> - **high**: kernel 序列模式、source location、TP context 高度一致
-> - **medium**: 部分特征匹配但缺少关键证据
-> - **low**: 仅 kernel 名称接近，语义结构和上下文不匹配
+- **high**: kernel 序列模式、source location、TP context 高度一致
+- **medium**: 部分特征匹配但缺少关键证据
+- **low**: 仅 kernel 名称接近，语义结构和上下文不匹配
 
 ### Layer 4: 算子明细
 

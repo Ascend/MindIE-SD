@@ -329,7 +329,7 @@ functionalization 引入的拷贝（见 `pattern-dev` Phase 7）。
 | `references/lightx2v-enablement.md` | LightX2V（#1471 合入版）：注册表接入、平台注册懒工厂 + 配置可选键、代码地图、三条必修坑（a2a 不进图 / backend 单例 / swiglu 双 split 变体）、`[探针]` 清单（含框架侧结构性实现的跨侧指针 → §2） | 接入 LightX2V 或照抄其合入姿势时 |
 | `references/cache-dit-enablement.md` | cache-dit × vLLM-Omni 0.26：trunk 托管链画像与版本边界、自研算子部署前置（"先 import mindiesd" 顺序）、Cache 主导旋钮、稀疏两条路径、受控交错 A/B、kernel 级计数契约兜底 | cache-dit / 缓存类特性使能时 |
 | `references/train-aware-lossy-method.md` | **跨框架通用方法（与具体产物隔离）**：训练感知有损的分类与归组判据 → 四步使能回路 → 三条前置契约（步数语义 / 装载计数防 no-op / 组件契约先读参考实现）→ 判定三件（比值法 + 逐步墙钟 + 质量分层，**PSNR 不可判接错**）→ 归因链 → 数字纪律 | S5 训练感知类任务（少步蒸馏 / 换解码器） |
-| `references/vllm-omni-train-aware-enablement.md` | vLLM-Omni 训练感知开启方式：少步蒸馏 LoRA 链（仅 0.28 有；`model_index.json` 不得 pin `base_schedule`；装载计数日志契约 `num_modules=259` / rank `0 -> 64`）、`VAE解码替换` 框架未提供 ⇒ fork 探针、视频 VAE 帧数契约、少步档 Cache 结构性失效 | 该框架训练感知档 |
+| `references/vllm-omni-train-aware-enablement.md` | vLLM-Omni 训练感知开启方式：少步蒸馏 LoRA 链（仅 0.28 有；`model_index.json` 不得 pin `base_schedule`；装载计数日志契约 = 计数行与实际适配器模块数一致（rank 递进））、`VAE解码替换` 框架未提供 ⇒ fork 探针、视频 VAE 帧数契约、少步档 Cache 结构性失效 | 该框架训练感知档 |
 | `references/cache-enablement-pattern.md` | 三方框架用库内 CacheAgent / DiTBlockCache / AttentionCache 做有损缓存的通用姿势（接入三要素 + 验证三件套 + 坑速查） | **明确要求**基于库内 CacheAgent 开发缓存能力时；**框架本身不支持 cache 时不得作兜底**（那种情形按「不支持」登记并引 `framework-support-matrix.md` 三态） |
 | `references/run-entry-and-request-tiers.md` | 部署完成后的**运行入口与档位**：vLLM-Omni serve 目标二选一 + **请求级 `extra_params.task` 档位切换**；LightX2V `torchrun` 入口 + **`--config_json` 档位语义**（并行档位语义指回 `dit-parallel-opt`）；使能异常时的**回退姿势**（选哪一档退归 `dit-perf-opt`） | 需要"起服务 / 换运行档 / 请求级切 task / 档位报错回退"时 |
 | `references/troubleshooting-vllm-omni.md` | vLLM-Omni 构建 / 启动 / 运行期异常（§E1 构建、§E2 启动、§E3 运行期；编排层口径见其开头指针） | 该框架异常排查时 |

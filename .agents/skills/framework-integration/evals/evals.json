@@ -192,7 +192,7 @@
     {
       "id": 15,
       "prompt": "远端容器里 vllm serve --omni 起不来，报 ImportError: libxcb.so.1，另外权重索引里有几个分片找不到，这算特性使能问题吗？找谁？",
-      "expected_output": "不算——**装库 / 权重属环境安装**：near-miss 判据是「库没装 / 权重不全」而非「框架侧特性没落地」⇒ 走 env-install/references/troubleshooting-env.md §H（X11 库 dnf 安装 / 按 *.safetensors.index.json 核对分片并从 hf-mirror 补下载 / 950PR 不设 MINDIE_SD_FA_TYPE）；修复后如需特性使能与验证再回本技能分支 A",
+      "expected_output": "不算——**装库 / 权重属环境安装**：near-miss 判据是「库没装 / 权重不全」而非「框架侧特性没落地」⇒ 走 env-install/references/troubleshooting-env.md §H（X11 库 dnf 安装 / 按 *.safetensors.index.json 核对分片并从 hf-mirror 补下载 / 目标代际不适用时不设 MINDIE_SD_FA_TYPE）；修复后如需特性使能与验证再回本技能分支 A",
       "files": [
         "SKILL.md"
       ],

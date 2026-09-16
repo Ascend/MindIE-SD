@@ -255,7 +255,8 @@ def pattern(x, weight):       # weight → FX placeholder
 **正确 Pattern** (weight 作为 pattern 输入参数 —— register_replacement 即可命中):
 
 不要为实现 get_attr 匹配而手写自定义 Graph Pass（**该做法已禁止删除**，见 pattern-dev
-SKILL.md Phase 2 ⛔）。torch 2.11 下 `nn.Module` 权重在 freeze 前仍是 placeholder，把 weight
+SKILL.md Phase 2 ⛔）。**在目标 torch 版本上复核 freeze 窗口形态（真图 dump 为准）**：若
+`nn.Module` 权重在 pattern 运行窗口仍是 placeholder，把 weight
 放进 `inputs()` 与 `pattern()/replacement()` 参数即可让 register_replacement 正常匹配
 （参考 `patterns/rms_norm_pattern.py` / `patterns/minimax_h3_rmsnorm_pattern.py`）：
 
@@ -281,7 +282,8 @@ def replacement(hidden_states, weight):   # replacement 同样接收 weight
 **判据**:
 
 - 模型 graph dump 中 target 参数来源为 `get_attr(name.weight)` → 检查是否 freeze 前命中；
-  torch 2.11 下权重在 pattern 运行窗口为 placeholder，register_replacement 可处理
+  **在目标 torch 版本上复核**：若权重在 pattern 运行窗口为 placeholder（真图 dump 为准），
+  register_replacement 可处理
 - 模型 graph 中无 `get_attr` 节点 → 普通 pattern 可处理
 
 **修复**: 把 weight/bias 收进 `inputs()` + `pattern()/replacement()` 参数（register_replacement

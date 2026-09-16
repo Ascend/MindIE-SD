@@ -134,6 +134,7 @@
    见标准回路「步数口径」）。
 2. **识别可融合机会点**：至少覆盖 **rope、norm**（RMSNorm/RoPE/AdaLN 等）；并识别是否还有其它
    优化空间（数据搬运/Copy/图形态/后端选择），候选先入迭代表（假说先行，推进规则 7/8）。
+2b. **融合范围与收益判定**：把候选交 `fusion-scope-analyze` 定**融合单元边界与收益**（规则 0-6 + L0/L1 双口径），产出**强制交付件** `{run_results_dir}/fusion_scope.md` 并过门禁 `check_fusion_scope.py`；**未在交付表登记的机会点不得进入第 3 步，也不得进入迭代表**（该技能只出判定与建议，选点仍由本阶段按收益排序决定）。
 3. **收益分析**：对候选做融合前后**算子执行序/耗时收益评估**（候选 → 执行序对比 → 收益判定；
    少步下用首步耗时（辅助口径）同口径识别收益，见标准回路「步数口径」）；
    **首步 block 占比 <0.5% = 收益小可不执行**（签名 no-gain，进 A.1.3/§C）；≥0.5% 才进入采纳
@@ -152,8 +153,8 @@
 7. 归属与记录：内容属 `kernel融合` 特性（子项/方法 compile 或 API 接入进说明列与细分 A.1，
    不派生特性名）；每候选迭代表 retain/reject + 签名。
 
-- 支撑技能：`profiling-collect`、`profiling-analyze`、`framework-integration`、
-  `pattern-dev`、`operator-dev`、`dummy-run`。
+- 支撑技能：`profiling-collect`、`profiling-analyze`、`fusion-scope-analyze`（融合范围与收益判定）、
+  `framework-integration`、`pattern-dev`、`operator-dev`、`dummy-run`。
 - 方案确认点：候选集排序与时间盒（effort-estimation）向用户确认；接入方式（API/compile）与
   "是否 compile"按上述判定链与用户确认后再实施。
 - 验收证据：三层证据（图命中 → kernel diff → 锚点行实测 e2e）+ 数值核验 + 精度结论；API 接入项另

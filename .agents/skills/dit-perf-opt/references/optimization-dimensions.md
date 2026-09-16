@@ -5,7 +5,10 @@
 ## 1. 编译路径优化
 
 通过 `MindieSDBackend()` 启用 Pattern 融合和 ACLGraph 静态图捕获。
-融合作用于 Norm/激活/元素级操作，不作用于 MatMul 和 Attention 本身。
+融合作用于 Norm/激活/元素级操作，不作用于 MatMul 和 Attention 本身（这是**编译侧 pattern 的替换范围**）。
+若要以 **MatMul 为首算子**构造融合单元（Cube 首 + 向后包裹 Vec），按
+`../../fusion-scope-analyze/references/fusion-unit-method.md` 规则 4 判定——候选族、锚点与终止条件的
+单点在该文件，本文件不复制判据。
 
 | 方向 | 方法 | 预期收益 | 风险 |
 |------|------|---------|------|
@@ -17,7 +20,8 @@
 
 ## 2. Attention 优化
 
-Attention 本身**不可通过算子融合加速**。优化手段为：
+Attention 本身**不可通过算子融合加速**（FA 及其变种是**硬锚点**：不吸收、不跨越；判据见
+`../../fusion-scope-analyze/references/fusion-unit-method.md` 规则 2）。优化手段为：
 
 - **FA 量化**: Q/K/V FP8 块量化，降低注意力显存带宽
 - **稀疏注意力**: 跳过低相关 Token 对，减少有效计算量

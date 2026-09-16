@@ -60,7 +60,7 @@
   off-identity 独立档留痕；预期计数不符 fail-closed；
 - 复核记录进 evidence.json + 相应子表/说明列（如 overview_report §5 子表、step_trace 占比）。
 
-## 2. 首案例对照（H3 × vLLM-Omni 0.28 / 950PR；2026-09-05/06 + env A 2026-09-07）
+## 2. 首案例对照（H3 × vLLM-Omni 0.28；2026-09-05/06 + env A 2026-09-07；机型坐标见归档）
 
 | 使能 | 复核发现 | 去向 |
 |---|---|---|

@@ -1,18 +1,19 @@
 # 量化档位 × 设备代际：选档语义（档位名 ≠ 实际算法）
 
 > **加载时机**：选取/复验量化档位，或解释「同一档位在两台机器上精度与收益都不同」时。
-> **边界**：本文件只承载**选档语义**（哪个代际落到哪个算法、怎么确认、怎么复验）。
+> **边界**：本文件只承载**选档语义**（怎么确认目标代际落到哪个算法、怎么复验；映射本身外置真源）。
 > 量化器的**数值契约**（编码公式 / 舍入 / scale 粒度 / 退化块 / 布局互通）在
 > `../../quantization-dev/references/online-quant-contract.md` 与 `../../quantization-dev/SKILL.md`。
 
 ## 1. 核心判据：档位名 ≠ 实际算法
 
-「在线 W8A8」在载体侧只是一个入口，**实际算法由设备代际分派**：
+「在线 W8A8」在载体侧只是一个入口，**实际算法由设备代际分派** ⇒ **档位名 ≠ 实际算法**：
 
-| 设备代际 | 落到的实际算法 | 数值契约归属 |
-|---|---|---|
-| A5（如 950PR） | W8A8-**MXFP8**（e8m0 块尺度 + e4m3 payload） | quantization-dev SKILL §一 |
-| A2 / A3（910B / 910C，含 Duo） | W8A8_**DYNAMIC**（INT8） | quantization-dev SKILL §二 |
+**代际 → 实际算法的映射不在此复制**——它**也没有单一真源文档**（`docs/zh/features/quantization.md`
+只给档位语义 / API，**不含档位 → 代际映射表**，仅个别节标注硬件要求）；各算法对应的**数值契约归属**见 `quantization-dev` SKILL §一 / §二
+（MXFP8 / INT8 两条路径）。
+**现场取数方式**：先用 `npu-smi info` 确认目标设备代际，再用框架侧代码 / 日志取证（量化节点的出现与计数）；
+**勿硬编码代际名**。
 
 推论（选档时必须遵守）：
 
@@ -30,10 +31,10 @@ INT8 动态量化。⇒ 选档的**第一约束是硬件支持的量化类型**�
 ## 3. 选档流程（真源外置，不在此复制）
 
 1. 前提：瓶颈点已定位（DiT 计算受限 / MatMul 占比高）——未定位先回编排层；
-2. 查 `docs/zh/features/quantization.md` 对应节（API / 算法名 / 硬件列）——**特性真源**；
+2. 查 `docs/zh/features/quantization.md` 对应节（**档位语义 / API / 算法名**）——特性真源；代际 → 算法须现场取证；
 3. 查 `framework-integration/references/framework-support-matrix.md` 的支持状态
    （框架 × 模型 × 档位的 ✅/🟡/❌）；
-4. 确认目标设备代际 → 由 §1 得到**实际算法**，并记录；
+4. 按 §1 的真源确认目标设备代际 → 取得**实际算法**（取证，勿按档位名），并记录；
 5. 落地后按本 SKILL Step 4 / Step 5 复验：**"开了 ≠ 生效"**，以图节点/计数证据为准；
 6. 有损档另过三级精度验收（`accuracy-gate`）——只过墙钟不得宣称有损加速。
 
@@ -57,5 +58,5 @@ INT8 动态量化。⇒ 选档的**第一约束是硬件支持的量化类型**�
 
 ## 维护与更新
 
-设备代际与算法的对应关系、支持状态入口或复验要求变化时更新本文件；
-与 `quantization-dev/references/online-quant-contract.md` §1 的映射表必须保持一致。
+档位语义真源（`docs/zh/features/quantization.md`）或支持状态入口、复验要求变化时更新本文件；
+本文件与 `quantization-dev/references/online-quant-contract.md` §1 的映射口径必须保持一致。

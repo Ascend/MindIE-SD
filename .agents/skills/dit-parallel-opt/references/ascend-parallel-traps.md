@@ -1,6 +1,6 @@
 # Ascend NPU 并行体系陷阱清单
 
-来源：vLLM-Omni / MiniMax-H3 + MindIE-SD 稀疏 FA 在 Ascend 950PR（A5 代）上的实测。
+来源（case 坐标）：某三方推理框架 × 扩散模型 + MindIE-SD 稀疏 FA 的实测方法化；
 每条都标注了**症状 → 原因 → 处置**，便于直接对照报错码定位。
 
 > 内容索引：§0 陷阱有寿命（先读）→ §1 coreDim 上限 → §2 静默关闭全部序列并行 →
@@ -11,9 +11,9 @@
 >
 > ## ⚠️ 适用范围（先读）
 >
-> 本文档的报错码、常量与阈值来自**一次特定环境**：Ascend 950PR（A5）、56 vector core、
-> UB 248 KiB、单机 8 卡（含 UB 岛 / SYS 拓扑）、**特定版本的 CANN / triton-ascend / torch_npu /
-> vLLM-Omni / MindIE-SD**。
+> 本文档的报错码、常量与阈值来自**一次特定环境快照**（机型/代际、核数与 UB 容量、卡数与拓扑、
+> 以及 CANN / triton-ascend / torch_npu / 框架 / MindIE-SD 的具体版本）——快照坐标见会话产物归档与
+> 对应 case 记录；**本文件不写死这些取值，用前须现场取数与复测**。
 >
 > **结论分两类对待**：
 >
@@ -65,7 +65,7 @@
 
 **症状**：只在长序列/大规模时崩，短序列正常。
 
-**原因**：Ascend 的 AIV grid 上限是 **65535**。Triton kernel 若用 `[ (rows,) ]` 作 grid（一个 program 一行），`rows` 一旦超过上限即报错。
+**原因**：设备的 AIV grid / coreDim 存在上限（**具体数值查设备属性或算子 UT，勿硬编码**）。Triton kernel 若用 `[ (rows,) ]` 作 grid（一个 program 一行），`rows` 一旦超过上限即报错。
 **关键**：很多调制类 kernel 的 grid 直接取自 `x.shape[0]`（序列行数），所以**崩溃本身就是"这个张量没被分片"的信号**。
 
 **判别**：把报错里的 `N` 与 `seq_len` 对比。
@@ -75,7 +75,7 @@
 | `N == seq_len` | **未分片**（拿到全序列） |
 | `N == seq_len // sp_world` | 已分片，上限另有问题 |
 
-**陷阱**：小规模（如 5s，`seq_len ≈ 37888 < 65535`）时**不会报错**，于是"能跑"被误认为"跑对"。**这是本类故障最危险的地方。**
+**陷阱**：小规模（`seq_len` 明显低于 grid 上限，如短序列档）时**不会报错**，于是"能跑"被误认为"跑对"。**这是本类故障最危险的地方。**
 
 **处置**：先按 `scope-effectiveness-check.md` 的流程确认分片，再考虑 kernel 侧。
 
@@ -125,7 +125,7 @@ if ring_world_size != 1 or allgather_world_size != 1:
 **处置**：
 
 ```bash
-export GLOO_SOCKET_IFNAME=<实际 IPv4 网卡名>     # 例如 ens71f0
+export GLOO_SOCKET_IFNAME=<实际 IPv4 网卡名>     # 用 ip -o -4 addr 取，勿照抄示例名
 ```
 
 容器里可能没有 `ip` 命令，用 Python 取网卡名：

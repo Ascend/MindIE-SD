@@ -74,7 +74,7 @@ NPU 数等配置。基线必须与待验档位**同窗可比**（跨窗口绝对
 
 选择时需考虑：
 
-- 硬件约束（docs 对应节的硬件列）
+- 硬件约束（docs 对应节的**硬件要求**；**档位 → 代际映射无单一真源，须现场取证**）
 - 模型兼容性（`framework-support-matrix.md` 的支持状态）
 - 精度 vs 速度权衡
 - 有损 / 无损归属：无损档优先；有损档的判据与阈值引 `accuracy-gate`
@@ -130,7 +130,7 @@ NPU 数等配置。基线必须与待验档位**同窗可比**（跨窗口绝对
 | 瓶颈是**多卡并行形态 / 通信掩盖 / TP·offload** | `dit-parallel-opt` |
 | 瓶颈在 **VAE / TAE 解码段**（计算或通信） | VAE 模块（`vae-opt`，计算 + 通信同技能） |
 | 瓶颈是**交付/搬运/装载/预热等固定开销** | host 模块（`host-opt`） |
-| 需要**新增 pattern / 融合 / 算子**才能落地该档 | `pattern-dev` / `operator-dev` |
+| 需要**新增 pattern / 融合 / 算子**才能落地该档 | 先经 `fusion-scope-analyze` 定**融合范围与收益**（机会点 + go/no-go），再由本技能按收益选点并派给 `pattern-dev` / `operator-dev`；**未在交付表登记的机会点不得选点** |
 | 框架侧**开关未使能 / 生效验证** | `framework-integration` |
 | 量化器**位级契约/精度对不上**（编码公式、舍入、scale 粒度） | `quantization-dev` |
 | 需要**同一算子多实现实测对比**（同 peak 口径） | `benchmark-dev`（结论回填本技能 Step 4 作实施证据） |
@@ -142,7 +142,7 @@ NPU 数等配置。基线必须与待验档位**同窗可比**（跨窗口绝对
   （编译路径 / Attention / MatMul / 显存 / 缓存；阈值只引用 profiling-analyze 与验收标准）
 - `references/combination-search.md` — 加载时机: 需同时开启 ≥2 个有损维度时
   （seam 静态判定 + 必测覆盖集 + 单变量叠加 + frontier 保留 + 层回退）
-- `references/quant-tier-device-mapping.md` — 加载时机: 需要核对**档位名 ≠ 实际算法**（同一档名在不同设备代际映射到不同算法/精度档）、或用户问"这个档位在 A2 / 950PR 上到底是什么实现"时（自 `dummy-run` 下沉的选档语义）
+- `references/quant-tier-device-mapping.md` — 加载时机: 需要核对**档位名 ≠ 实际算法**（同一档名在不同设备代际映射到不同算法/精度档）、或用户问"这个档位在**某设备代际**上到底是什么实现"时（自 `dummy-run` 下沉的选档语义；代际与算法的对应**没有单一真源文档**（该文只给档位语义）⇒ 用 `npu-smi` 确认代际后现场取证确认）
 - `references/resource-fallback-tiers.md` — 加载时机: **显存不足（OOM）要选一组降档顺序时**，
   或**某档使能后算子 crash / 劣化 / 静默无效、要判"退到哪一档"时**
   （显存档位表 + 回退顺序 + 回退判据；使能验证与回退姿势归 `framework-integration`，

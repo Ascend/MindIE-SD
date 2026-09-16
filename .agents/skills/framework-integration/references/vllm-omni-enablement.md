@@ -152,7 +152,7 @@ curl -s -m 600 -X POST "http://127.0.0.1:8091/v1/images/edits" \
 | 开关 | 路径与要点 |
 |---|---|
 | `--enable-distributed-layerwise-offload`（DLO） | 默认 AllGather 路径：host 存 `1/DP` + H2D/AllGather 重叠；日志判据 `Distributed layer-wise offloading enabled on <N> blocks ... dp_size=…, sp_size=…`。**选 AllGather 路径**：no-AllGather（rank-local H2D）明显更慢、host-bound |
-| `--enable-layerwise-offload` | ⚠️ 950PR 上会触发 OOM killer → 用 DLO，不用普通 layerwise |
+| `--enable-layerwise-offload` | ⚠️ 部分代际会触发 OOM killer（须逐代际验证）→ 用 DLO，不用普通 layerwise |
 | 互斥 / 副作用 | ⚠️ FastH3 拒绝任何 offload |
 
 - mindiesd 侧 `enable_offload`、PyTorch FSDP/CPU-offload 语义开关同族（按框架命名查）；方法序列见
@@ -177,7 +177,7 @@ curl -s -m 600 -X POST "http://127.0.0.1:8091/v1/images/edits" \
 | FLASH_ATTN | backend 未配置且 `find_spec("mindiesd")`（`platform.py`） | 单点收益为正（本组合观测） |
 | 单算子替换 | norm / rope / adaln 层 CustomOp dispatch（`fast_layernorm` / `rotary_position_embedding` / `layernorm_scale_shift`）；RMSNorm eager 即 `npu_rms_norm` | 与 FA 同开；图像侧另见 AdaLayerNormV2 / RotaryPositionEmbeddingV2 / GeluV2 |
 | 编码器 patch | NPU 平台 `init_diffusion_model_runner_runtime`（fused RoPE + GQA-SDPA + packed GEMM + `npu_swiglu`） | 文本编码阶段非瓶颈（占比可忽略） |
-| `MINDIE_SD_FA_TYPE` | mindiesd manual 分支枚举 `{prompt_flash_attn, fused_attn_score, ascend_laser_attention}`；vllm-omni 只比 `==ascend_laser_attention`（`flash_attn.py`） | ⚠️ 950PR / 950DT 场景**勿设置**（未做 AB） |
+| `MINDIE_SD_FA_TYPE` | mindiesd manual 分支枚举 `{prompt_flash_attn, fused_attn_score, ascend_laser_attention}`；vllm-omni 只比 `==ascend_laser_attention`（`flash_attn.py`） | ⚠️ 未做 AB 的代际**勿设置** |
 
 - 热路径 eager 已被 mindiesd/CANN 单算子覆盖时，**再叠 compile 的 kernel 级结果为负**（拷贝 / 调度开销
   增、输出不变）⇒ 不采纳；剩余融合机会集中在 **DQ 两侧**与注意力路径布局（方法见

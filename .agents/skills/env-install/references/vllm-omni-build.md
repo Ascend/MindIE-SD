@@ -1,10 +1,10 @@
-# vLLM-Omni 全栈源码构建（Ascend 950PR / 950DT，x86_64）
+# vLLM-Omni 全栈源码构建（镜像未覆盖的目标机型）
 
 > **目录** · [版本配套矩阵](#版本配套矩阵) · [Step 2.1: 容器环境预检](#step-21-容器环境预检) · [Step 2.2: 安装 torch + torch_npu](#step-22-安装-torch--torch_npu) ·
 > [Step 2.3: 构建 vllm 0.26.0](#step-23-构建-vllm-0260) · [Step 2.4: 构建 vllm-ascend（releases/v0.26.0rc）](#step-24-构建-vllm-ascendreleasesv0260rc) · [Step 2.5: 构建 vllm-omni（main）](#step-25-构建-vllm-omnimain) ·
 > [Step 2.6: 构建 mindiesd（全栈环境内）](#step-26-构建-mindiesd全栈环境内) · [维护与更新](#维护与更新)
 >
-> **维护说明**：本文件内容来自 env-install SKILL「三方框架全栈安装（vLLM-Omni 950PR 源码构建）」
+> **维护说明**：本文件内容来自 env-install SKILL「三方框架全栈安装（vLLM-Omni 源码构建）」
 > 一节拆分下沉（progressive disclosure：SKILL.md 正文保持 <500 行，只保留精简指针）。版本配套矩阵、
 > Step 2.1–2.6 分步命令与内联已知坑 / ⚠️ 警告以本文件为准；更新 vLLM-Omni 构建路径、版本矩阵
 > 或发现新的构建已知坑时改本文件即可。
@@ -13,14 +13,15 @@
 
 当目标是在远端容器内用 **vLLM-Omni 托管扩散模型**（Qwen-Image-2512 / Wan2.2 / MiniMax-H3 等），
 需要安装完整栈：`torch + torch_npu + vllm + vllm-ascend + vllm-omni + mindiesd`。
-官方预构建镜像（`quay.io/ascend/vllm-omni:*`）仅覆盖 Atlas A2/A3（aarch64）；
-⚠️ **Ascend 950PR / 950DT（x86_64）必须从源码构建**。
+官方预构建镜像（`quay.io/ascend/vllm-omni:*`）**覆盖面以镜像 tag 说明为准**（历史版本只覆盖 aarch64）；
+⚠️ **镜像未覆盖目标机型/架构时（例如目标为 x86_64）必须从源码构建**——先用 `uname -m` 与
+`npu-smi info -l` 核对覆盖面。
 
-以 950PR + vllm 0.26.0 为例（2026-08 实测可用）：
+以 **vllm 0.26.0** 为例（该组合实测可用；机型 / 完整快照坐标见会话产物归档）：
 
 | 组件 | 版本 | 获取方式 |
 |---|---|---|
-| CANN | 9.1.0 | 容器镜像自带（`cann:9.1.0-950-*`） |
+| CANN | 9.1.0 | 容器镜像自带（`cann:<版本>-<机型>` 基础镜像） |
 | torch | **2.11.0+cpu**（由 vllm 决定） | `pip install torch==2.11.0+cpu -i https://download.pytorch.org/whl/cpu` |
 | torch_npu | **2.11.0**（与 torch 配套） | gitcode `Ascend/pytorch` release：`v26.1.0-pytorch2.11.0` 下的 `torch_npu-2.11.0-cp312-cp312-manylinux_2_28_x86_64.whl` |
 | vllm | **0.26.0** | 源码构建（`VLLM_TARGET_DEVICE=empty`） |
@@ -28,6 +29,17 @@
 | vllm-omni | **main 分支**（配套 vllm 0.26） | 源码 `VLLM_OMNI_TARGET_DEVICE=npu pip install -e . --no-build-isolation` |
 | mindiesd | dev 分支 | 源码 `python setup.py build_py && pip install -e .` |
 
+以 **vllm 0.28.0** 为例（另一条已复现链；来源见 `../../framework-integration/references/vllm-omni-minimax-h3-case.md`
+§0 与 `vllm-omni-qwen-image-case.md` 的环境声明）：
+
+| 组件 | 版本 | 说明 |
+|---|---|---|
+| torch / torch_npu | **2.13.0+cpu / 2.13.0.rc1** | PyPI（CANN 9.1.0 档可用）；系统 torch 2.11 作 `--system-site-packages` 回退 |
+| vllm / vllm-omni | **0.28.0+empty / 0.28.0** | 源码构建（`VLLM_TARGET_DEVICE=empty`） |
+| triton-ascend | 3.2.1 | 部署使用时需要 |
+
+> **两条链遵循同一推导顺序**（见下）；矩阵只登记**已复现**的组合，新增链按该方法反查后补行。
+>
 > **版本推导顺序**：vllm 0.26.0 的 `pyproject.toml` 锁定 `torch == 2.11.0` →
 > 从 [gitcode Ascend/pytorch releases](https://gitcode.com/Ascend/pytorch/releases) 选择
 > `v26.1.0-pytorch2.11.0` 下载配套 torch_npu（版本 tag 含 `pytorch2.11.0` 字样）。
@@ -38,7 +50,7 @@
 
 ```bash
 docker exec {容器} bash -lc 'uname -a'                    # 确认 x86_64
-docker exec {容器} bash -lc 'npu-smi info -l | head -20'  # 确认 Ascend950PR 及卡数
+docker exec {容器} bash -lc 'npu-smi info -l | head -20'  # 确认型号 / 架构与卡数
 docker exec {容器} bash -lc 'python --version'            # 确认 3.12（cp312 wheel）
 ```
 
@@ -147,5 +159,5 @@ python -c "import mindiesd; print(mindiesd.attention_forward, mindiesd.fast_laye
 
 ## 维护与更新
 
-当 vllm / vllm-ascend / vllm-omni 版本矩阵变化、950PR 构建路径调整或发现新的构建已知坑时，
+当 vllm / vllm-ascend / vllm-omni 版本矩阵变化、源码构建路径调整或发现新的构建已知坑时，
 按 dev-workflow 的复盘流程更新本文件（SKILL.md 正文只保留指针，细节以本文件为准）。

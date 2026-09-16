@@ -15,11 +15,11 @@
     },
     {
       "id": 2,
-      "prompt": "Ascend 950PR（x86_64）上要用 vLLM-Omni 托管 Qwen-Image-2512，官方预构建镜像不覆盖，全栈怎么从源码构建安装？",
-      "expected_output": "按 env-install 三方框架全栈安装：950PR/950DT 必须源码构建，按版本配套矩阵（torch 2.11.0+cpu / torch_npu 2.11.0 / vllm 0.26.0 / vllm-ascend releases/v0.26.0rc / vllm-omni main / mindiesd dev）依序执行 Step 2.1 容器预检（含 HCCL ranktable 挂载检查）→ 2.2 torch+torch_npu → 2.3 vllm（先升级 setuptools、跳过 rust）→ 2.4 vllm-ascend → 2.5 vllm-omni（设 VLLM_OMNI_VERSION_OVERRIDE、装完重装回 torch 2.11.0）→ 2.6 mindiesd（triton-ascend==3.2.1）；装完转权重确认/下载，服务启动与验证归 framework-integration",
+      "prompt": "目标机型是 x86_64，官方预构建镜像不覆盖该架构，要用 vLLM-Omni 托管 Qwen-Image-2512，全栈怎么从源码构建安装？",
+      "expected_output": "按 env-install 三方框架全栈安装：镜像不含目标机型/架构时必须源码构建，按版本配套矩阵（torch 2.11.0+cpu / torch_npu 2.11.0 / vllm 0.26.0 / vllm-ascend releases/v0.26.0rc / vllm-omni main / mindiesd dev）依序执行 Step 2.1 容器预检（含 HCCL ranktable 挂载检查）→ 2.2 torch+torch_npu → 2.3 vllm（先升级 setuptools、跳过 rust）→ 2.4 vllm-ascend → 2.5 vllm-omni（设 VLLM_OMNI_VERSION_OVERRIDE、装完重装回 torch 2.11.0）→ 2.6 mindiesd（triton-ascend==3.2.1）；装完转权重确认/下载，服务启动与验证归 framework-integration",
       "files": [],
       "expectations": [
-        "指出 950PR/950DT 官方预构建镜像不覆盖，必须源码构建全栈（VLLM_TARGET_DEVICE=empty）",
+        "指出官方预构建镜像不含目标机型/架构时必须源码构建全栈（VLLM_TARGET_DEVICE=empty）",
         "给出 vllm 0.26.0 构建前先升级 setuptools（>=77.0.3,<81.0.0）并跳过 rust 的要点",
         "给出两者的源码安装参数**分别正确**：vllm-ascend 用 `--no-deps --no-build-isolation`，vllm-omni 用 `--no-build-isolation`（**不带 `--no-deps`**，带 `VLLM_OMNI_TARGET_DEVICE=npu`），并设置 VLLM_OMNI_VERSION_OVERRIDE",
         "提到容器需挂载 HCCL ranktable（/usr/local/Ascend/driver/topo）否则多卡启动报 hcclCommInitRootInfoConfig error code is 4"

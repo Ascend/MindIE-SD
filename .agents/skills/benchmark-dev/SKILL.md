@@ -35,7 +35,7 @@ description: MindIE-SD 核心算子（FA/BSA/GMM/MM）性能基准工具链。�
 
   ```bash
   python benchmarks/scripts/mindie_bench.py run --op "{fa: {}}" \
-      --config "{seqlen: [4096, 8192], dtype: [bf16, fp8, mxfp4], timeout: 300, peak_flops: 377.78}"
+      --config "{seqlen: [4096, 8192], dtype: [bf16, fp8, mxfp4], timeout: 300, peak_flops: <设备实测峰值>}"
   # report --report-dir {父目录} 合并不同 run，对比曲线
   ```
 
@@ -43,11 +43,11 @@ description: MindIE-SD 核心算子（FA/BSA/GMM/MM）性能基准工具链。�
 
   ```bash
   # 同 dtype 下扫 heads，选吞吐最优的 head 配置
-  python benchmarks/scripts/mindie_bench.py run --op "{fa: {num_heads: 16}}" --config "{seqlen: [8192], dtype: [bf16], peak_flops: 377.78}"
-  python benchmarks/scripts/mindie_bench.py run --op "{fa: {num_heads: 32}}" --config "{seqlen: [8192], dtype: [bf16], peak_flops: 377.78}"
+  python benchmarks/scripts/mindie_bench.py run --op "{fa: {num_heads: 16}}" --config "{seqlen: [8192], dtype: [bf16], peak_flops: <设备实测峰值>}"
+  python benchmarks/scripts/mindie_bench.py run --op "{fa: {num_heads: 32}}" --config "{seqlen: [8192], dtype: [bf16], peak_flops: <设备实测峰值>}"
   # BSA 扫稀疏度，看 MFU/latency 随 sparsity 的收益曲线
   python benchmarks/scripts/mindie_bench.py run --op "{bsa: {}}" \
-      --config "{seqlen: [8192, 16384], dtype: [bf16], sparse: [0.6, 0.8, 0.95, 0.99], timeout: 300, peak_flops: 377.78}"
+      --config "{seqlen: [8192, 16384], dtype: [bf16], sparse: [0.6, 0.8, 0.95, 0.99], timeout: 300, peak_flops: <设备实测峰值>}"
   ```
 
 - **对比多档位**：一次 `--config` 内列表值笛卡尔积（heads × dtype），一次跑完对比
@@ -109,7 +109,7 @@ python -m ruff check benchmarks tests/UT/benchmark
 
 - MFU/MBU 公式**只在** `common/metrics.py util_metrics`；运行时（op_defs `MfuMbuSummaryMixin`）与离线（benchmark_report `recompute_util`）都调它，改一处即可
 - 钳位 ≤1 在公式层（量化档真实吞吐可能超 bf16 峰值口径）；**数据层保持小数，百分比只是展示层**（`_pct`）
-- 峰值：**不内置**——`peak_flops` / `peak_bw` 必须由使用者通过 `--config` 输入（代码中不允许出现硬编码峰值如 377.78）；随 case arguments 走 jsonl，离线 `recompute_util` / 报告 env 段从 entry 读；无 env.json / --env
+- 峰值：**不内置**——`peak_flops` / `peak_bw` 必须由使用者通过 `--config` 输入（代码中不允许出现硬编码峰值——须注入设备实测值）；随 case arguments 走 jsonl，离线 `recompute_util` / 报告 env 段从 entry 读；无 env.json / --env
 
 ### 4.3 schema 数据驱动
 
@@ -156,7 +156,7 @@ python -m ruff check benchmarks tests/UT/benchmark
 
 1. **先跑算子自身 UT**（`tests/plugin/test_{op}.py`）分流：UT 通过 → benchmark 调用/计时代码问题；UT 失败 → 算子/环境问题
 2. **恒定 latency** = 计时区被固定开销污染（如 mask 构造每 iter 分配）或 kernel 空转——检查计时区内是否有可移到区外的构造/分配
-3. **全零输出** = kernel 未执行：对照算子 UT 调用参数（BSA `inner_precise` 在 950 设备必须为 4，用 0 会全零；mask 需 per-row uniform 避免全零行崩溃）
+3. **全零输出** = kernel 未执行：对照算子 UT 调用参数（BSA `inner_precise` 的取值**对齐算子 UT / vendor 要求，现场确认参数取值**，取值不当会全零；mask 需 per-row uniform 避免全零行崩溃）
 4. **偶发污染**：异常大 latency → 增量重跑该 case 确认；加数据守卫
 5. **长序列超时**：`--config {timeout: 300}`（默认 5s），backend 按 case 读
 6. **增量合并**：每次补跑独立 report_dir；mtime 决定覆盖顺序，避免坏值覆盖好值

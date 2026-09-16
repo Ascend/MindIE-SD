@@ -48,7 +48,7 @@ docker exec {容器} bash -lc 'cd /home/{user}/code/MindIE-SD && \
    ```
 
 2. 对照算子 UT 的调用参数，发现差异：
-   - **`inner_precise`**：950 系列设备（如 Ascend950PR / A310 报 950PR 名）要求 `inner_precise=4`（UT 注释明确 "op vendor requirement"）；**用 0 会导致 kernel 输出全零、latency 恒定**（空转）。按设备名自适应：`4 if "950" in dev_name else 1`
+   - **`inner_precise`**：取值必须对齐**算子 UT / vendor 要求**（UT 注释明确 "op vendor requirement"）；**取值不当会导致 kernel 输出全零、latency 恒定**（空转）。**按设备名硬编码取值是错的**（设备代际 ≠ 算子要求）——取值须现场确认：查算子 UT 的调用参数与注释；历史「按设备名分支取值」的写法与其取值见归档 `{run_results_dir}/archive/`，正文不承载
    - **mask 构造**：`mask.view(-1)[:keep] = 1`（前 keep 块）使**后部 query 行全零**（无 attend 块）→ 崩溃。改为 **per-row uniform**：`mask[..., :per_row] = 1`（每行保留 per_row 个 kv 块），与 UT 的随机 mask 一样保证每行有 attend 块
 3. 修复后验证：latency 应随 q_len/sparsity 增长（sp=0.99 远快于 sp=0.6），输出非零。
 
@@ -73,7 +73,7 @@ docker exec {容器} bash -lc 'cd /home/{user}/code/MindIE-SD && \
 
 1. **latency 是否真实**（见案例 A：恒定 = 假数据）
 2. **记账 FLOPs 是否与 kernel 实际执行一致**：BSA 的 `(1-sparsity)` 折扣是理论值，与真实块稀疏 kernel 的执行量可能不符
-3. **peak_flops 是否准确**：CUBE 峰值需设备实测（如 A310 用 425/9*8≈377.78）；峰值由使用者通过 `--config` 输入，随 case arguments 进 jsonl，离线 report 从 entry arguments 读，无需设备名匹配
+3. **peak_flops 是否准确**：CUBE 峰值须**现场实测**（读设备属性 / 跑峰值基准），**不得照抄任何历史值**；峰值由使用者通过 `--config` 输入，随 case arguments 进 jsonl，离线 report 从 entry arguments 读，无需设备名匹配
 
 钳位是"兜底"：钳位发生在 `util_metrics` 公式层（MFU/MBU 先算比值再 min(≤1)），数据层保持真实比值。**钳位频繁出现 = 上面某处口径有问题，应修复而非接受**。
 

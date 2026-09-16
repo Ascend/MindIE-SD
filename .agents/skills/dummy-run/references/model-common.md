@@ -50,7 +50,9 @@ examples/dummy_run/model/
 | `report_quant_layers(pipe, attrs)` | 汇总量化命中（quant linear / remaining nn.Linear） |
 | `_align_bias_dtype(module, dtype)` | 兜底：量化层 bias 对齐 bf16（防 Dynamo guard 失败重编译） |
 
-**设备映射（选档语义单点）**：A5（950PR）→ MXFP8；A2/A3（910B/910C）→ INT8。
+**设备映射（选档语义）**：**代际 → 实际算法没有单一真源文档**（`docs/zh/features/quantization.md`
+只给档位语义，不含档位 → 代际映射表）；档位语义查该文件的档位表，实际算法须用 `npu-smi info` 确认目标代际后
+**现场取证**（框架侧代码/日志），**勿硬编码代际名**。
 **档位名 ≠ 实际算法**的完整语义（同一档名在不同设备代际的映射、以及"该不该开、开哪一档"）
 见 `../../dit-perf-opt/references/quant-tier-device-mapping.md`——本处不展开。
 

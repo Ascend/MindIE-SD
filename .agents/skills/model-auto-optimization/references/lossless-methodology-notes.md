@@ -59,12 +59,13 @@
    - mindiesd：`enable_offload(model, blocks, ...)`
    - PyTorch 侧：FSDP/CPU-offload 语义的对应开关（按框架名查）
    - ⚠️ 与部分特性互斥需查（如 vllm-omni FastH3 拒绝任何 offload）；offload 也可能被 OOM killer 触发
-     （950PR recipe：--enable-layerwise-offload 主动有害 → 用 DLO 而非普通 layerwise）。
+     （**部分代际上普通 `--enable-layerwise-offload` 主动有害 → 改用 DLO 而非普通 layerwise；须逐代际复核**，
+     复核方法 = 同窗 AB 对比两者墙钟 + 是否被 OOM killer 触发，本案例读数见归档 `{run_results_dir}/archive/`）。
 2. **有损完成后复查**：量化（INT8/FP8）等降显存动作会解锁新的通信组合（例：H3 BF16 单 rank 全量
    驻留超单卡容量 → 无法用更高度序列并行；INT8 online 后单 rank 显存降到可行区间 → 该形态可行，
    相对对照形态的收益见归档 `{run_results_dir}/archive/`）。
    因此 S4 每个量化档落地后，回头跑一遍「并行×新显存余量」候选（至少 10 步快测），把新增可行组合纳入矩阵。
-   **offload 解锁实证（2026-09-05，H3×vllm-omni 0.28/950PR）**：无损阶段用 vllm-omni DLO
+   **offload 解锁实证（2026-09-05，H3 × vllm-omni 0.28；机型坐标见归档）**：无损阶段用 vllm-omni DLO
    （`--enable-distributed-layerwise-offload`，默认 AllGather：host 存 1/DP + H2D/AllGather 重叠）
    解锁了原本因单卡容量不可行的 BF16 高序列并行形态（同窗对照为**略慢**，属形态置换的代价，
    绝对耗时见归档）；DLO 的 no-AllGather 路径（rank-local H2D）**明显更慢（数倍量级）**
@@ -79,8 +80,10 @@
 > （量化档最典型；稀疏后端/档、缓存、并行拓扑亦同），S1 融合的既有融合判定只对「使能前序列」有效，
 > **不得跨序列沿用**；须以新序列重走 S1 融合回路「候选 → 尝试 → 评估（图命中 → kernel diff → 墙钟）」。
 
-1. **为什么**：量化把原 MatMul/Addmm 序列替换为新的量化 kernel（H3 w8a8 单步实测：266 MatMul →
-   6 遗留 + 260 对 `DynamicQuantV2 → QuantBatchMatmulV3`，总行 2625→2885，**零新增布局搬运**），
+1. **为什么**：量化把原 MatMul/Addmm 序列替换为新的量化 kernel（**以计数契约核对**：替换后原 MatMul
+   应成规模消失、新增 `DynamicQuantV2 → QuantBatchMatmulV3` 类融合算子的调用次数与站点数对齐、
+   总 kernel 行数与布局搬运（Copy/Move）计数不新增；单案例计数见归档
+   `{run_results_dir}/archive/H3_w8a8_fusion_analysis.md`），
    producer/consumer 邻接整体重排 → 旧融合候选可能失效（bf16 MatMul 已被单量化 GEMM 替代）、
    新候选出现（量化 GEMM 与上游 norm/SwiGlu 的 epilogue、编译 pattern、FA 路径布局等）。
 2. **标准动作**：

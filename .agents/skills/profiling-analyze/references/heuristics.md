@@ -17,35 +17,21 @@
 > 后端事实：本仓只有 default（Inductor）与 aclgraph（批量下发）两条路径；
 > torchair_ge / npugraph_ex 在本仓未实现，不采用。
 
-## 融合机会判断
+## 融合机会判断 → 已迁出（本文件只留指针）
 
-### 优先：MindIE-SD Pattern（有开关可直接启用）
-
-| 优先级 | 融合模式 | 对应开关 | 检查条件 | 收益 |
-|:--:|---------|---------|---------|------|
-| 1 | RMSNorm | `CompilationConfig.fusion_patterns.enable_rms_norm` | transformer 前向路径 | 减少 kernel launch |
-| 2 | RoPE | `CompilationConfig.fusion_patterns.enable_rope` | 每层 attention 前后 | 减少 kernel launch |
-| 3 | AdaLayerNorm | `CompilationConfig.fusion_patterns.enable_adalayernorm` | DiT 类模型 | 减少同步 |
-| 4 | fastGELU | `CompilationConfig.fusion_patterns.enable_fast_gelu` | FFN 激活路径 | 减少中间显存 |
-| 5 | Mul+Add | `CompilationConfig.fusion_patterns.enable_mul_add` | element-wise 操作 | 减少 kernel launch |
-
-### 补充：业内通用融合（需自行实现，标注预期收益）
-
-| 融合模式 | 识别规则 | 预期收益 | 适用阶段 |
-|---------|---------|---------|:--:|
-| MatMul + BiasAdd + GELU | MatMul → Add → GELU 连续 | ~25-30% | DiT |
-| Scale + Softmax + MatMul | Mul(scale) → Softmax → MatMul | ~20-25% | DiT |
-| Element-wise 链 (≥3) | 连续 3+ element-wise 算子 (Add/Mul/Div/Sub) | ~15-20% | DiT / VAE |
-| FlashAttention + MatMul (proj) | Attention → MatMul 连续 | ~5-10% | DiT |
-| Conv2D + GroupNorm | Conv2D → GroupNorm 连续 | ~10-15% | VAE |
+> **候选族与识别规则的单点已迁至** `../../fusion-scope-analyze/references/fusion-unit-method.md` §3；
+> **判型与收益前置评估**的单点在 `../../fusion-scope-analyze/references/fusion-benefit-method.md`。
+> 本技能在 Layer 3c 只负责**导出候选并交棒**给 `fusion-scope-analyze`，不再在本文件复制识别规则、
+> 开关对照与预期收益量级（开关名真源 = `docs/zh/features/compilation.md` §Pattern 融合）。
 
 ## Attention 优化选择
 
-Attention 自身不可融合——优化手段为 FA 量化和稀疏注意力。
+Attention 自身不可融合（FA 及其变种是**硬锚点**，判据见
+`../../fusion-scope-analyze/references/fusion-unit-method.md` 规则 2）——优化手段为 FA 量化和稀疏注意力。
 
 | 优先级 | 策略 | 适用条件 | 预期收益 |
 |-------|------|---------|---------|
-| 1 | FA 量化 (FP8) | 910B，head_dim 兼容 Q/K/V 布局 | 显存带宽降低 |
+| 1 | FA 量化 (FP8) | 目标设备支持 FP8（现场按设备属性 / 算子 UT 确认）+ head_dim 兼容 Q/K/V 布局 | 显存带宽降低 |
 | 2 | 稀疏 rf_v2 | 图像/视频模型 | 1.5–1.8× 端到端加速 |
 | 3 | 稀疏 ada_bsa | rf_v2 不兼容时 | 灵活调节 |
 

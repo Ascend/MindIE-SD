@@ -205,15 +205,18 @@ Ascend 上 triton 后端的 codegen（grid-stride + mask 谓词、无手调双�
 > `../../perf-gate/references/evidence-toolbox.md` §1（三重证据）与
 > `../../perf-gate/references/measurement-discipline.md` §2（ABBA 交错）。
 
-1. **wall AB**：该 pattern 单独关闭 vs 开启，timed 段收益转正（>0.1ms 视为有效）；
+1. **wall AB**：该 pattern 单独关闭 vs 开启，timed 段收益转正 —— 「有效」的门限**必须在目标环境
+   现场标定**：同窗对同一配置做 A/B（或 A/B/A）拿到读数漂移与噪声地板，取**超过地板且符号一致**
+   为有效；**不得沿用其他环境的固定绝对值门限**（本组合曾用一个 ms 量级的绝对值，其取值与作用域
+   见 `{run_results_dir}/archive/`）；
    ⚠️ 本阈值与 `../../benchmark-dev/references/benchmark-guide.md` / dit-perf-opt 优化闭环 Step 5 /
    `../../dit-parallel-opt/references/few-step-multirank-protocol.md` §3 的「<3% 视为噪声」、
    以及 `../../model-auto-optimization/workflows/optimization-flow.md`（单点定义）
    与 `../../model-auto-optimization/references/run-state.md` §特性覆盖清单 的
    「整 block 耗时影响 <0.5% 视为收益小」**分母各不相同**，
    **不得互换使用**——给出任一阈值时必须写明它适用的**分母**；
-   **作用域提示**：本阈值（`>0.1ms` 视为有效）与上面并列的其他阈值一样，是**本环境、本模型**口径下定的，
-   换硬件 / 换模型 / 换负载须**本地重新标定**后再用——除分母外还须写明其**环境来源**。
+   **作用域提示**：本阈值（timed 段收益转正）与上面并列的其他阈值一样，是**本环境、本模型**口径下
+   **现场标定**出来的，换硬件 / 换模型 / 换负载须**本地重新标定**后再用——除分母外还须写明其**环境来源**。
 2. **kernel diff**：R1/R2/R3 对应的辅助 copy/cast 消失或显著减少；
 3. **正确性回归**：pattern 单元测试 + 全模型 `--compile` 推理 + BF16 图验证
    （`_verify_compute_precision_graph`，无 fp32/tf32/int32 计算节点）；
@@ -244,6 +247,10 @@ Ascend 上 triton 后端的 codegen（grid-stride + mask 谓词、无手调双�
 ---
 
 ## 5. 案例库
+
+> **本节为案例记录（非判据）**：下列形状 / 计数 / kernel 数 / `BLOCK_SIZE` 等取值都来自**一次真图 dump**，
+> 仅作示性；**可迁移的是每例的「现象 → 根因 → 修复 → 判据」四列**，具体取值须按现场真图 dump 取，
+> 不得当作预期值沿用。
 
 ### 案例 1: MiniMax-H3 RoPE — R1 dtype 提升吞掉全部收益（2026-08）
 

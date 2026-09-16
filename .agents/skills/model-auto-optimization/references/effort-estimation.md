@@ -4,13 +4,13 @@
 > 以及每阶段计划时，用本表估算「某个优化点做下来要多久、要跑多少轮」。
 > 样本：
 >
-> - **V1（视频长任务）**：MiniMax-H3 × vLLM-Omni 0.28 / 950PR×4，2026-09-05/06 无损+有损全链复盘
+> - **V1（视频长任务）**：MiniMax-H3 × vLLM-Omni 0.28，4 卡（机型坐标见归档），2026-09-05/06 无损+有损全链复盘
 >   （框架侧见 framework-integration/references/vllm-omni-enablement.md，实测数字归档于会话
 >   产物目录 `{run_results_dir}/archive/`；576p/60 步/118s 级）。
-> - **V3（图像短任务）**：Qwen-Image-2512 × vLLM-Omni 0.28 / 950PR×1-2，2026-09-05/06
+> - **V3（图像短任务）**：Qwen-Image-2512 × vLLM-Omni 0.28，1–2 卡（机型坐标见归档），2026-09-05/06
 >   （同上归档；1024²/20 步/秒级）。
 > - **V4（视频长任务 · cache-dit 框架本体托管链）**：MiniMax-H3 × cache-dit trunk 51979f0 × vLLM-Omni 0.26
->   / 950PR×4，2026-09-06/07（开启方式见 framework-integration/references/cache-dit-enablement.md，
+>   ，4 卡（机型坐标见归档），2026-09-06/07（开启方式见 framework-integration/references/cache-dit-enablement.md，
 >   实测数字归档于 `{run_results_dir}/archive/cache-dit-minimax-h3-case.md`；
 >   1024×576/50 步/91.4s 级 lossless；DiT 仅 USP 无 TP，e2e 不随卡数线性）。
 > ⚠️ **按任务类型分档预测（视频 ≠ 图像；短任务 ≠ 长任务）**：勿用视频分钟级外推图像秒级（图像 20 步
@@ -20,7 +20,7 @@
 
 ## 1. 运行成本口径（实测样本，可直接套用估算）
 
-### 1a. 视频长任务样本（H3 576p/60 步；950PR×4 TP2×USP2，lossless 118s 起）
+### 1a. 视频长任务样本（H3 576p/60 步；4 卡 TP2×USP2（机型坐标见归档），lossless 118s 起）
 
 | 运行项 | 实测 | 备注 |
 |---|---|---|
@@ -36,7 +36,7 @@
 | hccl 带宽等价工具（torchrun 4 rank，9 档×2 op） | ≈2-3 min/卡组 | 先 set_device 再 init |
 | 质量补测（存量 mp4 抽帧+quality_compare，1 对） | ≈2-3 min/对 | 有帧则不必重跑（quality-gate.md） |
 
-### 1b. 图像短任务样本（Qwen-Image-2512 1024²/20 步；950PR×1-2，秒级；V3 2026-09-05/06）
+### 1b. 图像短任务样本（Qwen-Image-2512 1024²/20 步；1–2 卡（机型坐标见归档），秒级；V3 2026-09-05/06）
 
 | 运行项 | 实测 | 备注 |
 |---|---|---|
@@ -48,7 +48,7 @@
 | 单步 kernel 采集+analyse | 采集含在运行；analyse ~1-3 min | OMNI_KPROF_TARGET=qwen_image（fork hook 扩展） |
 | 组合/对照批（3-6 配置 + 质量集） | ≈25-40 min | 同窗相邻对 + 21-seed 质量 |
 
-### 1c. 视频长任务样本（cache-dit 框架 × vLLM-Omni 0.26 托管链；950PR×4；1024×576×50 步；V4 2026-09-06/07）
+### 1c. 视频长任务样本（cache-dit 框架 × vLLM-Omni 0.26 托管链；4 卡（机型坐标见归档）；1024×576×50 步；V4 2026-09-06/07）
 
 > cache-dit 为框架本体（trunk 51979f0），H3 由 vllm-omni 0.26 托管；DiT 仅 USP 形态（无 TP）。
 > 完整数字与卡数关系见归档 `{run_results_dir}/archive/cache-dit-minimax-h3-case.md` §3/§6；
@@ -74,7 +74,7 @@
   analyse）另 +~10 min；组合质量对（ffmpeg psnr/ssim 每对两次独立跑）~2-3 min/对——叠加矩阵按
   「serve 数 × 5 min + 质量对 × 3 min」预算。
 
-### 1d. 视频长任务样本（同环境双树 · 显式 SDPA 基线口径；950PR×2 TP2；576p/60 步；env A 2026-09-07）
+### 1d. 视频长任务样本（同环境双树 · 显式 SDPA 基线口径；2 卡 TP2（机型坐标见归档）；576p/60 步；env A 2026-09-07）
 
 > 与前几节不同处：本样本基线 = **显式 TORCH_SDPA**（安装 editable mindiesd 的宿主默认会把
 > attention 路由到 FLASH_ATTN，冻结"未加速对照"必须显式指定并核对 resolve 日志，见

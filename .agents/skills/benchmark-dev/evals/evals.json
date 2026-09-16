@@ -15,10 +15,10 @@
     {
       "id": 2,
       "prompt": "BSA 的 benchmark 数据所有 case 的 latency 都恒定 60us 不变，q_len 从 1k 到 32k 都一样，MFU 全钳位 1，是不是 benchmark 代码有问题？帮我查。",
-      "expected_output": "按调试方法论定位 benchmark 代码问题：先跑算子自身 UT 分流（UT 通过 → benchmark 调用问题）；检查 vendor 调用的 inner_precise（950 设备必须 4）与 mask 构造（per-row uniform 避免全零行）；修复后加数据守卫（全零输出校验）",
+      "expected_output": "按调试方法论定位 benchmark 代码问题：先跑算子自身 UT 分流（UT 通过 → benchmark 调用问题）；检查 vendor 调用的 inner_precise（**目标设备档须使该参数取 UT / vendor 要求的值，现场确认**）与 mask 构造（per-row uniform 避免全零行）；修复后加数据守卫（全零输出校验）",
       "expectations": [
         "第一步跑 tests/plugin/test_block_sparse_attention.py（算子 UT）判断是算子还是 benchmark 调用问题",
-        "定位 benchmark vendor 与 UT 的调用差异：inner_precise 在 950 设备必须为 4（用 0 导致全零输出/恒定 latency）",
+        "定位 benchmark vendor 与 UT 的调用差异：inner_precise 取值不当（如 0）会导致全零输出 / 恒定 latency，须对齐 UT / vendor 要求（现场确认取值）",
         "检查 mask 构造：front-keep（前 N 块）产生全零行崩溃，应改 per-row uniform",
         "修复后验证 latency 随 q_len/sparsity 增长、输出非零，并考虑加输出有效性守卫"
       ]

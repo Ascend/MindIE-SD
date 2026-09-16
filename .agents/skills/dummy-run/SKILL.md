@@ -86,6 +86,9 @@ pipe = FluxPipeline(
 
 ### A4 验证结果示例
 
+> 下列为**格式示例**（数值取自一次运行快照，只为示形）；**实测读数、来源环境与峰值显存见会话产物归档**，
+> 不得当作该模型/该配置的预期值引用。
+
 ```text
 transformer params:       14.29 B
 Total params:             34.38 B
@@ -117,7 +120,7 @@ Verification:             PASSED
 | 模式 | 行为 |
 |---|---|
 | `bf16` | 模型级 bf16 计算精度：权重 cast + `.float()` 精度岛源码级改写（compile 图真正 bf16） |
-| `w8a8` | W8A8 在线量化（Matmul-only）on bf16 基座；**格式按 NPUDevice 自动选择**：A5（950PR）→ **MXFP8**，A2/A3（910B/910C）→ **INT8**（`W8A8_DYNAMIC`） |
+| `w8a8` | W8A8 在线量化（Matmul-only）on bf16 基座；**实际格式按设备代际自动选择**（**代际 → 实际算法没有单一真源文档**：档位语义见 `docs/zh/features/quantization.md` 档位表，实际算法须用 `npu-smi` 确认代际 + 框架侧代码/日志**现场取证**，**勿硬编码代际名**） |
 | `fp32` | 原 fp32 计算 |
 
 量化范围（kernel 实证）：只有 `nn.Linear` 被替换为在线量化 Linear（`npu_quant_matmul` /
@@ -129,7 +132,7 @@ Verification:             PASSED
 `quantization.py`（w8a8 设备感知 + `apply_w8a8_quant`）。
 **完整模块职责/API/接入方式见 `references/model-common.md`。**
 
-**性能基线**（950PR，2 层 dummy，transformer Timed，compile vs eager）：
+**性能基线**（2 层 dummy，transformer Timed，compile vs eager；来源设备代际与绝对读数见会话产物归档 `{run_results_dir}/archive/`）：
 
 | 模式 | 结论 |
 |---|---|
@@ -143,7 +146,10 @@ Verification:             PASSED
 （质量基本无感）**，且**不可跨任务类型迁移**（见 `../accuracy-gate/references/quality-gate.md`
 「校准经验」与 `../framework-integration/references/vllm-omni-enablement.md` §3）。
 
-**diffusers 0.40 全模型 wall（w8a8，A310-50，三模型并行一模型一卡，2026-09-06）**：
+**全模型 wall 结论形态（w8a8 档，compile vs eager；多模型并行、一模型一卡）**：
+
+> 该案例的**来源设备代际 / 框架版本 / 日期**与**绝对读数**按归档指针出库（`{run_results_dir}/archive/`），
+> 下表只留**方向与相对排序**（换环境须重测）。
 
 | 模型 | 结论 |
 |---|---|
@@ -177,7 +183,7 @@ Verification:             PASSED
 2. 开启目标使能项（runtime 替换或 compile，姿势见 framework-integration）
 3. 图命中确认（graph.print_readable / pattern dump；需新增 pattern 时指向 pattern-dev）
 4. 输出一致性（dummy 内前后对比）
-5. 结论（可行/不可行 + 原因）交 S1 融合决策；不可行不进入真实权重试错
+5. 结论（可行/不可行 + 原因）交 `fusion-scope-analyze`（融合范围与收益判定；交付件与门禁见其「交付件」节）**再回流 S1 阶段**；不可行不进入真实权重试错
 
 > 注意：dummy 的耗时不代表真实权重（层数主导），快验只回答「能不能命中/姿势对不对」；收益评估必须回到真实权重。
 

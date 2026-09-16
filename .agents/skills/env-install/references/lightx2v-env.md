@@ -1,7 +1,7 @@
 # LightX2V 调优环境（MindIE-SD 接入实测环境）
 
 > 定位：LightX2V 的部署形态与 vLLM-Omni 不同——**editable 源码 + `PLATFORM` 环境变量驱动**，
-> 无独立服务进程。本文记录把该环境从零复现/更新到就绪的姿势（Ascend 950PR 实测）。
+> 无独立服务进程。本文记录把该环境从零复现/更新到就绪的姿势（快照环境实测；读数与配置坐标见归档）。
 > 边界：止于「环境就绪」（import 成功、版本配套、权重就位）；**运行入口与 `--config_json` 档位**见
 > `framework-integration/references/run-entry-and-request-tiers.md` §2，
 > 使能姿势见 `framework-integration/references/lightx2v-enablement.md`。
@@ -14,7 +14,7 @@
 | 运行时 | `docker exec` 进容器 → source CANN env → `torchrun` 启动推理（命令与档位见 §4 指针） |
 | 模型 | 共享模型目录（容器与宿主机挂载一致） |
 
-## 2. 版本配套（950PR 实测）
+## 2. 版本配套（一次环境快照；换机型 / 换框架版本须按 §1 推导顺序重查）
 
 | 组件 | 版本 | 说明 |
 |---|---|---|

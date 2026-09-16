@@ -94,8 +94,30 @@ diffusers 单进程：无需 torchrun，本地脚本直接包装 pipeline 调用
 或把包装模块直接 import 进入口脚本顶层（spawn 场景必须能被子进程加载，见上）。
 
 产出契约与框架无关：补丁统一产出 `ASCEND_PROFILER_OUTPUT/`（kernel_details.csv +
-trace_view.json + step_trace_time.csv）→ 打包回传后喂同一 profiling-analyze 管道
+trace_view.json + step_trace_time.csv + **单元利用率档**）→ 打包回传后喂同一 profiling-analyze 管道
 （analyze_trace.py / compare_traces.py），无需按框架分化。
+
+**单元利用率档（强制 · 融合判型的唯一数据源）**：融合范围与收益判定（`fusion-scope-analyze`）依赖各计算
+单元的占用比，必须采集 `--task-time=l1 --aic-mode=task-based --aic-metrics=PipeUtilization`——
+否则 `memory_bound` / `*_vec_ratio` / `*_mac_ratio` / `*_mte2_ratio` / `*_mte3_ratio` / `cube_utilization(%)`
+等字段一律为 `N/A`（官方口径：`task_time=l0|off` 时不产出 AI Core / AI Vector PMU 数据）。
+不要只采 duration：**没有利用率档的采集对融合判定不可用**。
+
+**执行完成检查门禁（fail-closed）**：回传/交付前逐项断言，任一不满足即判本次采集**不合格**并给出重采命令，
+**不得**交给下游：
+
+1. 执行序可用：存在含 `Name`（或 `Op Name`）/ `Duration(us)` / `Task Type` 的文件；
+2. 利用率可用：存在含 `*_vec_ratio`、`*_mac_ratio`、`*_mte2_ratio`、`*_mte3_ratio` **四族**的文件
+   （`op_summary_*.csv` 为权威来源；若所用版本的 `kernel_details.csv` 含同名列则等价），
+   且**待判型的目标算子**这些列非 `N/A` 且非空。`memory_bound` 是**可算字段**
+   （公式 `mte2_ratio / max(mac_ratio, vec_ratio)`），实测导出常不含它 ⇒ **不作必需列**，判型时现算；
+3. 口径可用：warmup 已在 profiler 外剔除（见「预热」节），步数与 profile 配置随产物留痕。
+
+> 反例（必须拦住）：把 `N/A` 当成 0 或忽略缺列 → 下游会把"无数据"读成"无内存瓶颈"，
+> 属**静默失败**（判定看似完成、结论却是假的）。
+>
+> 机器化执行：`python .agents/skills/profiling-collect/scripts/check_output.py --dir {ASCEND_PROFILER_OUTPUT}`
+> （退出码 0 = 通过 / 1 = 不合格须重采 / 2 = 前置缺失；自带 `--selftest` 负样本回归，pre-commit 已挂钩）。
 
 各框架接入/使能上下文与实测案例参考 framework-integration 的 references：
 `lightx2v-enablement.md`（LightX2V 开启方式 + 采集相关坑）、`vllm-omni-enablement.md`
@@ -217,6 +239,10 @@ profiling-collect ──→ profiling-analyze ──→ dit-perf-opt
 
 - `scripts/collect_profile.py` — SSH连接 → 执行 profiling → 压缩 → 下载（mindiesd 自家脚本入口）
 - `scripts/collect_patch_template.py` — 三方框架采集补丁模板（顶层推理方法包装 + torchrun 多卡）
+- `scripts/check_output.py` — **产出完成检查门禁**（fail-closed）：按列名断言执行序与单元利用率档齐备、
+  判型列非全 `N/A`；退出码 0 通过 / 1 不合格 / 2 前置缺失。采集结束即跑
+  `python scripts/check_output.py --dir {ASCEND_PROFILER_OUTPUT}`；自带 `--selftest` 负样本回归
+  （pre-commit 的 `check-output-selftest` 已挂钩）
 
 > 部署使用 env-install/scripts/deploy_to_remote.py，空闲卡检测使用 remote-access/scripts/pick_free_device.py。
 

@@ -1,9 +1,9 @@
 ---
 name: env-install
-compatibility: paramiko（deploy_to_remote.py）；远端 SSH + Docker + CANN；本地 cmake/build/wheel；triton-ascend；950PR 源码构建全栈（torch/torch_npu/vllm/vllm-ascend/vllm-omni/LightX2V）；modelscope
+compatibility: paramiko（deploy_to_remote.py）；远端 SSH + Docker + CANN；本地 cmake/build/wheel；triton-ascend；源码构建全栈（torch/torch_npu/vllm/vllm-ascend/vllm-omni/LightX2V；代际与版本矩阵见 references）；modelscope
 description: >
   环境安装与准备：把部署环境从零安装就绪——mindiesd 编译安装（本地昇腾直装 / SSH 推远端容器 /
-  Docker 镜像直装）与三方推理框架全栈安装（vLLM-Omni 950PR 源码构建、DiffSynth-Engine 部署、
+  Docker 镜像直装）与三方推理框架全栈安装（vLLM-Omni 源码构建、DiffSynth-Engine 部署、
   LightX2V editable 部署），并负责模型权重确认与下载（下载前先确认远端是否已存在）。不含特性使能与验证
   （framework-integration）与 profiling（profiling-collect）；SSH 工具由 remote-access 提供。
   当用户需要安装 MindIE-SD、源码构建/直装 vLLM-Omni 或 LightX2V（editable + PLATFORM=ascend_npu）、
@@ -20,7 +20,7 @@ description: >
 本技能是能力层的「环境安装与准备」技能，覆盖两端职责：
 
 - **安装部署环境**：mindiesd 编译安装（本地昇腾直装 / SSH 推远端容器）+ 三方推理框架全栈安装
-  （vLLM-Omni 950PR 源码构建、DiffSynth-Engine 部署）。
+  （vLLM-Omni 源码构建、DiffSynth-Engine 部署）。
 - **模型权重确认/下载**：三方框架跑真实权重前，把权重从 modelscope 下载到远端容器并校验完整。
 
 分工边界：
@@ -60,7 +60,7 @@ description: >
 ├─ 已在昇腾设备上 → 走「MindIE-SD 编译安装」本地直装路径
 ├─ 本地开发机，远端昇腾容器已就绪 → 「部署脚本」增量推送 + 容器内编译安装
 ├─ 已有可用容器/镜像，或官方预构建镜像覆盖目标芯片 → 「Docker 镜像直装」直接使用（容器内按需补装 mindiesd）
-├─ 目标用 vLLM-Omni 托管扩散模型（Qwen-Image / Wan / MiniMax-H3，950PR）→ 「三方框架全栈安装」
+├─ 目标用 vLLM-Omni 托管扩散模型（Qwen-Image / Wan / MiniMax-H3 等；镜像未覆盖目标机型时）→ 「三方框架全栈安装」
 ├─ 目标跑 LightX2V（editable 源码 + mindiesd 同容器）→ 「三方框架全栈安装」→ LightX2V 部署要点
 ├─ 三方框架需要真实权重 → 「权重确认与下载」（先确认远端已存在，存在则跳过）
 └─ 只需随机权重快速验证架构 → dummy-run（本技能不下载权重）
@@ -70,7 +70,7 @@ description: >
 | --- | --- | --- |
 | 本地昇腾直装 | 已在昇腾设备上 | 本机执行 `python setup.py build_py && pip install -e .` |
 | SSH 推远端容器 | 本地开发机 → 远端昇腾 Docker 容器 | `scripts/deploy_to_remote.py` 增量传输后在容器内编译 |
-| Docker 镜像直装 | 官方预构建镜像覆盖目标芯片（如 Atlas A2/A3 aarch64），或已有可用容器/镜像 | 镜像内环境已就绪 → 免编译，容器内 `pip install mindiesd`；需自定义时才按需补装 |
+| Docker 镜像直装 | 官方预构建镜像**已覆盖目标机型/架构**（用 `npu-smi info -l` 确认型号与架构后核对镜像覆盖面），或已有可用容器/镜像 | 镜像内环境已就绪 → 免编译，容器内 `pip install mindiesd`；需自定义时才按需补装 |
 
 三条路径共用同一份「MindIE-SD 编译安装」流程与「兼容性前置检查」；镜像直装路径在镜像内
 CANN/torch/torch_npu 已就绪时免源码构建（仅补装 mindiesd），只有镜像内缺失基础环境或需改动
@@ -98,9 +98,10 @@ CANN/torch/torch_npu 已就绪时免源码构建（仅补装 mindiesd），只�
 
 **适用场景**（镜像内环境已就绪时直接使用，或在容器内按需补装 mindiesd）：
 
-- **官方预构建镜像覆盖目标芯片**（如 `quay.io/ascend/vllm-omni:*`，仅 Atlas A2/A3 aarch64）：
+- **官方预构建镜像已覆盖目标机型/架构**（如 `quay.io/ascend/vllm-omni:*`，覆盖面以镜像 tag 说明为准，
+  用 `npu-smi info -l` 确认型号与架构后核对）：
   镜像内 CANN/torch/torch_npu 与 vLLM-Omni 全栈已就绪，可直接使用镜像、免源码构建；缺 mindiesd 时补装。
-- **Ascend 950PR / 950DT（x86_64）无官方全栈镜像**：可用 CANN 基础镜像（如 `cann:9.1.0-950-*`）起容器，
+- **目标机型（x86_64 等）无官方全栈镜像**：可用 CANN 基础镜像（如 `cann:<版本>-*`）起容器，
   再按本技能「MindIE-SD 编译安装」源码路径补装，或参考 `references/vllm-omni-build.md` 源码构建
   vLLM-Omni 全栈。
 
@@ -137,14 +138,15 @@ python -c "import torch, torch_npu; print(torch.__version__, torch_npu.__version
 **拉取注意事项**（镜像较大、多架构、内网/代理都会影响拉取，先确认再动手）：
 
 - **多架构 manifest**：`quay.io/ascend/vllm-omni:*` 等多架构仓库默认按宿主架构拉取；x86_64 宿主上
-  aarch64-only 镜像不可用时不要硬 `--platform`，改走 950PR 源码路径。
+  aarch64-only 镜像不可用时不要硬 `--platform`，改走**源码构建**路径。
 - **内网/代理**：先确认拉取源可达（registry mirror / 代理）；大镜像用 `docker pull --retry` 或后台拉取，
   避免 SSH/终端断连中断传输。
 - **与本地已有镜像/容器复用**：起新容器前先确认是否已有可用镜像或容器（`docker images` / `docker ps -a`），
   能复用就不重拉/重装——与「权重确认与下载」先确认再下载是同一原则。
 
-**直装 vs 源码构建（一句话取舍）**：A2/A3 有官方镜像时直装省时（免源码构建）；950PR/950DT（x86_64）
-无官方全栈镜像、或需要改动 vllm / vllm-omni / mindiesd 框架源码时，走「三方框架全栈安装」源码构建路径。
+**直装 vs 源码构建（一句话取舍）**：官方镜像**已覆盖目标机型/架构**时直装省时（免源码构建）；
+镜像未覆盖目标机型（如以 x86_64 为目标而镜像只覆盖 aarch64）、或需要改动 vllm / vllm-omni / mindiesd
+框架源码时，走「三方框架全栈安装」源码构建路径。
 
 ## MindIE-SD 编译安装
 
@@ -185,7 +187,7 @@ docker exec {容器名} bash -lc 'source /usr/local/Ascend/ascend-toolkit/set_en
 | --- | --- |
 | CANN | >= 9.0.0，含 bisheng 编译器 |
 | Python | >= 3.10 |
-| PyTorch | 2.6 / 2.7 / 2.8 / 2.9 / 2.10（950PR 全栈用 2.11.0，见 `references/vllm-omni-build.md`「版本配套矩阵」） |
+| PyTorch | 2.6 / 2.7 / 2.8 / 2.9 / 2.10；**特定全栈组合锁定 2.11.0**（对应关系见 `references/vllm-omni-build.md`「版本配套矩阵」；**以框架侧锁定的 torch 版本为起点反查**，勿按机型硬记） |
 | TorchNPU | 与 PyTorch 版本匹配 |
 | triton | 3.5.0（部署使用时需要） |
 | triton-ascend | 3.2.1（部署使用时需要，Ascend 版 triton） |
@@ -281,17 +283,17 @@ python -c "import mindiesd; print(mindiesd.__version__)"
 > 若变更仅涉及 `examples/`、`tests/`、`docs/` 等非包目录，可跳过此步骤，
 > 直接使用远端已有的安装版本。
 
-## 三方框架全栈安装（vLLM-Omni 950PR 源码构建 + DiffSynth-Engine + LightX2V）
+## 三方框架全栈安装（vLLM-Omni 源码构建 + DiffSynth-Engine + LightX2V）
 
 当目标是在远端容器内用 **vLLM-Omni 托管扩散模型**（Qwen-Image-2512 / Wan2.2 / MiniMax-H3 等），
 需安装完整栈 `torch + torch_npu + vllm + vllm-ascend + vllm-omni + mindiesd`。⚠️ 官方预构建镜像
-（`quay.io/ascend/vllm-omni:*`）仅覆盖 Atlas A2/A3（aarch64），**Ascend 950PR / 950DT（x86_64）
-必须从源码构建**。示例（950PR + vllm 0.26.0，2026-08 实测）：torch 2.11.0+cpu → torch_npu
+（`quay.io/ascend/vllm-omni:*`）**覆盖面以镜像 tag 为准**（历史版本只覆盖 aarch64），**镜像不含目标
+机型/架构时必须从源码构建**。示例（vllm 0.26.0 组合，实测快照见归档）：torch 2.11.0+cpu → torch_npu
 2.11.0 → vllm 0.26.0 源码构建 → vllm-ascend（releases/v0.26.0rc）→ vllm-omni（main）→ mindiesd（dev）。
 
 完整构建流程（版本配套矩阵、Step 2.1–2.6 分步命令、内联已知坑与 ⚠️ 警告，含 setuptools 升级 /
 rust 跳过 / numpy 阿里云镜像等）见 `references/vllm-omni-build.md`。**加载时机**：需要源码构建
-vLLM-Omni 全栈（950PR/950DT）或排障 vllm / vllm-ascend / vllm-omni 构建问题时，加载该 reference 执行。
+vLLM-Omni 全栈（镜像未覆盖的目标机型）或排障 vllm / vllm-ascend / vllm-omni 构建问题时，加载该 reference 执行。
 
 ### DiffSynth-Engine 部署要点
 
@@ -300,7 +302,7 @@ vLLM-Omni 全栈（950PR/950DT）或排障 vllm / vllm-ascend / vllm-omni 构建
 
 - 纯 Python 包、无需编译：无 `setup.py build_py` / CANN 构建步骤，增量传输源码后
   `pip install -e . --no-deps` 即可（安装要点见 deploy_to_remote.py 的传输姿势）
-- ⚠️ **vLLM 全栈两者的源码安装参数不同，勿合并成一组**（950PR/950DT 源码构建口径）：
+- ⚠️ **vLLM 全栈两者的源码安装参数不同，勿合并成一组**（源码构建口径）：
   `vllm-ascend`（releases/v0.26.0rc）用 `pip install -e . --no-deps --no-build-isolation`；
   `vllm-omni`（main）用 `VLLM_OMNI_TARGET_DEVICE=npu pip install -e . --no-build-isolation`
   —— **不带 `--no-deps`**。差异的完整步骤见 `references/vllm-omni-build.md` §2.4/§2.5
@@ -325,8 +327,8 @@ LightX2V 与 vLLM-Omni 形态不同：**editable 源码 + `PLATFORM=ascend_npu` 
   无需重装、重启进程即生效
 - ⚠️ **`import lightx2v` 前必须 `export PLATFORM=ascend_npu`**：否则设备初始化按默认平台走，
   报 `ERR99999 UNKNOWN application exception` 类异常
-- 版本配套实测矩阵（python 3.12 / torch 2.11 / torch_npu 2.11 / CANN 9.1）、就绪验证、
-  MiniMax-H3 权重分区（t2av 不需要 FL2VA 135G）：见 `references/lightx2v-env.md`
+- 版本配套矩阵、就绪验证、模型权重分区（按目标形态只需其中一部分权重，具体清单见 reference）：
+  见 `references/lightx2v-env.md`
 
 > **运行入口不属本技能**：`torchrun` 命令与 `--config_json` 档位语义（含档位报错回退）见
 > `framework-integration/references/run-entry-and-request-tiers.md` §2；并行档位形态选择归
@@ -501,10 +503,10 @@ python deploy_to_remote.py --host <远端IP> --user {用户名} \
 - `references/troubleshooting-env.md` — 加载时机: 部署/编译/安装遇到异常，需系统排查定位根因时
   （**安装 / 部署域决策树 + 越界归属表**：服务启动、使能、选档、多卡归因、精度判定、传输域
   均只留指针，不在本文件展开）
-- `references/vllm-omni-build.md` — 加载时机: 需要源码构建 vLLM-Omni 全栈（950PR/950DT）或排障 vllm / vllm-ascend / vllm-omni 构建问题时（版本配套矩阵、Step 2.1–2.6 全量细节）
+- `references/vllm-omni-build.md` — 加载时机: 需要源码构建 vLLM-Omni 全栈（镜像未覆盖的目标机型）或排障 vllm / vllm-ascend / vllm-omni 构建问题时（版本配套矩阵、Step 2.1–2.6 全量细节）
 
 ## 维护与更新
 
 当远端昇腾环境变化（torch/TorchNPU 版本升级、CANN SDK 更新）、vllm/vllm-ascend/vllm-omni
-版本矩阵变化、950PR 构建路径调整、modelscope 下载流程或容器配置调整、或发现新的安装/部署问题时，
+版本矩阵变化、源码构建路径调整、modelscope 下载流程或容器配置调整、或发现新的安装/部署问题时，
 按 dev-workflow 的复盘流程更新本 skill。
