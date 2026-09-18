@@ -14,10 +14,10 @@
 #   msprof          - NPU profiling tool (bundled with CANN, no extra install)
 #
 # Base image:
-#   quay.io/ascend/vllm-omni:v0.20.0 (CANN-based, Ubuntu, aarch64)
+#   quay.io/ascend/vllm-omni:v0.28.0 (CANN-based, Ubuntu, linux/amd64)
 #
 # Build:
-#   docker build -t mindiesd:v3.0.0-A2-ubuntu22.04-py3.11-aarch64 \
+#   docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64 \
 #       -f Dockerfile.a2.ubuntu .
 #
 # Run:
@@ -37,11 +37,11 @@
 #       -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
 #       -v /etc/ascend_install.info:/etc/ascend_install.info \
 #       -v /root/.cache:/root/.cache \
-#       mindiesd:v3.0.0-A2-ubuntu22.04-py3.11-aarch64 \
+#       mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64 \
 #       bash
 # ============================================================================
 
-FROM quay.io/ascend/vllm-omni:v0.20.0
+FROM quay.io/ascend/vllm-omni:v0.28.0
 
 # --------------------------------------------------------------------------
 # Metadata labels (OCI image spec)
@@ -49,19 +49,19 @@ FROM quay.io/ascend/vllm-omni:v0.20.0
 LABEL maintainer="Ascend Container Team"
 LABEL description="MindIE-SD for Stable Diffusion inference on Ascend NPU"
 LABEL org.opencontainers.image.title="mindiesd"
-LABEL org.opencontainers.image.version="v3.0.0"
+LABEL org.opencontainers.image.version="v3.1.0"
 LABEL org.opencontainers.image.description="MindIE-SD image with Ascend tuning/debugging tools"
 
 # --------------------------------------------------------------------------
 # Environment variables for banner
 # --------------------------------------------------------------------------
 ENV ASCEND_SOFTWARE_NAME="MindIE-SD"
-ENV ASCEND_SOFTWARE_VERSION="v3.0.0"
+ENV ASCEND_SOFTWARE_VERSION="v3.1.0"
 
 # --------------------------------------------------------------------------
 # 1. Install MindIE-SD (Stable Diffusion inference engine)
 # --------------------------------------------------------------------------
-RUN pip install mindiesd==3.0.0 -i https://pypi.org/simple --no-cache-dir
+RUN pip install mindiesd==3.1.0 -i https://pypi.org/simple --no-cache-dir
 
 # --------------------------------------------------------------------------
 # 2. Install msprobe (precision debugging tool)
