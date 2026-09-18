@@ -14,11 +14,11 @@
 #   msprof          - NPU profiling tool (bundled with CANN, no extra install)
 #
 # Base image:
-#   quay.io/ascend/vllm-omni:v0.28.0-a3 (CANN-based, Ubuntu, linux/amd64)
+#   quay.io/ascend/vllm-omni:v0.28.0-a5 (CANN-based, Ubuntu, linux/amd64)
 #
 # Build:
-#   docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64 \
-#       -f Dockerfile.a3.ubuntu .
+#   docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64 \
+#       -f Dockerfile.a5.ubuntu .
 #
 # Run:
 #   docker run -it --rm --name=mindiesd \
@@ -37,11 +37,11 @@
 #       -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
 #       -v /etc/ascend_install.info:/etc/ascend_install.info \
 #       -v /root/.cache:/root/.cache \
-#       mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64 \
+#       mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64 \
 #       bash
 # ============================================================================
 
-FROM quay.io/ascend/vllm-omni:v0.28.0-a3
+FROM quay.io/ascend/vllm-omni:v0.28.0-a5
 
 # --------------------------------------------------------------------------
 # Metadata labels (OCI image spec)
