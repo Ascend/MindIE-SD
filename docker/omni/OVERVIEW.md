@@ -73,6 +73,8 @@ Each series has a dedicated Dockerfile, archived in the `docker/omni` directory 
 | Atlas 800I A3 SuperPoD Server | `v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a3.ubuntu) |
 | Ascend A5 series products | `v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a5.ubuntu) |
 
+Historical image tags, including v3.0.0, are listed in [Supported Tags](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/supported_tags.md).
+
 ## Quick Start
 
 ### Pull Base Image
@@ -226,16 +228,6 @@ RUN pip install --no-cache-dir your-package
 COPY ./your-app /workspace/your-app
 WORKDIR /workspace/your-app
 ```
-
-## Hardware Support
-
-| Item | Requirement |
-|------|-------------|
-| **NPU** | Atlas 800I A2 inference server |
-| | Atlas 800I A3 SuperPoD Server |
-| | Ascend A5 series products |
-| **Driver** | Atlas NPU driver must be installed on the host |
-| **Host Mounts** | `/usr/local/dcmi`, `/usr/local/bin/npu-smi`, `/usr/local/Ascend/driver/lib64/`, `/usr/local/Ascend/driver/version.info`, `/etc/ascend_install.info`, `/root/.cache` |
 
 ## Compatibility Changes
 

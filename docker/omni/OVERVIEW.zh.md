@@ -73,6 +73,8 @@
 | Atlas 800I A3 超节点服务器 | `v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a3.ubuntu) |
 | 昇腾 A5 系列产品 | `v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a5.ubuntu) |
 
+历史版本（包括 v3.0.0）的镜像 Tag 见 [Supported Tags](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/supported_tags.md)。
+
 ## 快速开始
 
 ### 拉取基础镜像
@@ -226,16 +228,6 @@ RUN pip install --no-cache-dir your-package
 COPY ./your-app /workspace/your-app
 WORKDIR /workspace/your-app
 ```
-
-## 硬件支持信息
-
-| 项目 | 要求 |
-|------|------|
-| **NPU** | Atlas 800I A2 推理服务器 |
-| | Atlas 800I A3 超节点服务器 |
-| | 昇腾 A5 系列产品 |
-| **驱动** | 宿主机需安装昇腾 NPU 驱动 |
-| **宿主机挂载** | `/usr/local/dcmi`、`/usr/local/bin/npu-smi`、`/usr/local/Ascend/driver/lib64/`、`/usr/local/Ascend/driver/version.info`、`/etc/ascend_install.info`、`/root/.cache` |
 
 ## 兼容性变更说明
 
