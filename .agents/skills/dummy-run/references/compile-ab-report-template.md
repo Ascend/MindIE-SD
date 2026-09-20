@@ -54,13 +54,9 @@
 
 ## 3. 数据来源（示例）
 
-- MiniMax-H3 w8a8（FFN 融合**默认开启**，diffusers 0.40）：eager 21.77ms / compile 15.65ms
-  （-28.1% wall；kernel_sum 22.92→16.60ms，kernel 数 484→338）；eager/compile 两份
-  kernel_details.csv 见 `tmp/mmx_w8a8/fusion_default_{eager,compile}_kernel_details.csv`，
-  聚合脚本 `tmp/mmx_w8a8/agg_fusion_default.py`；完整 §C 双报表见
-  `tmp/mmx_w8a8/dummy_ab_reports_mmx_fusion_default_on.md`。
-- diffusers 0.40 全模型 wall（三模型并行，一模型一卡，2026-09-06）：Wan2.2 951.49→841.76
-  （-11.5%）、MiniMax-H3 21.77→15.65（-28.1%）、FLUX.1-dev 17.2→15.14（-12.0%）。
+- 数据来源：本组合的 eager / compile 两份 profile（kernel_details）与 §C 双报表、聚合脚本，
+  见 `{run_results_dir}/`（目录级指针，含数据文件与脚本路径；具体文件名以归档为准）。
+- **模板内的 ✻ 数值为示意近似，不得当作实测收益引用**；正式报表按站点映射重填并自附数据来源。
 - 收益归因方法论（GEMM/FA 不变、小 kernel 融合）：
   `../../pattern-dev/references/pattern-dev-notes.md` §5。
 

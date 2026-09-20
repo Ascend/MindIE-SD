@@ -197,8 +197,7 @@ Qmm(x1 fp8, w1ᵀ, wsᵀ, pertoken_scale=x_scale) [S, 2F]
   → npu_dynamic_mx_quant → Qmm(out-proj)
 ```
 
-两个 view 是 diffusers SwiGLU 的 shape-noise；**S 动态**（同图 site1 S=1、site2/3
-S=3967）。trace 式 pattern（PatternBase/register_replacement）把 view 目标尺寸固化为
+两个 view 是 diffusers SwiGLU 的 shape-noise；**S 动态**（同一图内不同 site 的 S 不同）。trace 式 pattern（PatternBase/register_replacement）把 view 目标尺寸固化为
 example 常量 → 永不命中。旁证：triton swiglu pattern 能命中是因它的输入就是 3D
 `[1,S,2F]`（view 在 pattern 外），不含 Qmm 前缀。
 
@@ -206,15 +205,16 @@ example 常量 → 永不命中。旁证：triton swiglu pattern 能命中是因
 
 | 方案 | 结果 | 死因 |
 |---|---|---|
-| 全局 fold（redundant pass 折叠 view+split） | 反复崩 | fold 改 split 输入 rank 后 swiglu pattern 的 3D 假设在真实 shape 重放时崩（`split got 1`）；误伤 attn split(5376) |
+| 全局 fold（redundant pass 折叠 view+split） | 反复崩 | fold 改 split 输入 rank 后 swiglu pattern 的 3D 假设在真实 shape 重放时崩（`split got 1`）；误伤注意力链的 split |
 | fusion pattern 加 3D-view 变体（pattern 内显式 view） | 不命中 | trace 时 `-1` 被具体化 → view 常量 S 失配 |
 | 手写 `search_fn_pattern`（`Ignored()` 通配 view） | 不可落地 | torch 内部接口（仅 `register_lowering_pattern` 1 处用）；`check_fn` 无条件要求 `match.kwargs` 含 search_fn 全部参数名，手写 `Arg()` 收集进 args → 深链必抛 `Not all inputs to pattern found in match.kwargs` |
 | 本地 symbolic_trace / 独立 make_fx probe | 误导多轮 | probe 图形态与真实 compile 图不同（symbolic_trace 产 `call_method view`/`torch.split`；真实图是 `call_function aten.view.default`/OpOverload `split.Tensor`；make_fx 还把 silu 分解成 neg/exp/add/div）→ probe matched 0 不代表真实现状 |
 
-**正解（mkldnn_fusion.py 范式，已真图命中 3/3）**：改用 `GraphPatternEntry` + 手动改写
+**正解（mkldnn_fusion.py 范式）**：改用 `GraphPatternEntry` + 手动改写
 handler——四条硬规则（全 `Arg()` 叶子一个 kwargs 都不写 / 动态 view 尺寸 `Ignored()` /
 共享子节点同一实例 + `_users=MULTIPLE` / handler 从 `match.output_node()` 反向沿 producer
 链改图并逐个 erase 无 user 节点）见 `references/graph-pattern-rewrite-guide.md` §3-§4，本文不复述。
+命中判定按本节的计数契约现场复核（站点计数见会话产物归档 `{run_results_dir}/archive/`）。
 注册接入同文 §4：封装 `register_xxx_graph_entries(pattern_pass)` 由 `passes/__init__.py`
 在 fusion config 开启时调用，**fusion on 时跳过弱融合（triton swiglu）注册**（否则弱融合
 先吞子图、强融合无 site）。

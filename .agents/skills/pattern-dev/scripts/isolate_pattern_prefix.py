@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# coding=utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
 # MindIE is licensed under Mulan PSL v2.
 # You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -24,11 +23,10 @@ Usage:
     python isolate_pattern_prefix.py
 """
 
-
 # torch_npu 必须先于 torch._inductor 导入（NPU 后端注册/补丁顺序），保持原有顺序。
 import torch_npu  # noqa: F401, I001
-import torch._inductor.pattern_matcher as pm  # noqa: E402
-from torch._inductor.pattern_matcher import (  # noqa: E402
+import torch._inductor.pattern_matcher as pm
+from torch._inductor.pattern_matcher import (
     PatternMatcherPass,
 )
 
@@ -53,15 +51,16 @@ def register_levels():
     passes = []
     for name, pat in LEVEL_BUILDERS():
         p = PatternMatcherPass(pass_name=f"inc_{name}")
-        pm.GraphPatternEntry(pattern=pat, extra_check=lambda m: True,
-                             handler=lambda m, *a, **k: None).register(p.patterns)
+        pm.GraphPatternEntry(pattern=pat, extra_check=lambda m: True, handler=lambda m, *a, **k: None).register(
+            p.patterns
+        )
         passes.append((name, p))
     return passes
 
 
 def _install_hook(level_passes, backend_cls=None):
     if backend_cls is None:
-        from mindiesd.compilation import MindieSDBackend as backend_cls  # noqa: N813
+        from mindiesd.compilation import MindieSDBackend as backend_cls
 
     orig = backend_cls.apply_pattern_match_passes.__func__
 

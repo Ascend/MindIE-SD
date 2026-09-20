@@ -55,8 +55,10 @@ snapshot_download(
 
 ## 3. 依赖版本
 
-- **diffusers >= 0.40.0**（`MiniMaxH3ModularPipeline` 于 0.40 引入；dummy_run requirements 由 0.38.0 升到 0.40.0）
-- transformers >= 4.56.0（Qwen3-VL）
+- **diffusers：需支持 `MiniMaxH3ModularPipeline` 的版本**（该 pipeline 的引入版本见其 changelog；
+  dummy_run requirements 已随之抬升）
+- **transformers：需支持 Qwen3-VL 的版本**
+- **换版本先复核**：换 diffusers / transformers 版本后，先跑一次本文件 §10 的构造验证再套用
 - 远端验证隔离：`pip install --target /tmp/dif040_site --no-deps diffusers==0.40.0` + `PYTHONPATH=/tmp/dif040_site`，
   不污染已安装的 vllm-omni / mindiesd 环境（见 env-install 故障排查）
 
@@ -78,8 +80,9 @@ snapshot_download(
    2 步 = 1 次 transformer 前向。**不要沿用其他模型的 1 步**
 2. **几何约束**：`num_frames` 必须为 `17n+5`（最小 124 = 17×7+5，时长 5–15s @ 24fps）；
    `height`/`width` 必须是 32 的倍数（`vae_spatial_compression_ratio 16 × patch_w 2`）
-3. **单卡 O(seq²)**：全自注意力 packed 序列，768×1344×124 帧 QK^T ≈ 160GB（bf16）单卡不可行；
-   默认 256×384 小画布（seq ≈ 4K），可 `--height/--width` 调整
+3. **单卡 O(seq²)**：全自注意力 packed 序列下 QK^T 规模随分辨率 × 帧数**平方增长**，
+   单卡很快不可行（该组合的具体形状与显存读数见会话产物归档）；
+   默认用小画布（seq 量级为 4K），可 `--height/--width` 调整
 4. **`text_encoder_layer`**：完整模型在 Qwen3-VL 第 50 层 hidden state 做条件，且该属性是
    **read-only property**（`get_qwen3vl_prompt_embeds` 校验层数 > 该值）；截断为 2 层后
    必须**子类覆盖**该 property 为 1
@@ -231,8 +234,9 @@ AdaLN:  index_select(scale_table) -> add(·,1.0) -> mul(x,·)
 - **算子验收值（H3 接口事实）**：SwiGLU 需把 chunk 顺序对调为 `[gate,hidden]`（`npu_swiglu` 语义是
   `first_half*silu(second_half)`），swapped-order err=1e-4(bf16)；AdaLN 三种 shape err=0.0039(bf16)；
   调制表仅 `[3,D]`=64KB（**L2 驻留**，故行内核能一次吸收 2 个 index_select）。
-- **最终 kernel 构成（all on，315 kernels vs baseline 339）**：`gather_scale_shift_kernel` ×10、
-  `gather_residual_gate_kernel` ×8、`swiglu_kernel` ×3；IndexSelect_GatherV2 **28→2**、Silu 仅剩 4 个小实例。
+- **最终 kernel 构成（all on）**：`gather_scale_shift_kernel` ×N、`gather_residual_gate_kernel` ×N、
+  `swiglu_kernel` ×N（按 block 数与站点数可推算）；IndexSelect_GatherV2 大幅消减、Silu 仅剩少量小实例；
+  逐项计数见会话产物归档 `{run_results_dir}/archive/`。
 - **多时长验证（5s/10s/15s = 124/243/345 帧）**：5 个 pattern（rmsnorm/rope/adaln/swiglu/gate）
   all_on vs all_off 全部 PASSED + compute-precision PASSED；**收益比例在各时长稳定在同一量级
   （不随时长漂移）**，而绝对耗时随规模**超线性**增长（FA O(seq²)）。
@@ -283,7 +287,7 @@ AdaLN:  index_select(scale_table) -> add(·,1.0) -> mul(x,·)
   - handler 手动改图**（参考 `torch/_inductor/fx_passes/mkldnn_fusion.py` 的 `_recover_linear`）：
   全 Arg 叶子、view 尺寸 `Ignored`、共享子节点 `_users=MULTIPLE`，由 `register_ffn_fusion_graph_entries()`
   注册进 pattern_pass；**fusion on 时同步禁 triton swiglu pattern**（fusion 拥有 FFN 站点）。
-  实测 compile 图 3 个 fused op、eager/compile 同 seed latents **位级一致（mean_rel=0.0）**。
+  实测 compile 图中 FFN 站点被融合（fused op 计数见会话产物归档 `{run_results_dir}/archive/`）、eager/compile 同 seed latents **位级一致（mean_rel=0.0）**。
 - **适用边界（为何 wan/flux 无 mm_swiglu_mxquant）**：该算子只匹配 **H3 特有 FFN hidden 形态**
   （单个 `Linear(D→2F)` 输出直接 `chunk→hidden*silu(gate)` + 输出 MX 量化直供 out-proj）。Wan2.2 与
   FLUX 的 FFN 均为 **GELU 单分支 MLP**（无 `[hidden|gate]` 两半、无 SwiGLU、无 out==2F 配对）→

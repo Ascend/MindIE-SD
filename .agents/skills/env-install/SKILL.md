@@ -118,7 +118,7 @@ docker run -it --rm --runtime=ascend \
 - **无 Ascend Docker 运行时**：手动加 `--device=/dev/davinci0`、`--device=/dev/davinci_manager`、
   `--device=/dev/hisi_hdc`、`--device=/dev/devmm_svm` 与 `-v /usr/local/Ascend/driver:/usr/local/Ascend/driver`
   （topo / 权重挂载同上）。
-- **必须挂载 HCCL ranktable 目录** `/usr/local/Ascend/driver/topo`（含 `950/atlas_350_*.json`）：
+- **必须挂载 HCCL ranktable 目录** `/usr/local/Ascend/driver/topo`（含**按目标设备代际生成的** `*.json` ranktable 文件，文件名按目标机型现场核对、勿照抄）：
   缺失时多卡启动报 `hcclCommInitRootInfoConfig error code is 4`（见本文件「故障排查」表与
   `references/vllm-omni-build.md` Step 2.1）；已运行的容器可 `docker cp` 补挂
   `/usr/local/Ascend/driver/topo` 到 `{容器}:/usr/local/Ascend/driver/topo`。
@@ -187,10 +187,9 @@ docker exec {容器名} bash -lc 'source /usr/local/Ascend/ascend-toolkit/set_en
 | --- | --- |
 | CANN | >= 9.0.0，含 bisheng 编译器 |
 | Python | >= 3.10 |
-| PyTorch | 2.6 / 2.7 / 2.8 / 2.9 / 2.10；**特定全栈组合锁定 2.11.0**（对应关系见 `references/vllm-omni-build.md`「版本配套矩阵」；**以框架侧锁定的 torch 版本为起点反查**，勿按机型硬记） |
+| PyTorch | `>= 2.6`，且**与 TorchNPU 主版本一致**；全栈组合**以框架侧锁定的 torch 版本为起点反查**（对应关系与已复现快照见 `references/vllm-omni-build.md`「版本配套矩阵」），勿按机型硬记 |
 | TorchNPU | 与 PyTorch 版本匹配 |
-| triton | 3.5.0（部署使用时需要） |
-| triton-ascend | 3.2.1（部署使用时需要，Ascend 版 triton） |
+| triton / triton-ascend | **Ascend 版 triton**，版本与所选 torch 配套（部署使用时需要；取值现场取证） |
 | 环境变量 | `source /usr/local/Ascend/ascend-toolkit/set_env.sh` |
 | 编译工具 | cmake, build, wheel（`pip install build wheel`） |
 
@@ -209,8 +208,8 @@ source ${current_script_dir}/build_tik_ops.sh
 # source ${current_script_dir}/build_tik_ops.sh
 ```
 
-容器内可用 sed 一键完成等效修改（**注意行首缩进**：`build/build_ops.sh:70` 该行有 4 空格缩进，
-用 `^source` 作锚点的写法会静默不生效，故锚点须容忍前导空白）：
+容器内可用 sed 一键完成等效修改（**注意行首缩进**：该行缩进量随脚本版本变化，
+用 `^source` 硬锚的写法会静默不生效，故锚点须容忍前导空白）：
 
 ```bash
 sed -i 's|^\([[:space:]]*\)source \(.*build_tik_ops\.sh\)|\1# source \2|' build/build_ops.sh
@@ -288,8 +287,8 @@ python -c "import mindiesd; print(mindiesd.__version__)"
 当目标是在远端容器内用 **vLLM-Omni 托管扩散模型**（Qwen-Image-2512 / Wan2.2 / MiniMax-H3 等），
 需安装完整栈 `torch + torch_npu + vllm + vllm-ascend + vllm-omni + mindiesd`。⚠️ 官方预构建镜像
 （`quay.io/ascend/vllm-omni:*`）**覆盖面以镜像 tag 为准**（历史版本只覆盖 aarch64），**镜像不含目标
-机型/架构时必须从源码构建**。示例（vllm 0.26.0 组合，实测快照见归档）：torch 2.11.0+cpu → torch_npu
-2.11.0 → vllm 0.26.0 源码构建 → vllm-ascend（releases/v0.26.0rc）→ vllm-omni（main）→ mindiesd（dev）。
+机型/架构时必须从源码构建**。示例（**某条已复现组合**，完整版本快照见会话产物归档）：以框架侧锁定的 torch 版本为起点 →
+配套 torch_npu → vllm 源码构建 → vllm-ascend → vllm-omni → mindiesd。
 
 完整构建流程（版本配套矩阵、Step 2.1–2.6 分步命令、内联已知坑与 ⚠️ 警告，含 setuptools 升级 /
 rust 跳过 / numpy 阿里云镜像等）见 `references/vllm-omni-build.md`。**加载时机**：需要源码构建
@@ -353,7 +352,7 @@ LightX2V 与 vLLM-Omni 形态不同：**editable 源码 + `PLATFORM=ascend_npu` 
 - **目录约定**：`{model_weight_dir}/{模型名}/{任务变体}/`，模型根目录直接 serve；仓库内
   `FL2VA/`、`Ref2VA/` 等子目录 = vLLM-Omni 格式，按任务分区下载。
   **各模型实测落位见 `references/weights-prep.md` §2.2 落位表**
-  （H3 已填；Qwen-Image / Wan2.2 / FLUX 的仓库 id 与任务变体列标 `待回填`——未实测不推测）。
+  （H3 有实测记录；Qwen-Image / Wan2.2 / FLUX 的仓库 id 与任务变体列未实测——留空、**不推测**）。
   ⚠️ LightX2V t2av 运行不需要 `FL2VA`（135G，其他任务组件），其实际分区口径见
   `references/lightx2v-env.md` §5。
 
@@ -495,7 +494,7 @@ python deploy_to_remote.py --host <远端IP> --user {用户名} \
 ## Reference Files
 
 - `references/weights-prep.md` — 加载时机: 三方框架需要真实权重时（**下载源优先级：默认
-  modelscope、HF/gated 次选**；目录/分区约定与**各模型落位表 §2.2**（未实测列标 `待回填`）；
+  modelscope、HF/gated 次选**；目录/分区约定与**各模型落位表 §2.2**（未实测的格子留空、不推测）；
   下载命令、nohup 后台化、完整性校验、已知坑；§7 只讲"权重就绪"的交接语义）
 - `references/lightx2v-env.md` — 加载时机: 部署/复现 LightX2V 调优环境（editable 安装、
   PLATFORM=ascend_npu、版本配套矩阵、就绪验证、MiniMax-H3 t2av 权重分区）时

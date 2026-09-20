@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """状态携带切分骨架：把带记忆块（MemBlock/past）的递归解码器按潜帧边界切成若干段，
 逐段顺序解码并在段间搬运“每个记忆块输入处的末帧激活”，使结果与整段解码逐位等价。
 
@@ -19,20 +18,22 @@ ADAPTER（**必须由使用者替换，本文件里是示例/伪代码级的占�
   * `post_process(flat, n, t) -> Tensor`：整段实现里“所有块之后”的收尾（如 pixel_shuffle、
     reshape 回 (N,T,C,H,W)）。不同网络的收尾不同，故留成钩子而非常量逻辑。
 """
+
 from __future__ import annotations
 
 import argparse
 import os
-from typing import Callable
+from collections.abc import Callable
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 
 
 # --------------------------------------------------------------------------- core
-def _slice_frames(model: nn.Sequential, x: torch.Tensor, post_process: Callable,
-                  is_mem_block: Callable, state: dict, keep_state: bool):
+def _slice_frames(
+    model: nn.Sequential, x: torch.Tensor, post_process: Callable, is_mem_block: Callable, state: dict, keep_state: bool
+):
     """解码一段帧序列，返回 (输出, 新状态)。
 
     x: (N, T, C, H, W)。
@@ -53,22 +54,22 @@ def _slice_frames(model: nn.Sequential, x: torch.Tensor, post_process: Callable,
             else:
                 mem = torch.cat([prev.to(view.dtype), view[:, : tt - 1]], dim=1)
             if keep_state:
-                nxt[idx] = view[:, -1:].detach().clone()   # 该块 **输入** 的末帧
+                nxt[idx] = view[:, -1:].detach().clone()  # 该块 **输入** 的末帧
             flat = block(flat, mem.reshape(flat.shape))
         else:
             flat = block(flat)
     return post_process(flat, n, n * 0 + (flat.shape[0] // n)), nxt
 
 
-def apply_whole(model: nn.Sequential, x: torch.Tensor, post_process: Callable,
-                is_mem_block: Callable) -> torch.Tensor:
+def apply_whole(model: nn.Sequential, x: torch.Tensor, post_process: Callable, is_mem_block: Callable) -> torch.Tensor:
     """整段解码（对照基准，与线上整段实现同语义）。"""
     out, _ = _slice_frames(model, x, post_process, is_mem_block, {}, keep_state=False)
     return out
 
 
-def apply_sliced(model: nn.Sequential, x: torch.Tensor, post_process: Callable,
-                 is_mem_block: Callable, slices: int) -> torch.Tensor:
+def apply_sliced(
+    model: nn.Sequential, x: torch.Tensor, post_process: Callable, is_mem_block: Callable, slices: int
+) -> torch.Tensor:
     """按潜帧边界切 `slices` 段顺序解码，段间携带状态。
 
     slices < 2（或帧数不够）时自动退化为整段 —— 退化分支**只依赖 env 与 shape**，
@@ -84,8 +85,7 @@ def apply_sliced(model: nn.Sequential, x: torch.Tensor, post_process: Callable,
         lo, hi = bounds[i], bounds[i + 1]
         if hi <= lo:
             continue
-        part, state = _slice_frames(model, x[:, lo:hi], post_process, is_mem_block, state,
-                                    keep_state=True)
+        part, state = _slice_frames(model, x[:, lo:hi], post_process, is_mem_block, state, keep_state=True)
         outs.append(part)
     return torch.cat(outs, dim=1)
 
@@ -106,8 +106,10 @@ class _MemBlock(nn.Module):
     def __init__(self, n_in: int, n_out: int, act: nn.Module) -> None:
         super().__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(n_in * 2, n_out, 3, padding=1), act,
-            nn.Conv2d(n_out, n_out, 3, padding=1), act,
+            nn.Conv2d(n_in * 2, n_out, 3, padding=1),
+            act,
+            nn.Conv2d(n_out, n_out, 3, padding=1),
+            act,
             nn.Conv2d(n_out, n_out, 3, padding=1),
         )
         self.skip = nn.Conv2d(n_in, n_out, 1, bias=False) if n_in != n_out else nn.Identity()
@@ -126,7 +128,7 @@ class _TGrow(nn.Module):
         self.conv = nn.Conv2d(n_f, n_f * stride, 1, bias=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        nt, c, h, w = x.shape
+        _nt, c, h, w = x.shape
         return self.conv(x).reshape(-1, c, h, w)
 
 
@@ -134,7 +136,8 @@ def _demo():
     torch.manual_seed(0)
     act = nn.ReLU(inplace=True)
     model = nn.Sequential(
-        nn.Conv2d(4, 16, 3, padding=1), act,
+        nn.Conv2d(4, 16, 3, padding=1),
+        act,
         _MemBlock(16, 16, act),
         _MemBlock(16, 16, act),
         nn.Upsample(scale_factor=2, mode="nearest"),
@@ -145,7 +148,7 @@ def _demo():
     ).eval()
 
     def post(flat: torch.Tensor, n: int, t: int) -> torch.Tensor:
-        flat = F.pixel_shuffle(flat, 2)                 # 空间 x2（逐帧）
+        flat = F.pixel_shuffle(flat, 2)  # 空间 x2（逐帧）
         bt, c, h, w = flat.shape
         return flat.view(n, bt // n, c, h, w)
 
@@ -159,10 +162,10 @@ def _demo():
         for pieces in (2, 3, 4, 6):
             got = apply_sliced(model, x, post, is_mem_block, pieces)
             d = (got - ref).abs().max().item()
-            print("  %d 段: max|d| = %.3e  %s" % (pieces, d, "bitwise 等价" if d == 0 else "**不等价**"))
+            print(f"  {pieces} 段: max|d| = {d:.3e}  {'bitwise 等价' if d == 0 else '**不等价**'}")
         # 半帧切分（错误示范）：段数与潜帧数不整除时仍应保持一致（这里用不整除的 5 段验证）
         got = apply_sliced(model, x, post, is_mem_block, 5)
-        print("  5 段(不整除): max|d| = %.3e" % (got - ref).abs().max().item())
+        print(f"  5 段(不整除): max|d| = {(got - ref).abs().max().item():.3e}")
 
 
 def main() -> int:

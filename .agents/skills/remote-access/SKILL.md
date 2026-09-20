@@ -115,9 +115,13 @@ finally:
   （远端任务不受影响，但轮询/后处理会停）。
 - 不要在 python f-string 里内嵌远端 shell 变量（如 `${t}` → `NameError`）；用字符串拼接，
   或把 `{{ }}` 转义成字面 `{}`。
-- 结束释放卡：`pkill -9 -f "[v]llm-omni serve"` 后用 `npu-smi info` 进程段复核（0 进程）再交还。
-  模式首字符加 `[x]` 断字符是**必须**的：裸写的 pattern 会匹配到执行这条命令的 shell 自身，
-  导致连接被自杀式中断（纪律与反例见 `../dev-workflow/references/rework-lessons.md`）。
+- 结束释放卡：**优先按自己记录的作用域杀**（启动时 `setsid` 自立进程组 + 记 PGID ⇒ `kill -9 -<PGID>`；
+  或用**端口限定**），再用 `npu-smi info` 进程段复核（0 进程）再交还。
+  若沿用模式式写法（如 `pkill -9 -f "[v]llm-omni serve"`），模式首字符加 `[x]` 断字符是**必须**的
+  （裸写 pattern 会匹配到执行这条命令的 shell 自身，导致连接被自杀式中断）；但要注意
+  **断字符只解决"自杀"，不解决"杀别人"**——无锚点的类名/角色名模式会匹配**全机**同类进程，
+  在共用机器上会杀掉其他 agent 的臂（现场事故与规则见 `references/arm-driver-traps.md` §5.2；
+  另一处反例见 `../dev-workflow/references/rework-lessons.md`）。
 
 ## 空闲卡选择
 
@@ -190,6 +194,10 @@ SSH / 连接 / 容器 / 换行相关条目速查（完整决策树见 Reference 
 | tokenizer / 权重加载异常 | 二进制文件被换行转换损坏 | 换行转换仅限文本，二进制绝不转换 |
 | 凭据明文泄露 | `--password` 明文传递并留在进程列表 / 日志 | 改用 `MINDIE_SSH_PASSWORD` 环境变量或 SSH key；日志不回显 |
 | 改了代码但不生效 / 远端结果与本地不符 | 同 basename 上传互相覆盖，远端执行的是旧文件 | 按任务建 distinct dest 目录（见「上传同步纪律」），上传后比对 mtime / hash |
+| 只是"推脚本"，远端任务却自己跑起来了 / 与别人的任务抢卡 | 推送工具**推送即执行**，而脚本**默认就会起全卡任务** | 推送与执行分两步、推完先 `echo`/`head` 确认落盘；臂脚本默认不自启（须显式给 tag/port/卡数）或默认 `--dry-run`（见 `references/arm-driver-traps.md` §5.1） |
+| 收尾清理后**别人的**任务消失 / 某条臂"请求计数非 0 而进展行数为 0" | 无锚点类名 `pkill -f` 跨越了 agent 边界 | 作用域内清理：PGID（`setsid` 启动）或端口限定；永不用类名/角色名做无锚点匹配（见 `references/arm-driver-traps.md` §5.2） |
+| 两条臂都变慢、数字都不可解释 | 并发 serve 不报错，只是互相抢卡 | 启动前自检资源独占，已有 serve 存活就**拒绝启动**并打印其端口（见 `references/arm-driver-traps.md` §5.3） |
+| 判"整机空闲"通过了，起臂后却发现在抢卡 / 数字全废 | **进程名 grep 不是占用判据**：别的容器里的同类服务名字不同、且**跨 PID 命名空间看不到** | 占用以 **`npu-smi info` 进程表**为权威 + 主机侧进程表交叉核对；进程名 grep 永不作唯一判据；跨租户冲突先上报、授权后按"验身份 → 限作用域 → 复核残留"三步（见 `references/arm-driver-traps.md` §5.4） |
 
 > 其他传输域 / 本地开发机问题（Windows 开发机 schannel 握手失败、传输范围与路径语义、网络不可达定位顺序）
 > 见 `references/transport-troubleshooting.md`（本技能补充单点）；安装 / 编译 / 依赖 / 权重类问题归
@@ -203,10 +211,22 @@ SSH / 连接 / 容器 / 换行相关条目速查（完整决策树见 Reference 
 - `../env-install/references/troubleshooting-env.md` — 加载时机: 安装 / 编译 / 依赖 / 权重类异常需系统排查时
   （该文件归属 env-install，本技能仅引用不复制；其 SSH / CRLF / 传输域条目已收敛为指回本技能）
 
+- `references/arm-driver-traps.md` — 加载时机: 写 / 跑**同一份代码多开关档位（多臂）的远端对比批**时，
+  或出现"各臂结果完全一样"、"ON 臂结果好得不像话"、"跑完才发现跑的是旧代码"时；
+  **以及在共用机器上推送 / 启动 / 收尾臂脚本之前**（§5 现场事故：推送即执行抢卡、按类名全机清理杀掉别人的臂、
+  **用进程名 grep 判空闲而误判**；§5.4 给资源独占预检清单与跨租户三步处置；
+  另含环境块被 shell 字面量化、宽泛 except 导致的静默回退降级、每臂生效三件套证据、多臂顺序/窗口纪律）；
+  **以及交付一个跨文件的补丁之前**（§12 现场：调用点传的关键字被调方没有对应形参 ⇒
+  八卡 4/4 HTTP 500，而 `py_compile`、单卡烟测、归档哈希**三道防线全部漏掉**；§12 给签名对拍与归档契约）
+
 ## Bundled Scripts
 
 - `scripts/ssh_helper.py` — 单连接 SSH 命令执行器（连接复用；`--host/--user/--password/--container/--cmd`）
 - `scripts/pick_free_device.py` — 按 HBM 占用率选空闲 NPU 卡（`--host/--user/--password/--container/--num-cards`；import 复用连接）
+- `scripts/patch_iface_check.py` — **交付跨文件补丁前的接口一致性门禁**（调用点关键字集合 ⊆ 被调方形参；
+  纯 `ast`、零依赖、**内建正控/负控**；用法 `python scripts/patch_iface_check.py <调用点.py> <被调方.py> [--callee N] [--lines 379,386-388]`，
+  自测 `--selftest`）——加载时机: 补丁**跨文件**改接口（新增/改关键字、改回调签名）之后、**上机之前**；
+  判据与事故形态见 `references/arm-driver-traps.md` §12
 
 ## 维护与更新
 

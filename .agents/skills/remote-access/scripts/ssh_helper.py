@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# coding=utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
 # MindIE is licensed under Mulan PSL v2.
 # You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -67,7 +66,7 @@ def run(ssh, cmd, timeout=600):
                 if not chunk:
                     break
                 chunks[key].append(chunk)
-        except Exception:  # noqa: BLE001 - channel EOF/超时边缘，忽略
+        except Exception:  # noqa: BLE001, S110 - channel EOF/超时边缘，忽略
             pass
 
     t_out = threading.Thread(target=_pump, args=(stdout, "out"))
@@ -85,16 +84,13 @@ def run(ssh, cmd, timeout=600):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Run commands on remote Ascend host with single-connection reuse"
-    )
+    parser = argparse.ArgumentParser(description="Run commands on remote Ascend host with single-connection reuse")
     parser.add_argument("--host", required=True, help="remote host IP")
     parser.add_argument("--user", required=True, help="SSH username")
     parser.add_argument(
         "--password",
         default=None,
-        help="SSH password（可选；优先用环境变量 MINDIE_SSH_PASSWORD 或交互输入，"
-             "避免明文进进程列表/history）",
+        help="SSH password（可选；优先用环境变量 MINDIE_SSH_PASSWORD 或交互输入，避免明文进进程列表/history）",
     )
     parser.add_argument("--container", default=None, help="docker container name (run inside it)")
     parser.add_argument("--cmd", required=True, help="command to run on remote")

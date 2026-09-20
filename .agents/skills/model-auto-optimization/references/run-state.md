@@ -7,7 +7,10 @@
 
 | 文件 | 管什么 | 写者 | 读者 |
 |------|--------|------|------|
-| run-state.md（本规范） | **进行中**流程状态：任务与口径 / 阶段推进表 / 决策与轮次 | 推进表只有编排者（主 agent）写；工作区由执行者先读后追加 | 编排者裁决；执行者进场先读；stage_gate.py 解析推进表 |
+| run-state.md（本规范） | **进行中**流程状态：任务与口径 / 阶段推进表 / 决策与轮次 | 推进表只有**主控（orchestrator）**写；工作区由执行者先读后追加 | 主控裁决；执行者进场先读；stage_gate.py 解析推进表 |
+
+> 角色定义、写权限与交付件（派发单/回执/复核单/租约/交接单）的单点见
+> `agent-roles-and-handoff.md`；本文件只规定**状态文件本身**的写法。
 | manifest（见 manifest-schema.md） | 任务 scope / 口径声明（启动即定、一次成型） | 编排者 | 运行计划 / dry-run 门禁 |
 | final_report + evidence.json（见 artifact-layout.md） | **终态**归档（人读报告 + 机器可读证据） | 编排者（闭环收尾） | 归档 / 交接 / 后续引用 |
 
@@ -103,14 +106,25 @@ method-baseline catalog / search_space 状态与 cannbot 探索 dashboard 的候
 
 ## 写者规则与单一真相源
 
-- **推进表只有编排者（主 agent）写**：subagent / 执行者不直接改推进表；自己的产出先落
-  evidence/ 或工作区，由编排者核验后镜像进表。
+- **推进表只有主控（orchestrator）写**：subagent / 执行者不直接改推进表；自己的产出先落
+  evidence/ 或工作区，由主控核验后镜像进表。
+- **角色边界**：主控 / 代码开发 / 结果分析 / 部署与资源分配四角色的职责、写权限与交付件见
+  `agent-roles-and-handoff.md` §2–§3；**复核须由未参与该特性实施的 analyst 实例承担**（同文件 §6）。
 - **并行执行时**：多个单点特性子 agent 各自写入 `evidence/{task_id}/{stage}/{feature}/`（互不覆盖），
   迭代表/推进表仍编排者单写；共享文件与卡组互斥调度（护栏见
   `workflows/references/dispatch-templates.md`「单点特性独立子 agent 与并行执行」）。
 - 工作区与 evidence/ 由执行者**先读后追加**：只追加不清空，不覆盖他人记录。
 - **即时回写**：阶段结束、裁决、回退、用户确认等关键节点立即落盘，不延后到收尾——任意时刻
   可从 run-state + evidence 重建完整流程状态（上下文压缩 / 断点接力依据）。
+
+## 交接单（session 接力 · 与 run-state 同目录）
+
+换 session / 换角色接手时，状态重建靠**文件**而不是对话：`agentic/handoff.md` 存最新交接单
+（模板、字段、进场读取序与交接判据见 `agent-roles-and-handoff.md` §4）。
+
+- 写者 = 每个角色收尾时**追加**（最新在末尾）；只追加不覆盖；
+- 写时机 = 阶段收尾 / 裁决后 / 阻塞时 / session 结束前（与「即时回写」同纪律，不延后）；
+- 与推进表冲突时以**推进表 + manifest** 为准，并先修正交接单再推进。
 
 ## 推进门禁
 
@@ -130,7 +144,7 @@ method-baseline catalog / search_space 状态与 cannbot 探索 dashboard 的候
   close 前置 = 双报表存在 + **报表结构 lint**（`report_lint.py` error=0）+ **profile 强校验**
   （`evals/scripts/check_profile.py` error=0，profile 由流程生成于 runs/{task_id}/profiles/）。
 
-### 跨目录证据与 manifest 拆分（实测用法，env A 2026-09-07）
+### 跨目录证据与 manifest 拆分（用法约定）
 
 - **报表/产物目录与 agentic/ 分离是常态**：run-state + evidence 放 `{工作目录}/agentic/`，
   人读产物（overview/detail/final 报表、mp4、manifest 副本）放

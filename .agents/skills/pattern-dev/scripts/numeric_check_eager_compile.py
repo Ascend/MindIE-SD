@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# coding=utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
 # MindIE is licensed under Mulan PSL v2.
 # You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -42,15 +41,15 @@ def compare(va, vb, tol):
         maxabs = (x - y).abs().max().item()
         passed = rel <= tol and maxabs <= tol
         ok = ok and passed
-        print(f"{name}: mean_rel={rel:.6f} max_abs={maxabs:.6f} "
-              f"({'PASS' if passed else 'FAIL'})", flush=True)
+        print(f"{name}: mean_rel={rel:.6f} max_abs={maxabs:.6f} ({'PASS' if passed else 'FAIL'})", flush=True)
     return ok
 
 
 def main():
     parser = argparse.ArgumentParser(description="Numeric check eager vs compile")
-    parser.add_argument("--tol", type=float, default=0.0,
-                        help="max allowed mean_rel/max_abs (default 0.0 = bit-identical)")
+    parser.add_argument(
+        "--tol", type=float, default=0.0, help="max allowed mean_rel/max_abs (default 0.0 = bit-identical)"
+    )
     args = parser.parse_args()
     va = run_pipe("eager_base")
     vb = run_pipe("compile_fused")

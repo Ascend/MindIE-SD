@@ -254,7 +254,7 @@ def pattern(x, weight):       # weight → FX placeholder
 
 **正确 Pattern** (weight 作为 pattern 输入参数 —— register_replacement 即可命中):
 
-不要为实现 get_attr 匹配而手写自定义 Graph Pass（**该做法已禁止删除**，见 pattern-dev
+**禁止为实现 get_attr 匹配而手写自定义 Graph Pass**（见 pattern-dev
 SKILL.md Phase 2 ⛔）。**在目标 torch 版本上复核 freeze 窗口形态（真图 dump 为准）**：若
 `nn.Module` 权重在 pattern 运行窗口仍是 placeholder，把 weight
 放进 `inputs()` 与 `pattern()/replacement()` 参数即可让 register_replacement 正常匹配

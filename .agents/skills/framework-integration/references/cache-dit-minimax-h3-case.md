@@ -1,4 +1,4 @@
-# 实例：cache-dit（框架本体 trunk）× MiniMax-H3 × vLLM-Omni 0.26 托管链（NPU 950PR）特性使能与档位实测
+# 实例：cache-dit（框架本体 trunk）× MiniMax-H3 × vLLM-Omni 0.26 托管链特性使能与档位实测
 
 > 命名说明：文件名里的 `cache-dit` 是第三方框架仓库名（vipshop/cache-dit），**不是**固定特性名
 > `Cache`（大写 C，见 model-auto-optimization `overview-report.md` §2.1 名词表）——本案例的
@@ -13,8 +13,8 @@
 > 硬件：Ascend 950PR ×4（128GB/卡，0–3 卡）；模型 {model_weight_dir}/MiniMax-H3/FL2VA（BF16，
 > transformer 50 层 hidden 5376，13 分片）。
 > 负载与口径：T2VA 1024×576/5s（124 帧@24fps）/50 步/seed1101/flow_shift12/audio_flow_shift3.0；
-> e2e 主口径 = curl 请求墙钟中位（稳态 n≥2，排除 load/warmup）；**本文性能表述只给加速比与定性/
-> 相对结论**（绝对秒数/绝对质量值只在会话产物与会话归档，不入库）；同窗同卡组对比，<3% 噪声不宣称、
+> e2e 主口径 = curl 请求墙钟中位（稳态 n≥2，排除 load/warmup）；**本文性能表述只给量级/比值与定性/
+> 相对结论**（绝对读数只在会话产物与会话归档，不入库）；同窗同卡组对比，<3% 噪声不宣称、
 > 跨窗漂移 ±5%（09-08 补测窗 lossless 实测慢于 09-07 窗，同窗对照必要）；质量 = ffmpeg psnr/ssim
 > （vs 同窗 lossless 同 seed a/b 对，a/b 确定性一致）。
 
@@ -49,9 +49,9 @@
 | Cache（cache-backend cache_dit） | `--cache-backend cache_dit --enable-cache-dit-summary --cache-config '{"Fn_compute_blocks":2,"Bn_compute_blocks":1,"residual_diff_threshold":R,"max_warmup_steps":4,"max_continuous_cached_steps":MC,"enable_taylorseer":true,"taylorseer_order":2}'` | DBCache F2/B1/R0.4/W4/MC4+TaylorSeer O2 采纳（**约 2.8 倍**）；档位扫描见 §3/§5 |
 | 量化（线性层） | `--diffusion-quantization-config '{"transformer":{"method":"mxfp8"}}'` / `int8` | mxfp8/int8 接受并 serve（单点约 1.2 倍）；fp8 ❓ 配置缺口（§4.5） |
 | 稀疏 FA | RAINFUSION（eager，BF16）sparsity=0.8/start_step=12 | **kernel 级已确认**（见 §4.6）；e2e 约 1.2 倍为该路径真实收益；**融合 op（EagleQBSA = 稀疏FA+FA量化）op 级快约 6 倍，未接线**（见 §4.6） |
-| kernel融合（compile） | env `OMNI_MINDIE_COMPILE=1` + `--diffusion-compile-granularity regional` → MindieSDBackend | regional 52×`MiniMaxH3DiTBlock`×4 worker 命中；无稳健收益 → **回退（默认关）**；residual_gate 误触已修（§4.1） |
+| kernel融合（compile） | env `OMNI_MINDIE_COMPILE=1` + `--diffusion-compile-granularity regional` → MindieSDBackend | regional DiT block 全站点命中（×worker 并行；站点计数见归档）；无稳健收益 → **回退（默认关）**；residual_gate 误触已修（§4.1） |
 
-## 3. 结果表（仅加速比 + 定性/相对；绝对数值在会话报表与 §6，不入库）
+## 3. 结果表（仅加速比 + 定性/相对；绝对读数在会话报表与归档，不入库）
 
 > 行=同窗对照（09-07 行 vs 窗 B lossless；09-08 补测行 vs 同窗 lossless，两窗差可达数个百分点已注）。
 > 稀疏行 = **eager rf_v3 公共 API 路径**（非 EagleQBSA 融合 op，见 §4.6）。
@@ -73,11 +73,13 @@
 | `[补]` P0 稀疏 0.8/**start0** | 约 1.3 倍 | **明显劣化（不推荐）** | start_step=12 保真旋钮必要（首 12 步 dense） |
 | kernel融合（MindIE compile） | ≈1.0 倍（噪声内） | 非逐字节（图级微差） | **回退**：受控交错 A/B 相对 eager 落在 3% 噪声地板内，无稳健收益 |
 
+（原始读数见 `{run_results_dir}/archive/cache-dit-minimax-h3-case.md`）
+
 ## 4. 回修与坑（核心增量）
 
 ### 4.1 compile 泛型 pattern 误触（本案例最重要回修）
 
-- **症状**：开启 compile 后每步 100 次 `residual_gate_add`（修复前开销显著），替换对象不是真实 gate。
+- **症状**：开启 compile 后每步出现大量 `residual_gate_add`（修复前开销显著），替换对象不是真实 gate。
 - **定位**：DOT 图/pattern 图 dump + `kernel_details.csv` → 命中点是
   `fused_qk_norm_rope.py` RoPE 旋转段 `add(mul,mul)`（q、k 各 1 节点/block），由 `wan_residual_gate`
   **泛型 pattern 抢跑**（H3 rope pattern 未命中）。
@@ -104,8 +106,8 @@ compile 输出与 eager 非逐字节一致（图级数值微差）→ compile �
 
 cache_dit `summary.py` 暴露 `_cached_steps/_accumulated_*` 等逐步计数器，但该 trunk 在 vllm-omni
 视频路由**未填充**（需 glue 补 cache_summary，改三方仓需确认）→ 用 **kernel 级计数契约兜底**：
-cached 步 317 kernels（FA 54→7、Matmul 208→20、RMSNorm 110→16）vs eager 步 3157 → 每缓存步跳过
-**~90%** block 计算（kernel 计数为真实参与证据，防 no-op 假加速）。
+cached 步的三类 kernel（FA / Matmul / RMSNorm）计数相对 eager 步**骤降一个量级** → 每缓存步跳过
+**~90%** block 计算（kernel 计数为真实参与证据，防 no-op 假加速；绝对计数见归档）。
 
 ### 4.5 fp8 量化配置缺口
 
@@ -121,13 +123,13 @@ cached 步 317 kernels（FA 54→7、Matmul 208→20、RMSNorm 110→16）vs eag
 - 配置语义：`sparsity` = 每 query block **丢弃** key block 名义比例（mindiesd `keep_len=ceil(cols×(1-sparsity))`，
   内容相关 mask：pooled q/k 相似度 softmax→topk→阈值，**每层每步重建**）；`start_step` = 前 N 步 dense；
   `skip_layers` 豁免指定 block。
-- **kernel 级生效坐实**（同窗稀疏步 step20 采集）：dense FA **54→4** + `BlockSparseAttentionV2` **×50**
-  （DiT self 50 站点）；token_refiner 无 video 段 → staying dense（设计使然，成本小）；host/kernel 间隙 ≈0
+- **kernel 级生效坐实**（同窗稀疏步采集）：dense FA 计数骤降一个量级 + `BlockSparseAttentionV2` 按
+  DiT self 站点数出现；token_refiner 无 video 段 → staying dense（设计使然，成本小）；host/kernel 间隙 ≈0
   （step_trace Free 为毫秒量级，步墙钟≈device Stage）。
 - **收益边界**：mask/几何构建开销大——mask 选择逻辑本身（topk/softmax/阈值/首帧保护）为毫秒量级、可忽略，
-  **大头是每层每步全尺寸 rearrange/pool 数据搬运**（cat/transpose/cast/mean 等为百毫秒量级/步，50 层重复，
-  COPY/MOVE 767→2017、总 kernel 3157→5707）→ 稀疏步仅省约两成，50 步中 start_step 后
-  才稀疏（38/50）→ e2e 约 1.2 倍为真实上界；**op 级单调用该路径甚至慢于 dense FA（慢约两成）**。
+  **大头是每层每步全尺寸 rearrange/pool 数据搬运**（cat/transpose/cast/mean 等为百毫秒量级/步，每层重复，
+  COPY/MOVE 计数成倍增长、总 kernel 计数近乎翻倍）→ 稀疏步仅省约两成，50 步中 start_step 后
+  才稀疏（约七成步）→ e2e 约 1.2 倍为真实上界；**op 级单调用该路径甚至慢于 dense FA（慢约两成）**。
 - quality 近无损（vs lossless，同窗复现一致）与「丢 80%」并存的解释：结构感知掩码 + 5s 短片段帧间冗余
   与 prefix/first-frame 恒保留 → realized sparsity < nominal。
 - 组合结论：稀疏作为**步级跳过外的"算步加速"叠加层**在 Cache 上有效（C1 约 3.7 倍，质量≈Cache）；start0
@@ -140,7 +142,7 @@ cached 步 317 kernels（FA 54→7、Matmul 208→20、RMSNorm 110→16）vs eag
 - **部署坑（本案例踩到）**：op 包只构建不安装进运行 CANN → GE `inferShape function does not exist`；
   修复 = `import mindiesd`（设 `ASCEND_CUSTOM_OPP_PATH`）**先于任何 NPU 张量/初始化**；算子精度
   以 `tests/ops/eagle_quant_block_sparse_attention/` 三层套件为准（小 shape pytest + 大 shape NPU 对照）。
-- **op 级微基准（同 serve 几何 S=21767/block128/sp0.8，1 卡）**：dense FA 为基准 → EagleQBSA(0.8)
+- **op 级微基准（同 serve 几何，1 卡）**：dense FA 为基准 → EagleQBSA(0.8)
   **约为其六分之一（快约 6 倍）**；EagleQBSA 全保留 mask（只量化不稀疏）也 **约为其六成**（INT8/FP8 计算即快，
   量化级精度）；rf_v3 eager 路径约 1.2 倍（最慢）。
 - **教训（收益归因）**：eager 公共 API 的稀疏（外部逐层 mask）与融合 op 的稀疏（mask+BSA 一体化）是
@@ -195,6 +197,8 @@ CRLF（上传后 `sed -i 's/\r$//'`）；嵌套引号吞参数（上传脚本执
 | 单配置 serve 墙钟 | 档位/组合扫描每 serve 为个位数分钟；量化/稀疏档相近；计数/kstep 更短；kernel 采集档到十数分钟；graph dump 最长（上限） | ≈ load + init + warm 1 请求 + 稳态 n×e2e + kill |
 | NPU 占用核算 | 单日（09-07）主要 serve 为**数卡·时**量级（上限口径）；09-08 补测更低 | 正式/扫描/补测多日另计 |
 
+（原始读数见 `{run_results_dir}/archive/cache-dit-minimax-h3-case.md`）
+
 **卡数 ↔ 耗时关系（注意，勿线性外推）**：
 
 - 本栈 vllm-omni 0.26 DiT 仅 **USP 形态（无 TP）**：单请求 e2e 与「卡数」无线性关系（步数串行 +
@@ -243,15 +247,17 @@ CRLF（上传后 `sed -i 's/\r$//'`）；嵌套引号吞参数（上传脚本执
 
 | 阶段 | 通信 | 次数（3 请求累计） | 单步 / 单请求口径 |
 |---|---|---|---|
-| DiT 步（含 token_refiner） | all_to_all_single（Ulysses） | 6200 | **每步约 182 次、载荷每步数十 GB 量级**（例 shape `(2,10880,1,28,128)` bf16） |
-| text encoder（TP=2） | all_reduce(+bcast) | 303+3 | 约 101 次/encode、单次载荷 MB 量级（hidden 5120、seq = prompt 长） |
-| VAE video decode | all_gather | 42 | 14 次/请求、载荷 GB 量级/请求（例 `(44040192,)` fp32） |
+| DiT 步（含 token_refiner） | all_to_all_single（Ulysses） | 数千次量级 | **每步上百次量级、载荷每步数十 GB 量级**（shape 例见归档） |
+| text encoder（TP=2） | all_reduce(+bcast) | 数百次量级 | 约百次/encode 量级、单次载荷 MB 量级 |
+| VAE video decode | all_gather | 数十次量级 | 十余次/请求量级、载荷 GB 量级/请求 |
 | VAE audio decode | — | 0 | **AudioVAE 无 DistributedVaeMixin → 无并行通信**（单 rank 解码） |
-| pipeline / 其他 | broadcast（元数据） | 18 | 阶段切换 / 形状广播，载荷可忽略 |
-| **整体** | | 6566 | DiT 通信占载荷**近乎全部** |
+| pipeline / 其他 | broadcast（元数据） | 十数次量级 | 阶段切换 / 形状广播，载荷可忽略 |
+| **整体** | | 数千次量级 | DiT 通信占载荷**近乎全部** |
 
-- **结论**：通信绝对主体 = DiT Ulysses a2a（每步约 182 次、载荷数十 GB/步量级）；
-  TE TP all_reduce 量小但频率高（约 101 次/encode，同 prompt 可缓存省）；VAE video all_gather 为
+（原始读数见 `{run_results_dir}/archive/cache-dit-minimax-h3-case.md`）
+
+- **结论**：通信绝对主体 = DiT Ulysses a2a（每步上百次量级、载荷数十 GB/步量级）；
+  TE TP all_reduce 量小但频率高（约百次/encode 量级，同 prompt 可缓存省）；VAE video all_gather 为
   GB 量级/请求；audio 无并行通信。优化指向 = DiT a2a 通信掩盖（现状 Overlapped=0）+ HCCL 带宽/拓扑核验
   （方法见 `dit-parallel-opt/references/ascend-topology-bandwidth-diag.md`）。
 - 口径注：`tensor_bytes` = op 本 rank 载荷；`moved~` 为估算（a2a / allreduce / broadcast ≈ ×(w−1)/w、

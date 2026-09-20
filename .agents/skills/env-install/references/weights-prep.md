@@ -17,7 +17,7 @@
 - **下载源优先级**：**默认 modelscope**（国内可达、免代理；HF gated 仓库在 modelscope 镜像通常
   免鉴权），HuggingFace / 其他 gated 仓库作**次选**（需 token）——判据见 §2.1。
 - **目录约定**：`{model_weight_dir}/{模型名}/{任务变体}/`（如 `{model_weight_dir}/MiniMax-H3/FL2VA`），
-  模型根目录直接 serve；各模型实测落位见 §2.2 落位表（未实测的格子写 `待回填`）。
+  模型根目录直接 serve；各模型实测落位见 §2.2 落位表（**未实测的格子留空，不推测**）。
 - **核心命令**（详见 §3）：
   `modelscope download {模型} --local_dir {root} --include '{分区}/**' --max-workers 16`
 
@@ -50,19 +50,19 @@
 - **落位约定（统一）**：`{model_weight_dir}/{模型名}/{任务变体}/` —— **模型根目录直接 serve**，
   任务变体（分区 / 精度档 / 对话与编辑变体）作为子目录；不在 `{模型名}` 之下再加厂商 / 组织层
   （同一模型在不同框架文档里出现两套路径会导致服务路径与排查口径分裂）。
-- **落位表**（新增模型按同列回填；**未实测的格子一律写 `待回填`，不得按命名习惯推测**）：
+- **落位表**（新增模型按同列补齐；**未实测的格子一律留空并在说明列标「未实测」，不得按命名习惯推测**）：
 
-| 模型 | 目录落位（`{model_weight_dir}/…`） | 任务变体 / 分区 | modelscope 仓库 id | 依据 / 状态 |
+| 模型 | 目录落位（`{model_weight_dir}/…`） | 任务变体 / 分区 | modelscope 仓库 id | 来源 / 说明 |
 |---|---|---|---|---|
-| MiniMax-H3 | `MiniMax-H3/`（根目录 + `FL2VA/`、`Ref2VA/`） | t2va / fl2va → `FL2VA/**`；ref2va → `Ref2VA/**`；**根目录 = diffusers 格式给 dummy run** | `MiniMax/MiniMax-H3` | **已填**：2026-08 实测（§2.3 / §7，81 文件；双分区全量约 270 GiB） |
-| Qwen-Image（基础版） | `Qwen-Image/` | `待回填`（diffusers 布局，真实权重 60 层 / 1024²） | `待回填` | 目录落位见 `framework-integration/references/diffsynth-engine-enablement.md` §6；**仓库 id / 分区待回填** |
-| Qwen-Image-2512 | `Qwen-Image-2512/` | `待回填`（diffusers 布局，`QwenImagePipeline`） | `待回填` | 目录落位见 `framework-integration/references/vllm-omni-enablement.md` §6；**仓库 id / 分区待回填** |
-| Qwen-Image-Edit-2511 | `待回填` | Edit / I2I（走 `/v1/images/edits`，multipart） | `待回填` | `framework-integration/SKILL.md`「Edit 类模型验证」示例路径**已按本节「落位约定」统一**为 `{model_weight_dir}/Qwen-Image-Edit-2511`；**框架侧历史写法** `{model_weight_dir}/qwen/Qwen/Qwen-Image-Edit-2511`（多一层厂商/组织）已弃用，勿照抄；**实际落位待实测回填** |
-| Wan2.2 | `待回填` | `待回填` | `待回填` | 无真实权重落位记录（dummy run 用随机权重，见 dummy-run） |
-| FLUX.1-dev | `待回填` | `待回填` | `待回填` | 同上（dummy run 用随机权重） |
+| MiniMax-H3 | `MiniMax-H3/`（根目录 + `FL2VA/`、`Ref2VA/`） | t2va / fl2va → `FL2VA/**`；ref2va → `Ref2VA/**`；**根目录 = diffusers 格式给 dummy run** | `MiniMax/MiniMax-H3` | 实测日志（§2.3 / §7，81 文件；双分区全量约 270 GiB 量级） |
+| Qwen-Image（基础版） | `Qwen-Image/` | 未实测（diffusers 布局，真实权重 60 层 / 1024²） | 未实测 | 目录落位见 `framework-integration/references/diffsynth-engine-enablement.md` §6；**仓库 id / 分区未实测** |
+| Qwen-Image-2512 | `Qwen-Image-2512/` | 未实测（diffusers 布局，`QwenImagePipeline`） | 未实测 | 目录落位见 `framework-integration/references/vllm-omni-enablement.md` §6；**仓库 id / 分区未实测** |
+| Qwen-Image-Edit-2511 | 未实测 | Edit / I2I（走 `/v1/images/edits`，multipart） | 未实测 | `framework-integration/SKILL.md`「Edit 类模型验证」示例路径按本节「落位约定」取 `{model_weight_dir}/Qwen-Image-Edit-2511`；**框架侧历史写法** `{model_weight_dir}/qwen/Qwen/Qwen-Image-Edit-2511`（多一层厂商/组织）与落位约定不符，勿照抄；**实际落位未实测** |
+| Wan2.2 | 未实测 | 未实测 | 未实测 | 无真实权重落位记录（dummy run 用随机权重，见 dummy-run） |
+| FLUX.1-dev | 未实测 | 未实测 | 未实测 | 同上（dummy run 用随机权重） |
 
 - **回填纪律**：新增模型时三项同记——**仓库 id + 实际落位 + 任务变体**，依据列写来源
-  （实测日志 / 框架文档 / 会话产物）；**只写实测过的**，其余留 `待回填`。
+  （实测日志 / 框架文档 / 会话产物）；**只写实测过的**，其余留空并标「未实测」。
 
 ### 2.3 仓库布局与按任务选分区（MiniMax-H3 为例）
 
@@ -162,5 +162,5 @@ echo $! > {model_weight_dir}/h3_download.pid
 
 ## 维护与更新
 
-当 modelscope / HF CLI 参数变化、**新模型落位（§2.2 落位表的 `待回填` 格子）被实测补齐**、
+当 modelscope / HF CLI 参数变化、**§2.2 落位表中未实测的格子被实测补齐**、
 或下载/校验流程有改进时，按 dev-workflow 的复盘流程更新本文件。

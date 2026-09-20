@@ -155,10 +155,9 @@ Phase 7: Copy 消减 → 检测 ViewCopy 翻倍 → 后端选择
   handler 从 `match.output_node()` 反向走 producer 链手动改图。完整规则/代码骨架/
   调试方法见 `references/graph-pattern-rewrite-guide.md`，真图命中案例见 `pattern-dev-notes.md` §5.2。
 
-> ⛔ **禁止：自定义 FX Graph Pass（手写 graph traversal pass）**。曾有一份 `custom-graph-pass-guide.md`
-> 记录"get_attr 权重无法用 register_replacement → 手写
-> 遍历 FX graph 节点改图"，该方案**已废弃**——该文件本身亦已 `git rm`（仅历史留档于
-> `dev-workflow/references/rework-lessons.md` §24/§25）：**在目标 torch 版本上复核 freeze 窗口形态
+> ⛔ **禁止：自定义 FX Graph Pass（手写 graph traversal pass）**。历史上曾有把
+> "get_attr 权重无法用 register_replacement → 手写
+> 遍历 FX graph 节点改图"当作解法的做法，**该做法是错的**：**在目标 torch 版本上复核 freeze 窗口形态
 > （以真图 dump 为准，勿沿用跨版本结论）** —— 若 `nn.Module` 权重在 pattern 运行窗口仍是
 > placeholder，用 `register_replacement` 双参数 pattern（weight 作输入）即可命中，无需绕过
 > pattern matcher；确需手动改图的场景走 **GraphPatternEntry**（pattern matcher 原生 API，
@@ -274,8 +273,8 @@ python scripts/analyze_copy_kernels.py --csv compile/kernel_details.csv --label 
 （A 修复 pattern 匹配 → B 混合模式 → C 静态 shape/大 batch 改走 `aclgraph-dev` 批量下发）；
 本节不复制方案内容，避免两处口径漂移。
 
-> torchair_ge / npugraph_ex 作为后端选项**在本仓未实现**（`CompilationConfig` 无
-> `backend_mode` 及对应常量），历史上记录的"四后端对比"不适用于本仓，勿按旧文档执行。
+> 后端选项以 `CompilationConfig` 的现有字段为准（当前无 `backend_mode` 及对应常量：
+> `torchair_ge` / `npugraph_ex` 不作为本仓可选后端），文档只描述 `default` 后端。
 
 完整流程见 `references/copy-elimination-guide.md`。
 
@@ -300,7 +299,7 @@ python scripts/analyze_copy_kernels.py --csv compile/kernel_details.csv --label 
 
 ## Bundled Scripts
 
-- `scripts/compare_profiles.py` — Phase 6: eager vs compile kernel diff（算子族聚合 + 逐 kernel delta）——**kernel 对比唯一入口**（原 `cmp_kernels.py` 的算子类 count/耗时对比为其子集，已删除以免两套口径）
+- `scripts/compare_profiles.py` — Phase 6: eager vs compile kernel diff（算子族聚合 + 逐 kernel delta）——**kernel 对比唯一入口**（把算子类 count/耗时对比合并进同一套口径，避免两套口径并存）
 - `scripts/analyze_copy_kernels.py` — Phase 7: Copy 膨胀检测（统计 + Top kernel + 前后算子归因）
 - `scripts/check_fusion_hit.py` — Phase 6/graph-pattern: 融合命中判定（kernel csv 中融合 kernel 计数 vs 期望站点数，可选 eager csv 应 0）
 - `scripts/probe_real_graph_pattern.py` — graph-pattern 调试: 真实 compile 图注入 probe（在 apply_pattern_match_passes 前打测试 pattern 并计数）——模板，替换模型构建段使用

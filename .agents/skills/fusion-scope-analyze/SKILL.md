@@ -4,7 +4,7 @@ compatibility: Python 3.10+；输入为模型代码 + profiling 执行序（kern
 description: 融合单元的范围判定与收益前置评估：判定「哪些计算该被融进同一个融合单元、边界画在哪、
              融了值不值」。结构侧按融合单元构造规则切边界——函数边界即候选组；FA（含 BSA 等变种）为
              禁融锚点；以 norm / rope / FA 为分界分区，全 Vec 区域优先试融；区域内有 Cube 时以 Cube 为
-             首算子向后包裹 Vec（Σvec < cube 或遇下一 Cube 封口）；一轮之后纯 Vector 单元之间再迭代；
+             首算子向后包裹 Vec（Σvec 小于 cube 或遇下一 Cube 封口）；一轮之后纯 Vector 单元之间再迭代；
              MLP / MoE 以矩阵乘族（MatMul / BatchMatMul / GroupedMatmul）为界；若该段计算已由单个
              融合算子承载，按规则 6 先确认载体是否已生效（不重复建单元）。
              收益侧按计算单元利用率判型（memory_bound、*_vec|mac|mte2|mte3_ratio、cube_utilization），
@@ -12,6 +12,8 @@ description: 融合单元的范围判定与收益前置评估：判定「哪些�
              当用户问「这几个算子能不能融成一个」「融合边界画在哪」「融多大范围」「融了值不值得」，
              或 profiling-analyze 给出融合机会候选需要定范围与收益时使用；即使用户只说「这条链要不要
              合成一个 kernel」「这里能不能省一次读写」也应触发。
+              **已经做完、实测收益却打平或为负时同样触发**——此时的任务不是接受"融合无收益"，
+              而是按事后复核做**等功忙计数对照**归因，并在缺陷落在融合核自身时**升级 operator-dev**。
              边界：只出「融合单元草案 + 收益判定 + 否决理由」。不做采纳与选点（dit-perf-opt 依收益选 top
              并派活）、不做采集与瓶颈定位（profiling-collect / profiling-analyze）、不写 kernel、不写 pattern、
              不做使能与并行选型、不定义验收标准（引 accuracy-gate / perf-gate）。
@@ -29,7 +31,7 @@ description: 融合单元的范围判定与收益前置评估：判定「哪些�
 |---|---|---|
 | 模型**代码** | forward / 模块定义（含被封装成同一函数的算子） | 规则 1：函数边界即候选组 |
 | **算子执行序** | `kernel_details.csv`：`Name`、`Start Time(us)`、`Duration(us)`、`Task Type` | 邻接链、区域切分、`Σ` 耗时核算 |
-| **计算单元利用率** | 同目录含 PipeUtilization 列的文件（`op_summary_*.csv` 为权威来源）：`*_vec_ratio`、`*_mac_ratio`、`*_mte2_ratio`、`*_mte3_ratio`、`cube_utilization(%)`（**判型所需的四族 ratio 缺列或全 `N/A` 即判采集不合格，先补采**，见 `profiling-collect` 的完成检查门禁）；`memory_bound` 是**可算字段**（按下方公式现算），**不是**必备列——真实 CANN 导出常不含该列 | 判型：这条链的收益来自哪一类 |
+| **计算单元利用率** | 同目录含 PipeUtilization 列的文件（`op_summary_*.csv` 为权威来源）：`*_vec_ratio`、`*_mac_ratio`、`*_mte2_ratio`、`*_mte3_ratio`、`cube_utilization(%)`（**判型所需的四族 ratio 缺列或全 `N/A` 即判采集不合格，先补采**：先用 `../profiling-collect/scripts/check_output.py` 判该次采集不合格，再按其提示带 `--task-time=l1 --aic-mode=task-based --aic-metrics=PipeUtilization` 重采）；`memory_bound` 是**可算字段**（按下方公式现算），**不是**必备列——真实 CANN 导出常不含该列 | 判型：这条链的收益来自哪一类 |
 
 ## 判定链
 
@@ -74,6 +76,12 @@ L1 的理论列由本技能自产的 `scripts/theory_columns.py` 计算（逐算
 **只在关键流（critical stream）上核算**，且 `duration_over_theoretical ≈ 1` 的成员不计入可回收量。
 阈值与噪声地板**只引用** `../perf-gate/SKILL.md`，本技能不另立一套。
 
+**事后复核（实测收益打平或为负）**：本技能的另一半职责，方法在
+`references/fusion-benefit-method.md` **§10**（关键流核对 → **等功忙计数对照** → 判决 → 升级）。
+**总纪律：在完成等功对照之前，"融合打平/为负"不是结论，不得据此关闭该项。**
+判决落在"缺陷在融合核自身"（等功下核芯忙计数高于被替换算子）或"epilogue 写法缺陷"时，
+**必须升级 `../operator-dev/SKILL.md` 深入分析**，并一并给出重算后的**可操作上界**。
+
 ## 与相邻技能的关系
 
 | 方向 | 技能 | 接口 |
@@ -83,6 +91,7 @@ L1 的理论列由本技能自产的 `scripts/theory_columns.py` 计算（逐算
 | 阶段编排（L2） | `../model-auto-optimization/workflows/optimization-flow.md` | 其 S1 在「识别机会点」后、「收益分析」前调用本技能；**未登记进交付件的机会点不得进入收益分析与迭代表** |
 | 可行性快验（上游） | `../dummy-run/SKILL.md` | 它把「融合可行性结论（可行/不可行 + 原因）」交本技能做范围与收益判定 |
 | 选点与派活 | `../dit-perf-opt/SKILL.md` | 本技能只给机会点与收益结论；**是否纳入、排 top、派给谁**由它决定 |
+| **下发削减的分工** | `../dit-perf-opt/SKILL.md` | **融合 kernel** 是减少下发次数的手段之一，归本技能（规则 5 迭代融合即此意）；**非融合**的下发削减（减少 program 数、上提重复 host 准备、消除动态形状回读）**归它**，见其 `references/host-dispatch-dimension.md` |
 
 ## 不做什么
 
@@ -112,6 +121,24 @@ L1 的理论列由本技能自产的 `scripts/theory_columns.py` 计算（逐算
 
 - `references/fusion-unit-method.md` — 加载时机: 要判定融合单元的边界（候选分组、锚点、Cube 首算子、迭代再融、MLP/MoE 分区）时
 - `references/fusion-benefit-method.md` — 加载时机: 要判定某条链或某个融合单元**值不值得做**（判型、收益上界、地板先行、传导校验）时
+- `references/fusion-candidate-identification.md` — 加载时机: **开始找融合点之前**（候选来源、两个候选是否争同一 seam、profile 三类误判的排除、候选的预注册与 L1/L2 分级、绕行的可删除性）与 **profile 归因出现「看不到的成本」时**（逐算子视图里为零、wall 却明显）读它
+
+**路由判据（何时读候选识别文件）**：① 在动手找融合点、或接收上游候选清单之前——先用它筛掉"争同一处 seam"的候选（竞争者的收益**不可相加**），再进 `fusion-unit-method.md` 定边界；
+② profile 归因出现"看不到的成本"或"名字还在但不像被调用"时——先按它的三类误判排除法判真假，再决定是否立单元；
+③ 给候选排收益 / 写交付表之前——按其判定法做**站点重叠分析**，并把旁路型闸门"是否静默丢功能"用 OFF/ON 逐位对比收口。
+
+## 候选争用同一站点：禁止把单项收益相加
+
+**规则：若候选 A 的融合会"吃掉"候选 B 所优化的算子，则 B 在 A 打开后只剩残余价值——**必须按组合实测**，
+不允许把各项的独立测量值相加。**
+
+实测（单卡、生产形状、ABBA）：**收益不可按各项独立值外推**。
+
+机理：某候选合并了**层间边界**后，**直接删掉了其余候选的绝大多数目标站点** ⇒ 后者只剩独立价值的
+**个位数百分点**（本组合观测，须本地重测；读数见会话产物归档 `{run_results_dir}/archive/`）。
+
+**执行**：候选清单先做**站点重叠分析**（谁删掉谁的目标算子）；重叠者必须**按组合测量**，并在表里写清
+"该项在组合 X 下的残值"，而不是并列各自的独立值。
 
 ## 维护与更新
 

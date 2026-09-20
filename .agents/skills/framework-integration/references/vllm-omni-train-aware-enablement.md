@@ -39,9 +39,9 @@ Increasing max LoRA rank: 0 -> 64       # rank 生效
   **fail-closed**）+ pipeline 构造处按 env 分派；**未设 env = 原生路径不变**。
 - **未合入上游 / `.bak` 保留 / 默认关** ⇒ 按本仓「经验 vs 探针」判为探针。
 - 布局判别（fail-closed，认不出即抛错而非静默误载）：
-  - `taehv-temporal`：官方时序布局，`decoder.` 前缀、128 张量（64 解码 + 64 编码）、F16；
-    构造后参数 **9,868,236** 与结构逐位吻合。
-  - `tae-2d`：逐帧 2D 布局（裸索引、81 张量、F32）—— 对本模型属**架构级错配**（见方法文件 §3.3）。
+  - `taehv-temporal`：官方时序布局，`decoder.` 前缀、**解码项与编码项成对**、F16；
+    构造后**参数计数与结构逐位吻合**（判定布局认对的最小证据；具体计数随 checkpoint 变，不作为常量核对）。
+  - `tae-2d`：逐帧 2D 布局（裸索引、张量条数与上述互补关系不符、F32）—— 对本模型属**架构级错配**（见方法文件 §3.3）。
 - 开关与对拍用 env：
 
 | env | 作用 |
@@ -56,7 +56,7 @@ Increasing max LoRA rank: 0 -> 64       # rank 生效
 
 ```text
 输出帧数 out = 4T − 3·⌈T/5⌉        （T = latent 帧数）
-实测命中：T=37 → 124、T=107 → 362（9/9 全中）
+实测命中：任取若干 T 值与参考实现逐点对齐（判据 = 全部命中；具体样本见归档 `{run_results_dir}/archive/`）
 配置来源：video_vae/config.json 的 vae_clip_length=17 + vae_token_drop=3
 交叉校验（参考实现）：upscale_ratio(a)=(a−2)//5*17+5、downscale_ratio(a)=(a−1)//17*5+2
 ```

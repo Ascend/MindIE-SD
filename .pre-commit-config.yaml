@@ -113,6 +113,13 @@ repos:
         language: system
         files: ^\.agents/scripts/run_evals\.py$
         pass_filenames: false
+      # 多 agent 契约门禁自身的回归（交接单字段/回执要素/指针链/租约的负样本必须仍被触发）
+      - id: stage-gate-selftest
+        name: stage-gate multi-agent contract selftest (negative samples)
+        entry: python .agents/skills/model-auto-optimization/scripts/stage_gate.py --selftest
+        language: system
+        files: ^\.agents/skills/model-auto-optimization/scripts/stage_gate\.py$
+        pass_filenames: false
       # 交付件门禁自身的回归（列内容洁净：名/明细/次数/收益必须可机判）
       - id: fusion-scope-selftest
         name: fusion-scope deliverable gate selftest (column cleanliness)
@@ -120,12 +127,23 @@ repos:
         language: system
         files: ^\.agents/skills/fusion-scope-analyze/.*\.(py|md)$
         pass_filenames: false
-      # 采集侧完成检查门禁自身的回归（缺列/全 N/A 必须能被抓住）
+      # 采集侧完成检查门禁自身的回归（缺列/全 N/A/陈旧产物/只有表头 必须能被抓住）
+      # 退出码语义（**勿照抄成运行时判据**）：自测只允许 0；而真实运行 `check_output.py` 是
+      #   0 = 通过 / 1 = 有检查判失败 / 2 = 前置缺失 / 3 = 无法判定（**3 与 0 语义不同，不得混淆**）。
+      # 同理 `collect_profile.py` 真实运行也会透传 0/1/3，其中 3 = 未验证（含显式跳过门禁）。
       - id: check-output-selftest
         name: profiling-collect output gate selftest (negative samples)
         entry: python .agents/skills/profiling-collect/scripts/check_output.py --selftest
         language: system
         files: ^\.agents/skills/profiling-collect/scripts/check_output\.py$
+        pass_filenames: false
+      # 采集脚本的门禁接线回归（只跑 --selftest：零 SSH / 零设备，夹具覆盖 0/1/3 三态）。
+      # ⚠️ 此处**只挂自测**，不挂真实采集路径（那会连 SSH 与设备，不属于 pre-commit 范围）。
+      - id: collect-profile-selftest
+        name: profiling-collect collect_profile gate wiring selftest (zero SSH)
+        entry: python .agents/skills/profiling-collect/scripts/collect_profile.py --selftest
+        language: system
+        files: ^\.agents/skills/profiling-collect/scripts/collect_profile\.py$
         pass_filenames: false
 
   # C++ 核心检查

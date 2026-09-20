@@ -18,6 +18,7 @@
       kernel_details.csv + trace_view.json + step_trace_time.csv
       （profiling-analyze 的 analyze_trace.py / compare_traces.py 直接消费）
 """
+
 import os
 
 os.environ.setdefault("PLATFORM", "ascend_npu")
@@ -31,9 +32,9 @@ WARMUP = int(os.environ.get("H3_WARMUP_STEPS", "5"))
 
 # 这三行必须留在上面的 os.environ.setdefault 之后：NPU 侧环境变量需在 torch/torch_npu
 # 初始化前生效，提前 import 会改变执行顺序，故就地抑制 E402。
-import torch  # noqa: E402
-import torch.distributed as dist  # noqa: E402
-import torch_npu  # noqa: E402
+import torch
+import torch.distributed as dist
+import torch_npu
 
 # ── 框架适配区 ────────────────────────────────────────────────
 # 把下面两行替换为实际框架的顶层推理类与方法：
@@ -44,7 +45,7 @@ import torch_npu  # noqa: E402
 #   FRAMEWORK_CLASS = MiniMaxH3TransformerInfer
 #   METHOD = "infer"
 FRAMEWORK_CLASS = None  # 替换：框架推理类
-METHOD = "infer"        # 替换：顶层推理方法名
+METHOD = "infer"  # 替换：顶层推理方法名
 # ──────────────────────────────────────────────────────────────
 
 os.makedirs(PROF_OUT, exist_ok=True)
@@ -79,7 +80,7 @@ def _make_patch():
 def main():
     _make_patch()
     # 框架 CLI 入口，参数原样透传（以 LightX2V 为例）：
-    from lightx2v.infer import main as cli_main  # noqa: E402  # 替换为框架入口
+    from lightx2v.infer import main as cli_main  # 替换为框架入口
 
     cli_main()
 

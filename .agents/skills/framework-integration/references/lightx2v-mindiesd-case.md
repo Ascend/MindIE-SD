@@ -40,7 +40,7 @@
 | 模型 | `{model_dir}/MiniMax-H3`（transformer 62GB + text encoder 63GB） |
 | 代码 | `{repo}/LightX2V`（合入版 = 上游 main）+ `{repo}/MindIE-SD`（mindiesd） |
 | 并行 | USP4（tensor_p=1, seq_p=4, ulysses a2a），torchrun 4 卡 |
-| 序列 | 5s：local 9467 / global 37751；15s：local ~27276 / global ~109103 |
+| 序列 | 按 `target_video_length` / 分辨率**现场换算**（本链实测长度见归档 `{run_results_dir}/archive/lightx2v-mindiesd-case.md`） |
 
 ## 2. 接入策略（核心结论，合入后最终形态）
 
@@ -121,7 +121,7 @@ DiTBlock 采用**三路组合**，全部由配置驱动、零侵入：
 | kernel 总耗时 | 参照 | 更低 | **约降一成** |
 | 通信 | 参照 | 更低 | **明显下降（约三成）** |
 
-- 新增融合 kernel：`swiglu`（50 次）、`gather_scale_shift`（200 次）、`gather_residual_gate`（100 次），单次十毫秒量级
+- 新增三个融合 kernel（`swiglu` / `gather_scale_shift` / `gather_residual_gate`）、旧分解链消失
 - 消除算子链：Mul、Add、Silu、IndexSelect 大幅减少（Silu 近完全消失）
 - `hcom_alltoallv` **完全消失**（a2a 用 `hccl_eager` 留 eager 后不再退化；此前 Dynamo 把
   `split_sizes` 推断成 `[1,1,...]`，单次耗时放大到百毫秒量级）
@@ -199,6 +199,8 @@ DiTBlock 采用**三路组合**，全部由配置驱动、零侵入：
 | Run DiT 墙钟 | 为正（干净环境幅度更大） | 近乎持平 |
 | per-step sum | 为正（幅度更低） | 近乎持平 |
 
+（原始读数见 `{run_results_dir}/archive/lightx2v-mindiesd-case.md`）
+
 子图审计（DUMP_N=8）：block 被 a2a/FA graph-break 拆成 ~8 个子图，调制/adaln/swiglu/gate
 段全部融合；唯一未融合是 gate-msa 残差（`residual + gate*attn_out` 跨子图边界），属拆图
 固有代价。**DiTBlock 中所有可融合算子已全部融合**（gate-msa 2D kernel 原型已试回退：
@@ -242,8 +244,8 @@ warmup 5 步在 profiler 外；只 rank0 采集；产出 `ASCEND_PROFILER_OUTPUT
 
 ## 8. 2026-09-04 增补（复核：mindiesd 同步回退 + 热降频口径）
 
-- **同步回退风险**：mindiesd 从 dev-skills 分支整仓回填远端会**覆盖会话内未合入的修复**。
-  本案例实际复现两处并已修复回填（详见框架仓内会话过程文档，**非本仓、不入库**）：
+- **同步回退风险**：mindiesd 从 dev-skills 分支整仓回填远端会**覆盖会话内未合入的修复**
+  ⇒ 回填后按下列两条**复采 profile 核验**：
   1. `minimax_h3_swiglu_pattern.py` 需 **split_twice 变体**（LightX2V chunk(2) 展开为两个独立
      split 节点）——丢失后 swiglu 融合静默消失（墙钟回归），且 profile 才可见（日志无痕）
   2. **注册顺序**：`enable_minimax_h3_gate` 必须先于 `enable_wan_residual_gate`，否则 wan 泛型
@@ -251,8 +253,8 @@ warmup 5 步在 profiler 外；只 rank0 采集；产出 `ASCEND_PROFILER_OUTPUT
      `[residual_gate_add] fallback (ndim)`，kernel 级 gather_residual_gate 消失）
   - 核验姿势：对比 kernel_details.csv 中的 swiglu_kernel / gather_residual_gate_kernel 计数
 - **热降频 → clean-window 口径**：950PR 满载功耗高，机箱热时 30 步长跑在 ~14-17 步后
-  降频（单步耗时约翻倍，83-86°C，与 compile/租户无关）→ 与历史绝对数字不可比；对比一律用
-  **rank0 steps 2-14 clean-window avg/p50**（该窗口与无降频时代数字吻合）
+  降频（单步耗时**成倍抬高**，与 compile/租户无关）→ 与历史绝对数字不可比；**按现场温控读数**
+  判定是否进入降频窗，对比一律用 **rank0 steps 2-14 clean-window avg/p50**（该窗口与无降频时代数字吻合）
 - **fp8 a2a comm 在此环境不可用**：`seq_p_fp8_comm` 走 vllm `dynamic_per_token_scaled_fp8_quant`
   （Ascend 未注册）；naive per-token fp8 回退跑通但量化开销 > 通信节省，否决
 - **收益判定**：kernel diff 为准（图命中 ≠ 运行期生效），配墙钟 step 时

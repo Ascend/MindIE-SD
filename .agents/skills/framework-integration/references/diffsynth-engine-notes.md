@@ -67,8 +67,7 @@ for submodule in model.modules():
 > ⚠️ **关键陷阱：`torch.compile(submodule, backend=...)` 不赋值不生效**。
 > `torch.compile` 返回包装对象，直接调用不修改原模块；必须写入
 > `submodule._compiled_call_impl`（与 `nn.Module.compile()` 内部实现一致）。
-> 实测教训：第一次接入时直接 `torch.compile(submodule, backend=MindieSDBackend())`
-> 未赋值 → warmup 时间与 eager 完全一致、pattern 0 命中 → 排查到赋值问题后修正。
+> **判定特征**：不赋值时 warmup 时间与 eager 完全一致、pattern 0 命中 ⇒ 据此判定未生效。
 
 ### 2.3 Qwen-Image 模型层改写（命中 pattern 的前提）
 

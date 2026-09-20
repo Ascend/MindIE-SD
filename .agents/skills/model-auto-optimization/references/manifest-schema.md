@@ -42,8 +42,8 @@ SEED = "1101"
 FEATURE_FLAGS = "..."          # 框架侧开关/environment（渲染器转成启动命令）
 
 [thresholds]
-psnr_db = 16.0                 # 引用 runs/{task_id}/profiles/{model}.toml（流程生成不入库）
-ssim = 0.51
+psnr_db = {p}                  # 引用 runs/{task_id}/profiles/{model}.toml（流程生成不入库）
+ssim = {s}
 
 [off_identity]
 required = true

@@ -22,6 +22,18 @@
         "提到编译场景 warmup 需覆盖 JIT（建议 ≥10 步）",
         "提到 WARMUP_NOT_STRIPPED 标注机制"
       ]
+    },
+    {
+      "id": 3,
+      "prompt": "采集脚本打印了『analyse() returned OK』，`msprof --export=on` 也打印 done，可是输出目录里没有 `kernel_details.csv`。是不是这次没采到数据？我还想拿它和 `op_summary.csv` 互相对一下做交叉验证，行吗？",
+      "expected_output": "缺文件不等于没采到数据：这是本环境的已知陷阱 —— **进程内文本导出可能从不执行，且失败被静默吞掉**（`analyse_profiling_data()` 被 `@no_exception_func()` 装饰，异常被吞 ⇒ 日志里的 `OK` / `done` 都是假的；`msprof --export=on` 只写 MindStudio 布局、仍不出该文件），本仓在 **3 次采集 / 2 种注入布局**上复现（容器属性，不是用例问题）。处置按序：① **断言「新」** —— 产物必须**带新时间戳且行数 > 0**，**不以日志里的 `done` / `OK` / 退出码 0 为准**（与宿主侧 `no NEW … -- skipped` 是同一类陷阱的两种表现）；② 去找 `@no_exception_func` 这类**吞异常的装饰器 / 全局 except**；③ **绕过包装层**，直接驱动底层解析器（`ProfilingParser(profdir, Constant.TENSORBORAD_TRACE_HANDLER, None, {}).analyse_profiling_data()`）⇒ 数十秒量级内产出完整一套。另：**不能**拿 `kernel_details.csv` 与 `op_summary*.csv` 做交叉验证 —— 二者是**同一批 task 行的两种表头**（前者由 `generate_view()` 从 `OP_SUMMARY` 生成，行数相同、时间列同单位），那不是两份独立证据。",
+      "expectations": [
+        "指出缺文件不等于没采到数据，并给出根因：导出/解析路径的异常被装饰器（@no_exception_func）吞掉，日志里的 OK/done 不可信",
+        "给出断言语义：产物必须带新时间戳且行数 > 0，不以日志 done/OK/退出码为准（与宿主 no NEW --skipped 同类）",
+        "给出绕过写法：直接驱动底层解析器 ProfilingParser(...).analyse_profiling_data()，数十秒内出全套",
+        "指出 kernel_details.csv 与 op_summary*.csv 是同一批 task 行的两种表头，不能当两份独立证据交叉验证"
+      ],
+      "files": []
     }
   ]
 }

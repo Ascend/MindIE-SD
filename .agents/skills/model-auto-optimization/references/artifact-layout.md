@@ -1,4 +1,4 @@
-﻿# 产物目录规范
+# 产物目录规范
 
 每次模型自动优化闭环（采集→分析→方案→复验）的产物目录结构：
 
@@ -46,7 +46,7 @@ runs/YYYYMMDD_{model_slug}_optimization/
 ## manifest.txt 格式
 
 ```text
-device: ATLAS_800_A2_376T_64G
+device: {device}
 cann: 8.0.0
 pytorch: 2.6.0
 TorchNPU: 2.6.0
@@ -102,7 +102,7 @@ final_report 面向人读；需要机器可读伴生块时（跨会话交接/归
 {
   "schema_version": 1,
   "benchmark_id": "{model}_<方案slug>_{YYYYMMDD}",
-  "hardware": {"device": "ATLAS_800_A2_376T_64G", "npu_count": 1, "topology": "TP1/CP1"},
+  "hardware": {"device": "{device}", "npu_count": 1, "topology": "TP1/CP1"},
   "profile": {"model": "{model}", "framework": "{framework}", "precision": "bfloat16",
               "features": ["量化", "稀疏", "缓存"]},
   "sampling": {"hot_samples": 5, "excluded": ["model_load", "compile_prime", "warmup"]},

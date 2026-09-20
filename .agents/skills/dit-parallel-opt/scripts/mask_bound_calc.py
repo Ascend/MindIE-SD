@@ -193,8 +193,7 @@ def main() -> int:
     kern_csv = _find_one(root, "kernel_details.csv")
     if step_csv is None or kern_csv is None:
         print(
-            f"missing capture under {root}: step_trace_time.csv={bool(step_csv)} "
-            f"kernel_details.csv={bool(kern_csv)}",
+            f"missing capture under {root}: step_trace_time.csv={bool(step_csv)} kernel_details.csv={bool(kern_csv)}",
             file=sys.stderr,
         )
         return 2
@@ -240,21 +239,13 @@ def main() -> int:
     print(f"attention    : {fa_ms:.1f} ms over {fa_n} kernels ({args.fa_name})")
     print("comm families:")
     for (family, gid), (ms, count) in sorted(families.items(), key=lambda kv: -kv[1][0]):
-        print(
-            f"  {family:<14} gid={gid:<6} n={int(count):<6} total={ms:9.1f} ms "
-            f"mean={ms / max(count, 1.0):7.2f} ms"
-        )
+        print(f"  {family:<14} gid={gid:<6} n={int(count):<6} total={ms:9.1f} ms mean={ms / max(count, 1.0):7.2f} ms")
     print()
     step_note = "" if args.mask_family == "step" else f"; step column would be {comm_total:.1f}"
     gid_note = f" gid={args.mask_gid}" if args.mask_gid else ""
-    print(
-        f"C source     : family={args.mask_family}{gid_note}  "
-        f"({c_total * layers:.1f} ms/step{step_note})"
-    )
+    print(f"C source     : family={args.mask_family}{gid_note}  ({c_total * layers:.1f} ms/step{step_note})")
     print(f"per layer    : C={c_total:.2f} ms  F={f_total:.2f} ms")
-    print(
-        f"per chunk    : c={c_chunk:.2f} ms  f={f_chunk:.2f} ms  ->  c/f={ratio:.2f}   (chunks={n})"
-    )
+    print(f"per chunk    : c={c_chunk:.2f} ms  f={f_chunk:.2f} ms  ->  c/f={ratio:.2f}   (chunks={n})")
     print(
         f"ideal bound  : {100 * ideal_bound:.1f}% hiding (1-1/n)  <- reachable: "
         f"{'yes' if f_chunk >= c_chunk else 'NO (f < c)'}"

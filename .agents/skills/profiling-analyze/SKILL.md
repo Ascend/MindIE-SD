@@ -30,6 +30,55 @@ Profiling 数据由 profiling-collect skill 在远端 NPU 环境采集产出（�
 | `communication.json` | JSON | 通信算子详情（若开启） |
 | 单元利用率档（`op_summary_*.csv`，PipeUtilization） | CANN Profiler CSV | `*_vec_ratio` / `*_mac_ratio` / `*_mte2_ratio` / `*_mte3_ratio` / `cube_utilization(%)`；**融合判型（`fusion-scope-analyze`）的必需输入是这四族 ratio**，缺列或全 `N/A` 即判该次采集不合格（口径与门禁单点见 `profiling-collect/scripts/check_output.py`）。`memory_bound` 是**可算字段**（`mte2_ratio / max(mac_ratio, vec_ratio)`），真实导出常不含该列，**不列为必需列**、按公式现算 |
 
+> **同源提醒（不是两份独立证据）**：`kernel_details.csv` 与 `op_summary*.csv` 是**同一批 task 行的两种表头** ——
+> 前者由 `generate_view()` 从 `OP_SUMMARY` 生成（库内 `_kernel_view_parser.py`）⇒ **两文件行数相同、时间列同单位**。
+> **不得**把它们当成两份证据去"交叉验证"（那只会在同一份数据上自证 ✗）。
+> 另：**"导出报成功但没有新文件"**是本环境的已知陷阱（报成功的那一层把异常吞了），
+> 断言与绕过写法见 `../profiling-collect/SKILL.md`「导出类操作一律『无新文件即失败』」。
+
+## 读表口径与可复现性（三条实测，引用数据前必读）
+
+**① 「每层 / 每步耗时」必须声明口径：跨流 ΣDuration 还是纯计算忙碌**
+`kernel_details` 的 `Duration` 是**逐 task** 的 ⇒ 把**所有流**的 Duration 相加时，
+**被重叠的通信流会被算第二遍** ✗。本仓一条实测：ΣDuration 口径与纯计算忙碌口径
+**不相等**（差额 = 被重叠的通信量级；两者绝对值与占比出库 `{run_results_dir}/archive/`）。
+⇒ 报数时**写明口径**，并用 `step_trace_time` 的 `Computing / Communication / Overlapped / Free`
+四元组把两个口径**对上**（占比重叠读法见
+`../../dit-parallel-opt/references/parallel-plan-attribution-method.md` §2；
+"设备省了 e2e 没省"的方向性判据见 `../../perf-gate/references/measurement-discipline.md` §10）。
+
+**② 逐 kernel 计时不可复现，聚合量与计数可复现**
+同一配置、两次独立采集（不同 device）实测：**算子名字族的调用次数完全一致**、
+Top-kernel 集合相同、**聚合量差落在噪声内**；但**通信类与单个集合通信核的耗时差异显著**
+（单个集合通信核差异可达接近一倍）✗。
+⇒ **分层引用**：**调用次数 / Top 集合 / 聚合量与占比可信**；**单核毫秒数不可在 ±10% 内引用**、
+**跨设备单核差异可达接近一倍**（绝对偏差出库 `{run_results_dir}/archive/`）
+⇒ **禁止用单核毫秒数定位单卡 / 单设备问题**；
+跨设备比较只用**调用次数与占比**。
+⚠️ 该分层是**本仓实测上界、不是普适常数**（仅一次两设备对照）⇒ **每次换卡 / 换版本都要重测**。
+
+**③ 列语义必须实测自证，不能照抄二手字段说明**
+近名列并存，且**同一位次在不同表里的列名不同**。本仓实测（三张 kernel 表逐列取**去重值集合**后比对）：
+
+| 列名 | 出现在 | 实际装的是 | 等价关系（**去重值集合实测**） |
+|---|---|---|---|
+| `Type` | `kernel_details`（48 列布局） | **算子类型** | **≡ `OP Type`**：各 60 个值、集合完全相等（`Slice`/`ViewCopy`/`Cast`/…/`HcclLaunchAicpuKernel`/`hcom_*`） |
+| `OP Type` | `op_summary` / `op_statistic` / `communication_statistic` | **算子类型** | ≡ `Type`（同上，60/60 相等） |
+| `Accelerator Core` | `kernel_details` | **执行单元 / 核类型** | **≡ `Task Type`**：各 6 个值、集合完全相等（`AI_VECTOR_CORE` / `MIX_AIV` / `AI_CPU` / `COMMUNICATION` / `AI_CORE` / `MIX_AIC`） |
+| `Task Type` | `op_summary` | **执行单元 / 核类型** | ≡ `Accelerator Core`；⚠️ **`kernel_details` 里没有这个列名** |
+| `Core Type` | `op_statistic`（按算子聚合的表） | **执行单元 / 核类型**（聚合口径） | **值域同族但不等价**：只有 5 个值、**缺 `COMMUNICATION`** ⇒ 拿它统计通信会**整类漏掉** ✗ |
+| `kernel_type` | `task_time` | **更宽的 task 类型枚举** | **不等价**：16 个值，另含 `MEMCPY_ASYNC` / `NOTIFY_RECORD` / `DAVID_EVENT_*` 等非计算核 |
+| `Input/Output Data Types` | `kernel_details` | **数据类型**（与"算子类型"无关） | 易混名，勿当算子类型用 |
+
+⇒ **读表第一步是「列语义自证」**：对候选列取**去重值集合**判它到底是什么，**报告写明据以判定的证据**；
+**不要**引用别人给的字段摘要。另：**三张 kernel 表列数相同（48）但列名不同**
+（`Type`/`Name`/`Accelerator Core` vs `OP Type`/`Op Name`/`Task Type`）——
+这正是"**同一批 task 行、两种表头布局**"的实测确认 ⇒ **不能按"第 N 列"或照抄列名取数** ✗。
+
+**④ 一次便宜的交叉核对（自证解析正确）**：trace 里的 `Communication` 应与 `hcom_*` 行的
+**ΣDuration 应精确相等**（不等即说明表与 trace 已不同源或解析有变）
+⇒ 可当作"表与 trace 同源、解析正确"的一次核对 ✓。
+
 ## 分析管道
 
 ```text
@@ -233,3 +282,13 @@ Exposed Ratio = 未与计算重叠的通信耗时 / 通信总耗时
 
 当发现新的瓶颈类型、算子耗时分析方法更新、CANN profiler 输出格式变更或性能诊断工具升级时，
 按 dev-workflow 的复盘流程更新本 skill。
+
+- **更新触发条件**：CANN profiler **列名 / 列语义**变化（`Type` vs `Accelerator Core` 这类同名列的
+  归属会随版本变）、`step_trace_time` 四元组口径变化、或 §「读表口径与可复现性」三条的
+  读数（重叠计入的量级、跨设备可复现性分层、列语义归属）不再成立时。
+- **复核方法**：换版本 / 换采集档后重跑三项最小核对 —— ① 同一份产物分别用「跨流 ΣDuration」与
+  「纯计算忙碌」出数，确认两者**不相等**且差额与"被重叠的通信"量级一致（相等才该怀疑口径已变）；
+  ② 同配置**两次独立采集**比调用次数与总量，确认"计数一致、单核漂移"的分层仍成立；
+  ③ 对 `Type` / `Accelerator Core` 各取**去重值集合**，确认哪些值属于哪一列。
+- **失效信号**：若某次采集里「trace 的 `Communication`」与「`hcom_*` 行 ΣDuration」**不再相等**，
+  说明表与 trace 的对应关系或解析已变 —— 先修解析，再引用任何通信读数。

@@ -28,14 +28,15 @@ docker exec {容器} bash -lc 'cd /home/{user}/code/MindIE-SD && \
 | UT 结果 | 结论 | 下一步 |
 |---|---|---|
 | 全部 PASSED | 算子正常 → **benchmark 调用问题** | 对照 UT 与 vendor 实现的调用参数（inner_precise / mask / actual_seq_lengths / shape） |
-| FAIL / 崩溃 | 算子或环境问题 | 查 CANN 版本、算子编译产物、设备支持（UT 常带设备 skip 条件如 A5） |
+| FAIL / 崩溃 | 算子或环境问题 | 查 CANN 版本、算子编译产物、设备支持（UT 常带**按设备代际**的 skip 条件——具体代号现场查 UT） |
 
 **注意**：UT 通过不代表所有 shape 可用——UT 可能只覆盖小序列/特定参数。
 若怀疑 shape 依赖，用与 benchmark 相同的 shape 直接调用算子验证（见案例 A 的验证脚本模式）。
 
 ## 2. 案例 A：BSA 恒定 latency + 全零输出（inner_precise / mask）
 
-**现象**：BSA 所有 case latency 恒定（~60us，q_len 1024→32768 不变），MFU 爆表钳位 1。
+**现象**：BSA 的所有 case latency **恒定、且不随 q_len 变化**（恒定值与具体 q_len 读数见
+`{run_results_dir}/archive/`），MFU 爆表钳位 1。
 
 **排查链**（按序执行）：
 
@@ -57,7 +58,7 @@ docker exec {容器} bash -lc 'cd /home/{user}/code/MindIE-SD && \
 
 ## 3. 案例 B：偶发卡顿污染（异常大 latency）
 
-**现象**：同一 case 偶发 latency 异常（如 1024 sp=0.6 正常 49us，某次跑到 8.4 秒）。
+**现象**：同一 case 偶发 latency 异常（正常值与异常值**相差数量级**，读数见 `{run_results_dir}/archive/`）。
 
 **处理**：
 

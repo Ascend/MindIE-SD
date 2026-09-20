@@ -303,14 +303,16 @@ HCCL 集合跑在独立 comm stream 上，
 - `references/ascend-parallel-traps.md` — 加载时机: **遇到具体报错码（`EE1003 coreDim` 超限、gloo 地址族、Q≠KV 守卫、`auto_pad` × 后端互斥）、或怀疑「某个配置被静默忽略」时**（逐条陷阱的 症状→原因→处置 + **「如何判定它仍存在」的复核触发** + 陷阱寿命纪律）
 - `references/ascend-topology-bandwidth-diag.md` — 加载时机: **多卡拓扑选型（同域/跨域）**、HCCL 带宽验证（hccl_test 或 torchrun 等价工具）、端口 bind/卡组受损等环境诊断时
 - `references/comm-masking-method.md` — 加载时机: **要做/要做完通信掩盖（分块流水掩 a2a）、判断「掩盖率为什么达不到 1-1/n」、估算掩盖上限、或掩盖开了却没生效时**（含上限公式、实现 recipe、生效判据、静默失效清单）
-- `references/parallel-plan-attribution-method.md` — 加载时机: **比较两个并行形态/特性档的耗时差、需要把差异拆成可归因分项、判断「通信慢是传输还是等待」、建模跨岛/同岛通信量下限、或做 4→8 卡线性度分析时**
+- `references/parallel-plan-attribution-method.md` — 加载时机: **比较两个并行形态/特性档的耗时差、需要把差异拆成可归因分项、判断「通信慢是传输还是等待」、把某阶段新增成本拆成「按字节可预测 / 按等待不可预测」两类（含 `2 KB 级集合通信却阻塞整层` 与 `推导式里整张量算子被做 n 次` 两种形态）、建模跨岛/同岛通信量下限、或做 4→8 卡线性度分析时**
 - `references/parallel-form-selection-method.md` — 加载时机: **要在纯序列并行与复合（AllGather-KV × Ulysses）等形态之间做抉择、判断「哪个形态更快」、或要写「若修好 X 则反超」的投影结论时**（七关流程 + 判据表 + 条件化结论模板 + 重判触发清单）
 - `references/cp-sparse-combination-method.md` — 加载时机: **要把序列并行（CP/Ulysses）与稀疏注意力叠加、判断该叠加在框架侧是否可行、排查「稀疏看起来生效其实没生效」、或叠加掩盖时定分块与集合通信顺序时**（四条契约 + 验收判据 + 失效模式表）
 - `references/few-step-multirank-protocol.md` — 加载时机: **少步/短任务下验证并行配置、判断「少步结论能否外推全步」、设计并行对比矩阵、需要 DiT-only 计时口径或通信占比采集口径时**（含阈值、复验触发条件与踩坑清单）
+- `references/a2a-integrity-audit.md` — 加载时机: **某个跨 rank 的载荷“看起来”被截断 / 陈旧 / 放错位置、需要判定责任在传输还是在上游内容时**（四条免额外集合通信的检查：发送侧前后双指纹、逐源指纹、跨 rank 逐腿对账、自腿绝对校验 + 判读表与两条纪律；分析器 `scripts/a2a_reconcile.py`）
 - `scripts/fewstep_multirank_probe.py` — 加载时机: 需要**实际执行**「多 rank × 多步数档」矩阵并把 DiT-only 指标与排序一致性自动出成证据包时（`--parse-only` 可零 NPU 复盘既有日志）
 - `scripts/mask_bound_calc.py` — 加载时机: 拿到掩盖 ON/OFF 的 profile 后，**算每层 C/F、c/f、1-1/n 是否可达、真实上限与达成率**时（零依赖，只读 profile）
 - `scripts/collective_attribution.py` — 加载时机: 需要**把集合通信归到具体并行组、判重叠真实性（union/sum）、或检查侧流是否混入 AI-core 核**时（零依赖，只读 profile）
 - `scripts/bubble_attribution.py` — 加载时机: 需要**判定「暴露的是哪一族通信」「计算流空泡是等网还是等下发」、或决定下一步该投掩盖/压载荷还是投下发与图捕获**时（零依赖，只读 profile）
+- `scripts/a2a_reconcile.py` — 加载时机: 拿到各 rank 的逐腿审计日志后，**做跨 rank 对账并给出判读结论**（传输忠实 / 发送缓冲被改写 / 搬运落位 / 自腿拼装 四选一；零依赖、离线、`--selftest` 自证）
 
 ## 维护与更新
 

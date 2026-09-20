@@ -134,7 +134,7 @@ vllm serve --omni 启动即失败
 ├─ pip 报 `Invalid wheel filename (wrong number of parts)`
 │   └─ 第三方 wheel 被**重命名**（如 `torch.whl` / `torch_npu.whl`）后安装：pip 要求文件名符合
 │      `{name}-{version}-{build}-{py}-{abi}-{platform}.whl` → **保留原始文件名**重新安装
-│      （如 `torch-2.11.0+cpu-cp312-cp312-manylinux_2_28_x86_64.whl`），不要为下载方便改名
+│      （形如 `<name>-<version>-<build>-<py>-<abi>-<platform>.whl`；**版本号按实际下载的包**，不要为下载方便改名）
 └─ 部分机型代际上设置 MINDIE_SD_FA_TYPE 导致算子路由异常
     └─ 该变量在这些代际不适用 → 删除（**用 `npu-smi info -l` 确认目标代际后复核**，勿与其他代际场景写法混用）
 

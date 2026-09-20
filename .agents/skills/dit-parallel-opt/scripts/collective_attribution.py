@@ -162,9 +162,7 @@ def main() -> int:
 
     per_layer = max(args.layers * args.steps, 1e-9)
     print(f"capture      : {hits[0]}")
-    print(
-        f"denominator  : layers={args.layers:g} steps={args.steps:g} -> {per_layer:g} layer-steps"
-    )
+    print(f"denominator  : layers={args.layers:g} steps={args.steps:g} -> {per_layer:g} layer-steps")
     print()
     print(
         f"{'family':<16}{'gid':<8}{'n':>7}{'calls/layer':>13}{'total ms':>11}"

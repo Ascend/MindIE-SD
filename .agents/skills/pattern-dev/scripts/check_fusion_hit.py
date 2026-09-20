@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# coding=utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
 # MindIE is licensed under Mulan PSL v2.
 # You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -45,11 +44,11 @@ def main():
         required=True,
         help="substring of the fused kernel name (e.g. GroupedMxMatmulSliceMSwigluMxQuant)",
     )
-    parser.add_argument("--expect", type=int, default=None,
-                        help="expected hit count (e.g. number of FFN sites); exit 1 if mismatch")
+    parser.add_argument(
+        "--expect", type=int, default=None, help="expected hit count (e.g. number of FFN sites); exit 1 if mismatch"
+    )
     parser.add_argument("--name", default=None, help="display label (defaults to --kernel tail)")
-    parser.add_argument("--eager-csv", default=None,
-                        help="optional eager csv to confirm fused kernel absent there")
+    parser.add_argument("--eager-csv", default=None, help="optional eager csv to confirm fused kernel absent there")
     args = parser.parse_args()
 
     label = args.name or args.kernel.rsplit(":", 1)[-1].split(".")[-1]

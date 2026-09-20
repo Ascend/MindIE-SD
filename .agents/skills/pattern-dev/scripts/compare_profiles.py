@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# coding=utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
 # MindIE is licensed under Mulan PSL v2.
 # You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -34,8 +33,8 @@ FAMILY = [
     ("  Cast", lambda n: "InplaceCopy" in n and "Cast" in n),
     ("InplaceCopy(总)", lambda n: "InplaceCopy" in n),
     ("Transpose(布局)", lambda n: "Transpose" in n and "InplaceCopy" not in n),
-    ("Mul", lambda n: n.startswith("aclnnMul") or n.startswith("aclnnMuls")),
-    ("Add", lambda n: n.startswith("aclnnAdd") or n.startswith("aclnnAdds")),
+    ("Mul", lambda n: n.startswith(("aclnnMul", "aclnnMuls"))),
+    ("Add", lambda n: n.startswith(("aclnnAdd", "aclnnAdds"))),
     ("LayerNorm", lambda n: "LayerNorm" in n and "AdaLayerNorm" not in n),
     ("RMSNorm", lambda n: "RmsNorm" in n or "rms_norm" in n),
     ("Pow/Mean/Rsqrt", lambda n: "Pow" in n or "Mean" in n or "Rsqrt" in n or "Square" in n),
@@ -88,10 +87,7 @@ def main(eager_path, compile_path):
                 cfam_d[label] += d / 1000
                 cfam_c[label] += cc[n]
                 break
-    print(
-        f"{'family':22s} {'eager ms':>10s} {'cmpl ms':>10s} "
-        f"{'delta':>9s}  {'eager#':>6s} {'cmpl#':>6s}"
-    )
+    print(f"{'family':22s} {'eager ms':>10s} {'cmpl ms':>10s} {'delta':>9s}  {'eager#':>6s} {'cmpl#':>6s}")
 
     def sort_key(x):
         return -max(efam_d.get(x, 0), cfam_d.get(x, 0))

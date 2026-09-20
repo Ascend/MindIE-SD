@@ -17,6 +17,7 @@ Pass the batches and the shape of the *real* workload: thresholds are a function
 version, so they cannot be reused across shapes or releases (re-sweep instead of extrapolating).
 Add your own op to OPS with the same signature (x) -> tensor.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -26,7 +27,7 @@ try:
     import torch
     import torch.nn.functional as F
 except ImportError as exc:  # pragma: no cover
-    sys.exit("需要 torch (%s)" % exc)
+    sys.exit(f"需要 torch ({exc})")
 
 TOL = 1e-3
 
@@ -43,8 +44,8 @@ OPS = {
 
 def sweep(op_name: str, batches: list[int], c: int, h: int, w: int, device: str) -> None:
     fn = OPS[op_name]
-    print("== op=%s  shape=(B, %d, %d, %d)  device=%s" % (op_name, c, h, w, device))
-    print("   %8s %12s %12s %12s" % ("batch", "max|d|", "first_bad", "input_absmax"))
+    print(f"== op={op_name}  shape=(B, {c}, {h}, {w})  device={device}")
+    print(f"   {'batch':>8} {'max|d|':>12} {'first_bad':>12} {'input_absmax':>12}")
     for b in batches:
         torch.manual_seed(0)
         x_cpu = torch.randn(b, c, h, w, dtype=torch.float32)
@@ -53,10 +54,9 @@ def sweep(op_name: str, batches: list[int], c: int, h: int, w: int, device: str)
         y_ref = fn(x_cpu)
         d = (y - y_ref).abs().reshape(b, -1).amax(1)
         bad = (d > TOL).nonzero()
-        print("   %8d %12.4f %12s %12.3f" % (
-            b, float(d.max()),
-            int(bad[0]) if len(bad) else "—",
-            float(x_cpu.abs().max())))
+        print(
+            f"   {b:8d} {float(d.max()):12.4f} {int(bad[0]) if len(bad) else '—':>12} {float(x_cpu.abs().max()):12.3f}"
+        )
     print()
 
 
@@ -76,12 +76,14 @@ def main() -> int:
     ops = sorted(OPS) if a.all_ops else [a.op]
     for op in ops:
         sweep(op, batches, c, h, w, device)
-    print("判读：\n"
-          "  * first_bad 随 batch 变化但恒等于某个绝对索引 -> 固定索引/分块边界缺陷\n"
-          "  * first_bad 随 batch 变化且总在尾部/某个比例  -> 规模阈值缺陷\n"
-          "  * max|d| 每次运行都不同（重跑几遍看）        -> 陈旧内存（缓冲区未写入）\n"
-          "  * 所有等价写法表现一致                       -> 同一底层 kernel，改调用方式没用\n"
-          "  * 注意 repeat_interleave 这类写法会新建整张张量：数值等价但可能 OOM，先算峰值内存")
+    print(
+        "判读：\n"
+        "  * first_bad 随 batch 变化但恒等于某个绝对索引 -> 固定索引/分块边界缺陷\n"
+        "  * first_bad 随 batch 变化且总在尾部/某个比例  -> 规模阈值缺陷\n"
+        "  * max|d| 每次运行都不同（重跑几遍看）        -> 陈旧内存（缓冲区未写入）\n"
+        "  * 所有等价写法表现一致                       -> 同一底层 kernel，改调用方式没用\n"
+        "  * 注意 repeat_interleave 这类写法会新建整张张量：数值等价但可能 OOM，先算峰值内存"
+    )
     return 0
 
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# coding=utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
 """MindIE-SD incremental deploy to remote Ascend device.
 
@@ -51,7 +50,7 @@ def load_ssh_helper():
             "请确保 .agents/skills/ 下 env-install 与 remote-access 两个技能同时存在。"
         )
     sys.path.insert(0, str(helper_dir))
-    import ssh_helper  # noqa: PLC0415 - 跨技能复用，按需导入
+    import ssh_helper  # 跨技能复用，按需导入（非顶层导入，避免硬依赖 remote-access 的安装顺序）
 
     return ssh_helper
 

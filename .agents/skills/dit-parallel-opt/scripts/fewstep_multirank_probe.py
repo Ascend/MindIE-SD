@@ -90,9 +90,7 @@ def kill_tree(pid: int | None) -> None:
     if not pid:
         return
     with contextlib.suppress(OSError):
-        out = subprocess.run(
-            ["pgrep", "-P", str(pid)], capture_output=True, text=True, check=False
-        ).stdout
+        out = subprocess.run(["pgrep", "-P", str(pid)], capture_output=True, text=True, check=False).stdout
         for child in out.split():
             kill_tree(int(child))
     with contextlib.suppress(ProcessLookupError, PermissionError):
@@ -109,18 +107,36 @@ def launch_serve(args: argparse.Namespace, cfg: dict, log_path: str) -> subproce
     if cfg["dlo"]:
         extra.append("--enable-distributed-layerwise-offload")
     cmd = [
-        os.path.join(args.venv, "bin", "vllm-omni"), "serve", args.model, "--omni",
-        "--host", "0.0.0.0", "--port", str(args.port), "--trust-remote-code",
-        "--num-gpus", str(cfg["world"]),
-        "--tensor-parallel-size", str(cfg["tp"]),
-        "--usp", str(cfg["usp"]), "--ring", "1",
-        "--text-encoder-tp-size", str(cfg["world"]),
-        "--vae-patch-parallel-size", str(cfg["world"]),
-        "--vae-parallel-mode", "tile", "--vae-use-tiling",
+        os.path.join(args.venv, "bin", "vllm-omni"),
+        "serve",
+        args.model,
+        "--omni",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        str(args.port),
+        "--trust-remote-code",
+        "--num-gpus",
+        str(cfg["world"]),
+        "--tensor-parallel-size",
+        str(cfg["tp"]),
+        "--usp",
+        str(cfg["usp"]),
+        "--ring",
+        "1",
+        "--text-encoder-tp-size",
+        str(cfg["world"]),
+        "--vae-patch-parallel-size",
+        str(cfg["world"]),
+        "--vae-parallel-mode",
+        "tile",
+        "--vae-use-tiling",
         "--enable-diffusion-pipeline-profiler",
         *extra,
-        "--init-timeout", str(args.init_timeout),
-        "--stage-init-timeout", str(args.init_timeout),
+        "--init-timeout",
+        str(args.init_timeout),
+        "--stage-init-timeout",
+        str(args.init_timeout),
     ]
     env = dict(os.environ)
     env.update(
@@ -139,9 +155,7 @@ def launch_serve(args: argparse.Namespace, cfg: dict, log_path: str) -> subproce
         }
     )
     with open(log_path, "wb") as lf:
-        return subprocess.Popen(
-            cmd, stdout=lf, stderr=subprocess.STDOUT, env=env, start_new_session=True
-        )
+        return subprocess.Popen(cmd, stdout=lf, stderr=subprocess.STDOUT, env=env, start_new_session=True)
 
 
 def wait_health(port: int, log_path: str, timeout_s: int) -> int:
@@ -149,9 +163,10 @@ def wait_health(port: int, log_path: str, timeout_s: int) -> int:
     t0 = time.time()
     while time.time() - t0 < timeout_s:
         code = subprocess.run(
-            ["curl", "-s", "-m", "8", "-o", "/dev/null", "-w", "%{http_code}",
-             f"http://127.0.0.1:{port}/health"],
-            capture_output=True, text=True, check=False,
+            ["curl", "-s", "-m", "8", "-o", "/dev/null", "-w", "%{http_code}", f"http://127.0.0.1:{port}/health"],
+            capture_output=True,
+            text=True,
+            check=False,
         ).stdout.strip()
         if code == "200":
             return int(time.time() - t0)
@@ -162,22 +177,40 @@ def wait_health(port: int, log_path: str, timeout_s: int) -> int:
 
 
 def post_video(args: argparse.Namespace, steps: int, out_mp4: str) -> dict:
-    extra_params = (
-        f'{{"task":"t2va","duration":{args.duration},'
-        f'"audio_flow_shift":{args.audio_flow_shift}}}'
-    )
+    extra_params = f'{{"task":"t2va","duration":{args.duration},"audio_flow_shift":{args.audio_flow_shift}}}'
     form = [
-        "-F", f"prompt={args.prompt}",
-        "-F", f"width={args.width}", "-F", f"height={args.height}",
-        "-F", "aspect_ratio=16:9", "-F", f"fps={args.fps}",
-        "-F", f"num_inference_steps={steps}",
-        "-F", f"flow_shift={args.flow_shift}", "-F", f"seed={args.seed}",
-        "-F", f"extra_params={extra_params}",
+        "-F",
+        f"prompt={args.prompt}",
+        "-F",
+        f"width={args.width}",
+        "-F",
+        f"height={args.height}",
+        "-F",
+        "aspect_ratio=16:9",
+        "-F",
+        f"fps={args.fps}",
+        "-F",
+        f"num_inference_steps={steps}",
+        "-F",
+        f"flow_shift={args.flow_shift}",
+        "-F",
+        f"seed={args.seed}",
+        "-F",
+        f"extra_params={extra_params}",
     ]
     cmd = [
-        "curl", "-sS", "--max-time", str(args.request_timeout),
-        "-o", out_mp4, "-w", "%{http_code} %{time_total} %{size_download}",
-        "-X", "POST", f"http://127.0.0.1:{args.port}/v1/videos/sync", *form,
+        "curl",
+        "-sS",
+        "--max-time",
+        str(args.request_timeout),
+        "-o",
+        out_mp4,
+        "-w",
+        "%{http_code} %{time_total} %{size_download}",
+        "-X",
+        "POST",
+        f"http://127.0.0.1:{args.port}/v1/videos/sync",
+        *form,
     ]
     res = subprocess.run(cmd, capture_output=True, text=True, check=False)
     parts = (res.stdout or "").split()
@@ -311,12 +344,8 @@ def build_cells(requests: list[dict], steps_few: int, steps_anchor: int) -> list
                 "dit_stage_s_median": median_or_none([r["dit_stage_s"] for r in sel]),
                 "dit_stage_s_all": [r["dit_stage_s"] for r in sel],
                 "dit_stage_dispersion_pct": spread_pct([r["dit_stage_s"] for r in sel]),
-                "dit_per_iter_s_median": median_or_none(
-                    [r["dit_stage_per_iter_s"] for r in sel]
-                ),
-                "step_steady_s_median": median_or_none(
-                    [r["step_s_steady_median"] for r in sel]
-                ),
+                "dit_per_iter_s_median": median_or_none([r["dit_stage_per_iter_s"] for r in sel]),
+                "step_steady_s_median": median_or_none([r["step_s_steady_median"] for r in sel]),
                 "step_first_s_median": median_or_none([r["step_s_first"] for r in sel]),
                 "decode_stage_s_median": median_or_none([r["decode_stage_s"] for r in sel]),
             }
@@ -335,10 +364,7 @@ def verdict_for_config(cells: list[dict]) -> dict:
         return {"status": "incomplete", "reason": "per-iteration DiT time unavailable"}
     ratio = anchor_pi / few_pi
     drift = abs(ratio - 1.0) * 100.0
-    dispersions = [
-        c["dit_stage_dispersion_pct"] for c in cells
-        if c["dit_stage_dispersion_pct"] is not None
-    ]
+    dispersions = [c["dit_stage_dispersion_pct"] for c in cells if c["dit_stage_dispersion_pct"] is not None]
     worst = max(dispersions) if dispersions else None
     base = {
         "per_iter_ratio_anchor_over_few": round(ratio, 4),
@@ -349,21 +375,20 @@ def verdict_for_config(cells: list[dict]) -> dict:
         return {
             **base,
             "status": "unstable",
-            "reason": "within-cell dispersion exceeds the noise threshold; not usable "
-                      "for any ranking claim",
+            "reason": "within-cell dispersion exceeds the noise threshold; not usable for any ranking claim",
         }
     if drift > DRIFT_THRESHOLD_PCT:
         return {
             **base,
             "status": "reverify-at-anchor",
             "reason": "per-step DiT time is not stable across step tiers; the few-step "
-                      "ranking must be re-measured at the anchor step count",
+            "ranking must be re-measured at the anchor step count",
         }
     return {
         **base,
         "status": "extrapolates",
         "reason": "per-step DiT time is stable across step tiers within the noise "
-                  "threshold and the cells are repeatable",
+        "threshold and the cells are repeatable",
     }
 
 
@@ -395,9 +420,7 @@ def parse_config_spec(spec: str) -> dict:
     """Parse ``NAME:CARDS:tpX,uspY[,dlo]``."""
     parts = spec.split(":")
     if len(parts) < 3:
-        raise argparse.ArgumentTypeError(
-            f"config spec must be NAME:CARDS:tpX,uspY[,dlo] -- got {spec!r}"
-        )
+        raise argparse.ArgumentTypeError(f"config spec must be NAME:CARDS:tpX,uspY[,dlo] -- got {spec!r}")
     name, cards, opts = parts[0], parts[1], parts[2]
     tp = usp = None
     dlo = False
@@ -414,35 +437,45 @@ def parse_config_spec(spec: str) -> dict:
     world = tp * usp
     n_cards = len(cards.split(","))
     if n_cards != world:
-        raise argparse.ArgumentTypeError(
-            f"cards ({n_cards}) must match tp*usp ({world}) for {name}"
-        )
+        raise argparse.ArgumentTypeError(f"cards ({n_cards}) must match tp*usp ({world}) for {name}")
     return {"name": name, "cards": cards, "tp": tp, "usp": usp, "world": world, "dlo": dlo}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--config", action="append", default=[], type=parse_config_spec,
-                    help="NAME:CARDS:tpX,uspY[,dlo]; repeat for each configuration")
+    ap.add_argument(
+        "--config",
+        action="append",
+        default=[],
+        type=parse_config_spec,
+        help="NAME:CARDS:tpX,uspY[,dlo]; repeat for each configuration",
+    )
     ap.add_argument("--out-dir", required=True)
-    ap.add_argument("--model", default=os.environ.get("S32_MODEL_DIR", ""),
-                    help="model directory on the inference host")
-    ap.add_argument("--venv", default=sys.prefix,
-                    help="environment prefix providing the vllm-omni CLI; defaults to the "
-                         "running interpreter's prefix, so run this script with the "
-                         "inference environment's python")
+    ap.add_argument(
+        "--model", default=os.environ.get("S32_MODEL_DIR", ""), help="model directory on the inference host"
+    )
+    ap.add_argument(
+        "--venv",
+        default=sys.prefix,
+        help="environment prefix providing the vllm-omni CLI; defaults to the "
+        "running interpreter's prefix, so run this script with the "
+        "inference environment's python",
+    )
     ap.add_argument("--port", type=int, default=8123)
     ap.add_argument("--steps-few", type=int, default=4)
     ap.add_argument("--steps-anchor", type=int, default=10)
     ap.add_argument("--reps", type=int, default=3)
-    ap.add_argument("--warm-steps", type=int, default=6,
-                    help="excluded warmup request; also carries the profiler capture")
-    ap.add_argument("--kprof-after", type=int, default=5,
-                    help="n-th DiT forward to profile (lands inside the warmup request)")
+    ap.add_argument(
+        "--warm-steps", type=int, default=6, help="excluded warmup request; also carries the profiler capture"
+    )
+    ap.add_argument(
+        "--kprof-after", type=int, default=5, help="n-th DiT forward to profile (lands inside the warmup request)"
+    )
     ap.add_argument("--init-timeout", type=int, default=1800)
     ap.add_argument("--request-timeout", type=int, default=28800)
-    ap.add_argument("--prompt", default="A cinematic shot of a glowing robot walking "
-                                        "through a rainy neon city street at night.")
+    ap.add_argument(
+        "--prompt", default="A cinematic shot of a glowing robot walking through a rainy neon city street at night."
+    )
     ap.add_argument("--width", type=int, default=1344)
     ap.add_argument("--height", type=int, default=768)
     ap.add_argument("--fps", type=int, default=24)
@@ -450,8 +483,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--seed", type=int, default=1101)
     ap.add_argument("--flow-shift", default="12")
     ap.add_argument("--audio-flow-shift", default="3.0")
-    ap.add_argument("--parse-only", action="store_true",
-                    help="skip all NPU work; re-analyse existing serve logs in --out-dir")
+    ap.add_argument(
+        "--parse-only", action="store_true", help="skip all NPU work; re-analyse existing serve logs in --out-dir"
+    )
     return ap.parse_args(argv)
 
 
@@ -462,8 +496,10 @@ def run_config(args: argparse.Namespace, cfg: dict, all_requests: dict) -> None:
     kprof_dir = os.path.join(args.out_dir, f"kprof_{cfg['name']}")
     if os.path.isdir(kprof_dir):
         shutil.rmtree(kprof_dir)
-    print(f"[{cfg['name']}] launching world={cfg['world']} tp={cfg['tp']} usp={cfg['usp']} "
-          f"dlo={cfg['dlo']} cards={cfg['cards']}")
+    print(
+        f"[{cfg['name']}] launching world={cfg['world']} tp={cfg['tp']} usp={cfg['usp']} "
+        f"dlo={cfg['dlo']} cards={cfg['cards']}"
+    )
     proc = launch_serve(args, cfg, log_path)
     try:
         startup = wait_health(args.port, log_path, args.init_timeout)
@@ -478,8 +514,7 @@ def run_config(args: argparse.Namespace, cfg: dict, all_requests: dict) -> None:
         for tag, steps in plan:
             out_mp4 = os.path.join(args.out_dir, f"{cfg['name']}_{tag}.mp4")
             rec = post_video(args, steps, out_mp4)
-            print(f"[{cfg['name']}] req {tag} steps={steps} http={rec['http']} "
-                  f"t={rec['seconds']}")
+            print(f"[{cfg['name']}] req {tag} steps={steps} http={rec['http']} t={rec['seconds']}")
     finally:
         kill_tree(proc.pid)
         time.sleep(10)
@@ -490,12 +525,10 @@ def write_evidence(out_dir: str, bundle: dict) -> None:
     lines = [
         "# DiT-only few-step x multi-rank probe",
         "",
-        "> Every parallel-comparison number below comes from the **DiT denoise stage "
-        "only**.",
+        "> Every parallel-comparison number below comes from the **DiT denoise stage only**.",
         "> VAE decode / prompt encode / load / warmup are excluded by construction.",
         "",
-        "| config | tier | steps | reps | DiT per-iter (s) | DiT stage (s) | disp % "
-        "| decode (s) |",
+        "| config | tier | steps | reps | DiT per-iter (s) | DiT stage (s) | disp % | decode (s) |",
         "|---|---|---|---|---|---|---|---|",
     ]
     for name, c in bundle["configs"].items():
@@ -514,8 +547,15 @@ def write_evidence(out_dir: str, bundle: dict) -> None:
                 f"(drift {v.get('step_time_drift_pct')}%, "
                 f"worst dispersion {v.get('worst_dispersion_pct')}%)"
             )
-    lines += ["", "## Ordering stability across step tiers", "",
-              "```json", json.dumps(bundle["ordering_stability"], indent=2), "```", ""]
+    lines += [
+        "",
+        "## Ordering stability across step tiers",
+        "",
+        "```json",
+        json.dumps(bundle["ordering_stability"], indent=2),
+        "```",
+        "",
+    ]
     with open(os.path.join(out_dir, "evidence.md"), "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
 
@@ -545,8 +585,7 @@ def main(argv: list[str] | None = None) -> int:
         "caliber": {
             "primary": "DiT denoise stage only: <Pipeline>.diffuse wall clock",
             "derived": "per-denoise-iteration DiT time = diffuse / measured iterations",
-            "excluded": ["VAE decode", "prompt encode", "model load", "warmup",
-                         "response encoding"],
+            "excluded": ["VAE decode", "prompt encode", "model load", "warmup", "response encoding"],
             "request_delimiter": "API server 'Video sampling params: steps=N' line",
             "noise_threshold_pct": NOISE_THRESHOLD_PCT,
             "drift_threshold_pct": DRIFT_THRESHOLD_PCT,
@@ -561,9 +600,7 @@ def main(argv: list[str] | None = None) -> int:
         per_cfg[name] = cells
         entry: dict = {"spec": specs.get(name), "requests": reqs, "cells": cells}
         if specs.get(name):
-            entry["contract"] = contract_counters(
-                os.path.join(args.out_dir, f"{name}_serve.log"), specs[name]
-            )
+            entry["contract"] = contract_counters(os.path.join(args.out_dir, f"{name}_serve.log"), specs[name])
         entry["verdict"] = verdict_for_config(cells)
         bundle["configs"][name] = entry
     bundle["ordering_stability"] = ordering_stability(per_cfg)

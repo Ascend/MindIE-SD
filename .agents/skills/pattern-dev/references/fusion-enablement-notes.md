@@ -2,9 +2,8 @@
 
 > 场景：融合算子/pattern 使能入口与"开关"设置。与 SKILL.md「行为约束 #3（默认开启、不设开关）」呼应：
 > 默认开启不设开关是首选；**确需开关时必须收敛到 `CompilationConfig`，禁止散落独立开关**。
-> 案例：MiniMax-H3 `mm_swiglu_mxquant`（2026-09 前）；FLUX/Wan/Qwen-Image `mm_gelu_mxquant`
-> （2026-09 本仓：kernel+layer/pattern+使能+开关收敛全链路，报告 `{run_results_dir}/`
-> `fusion_enable_report.md`、`phase1_3_delivery_report.md`）。
+> 案例：MiniMax-H3 `mm_swiglu_mxquant`；FLUX/Wan/Qwen-Image `mm_gelu_mxquant`
+> （kernel + layer/pattern + 使能 + 开关收敛全链路；报告见会话产物归档 `{run_results_dir}/archive/`）。
 > §4 = **compile 阶段的适配动作**：由 `framework-integration` SKILL §② 的**阶段 2**
 > （API 接入验证通过后）指向本文件；阶段 1（API / runtime 注入）的方法与顺序纪律在该 SKILL §②。
 
@@ -28,8 +27,8 @@ layer-route helper/测试）一律**读它**，不设第二渠道。
   注释记录依据/日期/AB；未达标 → 默认 False。默认 True 必须可一键置 False 复现
   （off-identity/AB 对照），复用同一 flag。
 - **R4 多载体共享 flag**：同一融合同时存在 pattern 与 layer-route 等载体时共享同一 flag，
-  任何载体不得独立默认/独立开关（历史教训：mm_gelu 曾 pattern flag(False) 与 dummy env(默认 1)
-  两套并存造成默认漂移，已收敛）。
+  任何载体不得独立默认/独立开关（否则两套默认值会漂移：mm_gelu 的 pattern flag(False) 与
+  dummy env(默认 1) 就属此类，收敛方式 = 共享同一 flag）。
 - **R5 无效使能不进默认路径**：默认 True 的使能必须真实生效（Phase 6 kernel 计数契约验证）。
   canonical pattern 真实图未命中（seam）不算生效——未打通前不得以"默认开但无效"交付；改用
   命中的载体（如 layer-route）时在 flag/pattern 注释标注 carrier 与命中验证结果（含 seam 记录）。
@@ -43,10 +42,10 @@ layer-route helper/测试）一律**读它**，不设第二渠道。
 | 融合算子 | flag（唯一） | 默认 | 载体/说明 |
 |---|---|---|---|
 | `mm_swiglu_mxquant`（MiniMax-H3 FFN） | `enable_minimax_h3_ffn_fusion` | True | compile GraphPatternEntry 真图命中（mkldnn 范式，register_ffn_fusion_graph_entries）；register_replacement canonical 子线备用 |
-| `mm_gelu_mxquant`（FLUX/Wan/Qwen FFN） | `enable_flux_wan_ffn_gelu_fusion` | True | **compile GraphPatternEntry 真图命中**（register_ffn_gelu_fusion_graph_entries：Qmm→reshape(Ignored)→npu_fast_gelu→reshape(Ignored)→DxQ→Qmm，handler 反向改图，bias 原样直传）；dummy 前端零融合代码（layer-route 已撤） |
+| `mm_gelu_mxquant`（FLUX/Wan/Qwen FFN） | `enable_flux_wan_ffn_gelu_fusion` | True | **compile GraphPatternEntry 真图命中**（register_ffn_gelu_fusion_graph_entries：Qmm→reshape(Ignored)→npu_fast_gelu→reshape(Ignored)→DxQ→Qmm，handler 反向改图，bias 原样直传）；dummy 前端零融合代码（layer-route 不作载体） |
 
 - 其余既有融合（rms/rope/adaln/gate 等）同为 `fusion_patterns` pattern flag，无独立开关、
-  默认 True（`enable_minimax_h3_norm_rope` 已随算子整体移除）。强弱融合互斥靠**注册序**：
+  默认 True。强弱融合互斥靠**注册序**：
   `enable_minimax_h3_ffn_fusion` 先于 `enable_minimax_h3_swiglu`、
   `enable_flux_wan_ffn_gelu_fusion` 先于 `enable_fast_gelu`（fusion 链含其子图）。
 - 运行期外：构建开关 `MINDIESD_CATLASS_HOME`（R7）。
@@ -63,9 +62,10 @@ layer-route helper/测试）一律**读它**，不设第二渠道。
    FFN 链带 aten.reshape 动态 shape 噪声，trace 式 register_replacement 无法匹配（S 固化）；
    正解 = 手写 CallFunction 树（全 Arg 叶子 + reshape 尺寸 `Ignored()` + DxQ `_users=MULTIPLE`），
    由 handler 从 output_node 反向走 producer 链手动改图（h3 `register_ffn_fusion_graph_entries`、
-   本次 `register_ffn_gelu_fusion_graph_entries` 同款，2026-09 实测 flux 4/wan 2/qwen 3 站点命中）。
-   dummy/推理前端**禁止** monkeypatch 融合（SKILL 行为约束 #1）：layer-route 曾作验证载体，
-   已撤；compile 验证一律以 compile 图内 fused 节点计数为准（`scripts/check_fusion_hit.py`）。
+   `register_ffn_gelu_fusion_graph_entries` 同款；各模型的命中站点数逐模型现场实测，
+   读数见会话产物归档 `{run_results_dir}/archive/`）。
+   dummy/推理前端**禁止** monkeypatch 融合（SKILL 行为约束 #1）：layer-route 不作验证载体；
+   compile 验证一律以 compile 图内 fused 节点计数为准（`scripts/check_fusion_hit.py`）。
 4. **真实模型 bias 需实查**：flux FFN up/down Linear bias 实测全 0，kernel 可选 bias 支持按
    通用性保留（语义 Qmm(bias) 同列向：常数/ramp 对拍高度一致、zeros-bias ≡ no-bias 在 fp8
    量化级一致，真机风险 nil）；bias 装载/判别法等 kernel 侧细节见 operator-dev

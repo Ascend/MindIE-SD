@@ -1,26 +1,36 @@
-﻿# 派发模板与自验证回执（编排执行模式）
+# 派发模板与自验证回执（编排执行模式）
 
 > 与 `workflows/optimization-flow.md` 配套。两种执行模式：自执行（默认，编排者按模板自检）与
 > subagent 模式（运行环境支持 subagent 时，如 DSH / Claude Code；编排者按模板派发角色 subagent）。
 
 ## 通用派发规范
 
+> 交付件（派发单 / 回执 / 复核单 / 资源租约 / 交接单）的路径、最小字段与指针链单点见
+> `../../references/agent-roles-and-handoff.md` §3；派发前先过**扇出判据**（同文件 §1）。本节只给字段写法。
+
 - 派发 prompt 只填模板字段与占位符，不转述上下文：执行者进场先读
   `{工作目录}/agentic/run-state.md` 与指定的支撑技能，共享上下文以文件为单一来源。
 - 每条任务必须绑定支撑技能（「必须使用 skill / 脚本: X」），不允许执行者自由选路。
+- 派发单须写明**工作类型**（纯算子开发 / 框架接入 / 特性使能 / 优化验证）——**异类工作拆不同子 agent**
+  （技能面与验证口径不同，混在一起会串用判据），**同类工作默认共用一个 agent**（判据见
+  `../../references/agent-roles-and-handoff.md` §1.1）。
 - 回执只回：结论摘要 + 证据文件路径 + 需编排者决策的问题；长日志 / 原始数据留 evidence/，
   不回传主上下文。
 - 任何涉及代码改动的执行，先确认改动归属（mindiesd 仓内 → dev-workflow 子任务；三方框架 →
   framework-integration），不静默越界。
 
-## 角色与写权限
+## 角色（四角色 · 单点在上层）
 
-| 角色 | 职责 | 写权限 | 边界 |
-|------|------|--------|------|
-| 采集者 collector | profiling 采集（profiling-collect） | evidence/{task_id}/{stage}/ | 不改模型代码/配置 |
-| 分析者 analyzer | profiling 分析 / 候选清单（profiling-analyze） | evidence/{task_id}/{stage}/ | 不改模型代码/配置 |
-| 实施者 implementer | 按已确认方案实施（framework-integration 等） | evidence/ + 工作区；代码改动按归属子任务 | 唯一可改代码方；不自改已确认方案 |
-| 复核者 reviewer | 验收复核（只读） | evidence/{task_id}/{stage}/review.md | 禁改模型代码/配置，不做自行修复 |
+> **角色定义、写权限、交付件与指针链的单点 = `../../references/agent-roles-and-handoff.md` §2–§3**
+> （**主控 orchestrator / 代码开发 developer / 结果分析 analyst / 部署与资源分配 deployer**）。
+> 本文件只给**派发模板**；模板 ↔ 角色对应关系：
+
+| 本文件模板 | 对应角色 | 说明 |
+|------------|----------|------|
+| `collector` / `analyzer` | 结果分析 analyst | 只读数据角色：采集与分析 |
+| `implementer` | 代码开发 developer | 唯一可改代码方；不自改已确认方案 |
+| `deployer` | 部署与资源分配 deployer | 环境就绪 + 卡组/窗口租约签发 |
+| `reviewer` | 结果分析 analyst（**未参与实施的实例**） | 只读复核；禁改代码、不做自行修复 |
 
 ## 派发模板
 
@@ -56,6 +66,19 @@
 产物: 结论（通过/FAIL + 证据与诊断）写入 evidence/{task_id}/{stage}/review.md
 ```
 
+### deployer（部署与资源分配角色）
+
+```text
+工作目录: {work_dir}
+角色: deployer
+必须使用 skill: {env-install | remote-access}
+任务: {环境/权重/容器就绪 | 为 {特性} 单元分配卡组与实验窗口}
+资源: 卡组 id {…}（互斥，禁与他人对照臂同卡）；容器/远端 {…}；时间窗 {起-止}
+产物: evidence/{task_id}/{stage}/lease-{group}.md（占用者 / 起止 / 释放确认）+ 环境指纹；
+      回执只回摘要 + 租约路径 + 需主控决策的问题
+禁区: 不裁决收益、不选档、不改模型代码
+```
+
 ## 单点特性独立子 agent 与并行执行（无损 ∥ 有损）
 
 - **一特性一 agent**：每个单点特性（`kernel融合` 的融合内容 / `并行` / `Cache` / `量化` /
@@ -65,13 +88,10 @@
   本身即可并行**；组内不同有损特性（Cache×量化×稀疏×时间步）亦可在 seam 裁定后并行试验。
 - **禁止并行**：同 seam 互斥组合（seam_check 判定，如 cache_dit×cache_attention、同
   attention_backend 双 writer）不得双开，裁定取最强档后顺序化；共享同一代码/环境的改动串行化。
-- **并行护栏**：
-  1. 推进表/迭代表仍由**编排者单写**；子 agent 只写自己的 evidence 与工作区，先读后追加；
-  2. evidence 按 `{stage}/{feature}/` 隔离，回执路径与迭代表一致；
-  3. 共享文件与卡组资源互斥调度（同卡并行验证需隔离，参照 dev-workflow §3 并行策略）；
-  4. 每 agent 独立自验证 + 拒收语义；编排者按迭代表 retain/reject+签名裁决后，才允许结论
-     进入报表；
-  5. 收益一律在**同基线**上合并进报表（overview/detail），禁止并行中互相引用未裁决结果。
+- **并行护栏**：**单点在 `../../references/agent-roles-and-handoff.md` §5**（并行单元 = 特性 × 阶段 ×
+  卡组、资源租约、并发上限、收口指针链）。派发侧只需记住两条：① 一单元一目录一实例，回执路径与
+  迭代表一致；② 结论进报表前必须由主控按迭代表裁决（retain/reject + 签名），
+  **禁止并行中互相引用未裁决结果**。
 
 ## 自验证回执格式（机械可查，实施者必填）
 
@@ -85,10 +105,31 @@
 
 编排者核验要点：四行齐全、验收证据路径与 run-state 推进表该阶段行一致、日志/产物真实存在。
 
+### 脚本交付补充（交付 **gate / 校验器 / 对照脚本** 时必填）
+
+**规则来源**：`../../../perf-gate/references/measurement-discipline.md` §11.1 —— 交付的判据脚本必须
+自证"平台归属 + 能在目标平台跑通一次"，否则**不是证据**（典型失效形态：gate 脚本把仓库路径写死为
+盘符绝对路径、其平台语义在目标平台根本不成立，且交付时没有任何一次运行记录）。
+
+```text
+### 脚本交付自证（回执必带；只交付脚本时这一节代替「自验证结果」）
+- 脚本: {相对路径}  md5={…}
+- 平台归属: {POSIX/Linux 容器/Windows；是否需要 /dev/shm、NPU、特定框架}
+- 外部依赖: {目标主机可达/某目录已暂存/某包已安装}；依赖不可达时 → 判「无法判定」（不得降级为通过）
+- 最小用例运行证据: {命令 + 退出码 + 日志路径 + 环境指纹（sys.platform / python 版本 / 关键目录是否存在）}
+- 若本环境跑不了: {平台不可达的证据（端点超时/无 /dev/shm/无容器）} ⇒ 结论只能写「未证明」
+- 机检: `python check_gate_script.py {脚本}` → error=N warn=N + 无法机检项逐条
+  （脚本位置 `perf-gate/scripts/`，判据见 `../../../perf-gate/references/measurement-discipline.md` §11.1）
+```
+
+**拒收判据**：缺"平台归属"或"最小用例运行证据" ⇒ 拒收；把"跑不通"写成"通过"或"未通过" ⇒ 拒收
+（正确写法是"未证明 + 不可达证据"）。
+
 ## 拒收语义
 
-- 回执缺自验证节、或记录与 evidence 矛盾 → 拒收并列出缺失项，要求补齐后重交；编排者不自行
-  审查代码替代验证。
+- **单点在 `../../references/agent-roles-and-handoff.md` §6**（拒收条件 + 六类多 agent 失败模式 +
+  独立复核要求）：回执缺自验证节、或记录与 evidence 矛盾 → 拒收并列出缺失项要求补齐后重交；
+  主控不自行审查代码替代验证。
 - 复核者报告 FAIL → 按 optimization-flow.md「阶段推进规则」进入修复轮（实施/复核合计上限
   5 轮，超限回退并报告阻塞点）。
 

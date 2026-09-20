@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# coding=utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
 # MindIE is licensed under Mulan PSL v2.
 # You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -29,9 +28,7 @@ COPY_KEYS = ("InplaceCopy", "ViewCopy", "TensorMove", "StridedSlice")
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Analyze copy kernels and top kernels in a profile"
-    )
+    parser = argparse.ArgumentParser(description="Analyze copy kernels and top kernels in a profile")
     parser.add_argument("--csv", required=True, help="kernel_details.csv path")
     parser.add_argument("--label", default="profile", help="label for output")
     args = parser.parse_args()

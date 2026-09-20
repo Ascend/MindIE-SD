@@ -1,4 +1,4 @@
-# 实例：Qwen-Image-2512 × vLLM-Omni 0.28（NPU 950PR）无损+有损优化（图像模型首个 case）
+# 实例：Qwen-Image-2512 × vLLM-Omni 0.28 无损+有损优化（图像模型首个 case）
 
 > 2026-09-05 实测。仓库：vllm-omni（0.28.0 e305afba + NPU fork 补丁，env A 与 env B fork md5 一致）、
 > MindIE-SD（dev，mindiesd 3.1.0 editable，env B 中继）。
@@ -25,12 +25,14 @@
 
 | 特性 | 触发 | 实测（qwen-image 1024²/20 步） |
 |---|---|---|
-| FLASH_ATTN | backend 未配置且 `find_spec("mindiesd")` | TP1 基线即 FA：FlashAttentionScoreV4 240/步（占单步约一成半） |
-| 单算子 | AdaLayerNormV2/RotaryPositionEmbeddingV2/GeluV2 | 240/240/120 每步；rope 实数域 fused（qwen_image rope_utils 命中） |
-| 量化(w8a8) | `--diffusion-quantization-config '{"transformer":{"method":"int8","activation_scheme":"dynamic"}}'` | **单点约降一成多**；DQ+QuantBatchMatmul 480/步；质量 SSIM 降约 0.01 |
+| FLASH_ATTN | backend 未配置且 `find_spec("mindiesd")` | TP1 基线即 FA：FlashAttentionScoreV4 按站点数出现（占单步个位数到一成多量级） |
+| 单算子 | AdaLayerNormV2/RotaryPositionEmbeddingV2/GeluV2 | 单算子按模型站点数出现；rope 走**实数域 fused** 路径（`qwen_image` `rope_utils` 命中） |
+| 量化(w8a8) | `--diffusion-quantization-config '{"transformer":{"method":"int8","activation_scheme":"dynamic"}}'` | **单点约降一成多**；DQ+QuantBatchMatmul 按站点数出现；质量 SSIM 降约 0.01 |
 | Cache | `--cache-backend cache_dit --enable-cache-dit-summary` | **单点约降一成多**（th=0.24/warmup=4/max_cont=3）；质量 SSIM 降约 0.04 |
 | 稀疏 rf_v2 | `--diffusion-attention-config '{"default":{"backend":"RAINFUSION_ATTN","block_sparse":{…}}'` | 路由 ✓ 但 **staying dense：图像层无 qkv_layout/BSND video 段 → 零稀疏（输出=lossless 逐字节）**；**0.8 与 0.4（<60% 小档，用户建议补测）两档均 staying dense——与档位无关** |
-| MindIE compile | `OMNI_MINDIE_COMPILE=1`（platform 注入） | 60 modules 编译成功但**输出非逐字节**（compiled FA 数值/seed 语义）+ 收益仅几个百分点 → 默认关 |
+| MindIE compile | `OMNI_MINDIE_COMPILE=1`（platform 注入） | 全部 modules 编译成功但**输出非逐字节**（compiled FA 数值/seed 语义）+ 收益仅几个百分点 → 默认关 |
+
+（原始读数见 `{run_results_dir}/archive/vllm-omni-qwen-image-case.md`）
 
 ## 3. 无损结果（1024²/20 步；同窗相邻对）
 
@@ -40,11 +42,12 @@
 - **TP1×USP2（2 卡，`--usp 2`）优于 TP2**（A/B/A 复现一致；vs TP2 约一成、vs TP1 约三成）→ **2 卡无损
   最优**（日志 `Applying sequence parallelism to QwenImageTransformer2DModel (sp_size=2, mode=ulysses)`；
   偶发慢请求为宿主抖动注记；step_trace ❓ 待补）。**教训：并行候选矩阵勿漏 2 卡 USP 形态
-  （TP1×USP2）；TP2 与 USP2 收益结构不同（TP2=240 allreduce/步 per-call 开销主导；USP=少次大交换）。
+  （TP1×USP2）；TP2 与 USP2 收益结构不同（TP2=逐步 allreduce per-call 开销主导；USP=少次大交换）。
   拓扑事实：0-3 / 4-7 各为 UB 岛（跨岛 SYS）；同岛亦受他户干扰（他户占卡时出现大幅变慢反例）→
   同窗同干净岛复现为准。**
-- compile 探针：kernel 行 5555→4055、步时降几个百分点，GEMM 步时不变；输出 d96e9a2c vs eager 1c702651
-  （非逐字节）→ **回退（默认关）**；torch_npu 告警 compiled FA 设随机种子时结果可与 eager 不同。
+- compile 探针：kernel 行数显著下降、步时降几个百分点，GEMM 步时不变；输出与 eager **非逐字节**
+  → **回退（默认关）**；torch_npu 告警 compiled FA 设随机种子时结果可与 eager 不同。
+  （原始读数见 `{run_results_dir}/archive/vllm-omni-qwen-image-case.md`）
 - 跨拓扑输出 ≠ 逐字节（预期）；同拓扑同配置 r1==r2==r3 逐字节。
 
 ## 3b. 实际运行耗时 vs 预期（用户要求记录；2026-09-05）
@@ -58,17 +61,19 @@
 
 | 组合 | e2e（相对主栈） | Δvs 主栈 | 质量变化度（SSIM vs lossless） | 计数 |
 |---|---|---|---|---|
-| lossless TP2 | 参照 | — | — | FA 240/MatMul 606/步 |
-| 量化(w8a8) | 约降一成多 | 约一成多 | 降约 0.01（基本无感） | DQ+QBMM 480/步 |
+| lossless TP2 | 参照 | — | — | FA / MatMul 按站点数出现 |
+| 量化(w8a8) | 约降一成多 | 约一成多 | 降约 0.01（基本无感） | DQ+QBMM 按站点数出现 |
 | Cache 单点 | 约降一成多 | 约一成多 | 降约 0.04 | DBCacheConfig；步跳过随图（seed 间呈双峰） |
 | **量化(w8a8)+Cache** | **约降两成多** | **约两成多** | **降约 0.04（叠加档同级）** | 叠加（最强组合对照行；**基底=TP2**，USP2×有损交叉 ❓ P1） |
 | 稀疏 rf_v2 0.8 / 0.4 | =lossless | 0%（staying dense） | 输出=lossless 逐字节 | 不可用证据日志（档位无关） |
 | 10 步 lossless | 约降四成半 | — | 决策记录 | 20 步固定主档 |
 
+（原始读数见 `{run_results_dir}/archive/vllm-omni-qwen-image-case.md`）
+
 - 质量门禁：quantitative 登记通过（图像同 seed 像素对比远高于视频档 H3——无轨迹混沌）；
   **visual_artifact inconclusive（无 VLM）→ 不宣称质量通过**，并排 montage 存证；off-identity 成立。
 - **量化后融合重审（S4 纪律⑥D/E）**：w8a8 单步 Computing 降约两成，Copy 耗时不变
-  （GEMM 级量化已到位，无新增搬运）；DQ 480/步上产邻接 GEMM → epilogue 融合机会 ❓；
+  （GEMM 级量化已到位，无新增搬运）；DQ 在步内按站点数出现并邻接 GEMM → epilogue 融合机会 ❓；
   **通信占比自约三成升至约三成半（GEMM 加速致 comm 占比升）**，Overlapped=0（框架无 comm-stream，
   结构性缺口 → 待 `../SKILL.md` §2 分支 B 范围确认，机会项 ❓ P1）。
 

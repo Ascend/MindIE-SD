@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""seam_check.py —— 特性组合的静态 seam/能力冲突检查（组合前门禁，零 NPU）。
+(
+    """seam_check.py —— 特性组合的静态 seam/能力冲突检查（组合前门禁，零 NPU）。
 
 判定规则（对应 combination-search.md 的 seam 表）：
 - capability：候选特性 requires_model_capabilities 必须由模型能力提供，否则拒；
@@ -12,12 +13,14 @@
 用法：
     python seam_check.py --features quant_w8a8_dynamic,sparse_rf_v2,cache_dit
     python seam_check.py --features cache_dit,cache_attention --model minimax-h3-vllm-omni
-    python seam_check.py --required-combos quant_w8a8_mxfp8,sparse_rf_v2,cache_dit """ \
+    python seam_check.py --required-combos quant_w8a8_mxfp8,sparse_rf_v2,cache_dit """
     """--model minimax-h3-vllm-omni
         # S4-2 组合前：由已过 gate 的单点 frontier 推导 [MUST] 必测组合清单
         # （跨族两两 + 三元 Cache+量化+稀疏，行内带 seam 预判）
 退出码：0 = 无 error（可有 warning）；1 = 存在 error。
 """
+)
+
 from __future__ import annotations
 
 import argparse
@@ -105,15 +108,29 @@ def required_combos(single_ids: list[str], model: str | None, decl: dict) -> lis
         for b in range(a + 1, len(fams)):
             ids = [present[fams[a]][0], present[fams[b]][0]]
             e, w = check(ids, model, decl)
-            lines.append({"combo": f"{fams[a]} × {fams[b]}", "ids": ids,
-                          "families": [fams[a], fams[b]], "must": True,
-                          "errors": e, "warnings": w})
+            lines.append(
+                {
+                    "combo": f"{fams[a]} × {fams[b]}",
+                    "ids": ids,
+                    "families": [fams[a], fams[b]],
+                    "must": True,
+                    "errors": e,
+                    "warnings": w,
+                }
+            )
     if {"量化", "稀疏", "Cache"} <= set(fams):
         ids = [present["量化"][0], present["稀疏"][0], present["Cache"][0]]
         e, w = check(ids, model, decl)
-        lines.append({"combo": "Cache + 量化 + 稀疏（三元）", "ids": ids,
-                      "families": ["量化", "稀疏", "Cache"], "must": True,
-                      "errors": e, "warnings": w})
+        lines.append(
+            {
+                "combo": "Cache + 量化 + 稀疏（三元）",
+                "ids": ids,
+                "families": ["量化", "稀疏", "Cache"],
+                "must": True,
+                "errors": e,
+                "warnings": w,
+            }
+        )
     return lines
 
 

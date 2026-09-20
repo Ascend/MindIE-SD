@@ -116,8 +116,12 @@ trace_view.json + step_trace_time.csv + **单元利用率档**）→ 打包回�
 > 反例（必须拦住）：把 `N/A` 当成 0 或忽略缺列 → 下游会把"无数据"读成"无内存瓶颈"，
 > 属**静默失败**（判定看似完成、结论却是假的）。
 >
-> 机器化执行：`python .agents/skills/profiling-collect/scripts/check_output.py --dir {ASCEND_PROFILER_OUTPUT}`
-> （退出码 0 = 通过 / 1 = 不合格须重采 / 2 = 前置缺失；自带 `--selftest` 负样本回归，pre-commit 已挂钩）。
+> 机器化执行：`python .agents/skills/profiling-collect/scripts/check_output.py --dir {ASCEND_PROFILER_OUTPUT} --start-marker {run_dir}/.start_epoch`
+> （**六项检查各自独立报结论**：产物存在 / 执行序 / 单元利用率 / 判型列有值（抽样） /
+> **数据表行数 > 0** / **产物新鲜度**；退出码 **0 = 全部通过 / 1 = 有检查判失败 / 2 = 前置缺失 /
+> 3 = 无失败项但存在「无法判定」**）；**`--selftest` 覆盖 10 类夹具逐条核对**（陈旧产物 / 只有表头零数据行 /
+> 无开始标记 / 标记不存在 / 缺利用率档 / 利用率全 N/A / 缺执行序 / 空目录 + 2 类合格），pre-commit 挂钩。
+> **`3` 与 `0` 必须区别对待**：没给开始标记时新鲜度只能报「无法判定」，**不得当通过**（这正是要防的事）。
 
 各框架接入/使能上下文与实测案例参考 framework-integration 的 references：
 `lightx2v-enablement.md`（LightX2V 开启方式 + 采集相关坑）、`vllm-omni-enablement.md`
@@ -145,6 +149,10 @@ trace_view.json + step_trace_time.csv + **单元利用率档**）→ 打包回�
 - **二次验证**：与 `msprof` 的 HCCL 计数器对拍（`--hccl=on`；output 目录须先建、`--rule` 不可与
   `--export` 同用、导出后查 `hccl.db`）。
 - 方法细节与实测明细见 `dit-parallel-opt/references/ascend-topology-bandwidth-diag.md` §6。
+- **只读插桩范式（`PYTHONPATH` + `sitecustomize`）**：需要**喂给内核的入参 / 调用参数**这类
+  CANN 默认输出看不到的东西时，用 `PYTHONPATH` 指到一个目录、其 `sitecustomize.py` 在导入期
+  **包装目标函数**（本仓形态：包住模型入口的 `forward`）⇒ **不改生产树**即可插桩，
+  收工只需撤掉环境变量 ✓。与上面的 collective shim 法同源，区别是包装点不同（模型入口 vs 通信原语）。
 
 ## Profiler 配置
 
@@ -225,6 +233,29 @@ print(f"Pre-check OK: output shape={output.images[0].size}")
 
 > 此格式直接对接 profiling-analyze 的 5 层递进分析（Layer 3 内含三层子分析）。
 
+### 导出类操作一律「无新文件即失败」（本仓实测，3 次采集 / 2 种注入布局复现）
+
+**事实**：在**服务进程内**做设备 profile 采集时，"进程内文本导出"可能**从不执行，且失败被静默吞掉**：
+
+| 环节 | 表面现象 | 实际 |
+|---|---|---|
+| 该次运行自身 | 正常结束 | **没有产出** `kernel_details.csv` |
+| `msprof --export=on` | 打印 `[INFO] Export all data in PROF_… done.` | **只写 MindStudio 布局**，仍无该文件 |
+| `torch_npu.profiler.profiler.analyse()`（**在采集进程内**） | 打印 `analyse() returned OK` | **什么都不写**（**在独立进程里对已落盘 raw dump 调则正常**，见文末「交付件必须含 trace view 与 kernel 明细」） |
+
+**根因（已定位到库内源码）**：`analyse_profiling_data()` 被 `@no_exception_func()` 装饰 ⇒ **异常被吞**，
+那个"成功"是假的（库内 `analysis/_profiling_parser.py`）。
+
+**处置（按序）**：
+
+1. **断言"新"**：产物必须**带新时间戳**（本次采集之后生成）**且行数 > 0**；
+   **不以日志里的 `done` / `OK` / 退出码 0 为准** ✗ —— 这与宿主侧 `no NEW … -- skipped`
+   是**同一类陷阱的两种表现**（判据单点见 `../../perf-gate/references/measurement-discipline.md` §10.1）；
+2. **怀疑被吞掉的异常**：遇到"报成功却不出文件"，去找 `@no_exception_func` 这类装饰器 / 全局 except；
+3. **绕过包装层**：直接驱动底层解析器（本仓已验证形态）——
+   `ProfilingParser(profdir, Constant.TENSORBORAD_TRACE_HANDLER, None, {}).analyse_profiling_data()`
+   ⇒ **数十秒量级内产出完整一套** ✓（比在包装层里"再试一次"有效得多）。
+
 ## 数据流向
 
 ```text
@@ -237,13 +268,26 @@ profiling-collect ──→ profiling-analyze ──→ dit-perf-opt
 
 ## Bundled Scripts
 
-- `scripts/collect_profile.py` — SSH连接 → 执行 profiling → 压缩 → 下载（mindiesd 自家脚本入口）
+- `scripts/collect_profile.py` — SSH连接 → 执行 profiling → 压缩 → 下载（mindiesd 自家脚本入口）；
+  **已接上产物门禁**：采集**之前**在本地输出目录落开始标记（`.start_epoch`，可用 `--start-marker` 改路径）
+  → 下载后**自动解包** → 调 `check_output.py --dir <解包目录> --start-marker <标记>`，
+  并**显式三态**落地：`0` 通过 / `1` 有检查判失败 / `3` 无法判定（**不得当成通过**，也不静默吞掉）；
+  三态分别打印且**退出码透传**（`--no-check-output` / `--no-extract` 记为"未验证"= 3；
+  `--skip-profiling` 时**不传标记**⇒新鲜度只能报"无法判定"并写明原因）。
+  自带 `--selftest`（零 SSH：3 类夹具逐条核对 0/1/3 三态，并断言"无法判定"报告写明原因）
 - `scripts/collect_patch_template.py` — 三方框架采集补丁模板（顶层推理方法包装 + torchrun 多卡）
-- `scripts/check_output.py` — **产出完成检查门禁**（fail-closed）：按列名断言执行序与单元利用率档齐备、
-  判型列非全 `N/A`；退出码 0 通过 / 1 不合格 / 2 前置缺失。采集结束即跑
-  `python scripts/check_output.py --dir {ASCEND_PROFILER_OUTPUT}`；自带 `--selftest` 负样本回归
-  （pre-commit 的 `check-output-selftest` 已挂钩）
+- `scripts/check_output.py` — **产出完成检查门禁**（fail-closed，**六项检查各自独立报结论**）：
+  产物存在 / 按列名断言执行序与单元利用率档齐备 / 判型列非全 `N/A`（抽样 200 行）/
+  **数据表行数 > 0**（`kernel_details*.csv`、`op_summary*.csv`，**只有表头判失败**）/
+  **产物新鲜度**（`--start-marker <运行开始标记>` 或 `--start-epoch <秒>`，**无标记报「无法判定」**）。
+  退出码 **0 通过 / 1 判失败 / 2 前置缺失 / 3 无法判定（≠ 通过）**；`--json` 时 stdout **只**给一个
+  JSON 文档（人类可读行走 stderr）。采集结束即跑
+  `python scripts/check_output.py --dir {ASCEND_PROFILER_OUTPUT} --start-marker {run_dir}/.start_epoch`；
+  自带 `--selftest`（10 类夹具逐条报结论并核对退出码，pre-commit 的 `check-output-selftest` 已挂钩）
 
+> 为什么要有"新鲜度 + 行数"两项：**「命令返回 0 / 日志里有 `done`·`OK`」都不是产物存在或本次产出的证据**
+> —— 本环境实测导出/解析的异常会被装饰器吞掉（见上文「导出类操作一律『无新文件即失败』」）。
+>
 > 部署使用 env-install/scripts/deploy_to_remote.py，空闲卡检测使用 remote-access/scripts/pick_free_device.py。
 
 ## Reference Files
@@ -264,6 +308,103 @@ profiling-collect ──→ profiling-analyze ──→ dit-perf-opt
   证据口径与日志判据见 §1.3/§3.6）
 - 🔗 `../framework-integration/references/diffsynth-engine-enablement.md` — 加载时机:
   DiffSynth-Engine 使能/性能验证时，参考其使能判断与方向结论（§3.4/§5）
+- 📁 `references/e2e-split-and-capture-traps.md` — 加载时机: **要出"某特性的端到端收益拆分"
+  （收益落在哪一段、为何 device 省了 e2e 没省），或采集结果要作为交付件交出去**时——三档交付件
+  契约（带特性 / 不带特性 / 换精度）、离线导出判据与"臂脚本强杀导致导出从不执行"、
+  端到端分段仪器与闭包对账、DiT 段占比量级、「采集单步 ≠ wall 均值」、
+  残留占卡与大文件分片两条采集陷阱（流程单点在 remote-access §9/§10）
+
+> **何时读 `e2e-split-and-capture-traps.md`**（路由判据）：任务要求"给出某特性的端到端收益/占比"
+> ⇒ 先读它定**三档交付件**（带特性 / 不带特性 / 换精度）并逐档留交付清单；采集要**交给下游**时按它
+> 逐档核对`trace_view.json` + `kernel_details.csv` 两件套、并确认导出是**外层显式**做的；
+> 只要算子级形态普查（哪族算子占多少）不必读它。**收益拆分结论须带本组合作用域，换组合重测占比。**
+
+## 交付件必须含 trace view 与 kernel 明细：文件名对照与最小代价采集
+
+**交付要求（用户 2026-09-19 明确）**：profiling 交付件**必须**包含
+①**trace view JSON**（时间线）与 ②**kernel 级明细表**（每个 kernel 一行，含 shape/时长/占比）。
+只有 `op_statistic` 这类**聚合**表**不算**交付完成。单个 step 即可。
+
+### 唯一可靠的产出命令：离线 `analyse()`（零卡耗 / 不碰 NPU，代价为 CPU 侧分钟以内量级）
+
+`torch_npu` 自带离线导出入口，**对已存在的 raw dump 直接跑，不碰 NPU、不需要活会话、
+不需要 MindStudio Insight（本机根本没装 `msinsight`）**：
+
+```bash
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
+RAW={run_results_dir}/{raw_dump}_ascend_pt   # 传 *_ascend_pt 目录
+{venv}/bin/python -c \
+  "from torch_npu.profiler.profiler import analyse; analyse('$RAW', max_process_number=8)"
+ls -la "$RAW"/ASCEND_PROFILER_OUTPUT/    # 必须看到 trace_view.json + kernel_details.csv
+```
+
+一次产出**完整一套**（对两份不同 dump 各跑一次均成立，判据 = `rc=0`；绝对耗时出库
+`{run_results_dir}/archive/`）：`trace_view.json`、`kernel_details.csv`、`step_trace_time.csv`、
+`op_statistic.csv`、`api_statistic.csv`、`task_time.csv`、`communication.json`、
+`ascend_pytorch_profiler_<dev>.db`（原始 db 的副本，喂 MindStudio Insight 用）。
+
+> 同一路径的**失败形态**要分清：在**采集进程内**调 `analyse()` 会被 `@no_exception_func()`
+> 吞掉异常、什么都不写（见上文「导出类操作一律『无新文件即失败』」）；在**独立进程**里对
+> **已落盘的 raw dump** 调则正常工作。故判据永远是"目录里有没有带新时间戳的这两个文件"，
+> 不是日志里的 `done`/`OK`/退出码。绕过包装层的备选形态：
+> `ProfilingParser(profdir, Constant.TENSORBORAD_TRACE_HANDLER, None, {}).analyse_profiling_data()`。
+
+### 文件名对照（按本机实际导出物写，不要凭空造名字）
+
+**两套导出器给同一份数据起不同名字**（映射随导出器版本变，现场用一次导出核对；本栈实测版本与
+对照表见归档 `{run_results_dir}/archive/`）：
+
+| 交付件 | torch_npu 导出（`ASCEND_PROFILER_OUTPUT/`，**推荐**） | `msprof --export=on` 产出（`mindstudio_profiler_output/`） |
+| --- | --- | --- |
+| **时间线 trace view** | `trace_view.json`（Chrome trace-event 数组） | `msprof_<ts>.json`（README.txt 称之为 *Timeline report*） |
+| **kernel 级明细** | `kernel_details.csv` | `op_summary_<ts>.csv` |
+| 聚合统计 | `op_statistic.csv`（按 OP Type 聚合） | `op_statistic_<ts>.csv` |
+| step 汇总 | `step_trace_time.csv`（Computing/Comm/Free/Stage） | 无（只有 torch_npu 导出产生） |
+| 逐 task 起止 | `task_time.csv` | `task_time_<ts>.csv` |
+| 通信 / api | `communication.json` / `api_statistic.csv` | `communication_statistic_*.csv` / `api_statistic_*.csv` |
+
+- **`kernel_details.csv` 就是 `op_summary_*.csv` 换 6 个表头**（本机实测：48 列、42 列同名、
+  首行数据逐字节相同）：`Op Name→Name`、`OP Type→Type`、`Task Type→Accelerator Core`、
+  `Task Start Time(us)→Start Time(us)`、`Task Duration(us)→Duration(us)`、
+  `Task Wait Time(us)→Wait Time(us)`（映射源：`torch_npu/profiler/analysis/prof_common_func/
+  _csv_headers.py::CsvHeaders.OP_SUMMARY_SHOW_HEADERS → OP_SUMMARY_KERNEL_BASE_HEADERS`，
+  由 `_kernel_view_parser.py::KernelViewParser` 施加）。其余 `aic*`/`aiv*`/`cube_utilization(%)`
+  等利用率列**一字不改** ⇒ 利用率档不会因换名而丢失。
+- 本栈实测版本下全树**搜不到** `kernel_details` 字样，`trace_view` 只命中 `*viewer*` 类名 ⇒
+  这两个文件名属于 **torch_npu 导出器**，不是 msprof 的；`msprof` 也没有任何按名选择 trace view 的开关
+  （`--reports` 只能开关 timeline 子层）。
+- 本仓旧文件 `msprof_step_trace_full.json` + `msprof_step_trace_full_mindstudio_insight_data.db`
+  与 `profiles/prof_dit8_v2/` 的 `trace_view.json` + `trace_view_mindstudio_insight_data.db`
+  **是同一件产物的不同别名**（都是 torch_npu 导出器出的），不是另一条采集链路。
+- 服务化采集常见"缺这两件套"的**根因**：arm/服务脚本结尾 `pkill -9`，torch_npu 的
+  **退出期导出**（`tensorboard_trace_handler`）没机会跑 ⇒ 只剩 raw dump +
+  `msprof --export=on` 的 MindStudio 布局。补法就是上面那条离线 `analyse()`。
+
+**最小代价采集（目标：一个 step 的 trace + kernel 明细，别为采集烧一整轮 A/B）**：
+
+1. **先复用已有 dump**：对**已存在的 raw dump** 跑离线 `analyse()`（或退一步
+   `msprof --export=on --output=<PROF 目录>`）是**零卡耗**的（CPU 侧分钟以内量级）；
+   够用就**不要**重采——两份 8 卡服务化 dump 的完整两件套就是这样白捡的；
+2. **必须重采时限定到单 step**：本链由 `H3_PROF_CALL=<k>` 控制落盘（第 k 次
+   `MiniMaxH3DiTModel.forward`），配 `H3_PROF_OUT` / `H3_PROF_LOCK`，经
+   `PYTHONPATH=<注入目录>` 的 `sitecustomize` 送进 spawn 出来的 worker。**采集窗口天然就是
+   一个 step（应与 `step_trace_time.csv` 的 `Stage` 相等——这是窗口正确性的现场核对），
+   不需要 `msprof --duration/--delay`；`--pid` 动态附着在本容器不可用**；
+3. **请求数压到刚好覆盖第 k 次调用**：`num_inference_steps=4` 时 `H3_PROF_CALL=5` 落在
+   第 2 个请求的第 2 个去噪步 ⇒ **1 冷 + 1 采 = 2 个请求即可**（臂默认跑 4 个）。
+   注意**启动（权重加载）才是大头**，砍请求数省下的墙钟与卡时占比很小
+   （绝对量级出库 `{run_results_dir}/archive/`）；
+4. 采集完**立刻核对两件套**：`ASCEND_PROFILER_OUTPUT/` 里有**带新时间戳**的
+   `trace_view.json` + `kernel_details.csv`，且行数 > 0（用 `check_output.py`）。
+   注意两条实测坑：①`check_output.py` 的执行序断言原先只认 `Task Type`，而
+   torch_npu 的 `kernel_details.csv` 把它改名为 `Accelerator Core` ⇒ **合格产物会被误判失败**；
+   `ORDER_TYPE` 必须同时接受 `Task Type` 与 `Accelerator Core`（`scripts/check_output.py`；
+   漏掉后者会把合格产物误判失败；`--selftest` 覆盖该断言的夹具）。
+   ②`--start-epoch` 有**时钟域**问题：容器时钟按 UTC 走、Windows 主机按本地时区显示，
+   用**容器侧**时间戳当 epoch 会让"产物新鲜度"在本地误判陈旧 ⇒ 起始标记/epoch 一律取
+   **持有产物那一侧**的时钟；
+5. 大文件**分片拉取**（一个 step 的 `trace_view.json` 可达 140–148 MB），交付清单里写清
+   **md5 + 大小 + 是哪个 step**（哪个 `H3_PROF_CALL`、哪个 rank、span 多少）。
 
 ## 维护与更新
 

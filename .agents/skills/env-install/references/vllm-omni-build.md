@@ -17,7 +17,10 @@
 ⚠️ **镜像未覆盖目标机型/架构时（例如目标为 x86_64）必须从源码构建**——先用 `uname -m` 与
 `npu-smi info -l` 核对覆盖面。
 
-以 **vllm 0.26.0** 为例（该组合实测可用；机型 / 完整快照坐标见会话产物归档）：
+下表是**一条实测快照**：记录若干**已复现**的组件组合（矩阵即该次快照的取值），用于说明配套关系与推导顺序，
+**本身不是硬性要求**——换机型 / 换镜像后须**按本机实际可用版本复测后再套用**（取值方式：
+`cat /usr/local/Ascend/ascend-toolkit/version.cfg` 看 CANN，其余按下方「版本推导顺序」从上游
+版本约束反查）；**机型 / 完整快照坐标见会话产物归档**。
 
 | 组件 | 版本 | 获取方式 |
 |---|---|---|
@@ -27,7 +30,7 @@
 | vllm | **0.26.0** | 源码构建（`VLLM_TARGET_DEVICE=empty`） |
 | vllm-ascend | **releases/v0.26.0rc 分支** | 源码 `pip install -e . --no-deps --no-build-isolation` |
 | vllm-omni | **main 分支**（配套 vllm 0.26） | 源码 `VLLM_OMNI_TARGET_DEVICE=npu pip install -e . --no-build-isolation` |
-| mindiesd | dev 分支 | 源码 `python setup.py build_py && pip install -e .` |
+| mindiesd | 本仓工作树 | 源码 `python setup.py build_py && pip install -e .` |
 
 以 **vllm 0.28.0** 为例（另一条已复现链；来源见 `../../framework-integration/references/vllm-omni-minimax-h3-case.md`
 §0 与 `vllm-omni-qwen-image-case.md` 的环境声明）：

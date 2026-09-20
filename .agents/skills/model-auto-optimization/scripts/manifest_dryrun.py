@@ -10,6 +10,7 @@
     python manifest_dryrun.py --manifest runs_plan.toml --framework lightx2v
 退出码：0 = 通过（可有 seam warning）；1 = 存在 error。
 """
+
 from __future__ import annotations
 
 import argparse
@@ -23,7 +24,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import seam_check  # noqa: E402
+import seam_check
 
 VALID_KIND = {"optimization", "smoke", "control"}
 VALID_PURPOSE = {"closed_loop", "frontier", "evidence", "blocker_probe"}
@@ -43,8 +44,7 @@ def render_plan(cfg: dict) -> str:
     renderer = RENDER_HINTS.get(meta.get("framework"), "unsupported-framework")
     lines = [
         f"run plan: model={meta.get('model')} framework={meta.get('framework')}",
-        f"topology={run.get('topology')} gpus={run.get('gpus')} "
-        f"baseline={run.get('baseline_run')}",
+        f"topology={run.get('topology')} gpus={run.get('gpus')} baseline={run.get('baseline_run')}",
         f"features={feats}",
         f"renderer: {renderer}",
     ]
@@ -74,10 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     if purpose not in VALID_PURPOSE:
         errors.append(f"purpose 非法：{purpose}（可选 {sorted(VALID_PURPOSE)}）")
     if fw not in KNOWN_FRAMEWORKS:
-        errors.append(
-            f"framework 渲染器未覆盖：{fw}（当前 {sorted(KNOWN_FRAMEWORKS)}，"
-            "不做静默猜测）"
-        )
+        errors.append(f"framework 渲染器未覆盖：{fw}（当前 {sorted(KNOWN_FRAMEWORKS)}，不做静默猜测）")
 
     feats = cfg.get("features", {}).get("enable", [])
     if not isinstance(feats, list):
@@ -85,13 +82,10 @@ def main(argv: list[str] | None = None) -> int:
     elif not feats:
         is_baseline = bool(cfg.get("run", {}).get("baseline_run", False))
         if is_baseline:
-            print(
-                "[info] features.enable=[] 且 baseline_run=true：按基线档处理（无 seam 可查，跳过）"
-            )
+            print("[info] features.enable=[] 且 baseline_run=true：按基线档处理（无 seam 可查，跳过）")
         else:
             errors.append(
-                "features.enable 为空且非基线档（非基线档必须声明 enable 列表；"
-                "基线档请 baseline_run=true + enable=[]）"
+                "features.enable 为空且非基线档（非基线档必须声明 enable 列表；基线档请 baseline_run=true + enable=[]）"
             )
     else:
         try:

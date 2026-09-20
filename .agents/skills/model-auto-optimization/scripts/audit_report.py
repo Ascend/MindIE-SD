@@ -15,6 +15,10 @@
      配对按**块**做（表行 / 段落 / 列表项 / 标题），并**剔除围栏代码块与行内代码**——因为
      ① 强调可以跨软换行成对（逐行数标记会把 `**…` 换行 `…**` 误报成未闭合）；
      ② 代码里的 `` `**` `` 是字面文本，不是标记（两处都是本脚本踩过的假阳性）。
+  S5 **主表报告必带章节**（`overview-report.md` §2.8）：只对"含 `优化类型`+`特性名` 主表"的文件判，
+      要求有「最佳路径下的特性详解」详情节与「附录」，附录内须含「开关对照表」/「内部代号对照表」/「证据指针」三小节，
+      且详情节在附录之前——报告"该有的章节没有"是结构缺陷（提交前即被打回），不是风格问题。
+      非报告类 md 不受此判（通常没有主表）；标题关键字判据与 `report_lint.py` 同源同改。
 
 数值自洽审计（分母判定见下，所用分母**始终打印**）
   N1 有 e2e + 加速比 → 校验 `分母 ÷ e2e ≈ 加速比`（跳过 `[估算]`/区间/`—`/`?` 行并逐条列出）
@@ -45,12 +49,22 @@
 退出码：0 = 干净（或仅 warn/info 且未开 --strict）；1 = 存在 error 级发现；2 = 前置条件缺失
 （有竖线行但无合法表格 / 无法确定分母）。
 """
+
 from __future__ import annotations
 
 import argparse
 import re
 import sys
 from pathlib import Path
+
+# Windows consoles default to a legacy code page (GBK here), which cannot encode the
+# characters these reports use (⊆, ❓, CJK). A gate that dies on a character is
+# indistinguishable from one that never ran, so force UTF-8 on both streams.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 SPLIT_UNESCAPED = re.compile(r"(?<!\\)\|")
 DELIM_ROW = re.compile(r"^\s*\|?[\s:\-|]+\|?\s*$")
@@ -63,24 +77,69 @@ KNOWN_STEP_SETS = {1, 2, 4, 8, 16, 32, 50, 100}
 #: 这些标记出现在 e2e/加速比 单元格时，该行不参与 N1（契约允许的估算/区间/缺失写法）
 SKIP_MARKS = ("[估算]", "[探索]", "—", "?", "❓", "待测", "未测")
 
+# --- S5 必带章节（与 report_lint.py 的 REQUIRED_SECTIONS 同源同改：overview-report.md §2.8） ---
+#: 附录三小节须齐；详情节位置不限（编号随报表），但必须在附录之前。
+REQUIRED_SECTIONS = (
+    ("最佳路径下的特性详解", ("最佳路径", "特性详解")),
+    ("开关对照表", ("开关", "对照")),
+    ("内部代号对照表", ("内部代号", "对照")),
+    ("证据指针", ("证据", "指针")),
+)
+APPENDIX_HEADING_RE = re.compile(r"附录|appendix", re.IGNORECASE)
+HEADING_SPACERS = " \t\u3000*`|｜/\\."
+
+
+def norm_heading(heading: str) -> str:
+    """标题归一化：去 `#`/加粗/空白/分隔符，按词判「是不是那个小节」（不绑定编号）。"""
+    text = re.sub(r"^#+\s*", "", heading.strip()).replace("**", "")
+    for ch in HEADING_SPACERS:
+        text = text.replace(ch, "")
+    return text
+
+
+def required_section_heading_hits(lines):
+    """必带章节判定（S5）。返回 (missing_errors, appendix_line)。
+
+    只判「主表报告」：调用方须已确认本文件含 `优化类型`+`特性名` 主表。判据与
+    `report_lint.py` 的 `check_doc_structure` 一致（同源同改），此处只做结构与次序。
+    """
+    hits = [(i, norm_heading(ln)) for i, ln in enumerate(lines, 1) if ln.lstrip().startswith("#")]
+    if not hits:
+        return (["报表无任何标题（§2.8：须有「最佳路径下的特性详解」详情节与「附录」）"], None)
+    appendix = [i for i, h in hits if APPENDIX_HEADING_RE.search(h)]
+    detail = [i for i, h in hits if all(k in h for k in REQUIRED_SECTIONS[0][1])]
+    errs = []
+    if not detail:
+        errs.append("缺必带小节「最佳路径下的特性详解」（overview-report.md §2.8）")
+    if not appendix:
+        errs.append("缺必带「附录」节（须含 开关对照表 / 内部代号对照表 / 证据指针，§2.8）")
+        return errs, None
+    first_appendix = min(appendix)
+    if detail and max(detail) > first_appendix:
+        errs.append("「最佳路径下的特性详解」位于附录之后（§2.8：正文在前、附录收尾）")
+    for name, aliases in REQUIRED_SECTIONS[1:]:
+        if not [i for i, h in hits if all(k in h for k in aliases) and i > first_appendix]:
+            errs.append(f"附录缺必带小节「{name}」（§2.8）")
+    return errs, first_appendix
+
 
 class Finding:
-    __slots__ = ("level", "where", "old", "expect", "basis")
+    __slots__ = ("basis", "expect", "level", "old", "where")
 
     def __init__(self, level, where, old, expect, basis):
         self.level, self.where, self.old, self.expect, self.basis = level, where, old, expect, basis
 
     def fmt(self):
-        return "[%s] %-30s 原值=%-20s 应为=%-24s 依据=%s" % (
-            self.level, str(self.where)[:30], str(self.old)[:20], str(self.expect)[:24], self.basis)
+        return (
+            f"[{self.level}] {str(self.where)[:30]:<30} 原值={str(self.old)[:20]:<20} "
+            f"应为={str(self.expect)[:24]:<24} 依据={self.basis}"
+        )
 
 
 def cells(line: str) -> list:
     t = line.strip()
-    if t.startswith("|"):
-        t = t[1:]
-    if t.endswith("|"):
-        t = t[:-1]
+    t = t.removeprefix("|")
+    t = t.removesuffix("|")
     return [c.strip() for c in SPLIT_UNESCAPED.split(t)]
 
 
@@ -111,7 +170,7 @@ def lead_num(s):
     if s is None:
         return None
     t = s.replace(",", "")
-    for _ in range(3):                      # 允许 `**…`、`≈**…` 这类叠加前缀
+    for _ in range(3):  # 允许 `**…`、`≈**…` 这类叠加前缀
         t2 = LEAD_JUNK.sub("", t)
         if t2 == t:
             break
@@ -141,8 +200,9 @@ def collect_tables(lines):
                 j += 1
             group = list(range(i, j))
             if len(group) >= 2 and DELIM_ROW.match(lines[group[1]]) and not DELIM_ROW.match(lines[group[0]]):
-                tables.append((group[0] + 1, cells(lines[group[0]]), group[1] + 1,
-                               [(n + 1, cells(lines[n])) for n in group[2:]]))
+                tables.append(
+                    (group[0] + 1, cells(lines[group[0]]), group[1] + 1, [(n + 1, cells(lines[n])) for n in group[2:]])
+                )
             else:
                 orphans.append((group[0] + 1, group[-1] + 1, len(group)))
             i = j
@@ -185,12 +245,18 @@ def bold_blocks(lines, fenced=frozenset()):
             i += 1
             continue
         if is_pipe(lines[i]):
-            blocks.append((i + 1, i + 1, lines[i]))     # 表行：单元格是行内内容，各自成块
+            blocks.append((i + 1, i + 1, lines[i]))  # 表行：单元格是行内内容，各自成块
             i += 1
             continue
         j = i + 1
-        while (j < n and lines[j].strip() and not is_pipe(lines[j]) and not FENCE.match(lines[j])
-               and (j + 1) not in fenced and not BLOCK_START.match(lines[j])):
+        while (
+            j < n
+            and lines[j].strip()
+            and not is_pipe(lines[j])
+            and not FENCE.match(lines[j])
+            and (j + 1) not in fenced
+            and not BLOCK_START.match(lines[j])
+        ):
             j += 1
         blocks.append((i + 1, j, "\n".join(lines[i:j])))
         i = j
@@ -199,18 +265,26 @@ def bold_blocks(lines, fenced=frozenset()):
 
 def audit_bold(lines, out):
     for a, b, text in bold_blocks(lines, _fence_spans(lines)):
-        where = "L%d 单元格" % a if a == b else "L%d–L%d 段落" % (a, b)
-        text = INLINE_CODE.sub("", text)        # 行内代码里的 `**` 是字面文本，不是加粗标记
+        where = f"L{a} 单元格" if a == b else f"L{a}–L{b} 段落"
+        text = INLINE_CODE.sub("", text)  # 行内代码里的 `**` 是字面文本，不是加粗标记
         marks = [m.start() for m in re.finditer(r"(?<!\\)\*\*", text)]
         if len(marks) % 2:
-            out.append(Finding("error", where, "`**` 共 %d 个（奇数）" % len(marks), "成对闭合",
-                               "§6：加粗标记未闭合 → 渲染错乱"))
+            out.append(
+                Finding("error", where, f"`**` 共 {len(marks)} 个（奇数）", "成对闭合", "§6：加粗标记未闭合 → 渲染错乱")
+            )
             continue
         spans = [(marks[k], marks[k + 1]) for k in range(0, len(marks), 2)]
-        for x, y in spans:                                  # 真嵌套：本对内还完整包含另一对
+        for x, y in spans:  # 真嵌套：本对内还完整包含另一对
             if any(x < x2 and y2 < y for x2, y2 in spans):
-                out.append(Finding("error", where, "嵌套加粗 `**…**…**…**`", "拆成两个独立加粗",
-                                   "§6：外层 `**` 对内嵌内层 → 渲染错乱"))
+                out.append(
+                    Finding(
+                        "error",
+                        where,
+                        "嵌套加粗 `**…**…**…**`",
+                        "拆成两个独立加粗",
+                        "§6：外层 `**` 对内嵌内层 → 渲染错乱",
+                    )
+                )
                 break
 
 
@@ -219,21 +293,41 @@ def audit_structure(lines, tables, orphans, out):
         n = len(hdr)
         d = cells(lines[delim - 1])
         if len(d) != n:
-            out.append(Finding("error", "L%d 表(L%d) 分隔行" % (delim, start), "%d 列" % len(d),
-                               "%d 列（= 表头）" % n,
-                               "§6：分隔行列数 ≠ 表头 → 整表不渲染"))
+            out.append(
+                Finding(
+                    "error",
+                    f"L{delim} 表(L{start}) 分隔行",
+                    f"{len(d)} 列",
+                    f"{n} 列（= 表头）",
+                    "§6：分隔行列数 ≠ 表头 → 整表不渲染",
+                )
+            )
         for ln, c in rows:
             if len(c) != n:
-                out.append(Finding("error", "L%d 表(L%d) 数据行" % (ln, start), "%d 列" % len(c),
-                                   "%d 列" % n,
-                                   "§6/§7：列数须与表头一致（转义竖线 \\| 不切分）"))
+                out.append(
+                    Finding(
+                        "error",
+                        f"L{ln} 表(L{start}) 数据行",
+                        f"{len(c)} 列",
+                        f"{n} 列",
+                        "§6/§7：列数须与表头一致（转义竖线 \\| 不切分）",
+                    )
+                )
     for a, b, cnt in orphans:
         if cnt == 1:
-            out.append(Finding("error", "L%d 孤立表行" % a, "单行 `|…|`（无分隔行）",
-                               "并入所属表或删除", "§6：行被插到空行之后 → 渲染成孤立片段"))
+            out.append(
+                Finding(
+                    "error",
+                    f"L{a} 孤立表行",
+                    "单行 `|…|`（无分隔行）",
+                    "并入所属表或删除",
+                    "§6：行被插到空行之后 → 渲染成孤立片段",
+                )
+            )
         else:
-            out.append(Finding("error", "L%d–L%d 竖线行组" % (a, b), "%d 行无分隔行" % cnt,
-                               "补分隔行使其成为合法表格", "§6/§7"))
+            out.append(
+                Finding("error", f"L{a}–L{b} 竖线行组", f"{cnt} 行无分隔行", "补分隔行使其成为合法表格", "§6/§7")
+            )
     audit_bold(lines, out)
 
 
@@ -278,21 +372,21 @@ def numeric_rows(rows, i_e2e, i_sp):
 def choose_baseline(cands, keep):
     """取与全部数值行相容的第一个候选（顺序即优先级：CLI > 报告基线 > 本表基线行）。"""
     for src, val in cands:
-        if val and all(lead_num(raw_s) is not None and near(lead_num(raw_s), val / e, raw_s)
-                       for _, e, raw_s, _ in keep):
+        if val and all(
+            lead_num(raw_s) is not None and near(lead_num(raw_s), val / e, raw_s) for _, e, raw_s, _ in keep
+        ):
             return src, val
     return (cands[0][0], cands[0][1]) if cands else (None, None)
 
 
-def _audit_ratio(start, delim, hdr, rows, i_e2e, i_sp, i_type,
-                 report_base, cli_base, out, notes, skips):
+def _audit_ratio(start, delim, hdr, rows, i_e2e, i_sp, i_type, report_base, cli_base, out, notes, skips):
     """N1：`分母 ÷ e2e ≈ 加速比`。分母按候选拟合（CLI > 报告基线 > 本表基线行），并始终打印所用分母。"""
     own = baseline_row(rows, i_type, i_e2e)
     keep, skip = numeric_rows(rows, i_e2e, i_sp)
     for ln, re_, rs in skip:
-        skips.append("L%d 未参与 N1（e2e=%s，加速比=%s）" % (ln, str(re_)[:16], str(rs)[:16]))
+        skips.append(f"L{ln} 未参与 N1（e2e={str(re_)[:16]}，加速比={str(rs)[:16]}）")
     if not keep:
-        notes.append("表 L%d：无可用数值行（跳过 N1）" % start)
+        notes.append(f"表 L{start}：无可用数值行（跳过 N1）")
         return
     cands = []
     if cli_base is not None:
@@ -300,22 +394,36 @@ def _audit_ratio(start, delim, hdr, rows, i_e2e, i_sp, i_type,
     if report_base is not None:
         cands.append(("报告基线", report_base))
     if own is not None:
-        cands.append(("本表基线行 L%d" % own[0], own[1]))
+        cands.append((f"本表基线行 L{own[0]}", own[1]))
     src, val = choose_baseline(cands, keep)
     if val is None:
-        out.append(Finding("error", "L%d 表(L%d) 分母" % (delim, start),
-                           "无分母候选（表内无「基线」行）", "补基线行或传 --baseline",
-                           "§7：锚点缺失须显式报错，不得静默跳过"))
+        out.append(
+            Finding(
+                "error",
+                f"L{delim} 表(L{start}) 分母",
+                "无分母候选（表内无「基线」行）",
+                "补基线行或传 --baseline",
+                "§7：锚点缺失须显式报错，不得静默跳过",
+            )
+        )
         return
-    notes.append("表 L%d：分母=%.2f（%s），核算 %d 行" % (start, val, src, len(keep)))
+    notes.append(f"表 L{start}：分母={val:.2f}（{src}），核算 {len(keep)} 行")
     if own is not None and abs(own[1] - val) > 0.01:
-        notes.append("表 L%d：另有参考行 L%d「基线」=%.2f，**非本表分母**（其加速比也相对 %.2f）"
-                     % (start, own[0], own[1], val))
+        notes.append(
+            f"表 L{start}：另有参考行 L{own[0]}「基线」={own[1]:.2f}，**非本表分母**（其加速比也相对 {val:.2f}）"
+        )
     for ln, e, raw_s, raw_e in keep:
         exp = val / e
         if not near(lead_num(raw_s), exp, raw_s):
-            out.append(Finding("error", "L%d 表(L%d) 列「加速比」" % (ln, start), raw_s,
-                               "%.2f×" % exp, "%s %.2f ÷ e2e %s" % (src, val, raw_e)))
+            out.append(
+                Finding(
+                    "error",
+                    f"L{ln} 表(L{start}) 列「加速比」",
+                    raw_s,
+                    f"{exp:.2f}×",
+                    f"{src} {val:.2f} ÷ e2e {raw_e}",
+                )
+            )
 
 
 def audit_numeric(tables, report_base, cli_base, out, notes, skips):
@@ -330,10 +438,9 @@ def audit_numeric(tables, report_base, cli_base, out, notes, skips):
         i_type = col_index(hdr, "优化类型")
         # ---- N1：e2e 与 加速比 的分母自洽（本表无这两列则跳过 N1，不跳过整表）----
         if i_e2e is None or i_sp is None:
-            notes.append("表 L%d：无 e2e/加速比 列（跳过 N1）" % start)
+            notes.append(f"表 L{start}：无 e2e/加速比 列（跳过 N1）")
         else:
-            _audit_ratio(start, delim, hdr, rows, i_e2e, i_sp, i_type,
-                         report_base, cli_base, out, notes, skips)
+            _audit_ratio(start, delim, hdr, rows, i_e2e, i_sp, i_type, report_base, cli_base, out, notes, skips)
 
         i_d, i_step = col_index(hdr, "diffuse"), col_index(hdr, "每步")
         if i_d is not None and i_step is not None:
@@ -345,11 +452,17 @@ def audit_numeric(tables, report_base, cli_base, out, notes, skips):
                     continue
                 implied = d / st
                 if abs(implied - round(implied)) > 0.03 * implied or round(implied) < 1:
-                    out.append(Finding("error", "L%d 表(L%d) 列「每步」" % (ln, start), c[i_step],
-                                       "使 diffuse÷每步 为整数", "隐含步数=%.3f（非整数）" % implied))
+                    out.append(
+                        Finding(
+                            "error",
+                            f"L{ln} 表(L{start}) 列「每步」",
+                            c[i_step],
+                            "使 diffuse÷每步 为整数",
+                            f"隐含步数={implied:.3f}（非整数）",
+                        )
+                    )
                 elif round(implied) not in KNOWN_STEP_SETS:
-                    notes.append("表 L%d 行 L%d：隐含步数=%d（不在常见集合，确认世代即可）"
-                                 % (start, ln, round(implied)))
+                    notes.append(f"表 L{start} 行 L{ln}：隐含步数={round(implied)}（不在常见集合，确认世代即可）")
 
         i_m, i_p, i_r = col_index(hdr, "实测"), col_index(hdr, "单点连乘"), col_index(hdr, "比值")
         if None not in (i_m, i_p, i_r):
@@ -360,19 +473,28 @@ def audit_numeric(tables, report_base, cli_base, out, notes, skips):
                 if not (m and p and r):
                     continue
                 if not near(r, m / p, c[i_r], rel=0.03):
-                    out.append(Finding("error", "L%d 表(L%d) 列「比值」" % (ln, start), c[i_r],
-                                       "%.3f" % (m / p), "实测 %.3f ÷ 连乘 %.3f" % (m, p)))
+                    out.append(
+                        Finding(
+                            "error",
+                            f"L{ln} 表(L{start}) 列「比值」",
+                            c[i_r],
+                            f"{m / p:.3f}",
+                            f"实测 {m:.3f} ÷ 连乘 {p:.3f}",
+                        )
+                    )
 
         i_up = col_index(hdr, "相对上一行")
         if i_up is not None:
             # 被比较的指标列：优先显式 e2e 列；否则取「相对上一行」左侧最近的数值列（推断须显式说明）
             i_val = i_e2e if i_e2e is not None else (i_up - 1 if i_up > 0 else None)
             if i_val is None:
-                notes.append("表 L%d：有「相对上一行」但无法确定被比较列（跳过 N4）" % start)
+                notes.append(f"表 L{start}：有「相对上一行」但无法确定被比较列（跳过 N4）")
             else:
                 if i_e2e is None:
-                    notes.append("表 L%d：N4 的被比较列按「相对上一行」左侧列推断 = 第 %d 列「%s」"
-                                 % (start, i_val + 1, hdr[i_val] if i_val < len(hdr) else "?"))
+                    notes.append(
+                        f"表 L{start}：N4 的被比较列按「相对上一行」左侧列推断 = 第 {i_val + 1} 列"
+                        f"「{hdr[i_val] if i_val < len(hdr) else '?'}」"
+                    )
                 prev = first = None
                 for ln, c in rows:
                     if max(i_up, i_val) >= len(c):
@@ -385,11 +507,21 @@ def audit_numeric(tables, report_base, cli_base, out, notes, skips):
                         first = e
                     refs = []
                     for m in PCT.finditer(cell):
-                        refs.append(("pct", float(m.group(0).replace("−", "-").rstrip("% ").strip()),
-                                     "行 0" if re.search(r"行\s*0", cell) else "上一行"))
+                        refs.append(
+                            (
+                                "pct",
+                                float(m.group(0).replace("−", "-").rstrip("% ").strip()),
+                                "行 0" if re.search(r"行\s*0", cell) else "上一行",
+                            )
+                        )
                     for m in MULT.finditer(cell):
-                        refs.append(("mult", float(NUM.search(m.group(0)).group(0)),
-                                     "行 0" if re.search(r"行\s*0", cell) else "上一行"))
+                        refs.append(
+                            (
+                                "mult",
+                                float(NUM.search(m.group(0)).group(0)),
+                                "行 0" if re.search(r"行\s*0", cell) else "上一行",
+                            )
+                        )
                     if prev is not None and refs:
                         ok = False
                         for kind, v, ref in refs:
@@ -398,22 +530,27 @@ def audit_numeric(tables, report_base, cli_base, out, notes, skips):
                                 continue
                             if kind == "pct" and abs(v - (e / b - 1) * 100) <= max(0.6, abs((e / b - 1) * 100) * 0.05):
                                 ok = True
-                            if kind == "mult" and near(v, b / e, "%.2f" % v, rel=0.03):
+                            if kind == "mult" and near(v, b / e, f"{v:.2f}", rel=0.03):
                                 ok = True
                         if not ok:
-                            out.append(Finding("error", "L%d 表(L%d) 列「相对上一行」" % (ln, start), cell,
-                                               "%+.1f%%（上一行 %.3f）或 %+.1f%%（行 0 %.3f）"
-                                               % ((e / prev - 1) * 100, prev,
-                                                  (e / first - 1) * 100 if first else 0.0, first or 0.0),
-                                               "§7：先判百分比/倍数与参照行（上一行 or 行 0）"))
+                            out.append(
+                                Finding(
+                                    "error",
+                                    f"L{ln} 表(L{start}) 列「相对上一行」",
+                                    cell,
+                                    f"{((e / prev - 1) * 100):+.1f}%（上一行 {prev:.3f}）或 "
+                                    f"{(((e / first - 1) * 100) if first else 0.0):+.1f}%（行 0 {(first or 0.0):.3f}）",
+                                    "§7：先判百分比/倍数与参照行（上一行 or 行 0）",
+                                )
+                            )
                     elif prev is None and refs:
-                        notes.append("表 L%d 行 L%d：有「相对上一行」但本行是首行（参照在本表之外，跳过）"
-                                     % (start, ln))
+                        notes.append(f"表 L{start} 行 L{ln}：有「相对上一行」但本行是首行（参照在本表之外，跳过）")
                     prev = e
 
 
 def audit_cross_table(tables, out, notes):
     """N5：同一报告内 e2e 相同的行，若两表分母也相同 → 加速比/首步/步数须一致（§4）。"""
+
     def base_of(hdr, rows):
         i_type, i_e2e = col_index(hdr, "优化类型"), col_index(hdr, "e2e")
         r = baseline_row(rows, i_type, i_e2e)
@@ -432,8 +569,7 @@ def audit_cross_table(tables, out, notes):
             e = lead_num(c[i_e2e])
             if e is None:
                 continue
-            sig = tuple(c[i] if (i is not None and i < len(c)) else None
-                        for i in (i_sp, i_first, i_steps))
+            sig = tuple(c[i] if (i is not None and i < len(c)) else None for i in (i_sp, i_first, i_steps))
             key = round(e, 3)
             if key not in seen:
                 seen[key] = (b, ln, sig)
@@ -442,18 +578,24 @@ def audit_cross_table(tables, out, notes):
             if b is None or pb is None:
                 continue
             if abs(b - pb) > 0.01:
-                notes.append("同测量行 L%d 与 L%d：两表分母不同（%.2f vs %.2f）→ 加速比不可比，按 §4 跨血缘标注"
-                             % (ln, pln, b, pb))
+                notes.append(
+                    f"同测量行 L{ln} 与 L{pln}：两表分母不同（{b:.2f} vs {pb:.2f}）→ 加速比不可比，按 §4 跨血缘标注"
+                )
                 continue
-            for name, a, x in (("加速比", psig[0], sig[0]), ("首步耗时", psig[1], sig[1]),
-                               ("步数", psig[2], sig[2])):
+            for name, a, x in (("加速比", psig[0], sig[0]), ("首步耗时", psig[1], sig[1]), ("步数", psig[2], sig[2])):
                 if a is None or x is None or a == x:
                     continue
                 if lead_num(a) is not None and lead_num(x) is not None and near(lead_num(x), lead_num(a), a, rel=0.02):
                     continue
-                out.append(Finding("error", "L%d（与 L%d 同一次测量）" % (ln, pln), "%s=%s" % (name, x),
-                                   "与 L%d 一致：%s" % (pln, a),
-                                   "§4：参考项与主表同测量行须逐字段一致"))
+                out.append(
+                    Finding(
+                        "error",
+                        f"L{ln}（与 L{pln} 同一次测量）",
+                        f"{name}={x}",
+                        f"与 L{pln} 一致：{a}",
+                        "§4：参考项与主表同测量行须逐字段一致",
+                    )
+                )
 
 
 def audit_text(text: str, only: str = "all", cli_base=None):
@@ -467,34 +609,59 @@ def audit_text(text: str, only: str = "all", cli_base=None):
         pipes = sum(1 for text_line in lines if is_pipe(text_line))
         if pipes == 0:
             # 文件本身不含表格：无可审计内容（不是错误）——审计任意 md 时不应报假警报
-            return ({"errs": [], "warns": [], "notes": ["本文件不含表格（无竖线行），无可审计内容"],
-                     "skips": [], "tables": 0, "orphans": 0, "base": None, "no_table": True,
-                     "head_warns": []}, "")
-        return None, ("有 %d 行竖线但没有任何合法表格（表头 + 分隔行）——无法审计。依据：report-contract "
-                      "§6/§7（分隔行缺失 → 整表不渲染）。请确认路径，或补上分隔行。" % pipes)
-    main = next((t for t in tables if any("优化类型" in x for x in t[1])
-                 and any("特性名" in x for x in t[1])), None)
+            return (
+                {
+                    "errs": [],
+                    "warns": [],
+                    "notes": ["本文件不含表格（无竖线行），无可审计内容"],
+                    "skips": [],
+                    "tables": 0,
+                    "orphans": 0,
+                    "base": None,
+                    "no_table": True,
+                    "head_warns": [],
+                },
+                "",
+            )
+        return None, (
+            f"有 {pipes} 行竖线但没有任何合法表格（表头 + 分隔行）——无法审计。依据：report-contract "
+            "§6/§7（分隔行缺失 → 整表不渲染）。请确认路径，或补上分隔行。"
+        )
+    main = next((t for t in tables if any("优化类型" in x for x in t[1]) and any("特性名" in x for x in t[1])), None)
     report_base = None
     head_warns = []
     if main is None:
-        head_warns.append("未找到含「优化类型 | 特性名」的主表：按通用表格审计继续（细分报表属正常），"
-                          "报告级基线不可用。")
+        head_warns.append(
+            "未找到含「优化类型 | 特性名」的主表：按通用表格审计继续（细分报表属正常），报告级基线不可用。"
+        )
     else:
         br = baseline_row(main[3], col_index(main[1], "优化类型"), col_index(main[1], "e2e"))
         report_base = br[1] if br else None
         if report_base is None:
-            head_warns.append("主表(L%d) 无「基线」行 → 报告级基线缺失；各表需自备基线行或 --baseline。"
-                              % main[0])
+            head_warns.append(f"主表(L{main[0]}) 无「基线」行 → 报告级基线缺失；各表需自备基线行或 --baseline。")
     out, notes, skips = [], [], []
     if only in ("structure", "all"):
         audit_structure(lines, tables, orphans, out)
+        if main is not None:
+            # S5 只对「主表报告」判——非报告类 md（无 优化类型+特性名 表）不在此范围
+            for msg in required_section_heading_hits(lines)[0]:
+                out.append(Finding("error", "报表章节（S5）", "缺少/次序错", msg, "§2.8 必带详情节与附录"))
     if only in ("numeric", "all"):
         audit_numeric(tables, report_base, cli_base, out, notes, skips)
         audit_cross_table(tables, out, notes)
-    return ({"errs": [f for f in out if f.level == "error"],
-             "warns": [f for f in out if f.level == "warn"],
-             "notes": notes, "skips": skips, "tables": len(tables), "orphans": len(orphans),
-             "base": report_base, "head_warns": head_warns}, "")
+    return (
+        {
+            "errs": [f for f in out if f.level == "error"],
+            "warns": [f for f in out if f.level == "warn"],
+            "notes": notes,
+            "skips": skips,
+            "tables": len(tables),
+            "orphans": len(orphans),
+            "base": report_base,
+            "head_warns": head_warns,
+        },
+        "",
+    )
 
 
 def run_audit(path: Path, only: str = "all", cli_base=None):
@@ -507,11 +674,10 @@ def run_audit_text(text: str, cli_base=None):
 
 def render(path: Path, res) -> int:
     if res.get("no_table"):
-        print("== 审计 %s：本文件不含表格，无可审计内容（exit 0，非错误）" % path.name)
+        print(f"== 审计 {path.name}：本文件不含表格，无可审计内容（exit 0，非错误）")
         return 0
-    print("== 审计 %s：%d 张表（另 %d 个竖线行组非表格）；报告级基线=%s"
-          % (path.name, res["tables"], res["orphans"],
-             ("%.2f" % res["base"]) if res["base"] else "未取到"))
+    base_shown = f'{res["base"]:.2f}' if res["base"] else "未取到"
+    print(f"== 审计 {path.name}：{res['tables']} 张表（另 {res['orphans']} 个竖线行组非表格）；报告级基线={base_shown}")
     for w in res["head_warns"]:
         print("  [warn] " + w)
     for f in res["errs"] + res["warns"]:
@@ -525,9 +691,11 @@ def render(path: Path, res) -> int:
         for s in res["skips"][:15]:
             print("     " + s)
         if len(res["skips"]) > 15:
-            print("     …其余 %d 条" % (len(res["skips"]) - 15))
-    print("结论：error=%d warn=%d（说明 %d 条，跳过 %d 行）"
-          % (len(res["errs"]), len(res["warns"]), len(res["notes"]), len(res["skips"])))
+            print(f"     …其余 {len(res['skips']) - 15} 条")
+    print(
+        f"结论：error={len(res['errs'])} warn={len(res['warns'])}"
+        f"（说明 {len(res['notes'])} 条，跳过 {len(res['skips'])} 行）"
+    )
     return 1 if res["errs"] else 0
 
 
@@ -544,40 +712,58 @@ def _corruptions(text: str):
                 continue
             keep, _ = numeric_rows(rows, i_e, i_s)
             if keep:
-                ln, e, raw_s, _ = keep[0]
+                ln, _e, raw_s, _ = keep[0]
                 return ln, i_s, raw_s
         return None
 
     hit = find_num_row()
     if hit:
-        ln, i_s, raw_s = hit
+        ln, _i_s, raw_s = hit
         v = lead_num(raw_s)
-        cases.append(("加速比与分母不符", "\n".join(
-            lines[:ln - 1] + [lines[ln - 1].replace(raw_s, "%.2f×" % (v * 3), 1)] + lines[ln:]),
-            "列「加速比」"))
+        cases.append(
+            (
+                "加速比与分母不符",
+                "\n".join(lines[: ln - 1] + [lines[ln - 1].replace(raw_s, f"{v * 3:.2f}×", 1)] + lines[ln:]),
+                "列「加速比」",
+            )
+        )
     if tabs:
         start, hdr, delim, rows = tabs[0]
-        cases.append(("分隔行列数少 1", "\n".join(
-            lines[:delim - 1] + [lines[delim - 1].rstrip().rstrip("|").rsplit("|", 1)[0] + "|"]
-            + lines[delim:]), "分隔行"))
+        cases.append(
+            (
+                "分隔行列数少 1",
+                "\n".join(
+                    lines[: delim - 1] + [lines[delim - 1].rstrip().rstrip("|").rsplit("|", 1)[0] + "|"] + lines[delim:]
+                ),
+                "分隔行",
+            )
+        )
         if rows:
             ln = rows[0][0]
             cells_ = cells(lines[ln - 1])
-            cases.append(("数据行少 1 列", "\n".join(
-                lines[:ln - 1] + ["| " + " | ".join(cells_[:-1]) + " |"] + lines[ln:]),
-                "数据行"))
+            cases.append(
+                (
+                    "数据行少 1 列",
+                    "\n".join(lines[: ln - 1] + ["| " + " | ".join(cells_[:-1]) + " |"] + lines[ln:]),
+                    "数据行",
+                )
+            )
             # 孤立表行：插到表块之后的空行之后
             tail = start
             while tail < len(lines) and is_pipe(lines[tail]):
                 tail += 1
-            cases.append(("孤立表行（空行后单行 |…|）", "\n".join(
-                lines[:tail] + ["", "| 孤立 | 行 |"] + lines[tail:]), "孤立表行"))
+            cases.append(
+                (
+                    "孤立表行（空行后单行 |…|）",
+                    "\n".join(lines[:tail] + ["", "| 孤立 | 行 |"] + lines[tail:]),
+                    "孤立表行",
+                )
+            )
     fenced = _fence_spans(lines)
     for i, line in enumerate(lines):
         if line.strip() and not is_pipe(line) and (i + 1) not in fenced and not FENCE.match(line):
             # 只注入到**散文行**：围栏代码块 / 行内代码里的 `**` 是字面文本，按设计不参与配对
-            cases.append(("加粗未闭合", "\n".join(lines[:i] + [line + " **未闭合"] + lines[i + 1:]),
-                          "奇数"))
+            cases.append(("加粗未闭合", "\n".join(lines[:i] + [line + " **未闭合"] + lines[i + 1 :]), "奇数"))
             break
     for start, hdr, delim, rows in tabs:
         i_m, i_p, i_r = col_index(hdr, "实测"), col_index(hdr, "单点连乘"), col_index(hdr, "比值")
@@ -585,9 +771,13 @@ def _corruptions(text: str):
             continue
         for ln, c in rows:
             if max(i_m, i_p, i_r) < len(c) and lead_num(c[i_r]):
-                cases.append(("比值 ≠ 实测÷连乘", "\n".join(
-                    lines[:ln - 1] + [lines[ln - 1].replace(c[i_r], "9.999", 1)] + lines[ln:]),
-                    "列「比值」"))
+                cases.append(
+                    (
+                        "比值 ≠ 实测÷连乘",
+                        "\n".join(lines[: ln - 1] + [lines[ln - 1].replace(c[i_r], "9.999", 1)] + lines[ln:]),
+                        "列「比值」",
+                    )
+                )
                 break
         else:
             continue
@@ -599,10 +789,18 @@ def _corruptions(text: str):
         picked = False
         for idx, (ln, c) in enumerate(rows):
             if idx == 0 or i_up >= len(c) or not PCT.search(c[i_up]):
-                continue            # 首行的"上一行"在本表之外 → 按设计不可验证，不能作为用例
-            cases.append(("相对上一行百分比错", "\n".join(
-                lines[:ln - 1] + [lines[ln - 1].replace(PCT.search(c[i_up]).group(0), "+99.9%", 1)]
-                + lines[ln:]), "列「相对上一行」"))
+                continue  # 首行的"上一行"在本表之外 → 按设计不可验证，不能作为用例
+            cases.append(
+                (
+                    "相对上一行百分比错",
+                    "\n".join(
+                        lines[: ln - 1]
+                        + [lines[ln - 1].replace(PCT.search(c[i_up]).group(0), "+99.9%", 1)]
+                        + lines[ln:]
+                    ),
+                    "列「相对上一行」",
+                )
+            )
             picked = True
             break
         if not picked:
@@ -633,43 +831,49 @@ def selftest(path: Path) -> int:
     src = path.read_text(encoding="utf-8-sig")
     base, msg = run_audit(path)
     if base is None:
-        print("[error] 自测基准不可审计：%s" % msg)
+        print(f"[error] 自测基准不可审计：{msg}")
         return 2
     cases = _corruptions(src)
     if not cases:
-        print("[error] 未能在 %s 上构造出任何注入用例（报表结构不足）" % path.name)
+        print(f"[error] 未能在 {path.name} 上构造出任何注入用例（报表结构不足）")
         return 2
     ok = True
-    print("== 负样本自测：%s（基准 error=%d）" % (path.name, len(base["errs"])))
+    print(f"== 负样本自测：{path.name}（基准 error={len(base['errs'])}）")
     for name, mutated, sig in cases:
         res, _ = run_audit_text(mutated)
         res2, _ = run_audit_text(mutated)
+
         # 签名可出现在任一字段（位置/原值/应为/依据）——例如"奇数""比值"出现在「原值」里
-        def _hit(r):
+        def _hit(r, sig=sig):
             return [x for x in r["errs"] if sig in (x.where + x.old + x.expect + x.basis)]
+
         caught = res is not None and bool(_hit(res))
-        idem = (res is not None and res2 is not None
-                and [x.fmt() for x in res["errs"]] == [x.fmt() for x in res2["errs"]])
-        print("  [%s] %-26s 期望命中 %-18s 幂等=%s%s"
-              % ("PASS" if (caught and idem) else "FAIL", name, sig, "OK" if idem else "NO",
-                 "" if caught else "  实际命中=" + (str([x.where for x in res["errs"]][:3]) if res else "N/A")))
+        idem = (
+            res is not None and res2 is not None and [x.fmt() for x in res["errs"]] == [x.fmt() for x in res2["errs"]]
+        )
+        print(
+            f"  [{'PASS' if (caught and idem) else 'FAIL'}] {name:<26} 期望命中 {sig:<18} "
+            f"幂等={'OK' if idem else 'NO'}"
+            f"{'' if caught else '  实际命中=' + (str([x.where for x in res['errs']][:3]) if res else 'N/A')}"
+        )
         ok = ok and caught and idem
-    print("自测结论：%s（%d 个注入用例）" % ("全部抓到且幂等" if ok else "有漏检", len(cases)))
+    print(f"自测结论：{'全部抓到且幂等' if ok else '有漏检'}（{len(cases)} 个注入用例）")
     return 0 if ok else 1
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="报表结构 + 数值自洽审计（只读、幂等）")
     ap.add_argument("report", type=Path)
-    ap.add_argument("--baseline", type=float, default=None,
-                    help="覆盖分母（例如细分报表只给相对值、或跨血缘表要用 §1 基线）")
+    ap.add_argument(
+        "--baseline", type=float, default=None, help="覆盖分母（例如细分报表只给相对值、或跨血缘表要用 §1 基线）"
+    )
     ap.add_argument("--only", choices=("structure", "numeric", "all"), default="all")
     ap.add_argument("--strict", action="store_true", help="warn 也视为失败")
     ap.add_argument("--selftest", action="store_true", help="负样本自测：注入已知事故并断言被抓到")
     a = ap.parse_args(argv)
 
     if not a.report.exists():
-        print("[error] 报表不存在：%s" % a.report)
+        print(f"[error] 报表不存在：{a.report}")
         return 2
     if a.selftest:
         return selftest(a.report)

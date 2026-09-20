@@ -55,6 +55,10 @@ description: >
 - 执行回执/自验证格式与 subagent 派发模板见 `workflows/references/dispatch-templates.md`：
   回执缺自验证或与 evidence 矛盾 → 拒收重交；验收 FAIL 修复合计上限 5 轮 → 回退该阶段改动并
   向用户报告阻塞点。
+- **多 agent 编排前置（四角色 · 文档交付 · 并行控制）**：派发子 agent / 开多特性并行验证 /
+  换 session 接力之前，先读 `references/agent-roles-and-handoff.md`——角色分工与写权限、交付件
+  与指针链、交接单、并行单元与资源租约；**不满足扇出判据即自执行**，并把不开的理由记入
+  run-state「决策与轮次」。
 
 ## 任务判定
 
@@ -66,7 +70,8 @@ description: >
 │    （framework-integration + profiling 回路 + pattern-dev/operator-dev + dummy-run）
 ├─ 多卡并行/通信掩盖/拓扑选型 → S3（dit-parallel-opt）
 ├─ 量化/稀疏/缓存/精度组合 → S4（performance-optimization + framework-integration）
-├─ 训练感知（DiT/模型级换外部训练权重：少步蒸馏，叠 SLA/QAT）→ S5（案例已回填，见 S5 槽位）
+├─ 训练感知（DiT/模型级换外部训练权重：少步蒸馏，叠 SLA/QAT；**候选识别须含「去冗余」族 =
+静态低秩适配器离线合并**，见 `../dit-perf-opt/references/optimization-dimensions.md` §7）→ S5（槽位与判据见 `.agents/README.md` §4 S5-1）
 ├─ 非 DiT 段（VAE 全部 + host 固定开销；阶段账占比 ≥10% 才启动）→ S6（VAE 模块 / host 模块）
 └─ 整体收益确认/产物归档 → 闭环复验（标准回路）
 ```
@@ -99,7 +104,7 @@ description: >
 | S1 DiT·融合 | profiling→识别融合机会（≥rope/norm 等，含其它优化空间）→执行序收益→按框架能力接入（抽象接口=API 接入 / 无接口=compile；算子不存在→operator-dev 开发→初成先 API 接入确认→依框架设计决定 compile；dummy-run 快验→框架验证） | `framework-integration`、`profiling-collect`、`profiling-analyze`、`pattern-dev`、`operator-dev`、`dummy-run` | 算子执行序 + 融合清单 + 三层证据 | 三层证据 + 数值核验 + 精度；候选执行序收益（整 block <0.5% 可不执行）；compile 口径=真图命中（禁前端绕开） | S1-1、S2-1 |
 | S3 DiT·并行 | 带宽探针（4/8/16 卡等）→ 4 卡带宽显著高则 USP4CP2（并行稀疏）；默认 USP→CFG→CP（allgather KV/Q 切分）→ 通算掩盖 | `dit-parallel-opt`、`profiling-collect`、`profiling-analyze` | 并行方案 + 多 rank 证据 + 掩盖率 | 固定 rank 口径通信下降；掩盖率识别；特性正确开启；输出一致；候选整体耗时评估 + 时间预算内收敛 | S3-1、S3-2 |
 | S4 DiT·有损 | 缓存/稀疏/量化逐个开启 + 精度校验 + 组合试验（允许层回退） | `performance-optimization`、`framework-integration`、`benchmark-dev` | 单特性精度报告 + 组合矩阵（含 [MUST] 覆盖清单）+ 回退名单 + **每档使能复核记录（post-enable-review）** | 目标档（8bit + 80% 稀疏 + 缓存）；墙钟 + 精度双指标；含无损项叠加复核；kernel 序列变化特性（量化等）使能后按 **post-enable-review 六面复核**；S4-2 组合必测集收口（两两 + 三元 Cache+量化+稀疏，无未裁决 [MUST] 行，见 combination-search.md） | S4-1、S4-2 |
-| S5 DiT·训练感知 | 换入**外部训练权重**换速度并承担质量代价：少步蒸馏适配器（DiT/模型级），以无损收敛（S1/S3）为前置，可叠 SLA / QAT。**VAE 侧一律归 S6**（含换解码器） | `framework-integration`、`performance-optimization` | 质量-速度权衡记录（相对原始模型）+ **两条并列部署建议（保画质档 / 预览档）** | 前置契约先验（步数语义 = denoiser 评估次数 ≠ sigma 点数；权重装载计数防 no-op 假加速）；叠加行全量步数实测 | S5-1 |
+| S5 DiT·训练感知 | 换入**外部训练权重**换速度并承担质量代价：少步蒸馏适配器（DiT/模型级），以无损收敛（S1/S3）为前置，可叠 SLA / QAT。**候选识别必须含「去冗余」族**——服务期**静态**的低秩适配器可**离线合并进权重**（把运行时的 down/up 增量对整体消掉；识别判据 = 适配器启动期加载且请求侧 scale 恒定 + 该链下发实例占比高而 device 耗时占比低 + 线性可合并，见 `../../dit-perf-opt/references/optimization-dimensions.md` §7；机制、精度存活判据与三形态选择见 `../../quantization-dev/references/lora-merge-and-precision.md`）。**VAE 侧一律归 S6**（含换解码器） | `framework-integration`、`performance-optimization` | 质量-速度权衡记录（相对原始模型）+ **两条并列部署建议（保画质档 / 预览档）** | 前置契约先验（步数语义 = denoiser 评估次数 ≠ sigma 点数；权重装载计数防 no-op 假加速）；叠加行全量步数实测 | S5-1 |
 | **S6 VAE + host** | 非 DiT 段优化：**VAE 全部归本阶段**（计算 + 通信），内含手段链——**无损优先**（分片 / 等价 / tile / 编译）→ 达不到目标时启用**换权重**（有损；含换入外部训练的小型自编码器替换原生解码器）；host 段做固定开销优化（交付搬运 + 装载预热，**不含并发/吞吐**） | `vae-opt`、`host-opt`（本阶段专属模块） | VAE 方案 + 一致性证据；host 固定开销账 | **进入条件**：MAO 阶段账测得 `非DiT-解码段` / `非DiT-host段` 占比 **≥10%**（门限口径见 `references/bottleneck-labels.md`，**须带步数档**）；未达则在推进表登记 `skipped`（带理由）；换权重档须与原生解码器同 latent 对拍 SSIM + 灰度相关 + 钳位占比并声明画质档位；换解码器前先核参考框架契约 | — |
 | 闭环复验 | 端到端收益确认 + 产物归档 + 槽位回填 | 标准回路（见下） | 复验报告 + 回填记录 + **优化总览报表 + 优化细分报表** | 同窗口同卡组复现；收益口径一致；输出总览/细分报表 | — |
 
@@ -118,6 +123,14 @@ description: >
   「框架未提供」并给证据。本入口在闭环收尾以 `stage_gate.py --stage close` 校验声明与归档。
   **e2e 主口径：base/最终推荐/三元组合必须实测；中间行可估算标 `[估算]`；首步耗时辅助；
   质量行与最终叠加必须全量步数实测**（见 optimization-flow 标准回路「步数口径」）。
+- **写/刷新总览主表时（强制触发 · 不得凭记忆写）**：先读 `references/overview-report.md` **§2 表
+  模板 + §2.8 紧凑说明模板与必带章节**（`说明` 三段式 ① 融合/调整了什么 → ② 在什么位置 →
+  ③ 每 step 性能变化，可见文本 ≤180 字目标 / ≤350 字上限；开关与内部代号进**附录**；长文进
+  **「最佳路径下的特性详解」**详情节），再逐行落表；主表写完**立即**跑
+  `python scripts/report_lint.py {overview_report.md}`——`error=0` 才可继续，随后
+  `python scripts/audit_report.py {overview_report.md}`（结构 + 数值）同样 `error=0`；**不得凭人肉
+  对照宣称合规**（三次主表打回的事故复盘与逐条判据见
+  `references/overview-table-failure-postmortem.md`）。
 
 ## 评估纪律总纲（无损 / 有损）
 
@@ -206,6 +219,9 @@ description: >
   每阶段收尾（回写推进表 + 跑门禁）时
 - `workflows/references/dispatch-templates.md` — 加载时机: 派发 subagent 或要求执行者提交自
   验证回执时
+- `references/agent-roles-and-handoff.md` — 加载时机: **准备派发子 agent / 开多特性并行验证 /
+  换 session 接力**之前（四角色分工、交付件与指针链、交接单、并行控制面、拒收与失败模式；
+  **默认单 agent 自执行，扇出前先过 §1 判据**）
 - 能力技能 SKILL.md（路由目标）：`env-install` / `remote-access` / `framework-integration` /
   `profiling-collect` / `profiling-analyze` / `performance-optimization` / `dit-parallel-opt` /
   `dummy-run` / `benchmark-dev` / `pattern-dev` / `operator-dev` —— 加载时机: 按「阶段路由表」
@@ -217,7 +233,10 @@ description: >
 - `references/bottleneck-labels.md` — 加载时机: §0 启动确认后判定瓶颈点、把任务交给优化域入口、
   以及判定 S6 进入条件（非 DiT 段 10% 门限，须带步数档）时（标签枚举与门限口径的单一真源）
 - `references/overview-report.md` + `references/detail-report.md` — 加载时机: 闭环复验 /
-  产物归档时（强制输出总览 + 细分双报表）
+  产物归档时（强制输出总览 + 细分双报表）；**其中 `overview-report.md` §2 + §2.8 在「写/刷新
+  总览主表」时即须加载**（模板 + 紧凑说明模板 + 附录/详情节要求），不得等闭环才读
+- `references/overview-table-failure-postmortem.md` — 加载时机: 写/刷新总览主表前（三轮主表
+  打回的根因复盘：契约已有要求为何没生效、逐条缺陷串与机械判据、规则落点），与 §2.8 同读
 - `references/manifest-schema.md` + `scripts/{seam_check.py, manifest_dryrun.py}` — 加载时机:
   生成/校验 manifest、运行前 dry-run 门禁、组合候选静态 seam 判定时（零 NPU/零数据）
 - `references/search-orchestration.md` — 加载时机: 需要自动推进组合搜索或并发多 agent 编排时
@@ -226,8 +245,9 @@ description: >
   有损质量判定时（质量工具：`evals/scripts/quality_compare.py` 现算 quality.json、
   `evals/scripts/gen_profile.py` S0 冻结后生成 profile 到 runs/{task}/profiles/、
   `evals/scripts/check_profile.py` close 前强校验——**具体模型 profile 不入库**）
-- `scripts/report_lint.py` — 加载时机: 闭环收尾（总览表 8 列/枚举/锚点禁估算机器校验，
-  stage_gate close 自动联动；自测 `scripts/report_lint_cases.md`）
+- `scripts/report_lint.py` — 加载时机: **写/刷新总览主表后立即跑**（主表 8 列/枚举/锚点禁估算 +
+  §2.8 可读性：开关/代号、说明长度、融合三段式、必带附录与详情节；stage_gate close 自动联动）；
+  自测 `scripts/report_lint.py --selftest`，样例说明 `scripts/report_lint_cases.md`
 - `references/lossless-methodology-notes.md` — 加载时机: S1 融合候选工作流 / S3 内存受限并行
   解锁与量化后复查（§D 量化后融合重审 / §E 量化后通信重审）时
 - `references/post-enable-review.md` — 加载时机: S4 每档特性落地后 / 任何改变 kernel 序列/

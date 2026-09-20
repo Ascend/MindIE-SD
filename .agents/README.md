@@ -36,6 +36,7 @@ L3 能力（21）：可复用的单一能力/知识/工具（含能力自身工�
 - **L2 管纵向**：对每个判定「做」的特性/任务，深挖其最佳策略（候选空间→经验档起扫→单变量扫描→替代算子/载体回退→与其它特性 seam 组合试叠→迭代表 retain/签名→收口采纳档进报表）；业务姿势链（稀疏候选选择链、融合开发链等）在此。
 - **报表分工**：总览 `overview_report.md` 由 **L1 维护 = 覆盖收口表**（每特性 + 必测组合均有行与数据，数据由 L2 特性/组合反馈录入，L1 不自测）；**特性自身的报表**（detail 分节 + 迭代表过程 + §E 质量证据）= 该特性内部的方案选择与过程记录；两者不同、缺一不可。
 - **执行波次**：单特性（判「做」者）可**多 agent 并行**（资源允许、同卡组互斥、迭代表单写）→ 组合（含 [MUST] 必测两两+三元）在**单特性收敛后启动**（防路径爆炸），多组合可并发、同 seam 不并行。
+- **多 agent 契约（L1 横切）**：扇出判据、四角色（主控 / 代码开发 / 结果分析 / 部署与资源分配）、交付件与指针链、交接单与 session 接力、并行控制面（资源租约 / 并发上限 / 收口）单点在 `model-auto-optimization/references/agent-roles-and-handoff.md`；**默认单 agent 自执行**，两入口与 L3 技能只引用不重复。
 - **跨特性组合归属**：必测组合覆盖 = L1 契约；seam/组合协议 = L3（combination-search.md / seam_check 声明）；组合"试叠与组合回退裁决"执行点 = 各特性 L2 策略 + 迭代表（一次一候选、带签名）。
 - **质量体系**：判定依据（profiles `[domain]/[decisions]`、rubric）= L3（产品 evals）；数值现算不入库、随报表 §E 逐行登记 = L1 契约；登记执行 = L2/闭环。
 
@@ -54,6 +55,33 @@ L3 能力技能（每能力 SKILL + references/scripts/evals）
 加载链路：触发 → L1 SKILL 分流 → 按业务线 **Read 对应 L2 workflows/*.md**（不得绕过）→ 建
 run-state（推进表/迭代表/覆盖清单）→ 逐阶段回写并跑 `stage_gate.py --stage {Sn}` → 具体执行
 路由 L3 → 闭环按 L1 交付件契约输出 overview/detail 双报表（`--stage close` 校验）。
+
+### 多 agent 扇出与交付契约（横切 · **默认扇出**）
+
+**扇出两轴判据**：① **工作性质**——**纯算子开发 / 框架接入 / 特性使能 / 优化验证**四类工作的技能面、
+验证口径与产物形态不同（同一 agent 会**串用判据**）⇒ **异类拆、同类默认共用**；② **是否并行验证**
+（下列四条）+ 资源（卡组 / 容器 / 窗口 / 可写文件）可互斥 + 预算允许（成本 ≈ 数倍 token 与上下文；
+本仓并行度通常受**空闲卡组数**限制，不是受 token 限制）。**优化维度本身（Cache / 量化 / 稀疏 / 并行）
+不构成独立拆分理由**——拆分粒度是**执行单元 = 「特性 × 卡组」**；**自动优化默认按此扇出**
+（用户裁决 2026-09-20，覆盖此前的"默认单 agent 自执行"；判据与字段见
+`model-auto-optimization/references/agent-roles-and-handoff.md` §0），同一执行单元内的多维度
+**顺序推进**。**仍不扇出**（保留例外清单）：同 seam 双 writer、需要共享演化上下文的连续单链探索、
+**同窗口对照臂**、口径未定（先冻结 manifest/基线再并行）、协调开销大于收益的小任务。
+
+**主控同时承担两项交付义务（强约束）**：①**定期汇报**——至少每 20 min 向用户汇报一次进展，
+字段固定（窗口 / 已完成 / 进行中 / 阻塞 / 裁决请求 / 下一步）并落 run-state 轮次记录；
+②**合入后整体效果 + 来源拆分**——同窗 A/B **两条并列**（相对基线、相对合入前最好档）+ 收益来源
+拆分表（列契约与单位见 `model-auto-optimization/references/overview-report.md` §2；
+**争夺同一处收益的候选必须标"不可相加"**）。
+
+**四角色**（职责分工，不是人数约束）：主控 orchestrator（定序 / 派发 / 裁决 / 总览收口）、
+代码开发 developer、结果分析 analyst（分析 + **独立复核**）、部署与资源分配 deployer（环境与资源租约）。
+
+**交付靠文件**：agent 间只传**文件指针**——派发单 / 回执 / 复核单 / 资源租约 / **交接单**（换 session
+接力的凭据：**状态在文件里，不在对话里**）；一条结论进报表必须可顺指针链回溯（行 → 回执 → 证据 →
+租约 → manifest/基线），**断链不得进主表**。**单点**：
+`model-auto-optimization/references/agent-roles-and-handoff.md`——两个 L1 入口与 L3 技能引用其判据与
+字段，不各自另立一套；工具层是否支持子 agent 由运行环境决定，**skill 只写"何时开、怎么交付"**。
 
 ### 业务线 L2 厚度差异（关键：不是所有业务线一样厚）
 
@@ -389,7 +417,9 @@ python skills/profiling-analyze/scripts/compare_traces.py \
        不长期分裂代码路径、不写兼容 shim，以便确认修复后**整块删掉**。
    - **skill 只承载知识与流程（强制 · 防混入交接内容）**：skill 面向**未来在新模型 / 新框架上复用**，
      不是项目进展记录。**状态、进度、证据清单、校验和、备份数量、私有路径、以及「某次会话里我……」
-     式的叙述，一律不进 skill** —— 这些归 `HANDOFF_*.md`（交接文档）：
+     式的叙述，一律不进 skill** —— 这些归 `HANDOFF_*.md`（交接文档）；其**运行态落点** =
+     `{工作目录}/agentic/handoff.md`（与 run-state 同目录、同不入 git；命名映射与字段集见
+     `model-auto-optimization/references/agent-roles-and-handoff.md` §4）：
      - **该进 skill**：机制与根因、契约与格式、公式、判据、流程与检查单、错误码表、**复核触发**；
      - **不该进 skill**：`已集成 / 未集成 / 已停用 / 待收尾 / 未闭环` 等状态；md5 等校验和；
        文件清单与证据树；备份个数；容器名、主机名与私有绝对路径；会话叙述与顺序性回顾；
@@ -433,11 +463,14 @@ python skills/profiling-analyze/scripts/compare_traces.py \
 两个**零依赖静态门禁**（纯 stdlib、零网络、零模型、只读幂等）：
 `.agents/scripts/kb_lint.py` —— 结构门禁（链接图 / 接线 / 计数 / 仓内坐标 / 反向边，**13 条规则**）；
 `.agents/scripts/run_evals.py` —— 技能 evals 的**裁定覆盖度**门禁。
-**规则细节、豁免机制、历史理由、已知盲区与积压登记一律记在 `.agents/scripts/README.md`
+**规则细节、豁免机制、跨工具纪律与已知盲区一律记在 `.agents/scripts/README.md`
 （与脚本同源同改），本节只给当前口径与用法。**
 
-- **当前口径**：`kb_lint` **error=0 / warn=0**（13 条规则或为 error、或积压已清零）；evals 裁定
-  **120 用例 / 473 条 expectation 全覆盖**。任一项非 0 即视为知识层有未收口项。
+- **当前口径**：`kb_lint` **error=0 / warn=0**（13 条规则或为 error、或积压已清零）。evals 的
+  用例/expectation 计数以 `run_evals.py --list` 的**实测合计**为准（**计数不得手抄**——改动任何
+  `evals.json` 都会让它变，最近一次实测为 **146 用例 / 592 条 expectation**，**每次改完 evals 都要重量**）；「已裁定覆盖」
+  只由**同一会话内** `--pack` → 逐条裁定 → `--check` 证明，且**任何 eval 改动都会让旧裁定作废**，
+  必须重跑 `--check` 才可再声明全覆盖。任一项非 0 即视为知识层有未收口项。
 - **违规怎么办**：先判「是内容真错了，还是规则误报」——**误报就改规则**（先例：23 条「缺加载时机」
   逐条复核后**全是误报**；markdownlint 高版本对同一批文件报 1943 条版本假违规），
   **不要为过门禁去写无意义的内容**；新增规则前先量积压，一次报出几十条几乎都是规则过宽。
@@ -454,7 +487,8 @@ python .agents/scripts/run_evals.py --pack  --out {run_results_dir}/skill_evals.
 python .agents/scripts/run_evals.py --check --results {run_results_dir}/skill_evals.json
 ```
 
-> 接线：`.pre-commit-config.yaml` 的 `kb-lint` / `kb-lint-selftest` / `run-evals-selftest`；
+> 接线：`.pre-commit-config.yaml` 的 `kb-lint` / `kb-lint-selftest` / `run-evals-selftest` /
+> `stage-gate-selftest`（多 agent 契约校验的负样本回归）；
 > CI 的 `CodeCheck_pre_commit` job 会执行 pre-commit，故**无需额外 CI 配置**即生效。
 
 ## 参考链接

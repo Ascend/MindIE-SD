@@ -52,7 +52,7 @@ Copy 膨胀的程度取决于模型结构：
 |------|:---:|:---:|
 | **Attention 维度** | 2D (FLUX.1-dev) | 3D (Wan2.2) |
 | **Norm 层类型** | 标准 LayerNorm/RMSNorm | FP32LayerNorm (→ native_layer_norm) |
-| **Pattern 命中率** | 4/4 全部命中 | 仅 GELU 命中 |
+| **Pattern 命中率** | 全部命中（FLUX.1-dev） | 仅 GELU 命中（Wan2.2） |
 | **VAE 结构** | 简单 2D Conv | 复杂 3D Conv + StridedSlice |
 
 ---
@@ -62,8 +62,7 @@ Copy 膨胀的程度取决于模型结构：
 ### 方案 A: 修复 Pattern 匹配（default 路径，推荐）
 
 条件: 模型使用标准 Norm 层 (LayerNorm/RMSNorm)，非 FP32LayerNorm。
-提高 pattern 命中率可减少 functionalization 引入的 Copy（FLUX.1-dev 实测 4 pattern
-全部命中时 Copy 不增反减）。
+提高 pattern 命中率可减少 functionalization 引入的 Copy（实测命中率高时 Copy 不增反减）。
 
 ### 方案 B: 混合模式
 

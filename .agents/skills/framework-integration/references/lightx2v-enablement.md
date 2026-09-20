@@ -48,8 +48,8 @@
   unknown a2a backend；若代码已合入而配置缺该键，a2a 会回编译图并丢掉通信红利。**远端代码升级后
   务必同步配置**。
 - **同步回退风险（硬约束）**：mindiesd 从 dev-skills 分支整仓回填远端会**覆盖会话内未合入的修复**
-  ——本案例实际复现两处并已修复回填（详见 §5）：① `minimax_h3_swiglu_pattern.py` 需
-  **split_twice 变体**，丢失后 swiglu 融合**静默消失**（墙钟回归，**日志无痕、只有 profile 可见**）；
+  ⇒ 回填后必须**复采 profile 核验两条**（详见 §5）：① `minimax_h3_swiglu_pattern.py` 的
+  **split_twice 变体**必须存在（缺失则 swiglu 融合**静默消失**：墙钟回归，**日志无痕、只有 profile 可见**）；
   ② **注册顺序**：`enable_minimax_h3_gate` 必须先于 `enable_wan_residual_gate`。
   核验姿势：对比 `kernel_details.csv` 中 swiglu / gather_residual_gate 的 kernel 计数。
 - 实测口径说明：本案例数据来自「**合入前代码 + 本地镜像 #1471 等价机制**」的远端（机制等价已验证）；
@@ -65,7 +65,7 @@
 | 模型 | `{model_weight_dir}/MiniMax-H3`（transformer + text encoder 两份大权重） |
 | 代码 | `{repo}/LightX2V`（合入版 = 上游 main）+ `{repo}/MindIE-SD`（mindiesd） |
 | 并行 | USP4（`tensor_p=1`、`seq_p=4`、ulysses a2a），`torchrun` 4 卡 |
-| 序列 | 5s：local 9467 / global 37751；15s：local ~27276 / global ~109103（token 数，随分辨率 / 时长换算） |
+| 序列 | 按 `target_video_length` / 分辨率**现场换算**（本链实测长度归档于 `{run_results_dir}/archive/lightx2v-mindiesd-case.md`） |
 
 ### 2.2 启动前置与坑
 

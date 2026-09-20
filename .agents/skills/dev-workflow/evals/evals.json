@@ -34,6 +34,38 @@
         "提到刷新 .agents/README.md 的技能清单（§1/§2）与目录树（§6）",
         "说明过程记录/状态/待办不入 .agents/README.md（该文件只放当前有效内容）"
       ]
+    },
+    {
+      "id": 4,
+      "prompt": "我想同时开三个 agent：一个改 pattern 代码、一个跑多卡性能对比、一个整理文档；远端只有两组空闲卡，怎么安排？",
+      "expected_output": "先过**扇出判据**（可独立完成 / 有独立复核价值 / 资源可互斥 / 预算允许），再划并行单元 = `模块 × 阶段 × 卡组`：pattern 改动（代码开发）与文档整理可并行；**多卡性能对比必须与 pattern 改动串行**（同代码/同环境改动会污染对照口径，或等代码冻结后再测）；卡组由**部署与资源分配**角色签发互斥租约（两组互斥、一次一实验、超时回收），文档单元不占卡；每单元交回执（命令 + 退出码 + 证据路径）落 `evidence/{task_id}/{stage}/{feature}/`，结论由**未参与实施的实例**复核；共享文件 / worktree 冲突在单元收敛后由主控统一合并，合并后重跑一次全量 pytest",
+      "files": [
+        "SKILL.md",
+        "../model-auto-optimization/references/agent-roles-and-handoff.md"
+      ],
+      "expectations": [
+        "先过扇出判据（含资源可互斥与预算），再划并行单元 = 模块 × 阶段 × 卡组",
+        "指出性能对比与代码改动同环境会污染口径 ⇒ 串行（或代码冻结后再测），不能真并行",
+        "卡组由部署与资源分配角色签发互斥租约（一次一实验、超时回收），文档单元不占卡",
+        "每单元回执带命令/退出码/证据路径，结论由未参与实施的实例复核",
+        "共享文件与 worktree 冲突在收敛后由主控统一合并，合并后重跑全量 pytest"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "这次要同时干三件事：写一个新的 triton 融合内核、把它接进框架的 pattern 注册、再打开量化档看有没有收益。要不要拆 agent？怎么拆？",
+      "expected_output": "要拆——这是**三类不同工作**：纯算子开发（判据 = 逐位/数值门 + 算子级微基准）、框架接入（判据 = 图**真实命中** + kernel diff）、特性使能（判据 = 计数契约 + 同窗 A/B + off-identity）。技能面与验证口径不同，混进同一个 agent 会**串用判据**（拿对拍口径判「使能生效」）。按类型**分段派发**，每段派发单绑定必须使用的 skill（`operator-dev` / `pattern-dev` + `framework-integration` / `framework-integration` + `dit-perf-opt`），上一段产物（内核 + 对拍证据 → 图命中证据）作为下一段输入，**交接靠回执与交接单而非对话**；**同类工作内部默认共用一个 agent** 顺序推进，只有多单元**并行验证**（过扇出四判据 + 卡组租约）时才再拆",
+      "files": [
+        "SKILL.md",
+        "../model-auto-optimization/references/agent-roles-and-handoff.md"
+      ],
+      "expectations": [
+        "判为异类工作 ⇒ 拆成三类（纯算子开发 / 框架接入 / 特性使能）",
+        "给出三类各自的验证口径差异（逐位与算子微基准 / 图真实命中 + kernel diff / 计数契约 + 同窗 A/B）",
+        "每段派发单绑定必须使用的 skill（operator-dev / pattern-dev / framework-integration 等）",
+        "段间以产物与回执/交接单交接，不靠对话；同类工作内部默认共用 agent",
+        "并行验证才追加拆分，且须过扇出判据与卡组租约"
+      ]
     }
   ]
 }

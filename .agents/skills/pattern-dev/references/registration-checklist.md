@@ -82,16 +82,16 @@ class FusionPatterns:
 
 ```python
 # 正确: import 与默认参数指向同一函数
-from .._custom_decomposition import select_pattern_decomp_table   # line 21
+from .._custom_decomposition import select_pattern_decomp_table
 
-def fwd_only_with_custom_decomp(..., get_decomp_fn=select_pattern_decomp_table): # line 107
+def fwd_only_with_custom_decomp(..., get_decomp_fn=select_pattern_decomp_table):
 ```
 
 **常见 bug**: import 改了但默认参数未同步 → pattern trace 使用错误的分解表 → 全部 pattern 失效。
 
 **核对**:
 
-- [ ] line 21 import 与 line 107 默认参数指向同一函数
+- [ ] import 语句与 `fwd_only_with_custom_decomp` 的默认参数指向**同一函数**（按符号名核对，不按行号）
 - [ ] 该函数返回的表包含 `aten.rms_norm` 的分解规则（否则 RMSNorm 不会被分解）
 
 ---

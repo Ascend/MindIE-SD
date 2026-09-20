@@ -36,7 +36,7 @@
 - 版本锚点：**cache-dit trunk `51979f0`**（fork main 已 reset 对齐）× **vllm-omni 0.26.0（editable）** +
   vllm 0.26.0+empty + diffusers 0.38.0 + torch 2.11.0+cpu / torch_npu 2.11.0 + mindiesd（dev 同步重建，
   editable）；硬件坐标（机型/卡数/显存）见归档；模型 `{model_weight_dir}/MiniMax-H3/FL2VA`（BF16；
-  transformer 50 层 / hidden 5376，13 分片）。**使能结论只在该框架版本 + 该模型 + 该环境成立**。
+  结构与分片几何见归档 `{run_results_dir}/archive/cache-dit-minimax-h3-case.md`）。**使能结论只在该框架版本 + 该模型 + 该环境成立**。
 - cache-dit 侧：本地 fork main reset 对齐 trunk（`git -c http.sslBackend=openssl fetch`）；本地旧 NPU
   提交已上游 PR **#1004** 合入并重构 → **勿再保留本地残留**；远端以
   `PYTHONPATH={repo}/cache-dit-trunksync/src` **影子生效**（vllm-omni `cachedit` glue 兼容验过）。

@@ -97,7 +97,7 @@
   量化×Cache / 三元 `Cache+量化+稀疏`）不因"预算耗尽/排序靠后"进 C.2——每行必须已测
   （C.1 带签名）或登记豁免；**豁免行必须附「形态穷尽清单」**（本环境各可测形态 × 尝试结果 ×
   证据；只有所有形态均不可测/无意义才允许豁免——「某形态不可行」≠「组合不可测」，存在任一
-  可测形态即须实测并注明形态约束；见 combination-search「裁决三态」2026-09-08 收紧）；
+  可测形态即须实测并注明形态约束；见 combination-search「裁决三态」）；
   否则视为组合覆盖缺口，先补测或补豁免再闭环。
 - 边界：C.1/C.2 只做治理汇总，收益数值不进 overview 主表；C.2 中「框架不支持」类须按
   `overview-report.md` §2.5 三态标注并与 support-matrix 一致。
@@ -124,7 +124,7 @@
   图像 21-seed 像素对，按 profile `[profile].domain` 套用协议）；
   弱视觉域（video_chaos）数值只登记回归、主判据 visual+off-identity；强视觉域（图像）可设
   绝对门槛——域规则来自 profile `[profile].domain`，报表不另起。
-- **E.2 强制产物与关联（2026-09-08 收紧）**：
+- **E.2 强制产物与关联（强制）**：
   - **quality.json 必须由契约工具现算**：`evals/scripts/quality_compare.py --baseline <帧目录>
     --config <帧目录> --metric ssim --metric psnr --output runs/{id}/quality.json`；
     自造脚本 / 手工填数值 / 临时计算不落 quality.json = 交付缺失（fail-closed）；

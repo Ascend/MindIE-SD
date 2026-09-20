@@ -248,51 +248,22 @@ Ascend 上 triton 后端的 codegen（grid-stride + mask 谓词、无手调双�
 
 ## 5. 案例库
 
-> **本节为案例记录（非判据）**：下列形状 / 计数 / kernel 数 / `BLOCK_SIZE` 等取值都来自**一次真图 dump**，
-> 仅作示性；**可迁移的是每例的「现象 → 根因 → 修复 → 判据」四列**，具体取值须按现场真图 dump 取，
-> 不得当作预期值沿用。
+> **本节是形态示例（非判据）**：每例只保留「现象 → 根因 → 修复 → 判据」四列；
+> **形状 / 计数 / kernel 数 / `BLOCK_SIZE` 等取值一律出库到会话产物归档 `{run_results_dir}/archive/`**，
+> 须按现场真图 dump 重新取数，不得当作预期值沿用。
 
-### 案例 1: MiniMax-H3 RoPE — R1 dtype 提升吞掉全部收益（2026-08）
+| 案例 | 现象 | 根因 | 修复 | 判据（可迁移） |
+| --- | --- | --- | --- | --- |
+| 1（MiniMax-H3 RoPE） | pattern 命中（RotaryPositionEmbeddingV2 出现、相邻 Neg / Cat 计数下降），但 AB 收益**近似为零** | pattern 内 `_to_copy(cos, bf16)` 被消费，replacement 收到 fp32 cos/sin → `rope.py` 的 `x.to(cos.dtype)` 把 bf16 x 提升 fp32、再由 `type_as` 降回 | replacement 显式 `_to_copy(cos, dtype=x.dtype)` | **命中 ≠ 收益**：先核 replacement 拿到的输入 dtype 是否与 pattern 内不同；`InplaceCopy_Cast` 类副作用会把收益吃掉（本组合观测：修复后 Cast 基本消除、该算子耗时降到约三分之一） |
+| 2（MiniMax-H3 residual_gate，反例） | 通用开关对另一模型残差子图误匹配，AB 负收益 | Wan 通用 `x+y*gate` pattern 命中 MiniMax 的 `x_rot*cos+rotated*sin` 及残差子图，ndim 校验不满足 → fallback | RoPE pattern 先注册（消除 rope 子图误匹配）+ 该场景关闭该开关 | **通用 pattern 跨模型复用前先核 ndim / 形态守卫**；fallback 日志是"误匹配"的直接信号，注册顺序是修复手段之一 |
+| 3（MiniMax-H3 RMSNorm，反例） | pattern 收益最大（该轮最强单点） | 被融合的是**多 kernel 链**（freeze 后 pow / mean / add / rsqrt / mul 每处数个 kernel，含大 tensor 平方），替换为单 `npu_rms_norm` 后净收益大；且无 dtype 提升 / 物化 / format 三类副作用 | ——（说明性案例，无修复动作） | 收益 ≈ 被替换链的原始成本 − 替换引入的副作用：链长 / 大 tensor 处融合收益高，小 kernel 链易被副作用抵消（对照案例 1 修复前） |
+| 4（MiniMax-H3 AdaLN） | 初版 pattern 命中（`Add+Mul+Add` 计数下降、kernels 总数下降），无新增 copy，但逐 pass AB **净负（该轮最大负项）** | replacement 是 triton 1D-flatten kernel：块小时每 site 比被替换的 aclnn 逐元素链**慢约 2 倍**（有效带宽远低于中间张量 L2 驻留的 aclnn 链）；**且 gather 节点在 pattern 外未被吸收，`[S,D]` scale/shift 物化 + 重读造成大幅冗余流量** | ① 提高 `BLOCK_SIZE`（负收益幅度收窄，治标不治本）；② **gather 融合**（调制表小到可 L2 驻留，pattern 扩到 index_select → 单 kernel 内按行 gather + scale-shift，工作集减半）⇒ 每 site 降到约三分之二、**AB 转正**；③ `i64→i32` 索引 + 多行/program（外部 `triton-latency-optimizer` 技能库）⇒ 每 site 再降约三成、净正幅度扩大 | **"triton 打不过 aclnn"是伪结论**——真瓶颈是 kernel 设计（流量冗余 + 融合边界 + i64 标量降级 + 并行度）；负收益先按 R1–R5 查 kernel 形态，不要归咎 DSL |
 
-| 项 | 值 |
-| --- | --- |
-| 现象 | pattern 命中（RotaryPositionEmbeddingV2 ×4 出现，Neg 8→4、Cat 8→4），但 AB 收益**近似为零** |
-| 根因 | pattern 内 `_to_copy(cos, bf16)` 被消费，replacement 收到 fp32 cos/sin → `rope.py` `x.to(cos.dtype)` 把 bf16 x 提升 fp32 + `type_as` 降回 |
-| 证据 | 每处 rope: 两处大张量 `InplaceCopy_Cast`（[1,S,H,96]），量级为**几十微秒** |
-| 修复 | replacement 显式 `_to_copy(cos, dtype=x.dtype)` |
-| 结果 | Cast **基本消除**，RotaryV2 耗时降至**约三分之一**，收益由近似为零 → **转为净正**（本组合观测） |
-| 文件 | `mindiesd/compilation/patterns/minimax_h3_rope_pattern.py`；报告 `refs/minimax_profiles/bf16_compile_ab_report.md` §7 |
-
-### 案例 2: MiniMax-H3 residual_gate — R4 误匹配 fallback（2026-08）
-
-| 项 | 值 |
-| --- | --- |
-| 现象 | `enable_wan_residual_gate` 对 MiniMax 残差子图误匹配，AB 负收益 |
-| 根因 | Wan 通用 `x+y*gate` pattern 命中 MiniMax 的 `x_rot*cos+rotated*sin` 及残差子图，ndim 校验不满足 → fallback |
-| 证据 | 日志 `[residual_gate_add] fallback (ndim) x=(1,3967,5376) y=(3967,5376)` ×4 |
-| 修复 | RoPE pattern 先注册（消除 rope 子图误匹配）+ MiniMax 场景建议关闭该开关 |
-| 结果 | 关闭后转为净正（幅度很小，本组合观测）且消除 fallback 日志噪音 |
-
-### 案例 3（反例）: MiniMax-H3 RMSNorm — 高收益为何高
-
-| 项 | 值 |
-| --- | --- |
-| 现象 | pattern 收益**最大（该轮最强单点）** |
-| 原因 | 被融合的是**多 kernel 链**（freeze 后 pow/mean/add/rsqrt/mul 每处 4-5 kernel，含大 tensor 平方运算），替换为单 `npu_rms_norm` 后 net 收益大；且无 dtype 提升/物化/format 三类副作用 |
-| 启示 | 收益与"被替换链的原始成本 - 替换引入的副作用"成正比；链长/大 tensor 处融合收益高，小 kernel 链易被副作用抵消（对照案例 1 修复前） |
-
-### 案例 4: MiniMax-H3 AdaLN — R5 自研 kernel 低效 + 修复路径（2026-08）
-
-| 项 | 值 |
-| --- | --- |
-| 现象 | 初版 pattern 命中（5×(Add+Mul+Add) 消失、5×scale_shift 新增，339→329 kernels），无新增 copy（`.contiguous()` 对连续输入是 no-op），但逐 pass AB **净负（该轮最大负项）** |
-| 根因(初版) | replacement 是 triton 1D-flatten kernel：BS1024 时每 site 比被替换的 3 个 aclnn 逐元素 kernel **慢约 2 倍**（有效带宽远低于中间张量 L2 驻留的 aclnn 链）；**且 2 个 index_select gather 在 pattern 外未被吸收，[S,D] scale/shift 物化+重读造成大幅冗余流量** |
-| 证据 | kernel diff：`scale_shift` 新增耗时 **大于** `Mul/Add/Adds` 减少的耗时（净为正）；隔离 bench：BS1024 最慢、BS8192 明显更快（warm 值偏乐观，cold 修正后介于两者之间）；模型内 device 耗时介于 bench 两档之间 |
-| 修复① | BLOCK_SIZE 1024→8192（模型内每 site 明显下降，AB 净负幅度收窄）——治标不治本 |
-| 修复②（转正） | **gather 融合**：MiniMax 调制表只有 [3,D]（3 模态，32KB L2 驻留），pattern 扩展匹配 2 个 index_select 节点 → triton 单 kernel 内按行 gather + scale-shift（工作集减半）→ 每 site 耗时降至约三分之二，**AB 转正**；GatherV2 16→6 |
-| 修复③（cannbot 技能） | **i64→i32 索引**（Ascend i64 向量算术降级为标量循环）+ **3 行/program**（triton-latency-optimizer 技能库）→ 每 site 再降约三成，**AB 净正幅度进一步扩大**；grid 1322、尾部 ROWS=1 微 kernel（微秒量级） |
-| 关键教训 | "triton 打不过 aclnn" 是**伪结论**——真实瓶颈是 kernel 设计（流量冗余 + 融合边界 + i64 标量降级 + 并行度），不是 triton 本身；改对 kernel 形态（行结构、标量 gather、int32、多行并行）后 triton 赢了 aclnn 链 |
-| 文件 | `mindiesd/layers/scale_shift.py`（`gather_scale_shift` op）、`mindiesd/compilation/patterns/minimax_h3_adaln_pattern.py`；profiles `refs/profiles/adaln_kdiff/{off,on}`；bench `refs/bench_scale_shift*.py`、`refs/adaln_triton_optimization.md`；外部技能 `cannbot-skills/ops/triton-latency-optimizer`（discrete_memory_access / avoid_scalar_lowering / vector_core_partition / multibuffer） |
+案例涉及的本仓落点：`mindiesd/compilation/patterns/minimax_h3_rope_pattern.py`、
+`mindiesd/compilation/patterns/minimax_h3_adaln_pattern.py`、`mindiesd/layers/scale_shift.py`
+（`gather_scale_shift` op）；外部技能 `$CANNBOT_SKILLS_DIR/cannbot-skills/ops/triton-latency-optimizer`
+（discrete_memory_access / avoid_scalar_lowering / vector_core_partition / multibuffer）；
+profiles / 报告 / bench 清单与各例绝对读数见会话产物归档 `{run_results_dir}/archive/`。
 
 ## 维护与更新
 

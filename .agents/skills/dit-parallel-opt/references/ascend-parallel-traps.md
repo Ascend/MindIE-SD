@@ -238,7 +238,7 @@ for n in [l.split(":")[0].strip() for l in open("/proc/net/dev").readlines()[2:]
 
 **处置**：**分别池化 Q/K/V**。依据是 `avgpool` **只沿序列轴归约**，因此与"仅为喂给它而存在的 dim=0 cat"**可交换** ⇒ 分别池化**逐位一致**，且**移除了每次调用 3× 大小的中间物化**。
 
-**实测**：pool 区 5s 档约 3 倍、15s 档约 4 倍（单次调用耗时同量级下降，读数见归档 `{run_results_dir}/archive/`）；e2e DiT 收益为个位数百分比量级，4/4 ABBA 同号，**16/16 输出 md5 相同（bit-lossless）**。
+**实测**：pool 区各时长档耗时下降**数倍量级**（单次调用耗时同量级下降，读数见归档 `{run_results_dir}/archive/`）；e2e DiT 收益为**个位数百分比量级**，同窗 ABBA 臂同号，**输出 md5 逐字节相同（bit-lossless）**。
 
 **消费方形状约束**：`qkv_pool` 的消费者会 `torch.chunk(qkv_pool, 3, dim=0)` **拆回三段**，因此唯一要求是保持 `(3, S/128, N, D)` 形状。**改造前先确认消费者的真实契约**，不要凭形状猜。
 
@@ -247,7 +247,7 @@ for n in [l.split(":")[0].strip() for l in open("/proc/net/dev").readlines()[2:]
 > *"效应与共享机器上的热漂移相竞争"* —— 这正是
 > `../../perf-gate/references/measurement-discipline.md` §2（交错对照 ABBA）的落地形态。
 
-⚠️ **同族的 `_grouped_pool`（分组池化）已被证伪、停止使用**：实现经单测证明与 `avgpool` **逐元素相同（max|diff| = 0.0）**，但 e2e 反而**恶化近一倍**（绝对耗时见归档 `{run_results_dir}/archive/`）。源码原话：该假设 *"is falsified, not merely mis-implemented"* —— **实现无误、想法错误**，该被推翻的是**假设**而不是代码。函数仍在文件里但未被调用。
+⚠️ **同族的 `_grouped_pool`（分组池化）已被证伪、停止使用**：实现经单测证明与 `avgpool` **逐元素相同（max|diff| = 0.0）**，但 e2e 反而**显著变差**（量级见归档 `{run_results_dir}/archive/`）。源码原话：该假设 *"is falsified, not merely mis-implemented"* —— **实现无误、想法错误**，该被推翻的是**假设**而不是代码。函数仍在文件里但未被调用。
 （另注：早期版本因 **bf16 累加**导致池化行偏移 ~1e-2；`avgpool` 在 **fp32** 累加，自定义实现必须对齐累加精度。）
 
 **复核触发**：CP 下对 Q（本地窗口）与 K/V（全序列）**直接**跑一次 `avgpool(torch.cat((q, k, v), dim=0))` —— 若不再报形状错、且与分开池化逐位一致（框架已提供原生等价路径），说明**原生 `cat` 形态可用：回到原生实现并删除本节的分开池化改造**；若 `cat` 仍不成立，分开池化继续必需（`_grouped_pool` 已证伪，勿复活）。
@@ -303,8 +303,8 @@ for n in [l.split(":")[0].strip() for l in open("/proc/net/dev").readlines()[2:]
 2. **小规模不报错 ≠ 正确** —— 上限类错误会被小规模掩盖（见 §1）。
 3. **区分“实现有 bug”与“想法被证伪”** —— 单测通过却 e2e 更差时，要推翻的是**假设**，
    继续改代码是纯浪费（§10 的 `_grouped_pool`）。
-4. **形状必须按 rank 核对** —— `(1, S, 56, 128)` 是**全局**形状，生产每 rank 看到的是
-   `(1, S, 14, 128)`（heads / world_size）；**按全局形状建 A/B 会偏 ~7×**。
+4. **形状必须按 rank 核对** —— 全局形状按 `(1, S, heads, D)` 读，生产每 rank 看到的是
+   `(1, S, heads / world_size, D)` 的**全局形状切片**；**按全局形状建 A/B 会按 world_size 偏**。
 
 ---
 
@@ -330,5 +330,5 @@ for n in [l.split(":")[0].strip() for l in open("/proc/net/dev").readlines()[2:]
   —— 仍复现则绕行保留，**不再复现的条目必须删除**（§0.2 第 5 条），并注明从哪个版本起不再需要。
 - **口径联动**：§1 / §2 的「未分片 vs 已分片」判别与处置都指向
   `scope-effectiveness-check.md`，那份的分片判据（`_sp_shard_depth` 等）变了本节要同步；
-  §13 第 4 条的全局形状 `(1, S, 56, 128)` 随头数与 world_size 变化 ⇒ 换模型先按 rank 重核形状
+  §13 第 4 条的全局形状 `(1, S, heads, D)` 随头数与 world_size 变化 ⇒ 换模型先按 rank 重核形状
   再套用前面各节的结论。

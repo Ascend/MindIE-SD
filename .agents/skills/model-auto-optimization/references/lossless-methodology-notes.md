@@ -35,7 +35,8 @@
   kernel diff（单步捕获）为准最稳：**通用做法 = 平台内加一个 env 门控的「单 forward kernel 采集 hook」**
   （torch_npu Level1 + tensorboard handler，事后 `torch_npu.profiler.profiler.analyse(dir)` 聚合出
   kernel_details.csv / step_trace_time.csv），任意 eager/compile/并行配置都能拿同口径单步 kernel 数据。
-- VAE/编码/封装等非 DiT 耗时单列：DiT 通常主导（~83%+），其余按阶段（文本编码/VAE decode/多 rank 交接）简析即可。
+- VAE/编码/封装等非 DiT 耗时单列：DiT 通常主导；先按阶段账取该任务各段实际占比再决定是否单列非 DiT 段
+  （占比读数见归档 `{run_results_dir}/archive/`），其余按阶段（文本编码/VAE decode/多 rank 交接）简析即可。
 - **热路径已被 eager 单算子覆盖后，剩余融合候选池落在「布局/小算子链」**（split / silu / cat / index
   等）：这类候选的收益必须先与 compile 的图内拷贝 / 调度开销**对抵**再判——整图编译后 kernel 行数与
   Copy/Move 计数上升、墙钟中性偏负，正是「剩余候选收益 < 图开销」的表现。判定动作 = kernel diff
@@ -101,7 +102,7 @@
    与归档分析 `H3_w8a8_fusion_analysis.md`。头号教训：量化后 **GEMM 级融合已到位**
    （bias/anti-quant/per-token scale 均在 QuantBatchMatmulV3 内、无独立 dequant kernel），
    新机会集中在 **DQ 两侧**（上游 norm/SwiGlu epilogue、与 GEMM 合并）+ 注意力路径布局 + 通信重叠；
-   每 DiT block 恰 5 个量化 GEMM（qkv/out/fc1/down/adaln，fc1 为 merged）→ 模型层无共享输入重复量化。
+   按 block 归组统计量化 GEMM 的份数与绑定位置（计数现场从 kernel csv 取），确认模型层是否存在共享输入的重复量化。
 
 ## E. 量化后通信重审（comm 占比、量化/压缩通信与掩盖）
 
@@ -124,8 +125,8 @@
    逐档显著抬升**（lossless → +INT8 → +mix；compute 单步耗时同步下降、comm 基本不变；
    绝对耗时与占比见归档 `{run_results_dir}/archive/`），Overlapped=0 → **掩盖空间上限 = 该占比**、
    随量化抬升（comm-overlap 实现评估列 P1）；通信内容 = TP2 列并行
-   allreduce 的量化 GEMM 部分和 → 低精度 allreduce / GEMM-comm 重叠为候选（量化 GEMM 后继 63 处
-   comm，见 §D 邻接证据）；FP8 KV 属缓存侧量化，另列（support-matrix W8A8_MXFP8 ❓）。
+   allreduce 的量化 GEMM 部分和 → 低精度 allreduce / GEMM-comm 重叠为候选（按邻接分析统计量化 GEMM
+   后继的 comm 站点数，现场从 kernel 邻接直方取，见 §D 邻接证据）；FP8 KV 属缓存侧量化，另列（support-matrix W8A8_MXFP8 ❓）。
 
 ## F. 无损评估提速（少量 step 快测 + mindiesd dummy-run）
 

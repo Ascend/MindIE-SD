@@ -34,7 +34,7 @@ Phase 5 中对比 pattern 定义图 [A] 与模型 traced 图 [B] 的操作步骤
 
 ```bash
 docker exec {container} bash -lc "
-cd /home/{user}/workspace/MindIE-SD_pattern/examples/dummy_run &&
+cd {workspace}/examples/dummy_run &&
 python wan_infer.py --compile --debug-graph 2>&1 | tee /tmp/model_debug.log
 "
 
@@ -44,9 +44,9 @@ sftp get /tmp/model_debug.log
 
 **日志关键段**:
 
-- `Graph before compiling` → 模型完整 FX graph（`mindie_sd_backend.py:152`）
-- `PatternMatchPass replace N patterns` → 命中数（`pattern_match_pass.py:66`）
-- `Graph after pattern matching` → pattern 替换后的 graph（`mindie_sd_backend.py:115`）
+- `Graph before compiling` → 模型完整 FX graph（`mindie_sd_backend.py` 的 compile 入口）
+- `PatternMatchPass replace N patterns` → 命中数（`pattern_match_pass.py` 的 pattern 替换处）
+- `Graph after pattern matching` → pattern 替换后的 graph（`mindie_sd_backend.py` 的图改写出口）
 
 **提取模型 graph 子图**:
 在日志中搜索目标算子名:

@@ -38,7 +38,7 @@
 | 功能/性能验证 | `triton-op-verifier` | verify.py + benchmark.py |
 | 算子特定经验 | **外部仓** `$CANNBOT_SKILLS_DIR/cannbot-skills/ops/triton-latency-optimizer/references/operators/`（**非本仓路径，不可按本文件相对解析**）：`adain.md`、`swiglu-quant.md`、`permute-layout-transform.md`、`general-insights.md`、`dimension-merge-large-block.md` | AdaIN/SwiGLU 量化/布局变换等已沉淀案例 |
 
-> 本次 AdaLN/SwiGLU/gate 三算子直接命中：`avoid_scalar_lowering.md`
+> AdaLN/SwiGLU/gate 类算子的常见命中路径：`avoid_scalar_lowering.md`
 > （i64 向量算术降级）、`vector_core_partition.md`（多行并行/grid 匹配）、
 > `discrete_memory_access.md`（标量 gather 不触发离散访存）、
 > `multibuffer-and-double-buffering.md`（实测本平台无收益）、
@@ -100,7 +100,7 @@
 
 ---
 
-## 3. 本次算子优化（2026-08）验证过的组合路径
+## 3. 组合路径（可迁移流程）
 
 ```text
 模型 kernel diff 发现瓶颈（本仓库方法）
@@ -109,8 +109,8 @@
     → 形态级优化：gather 融合（表小 L2 驻留时吸收 index_select）
     → swiglu 免 cat（cat 大张量是隐藏成本）
   → 每步 bench（warm/cold 双档）+ 模型级 AB + kernel diff 确认
-结果：AdaLN 由净负转正（并随 i32 + 多行并行继续放大）；SwiGLU 由净正到免 cat 后进一步扩大；
-     gate 融合再增一项净正；三者合并为该轮最大组合收益（本组合观测）
+判据：每项都要走到"净正"才并入组合；负收益先按 R1-R5 查 kernel 形态，
+     不要因为单项净负就否掉整条路径（本组合观测：逐项转正后合并收益最大）。
 ```
 
 > 经验要点（详见 `pattern-dev/references/benefit-rootcause-guide.md` §3 R1-R5）：负收益先查 kernel 形态

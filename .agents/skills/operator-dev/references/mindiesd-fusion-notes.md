@@ -15,7 +15,7 @@
 - **标准动作（改 kernel 后必做）**：
   1. sftp 推送 csrc 源 → **读回并 grep 校验**关键标记（防推送未生效）；
   2. `rm -rf build/build build/vendors mindiesd/ops/vendors build/lib.linux-x86_64-cpython-312/mindiesd/ops`；
-  3. `source set_env.sh && python setup.py build_py && pip install -e . --no-deps`（全清重建约 25-45min）；
+  3. `source set_env.sh && python setup.py build_py && pip install -e . --no-deps`（全清重建耗时较长：分钟级到数十分钟，视机器）；
   4. md5 校验 `csrc/ops/{op}` 与 `mindiesd/ops/vendors/.../aie_ascendc_impl/.../{op}` 一致；
   5. **数值冒烟**（不能只看编译过/只查 shape）。
 - **sentinel 法**：无法确认"跑的是不是我改的 kernel"时，在 kernel 里加一处**可观测的
@@ -33,8 +33,9 @@
 - **不要用"整算子改名"规避同名冲突**：本仓自定义 op 的 op 名/目录名/文件基名与 CANN
   autogen（`aclnn_{op}.cpp`、proto autogen、kernel config）**强绑定**；改名会触发
   "No rule to make target .../autogen/..." 类基建失败（实测两次 clean 重建失败）。
-- 更稳的解法候选（未走通，留给后续）：plugin 层走**直调**（绕过 aclnn 名字解析），或
-  自定义 OPP 优先级/安装路径控制——动手前先查加载器（`register_ops.py`/`find_op_path`）。
+- 更稳的解法候选（两条前置路径）：plugin 层走**直调**（绕过 aclnn 名字解析），或
+  自定义 OPP 优先级/安装路径控制——动手前先查加载器（`register_ops.py`/`find_op_path`），
+  按查到的加载顺序判定该走哪条。
 
 ## 3. Ascend C API 陷阱（非算法，cannbot 文档可能不覆盖）
 
@@ -48,14 +49,14 @@
 
 ## 4. triton-on-Ascend 短行地板与瓶颈判定
 
-- 短行（D=128）+ 行内归约的 vector kernel 存在 **数百 µs/site 量级地板**（实测形状 1×3967×56×128）。
+- 短行（D 小）+ 行内归约的 vector kernel 存在 **数百 µs/site 量级地板**（形状与读数见会话产物归档 `{run_results_dir}/archive/`）。
 - **瓶颈判定法（写 kernel 前/后快速做）**：把"读流量减半"当实验——本案例 48/48/32 单趟
   读（256→128 元素/行）只降 6% → 判定瓶颈是**指令/延迟（行内归约）而非带宽**，别继续在
   流量上优化。
 - 跨 lane gather/置换在 NPU triton 上会**标量化（慢 ~100× 量级）**，用对齐分段重载。
 - **有损叠加（w8a8）冲突**：QuantMatmul 输出 fp32 中间岛时，为 bf16 调的 triton 融合核
   严重退化（norm_rope 案例：per-site 耗时升到数倍量级，且连带 InplaceCopy/Cast 膨胀数十倍，
-  模型级耗时大幅上升；绝对数字见归档 `{run_results_dir}/archive/`；该融合已整体移除）→ **fusion pattern 需按图 dtype 门控**，默认对
+  模型级耗时大幅上升；绝对数字见归档 `{run_results_dir}/archive/`；**该 dtype 组合下融合不成立**）→ **fusion pattern 需按图 dtype 门控**，默认对
   量化路径关闭。
 
 ## 5. 融合收益前置评估 → 已迁出（本文件只留指针）
@@ -95,7 +96,8 @@
 
 > 覆盖形态：FLUX / Wan / Qwen-Image 的 FeedForward 同形态链（下同）。
 > 来源：2026-09 本仓 `mm_gelu_mxquant` 全链路实现的**集成侧**教训
-> （kernel + layer/pattern + 使能 + 开关收敛；原 `mmgelu-flux-wan-qwen-case.md` 已并入本节并删除）。
+> （kernel + layer/pattern + 使能 + 开关收敛；**需要该案例的原始细节记录时读
+> `mmgelu-flux-wan-qwen-case.md`，本节只留集成侧要点**）。
 > 使能载体（GraphPatternEntry）与开关治理见 `../../pattern-dev/references/fusion-enablement-notes.md`
 > §1–§3；六段流水线（P1–P7）见 `catlass-ffn-fusion-guide.md`；**本文不写绝对耗时 / 绝对加速比**
 > （原案例的绝对数字归档于会话产物目录 `{run_results_dir}/archive/`）。
@@ -136,7 +138,8 @@ handler 从 out-proj Qmm 反向取 x1/w1/ws1/x_scale/bias，重建 fused + out Q
 
 - **同 basename 的 ops / plugin cpp 会互相覆盖**：同步上传时用**不同暂存名**。
 - **共享远端 `.so` 可能被他方构建覆盖（不同 torch ABI）** → 复现前先 `check_mindie_operator_exists`。
-- qwen-image diffusers **0.40 的 `QwenEmbedRope` str-device bug** → 用 0.38。
+- qwen-image 在该 diffusers 版本线上有 `QwenEmbedRope` str-device bug ⇒ 降档到可用版本
+  （版本坐标与复核方式见会话产物归档 `{run_results_dir}/archive/`；复核 = 跑一次该模型 dummy run 看是否仍报该 bug）。
 - **profile 并行必须 `--profile-dir` 隔离**。
 
 ## 8. 维护与更新
@@ -149,5 +152,5 @@ handler 从 out-proj Qmm 反向取 x1/w1/ws1/x_scale/bias，重建 fused + out Q
   开关与 `mm_gelu_mxquant` 集成落点变化。
 - **复核方法**：改 kernel 后按 §1 标准动作全清重建 + md5 校验 + 数值冒烟，并用 §1 sentinel 法
   （在 kernel 里加一处可观测的语义改动）确认"跑的是新 kernel"；§6 的布局结论以实际
-  `npu_dynamic_mx_quant` 输出 shape 复核；§4 的 norm_rope 融合（已在量化路径整体移除）在
-  QuantMatmul 输出 dtype 变化时重测，不按旧结论直接复活。
+  `npu_dynamic_mx_quant` 输出 shape 复核；§4 的 norm_rope 融合（量化路径 fp32 中间岛下不成立）
+  在 QuantMatmul 输出 dtype 变化时重测，不按旧结论直接复活。

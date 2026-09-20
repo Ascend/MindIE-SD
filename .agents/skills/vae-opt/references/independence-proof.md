@@ -45,7 +45,7 @@ _Clamp (逐元素)  ->  Conv2d 3x3 堆叠（空间 halo，不跨帧）  ->  nn.U
 
 ## 3. 案例 B：时间维 taehv（帧轴不可精确切分 —— 关键否证）
 
-网络（官方 MiniMax-H3 TAE，`h3-tae-official/taeh3.safetensors`，9,868,236 参数，`layout=taehv-temporal`）：
+网络（官方 MiniMax-H3 TAE，`h3-tae-official/taeh3.safetensors`，参数量见权重文件本身，`layout=taehv-temporal`）：
 
 ```python
 _Clamp -> conv(latent,256) -> act

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# coding=utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
 """
 Ascend NPU profiling trace analysis.
@@ -21,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import itertools
 import json
 import logging
 import os
@@ -233,9 +233,7 @@ def load_host_events_from_trace(trace_path: str, t0: float) -> list[TraceEvent]:
 
         if ph == "X" and dur > 0:
             rel_ts = ts - t0 if t0 else ts
-            events.append(
-                TraceEvent(ts=rel_ts, dur=dur, name=name, cat=cat, pid=pid, tid=tid, ph=ph)
-            )
+            events.append(TraceEvent(ts=rel_ts, dur=dur, name=name, cat=cat, pid=pid, tid=tid, ph=ph))
         elif ph == "M":
             pass  # Skip metadata events
         elif ph == "C":
@@ -255,16 +253,14 @@ def load_step_time_from_csv(csv_path: str) -> dict[str, Any]:
                 step_info["device_id"] = row.get("Device_id", "")
                 step_info["computing_us"] = float(row.get("Computing", 0))
                 step_info["communication_us"] = float(row.get("Communication", 0))
-                step_info["communication_not_overlapped_us"] = float(
-                    row.get("Communication(Not Overlapped)", 0)
-                )
+                step_info["communication_not_overlapped_us"] = float(row.get("Communication(Not Overlapped)", 0))
                 step_info["overlapped_us"] = float(row.get("Overlapped", 0))
                 step_info["free_us"] = float(row.get("Free", 0))
                 step_info["stage_us"] = float(row.get("Stage", 0))
                 step_info["bubble_us"] = float(row.get("Bubble", 0))
                 row_count += 1
             step_info["step_count"] = row_count
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - 步骤计时是可选输入，任何读取/解析异常都只降级为警告
         logger.warning("Failed to load step_trace_time.csv: %s", exc)
     return step_info
 
@@ -305,7 +301,7 @@ def load_all_traces(profile_dir: str) -> tuple[list[TraceEvent], list[str]]:
     events: list[TraceEvent] = []
     sources: list[str] = []
     for fn in sorted(os.listdir(profile_dir)):
-        if fn.endswith(".pt.trace.json") or fn.endswith(".trace.json"):
+        if fn.endswith((".pt.trace.json", ".trace.json")):
             path = os.path.join(profile_dir, fn)
             events.extend(load_trace_events(path))
             sources.append(fn)
@@ -377,11 +373,7 @@ def detect_steps(kernels: list[KernelInfo], markers: list[TraceEvent]) -> list[d
         steps = []
         for i, m in enumerate(markers_sorted):
             step_start = m.ts
-            step_end = (
-                markers_sorted[i + 1].ts
-                if i + 1 < len(markers_sorted)
-                else max(k.end_us for k in kernels)
-            )
+            step_end = markers_sorted[i + 1].ts if i + 1 < len(markers_sorted) else max(k.end_us for k in kernels)
             steps.append(
                 {
                     "id": i,
@@ -408,9 +400,7 @@ def detect_steps(kernels: list[KernelInfo], markers: list[TraceEvent]) -> list[d
 # ============================================================================
 
 
-def build_device_intervals(
-    kernels: list[KernelInfo], step_start_us: float, step_end_us: float
-) -> list[Interval]:
+def build_device_intervals(kernels: list[KernelInfo], step_start_us: float, step_end_us: float) -> list[Interval]:
     out: list[Interval] = []
     for k in kernels:
         s = max(step_start_us, k.start_us)
@@ -446,7 +436,7 @@ def compute_bubble_metrics(
     tail_us = max(0.0, step_end_us - merged[-1].end_us)
 
     bubbles: list[Interval] = []
-    for left, right in zip(merged[:-1], merged[1:]):
+    for left, right in itertools.pairwise(merged):
         if right.start_us > left.end_us:
             bubbles.append(Interval(left.end_us, right.start_us))
 
@@ -561,9 +551,7 @@ def detect_wait_anchors(
 # ============================================================================
 
 
-def classify_aicpu(
-    kernels: list[KernelInfo], ai_core_intervals: Sequence[Interval]
-) -> list[dict[str, Any]]:
+def classify_aicpu(kernels: list[KernelInfo], ai_core_intervals: Sequence[Interval]) -> list[dict[str, Any]]:
     """Classify AI_CPU kernels by masked_ratio (how much they overlap with AI_CORE)."""
     results = []
     for k in kernels:
@@ -873,8 +861,7 @@ def detect_fusion_opportunities(kernels: list[KernelInfo]) -> list[dict[str, Any
 
             if pat == [_ROLE_ELEMENTWISE, _ROLE_ELEMENTWISE, _ROLE_ELEMENTWISE]:
                 all_elementwise = all(
-                    any(kw in k.name.lower() for kw in ("add", "mul", "div", "sub"))
-                    for k in window_kernels
+                    any(kw in k.name.lower() for kw in ("add", "mul", "div", "sub")) for k in window_kernels
                 )
                 if not all_elementwise:
                     continue
@@ -1008,15 +995,9 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
     w()
     if warmup_info:
         if warmup_info.get("stripped", True):
-            w(
-                f"Warmup properly stripped during profiling collection. "
-                f"{warmup_info.get('note', '')}"
-            )
+            w(f"Warmup properly stripped during profiling collection. {warmup_info.get('note', '')}")
         else:
-            w(
-                f"**WARMUP_NOT_STRIPPED**: warmup steps detected in profiling data. "
-                f"{warmup_info.get('note', '')}"
-            )
+            w(f"**WARMUP_NOT_STRIPPED**: warmup steps detected in profiling data. {warmup_info.get('note', '')}")
             w()
             w(
                 "> Recommendation: re-profile with profiling-collect skill "
@@ -1039,15 +1020,9 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
         dit_pct = stage_breakdown.get("dit", {}).get("pct", 0)
         vae_pct = stage_breakdown.get("vae", {}).get("pct", 0)
         if dit_pct >= 0.70:
-            w(
-                f"> Bottleneck stage: **DiT** ({dit_pct:.0%}). "
-                f"Focus optimization on Transformer path."
-            )
+            w(f"> Bottleneck stage: **DiT** ({dit_pct:.0%}). Focus optimization on Transformer path.")
         elif vae_pct >= 0.70:
-            w(
-                f"> Bottleneck stage: **VAE** ({vae_pct:.0%}). "
-                f"Focus optimization on VAE encode/decode."
-            )
+            w(f"> Bottleneck stage: **VAE** ({vae_pct:.0%}). Focus optimization on VAE encode/decode.")
         else:
             w(f"> Balanced workload: DiT ({dit_pct:.0%}) / VAE ({vae_pct:.0%}).")
     w()
@@ -1110,15 +1085,10 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
 
         bubbles = sorted(bubble["bubble_windows"], key=lambda b: b.dur_us, reverse=True)[:5]
         if bubbles:
-            w(
-                "| # | Start (us) | End (us) | Dur (ms) | Host Cov | Sync Cov | "
-                "Comm Cov | Attribution |"
-            )
+            w("| # | Start (us) | End (us) | Dur (ms) | Host Cov | Sync Cov | Comm Cov | Attribution |")
             w("|---|---|---|---|---|---|---|---|")
             for bi, bub in enumerate(bubbles):
-                attr = soft_attribution_for_bubble(
-                    bub, host_intervals, sync_intervals, comm_event_intervals
-                )
+                attr = soft_attribution_for_bubble(bub, host_intervals, sync_intervals, comm_event_intervals)
                 labels = ", ".join(attr["soft_root_cause_labels"])
                 w(
                     f"| {bi + 1} | {bub.start_us:.0f} | {bub.end_us:.0f} | "
@@ -1153,14 +1123,8 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
         w("| Metric | Value |")
         w("|---|---|")
         w(f"| Total communication time | {comm_analysis['comm_total_ms']:.2f} ms |")
-        w(
-            f"| Communication hidden (overlapped w/ compute) | "
-            f"{comm_analysis['comm_hidden_ms']:.2f} ms |"
-        )
-        w(
-            f"| **Communication exposed (not overlapped)** | "
-            f"**{comm_analysis['comm_exposed_ms']:.2f} ms** |"
-        )
+        w(f"| Communication hidden (overlapped w/ compute) | {comm_analysis['comm_hidden_ms']:.2f} ms |")
+        w(f"| **Communication exposed (not overlapped)** | **{comm_analysis['comm_exposed_ms']:.2f} ms** |")
         w(f"| **Exposed (can not hide) ratio** | **{comm_analysis['can_not_hide_ratio']:.1%}** |")
         w()
         if comm_analysis["can_not_hide_ratio"] > 0.30:
@@ -1176,10 +1140,7 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
     w("## 7. Structure (Layer) Timing Breakdown")
     w()
     if structures:
-        w(
-            "| # | Type | Kernels | Wall (ms) | Busy (ms) | Kernel Sum (ms) | "
-            "AI_CORE% | AI_CPU% | HCCL% |"
-        )
+        w("| # | Type | Kernels | Wall (ms) | Busy (ms) | Kernel Sum (ms) | AI_CORE% | AI_CPU% | HCCL% |")
         w("|---|---|---|---|---|---|---|---|---|")
         for i, s in enumerate(structures):
             w(
@@ -1211,9 +1172,7 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
     w()
 
     # ===== Wait-Anchor =====
-    wait_anchors = (
-        detect_wait_anchors(all_kernels, steps[0]["start_us"], steps[0]["end_us"]) if steps else []
-    )
+    wait_anchors = detect_wait_anchors(all_kernels, steps[0]["start_us"], steps[0]["end_us"]) if steps else []
     if wait_anchors:
         w("## 9. Wait-Anchor False Hotspot Candidates")
         w()
@@ -1222,21 +1181,14 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
         for wa in wait_anchors[:10]:
             w(f"| {wa['name']} | {wa['duration_us']:.1f} | {wa['start_us']:.0f} |")
         w()
-        w(
-            "Note: These are tiny-kernel candidates. Real wait-anchor detection "
-            "requires `Wait Time(us)`"
-        )
+        w("Note: These are tiny-kernel candidates. Real wait-anchor detection requires `Wait Time(us)`")
         w("from kernel_details.csv which is not available in Chrome Trace format at level=l1.")
         w()
 
     # ===== AICPU =====
-    device_intervals_all = (
-        [k.interval for k in all_kernels if k.task_type == "AI_CORE"] if not steps else []
-    )
+    device_intervals_all = [k.interval for k in all_kernels if k.task_type == "AI_CORE"] if not steps else []
     if not device_intervals_all and steps:
-        step_kernels = [
-            k for k in all_kernels if steps[0]["start_us"] <= k.start_us < steps[0]["end_us"]
-        ]
+        step_kernels = [k for k in all_kernels if steps[0]["start_us"] <= k.start_us < steps[0]["end_us"]]
         device_intervals_all = [k.interval for k in step_kernels if k.task_type == "AI_CORE"]
 
     aicpu_results = classify_aicpu(all_kernels, device_intervals_all)
@@ -1247,16 +1199,10 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
         w("| Name | Dur (us) | Masked Ratio | Classification |")
         w("|---|---|---|---|")
         for a in aicpu_results[:20]:
-            w(
-                f"| {a['name']} | {a['duration_us']:.1f} | {a['masked_ratio']:.1%} | "
-                f"{a['classification']} |"
-            )
+            w(f"| {a['name']} | {a['duration_us']:.1f} | {a['masked_ratio']:.1%} | {a['classification']} |")
         if exposed_aicpu:
             w()
-            w(
-                f"WARNING: {len(exposed_aicpu)} AICPU kernels are fully exposed "
-                f"(not masked by AI_CORE overlap)."
-            )
+            w(f"WARNING: {len(exposed_aicpu)} AICPU kernels are fully exposed (not masked by AI_CORE overlap).")
         w()
 
     # ===== Fusion Opportunities =====
@@ -1270,10 +1216,7 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
     w("### Generic Fusion Suggestions (requires custom implementation)")
     w()
     if fusion_opps:
-        w(
-            "| # | Pattern | Kernel Chain | Current (ms) | Est. Savings (ms) | "
-            "Est. After (ms) | Savings% |"
-        )
+        w("| # | Pattern | Kernel Chain | Current (ms) | Est. Savings (ms) | Est. After (ms) | Savings% |")
         w("|---|---|---|---|---|---|---|")
         for fi, fo in enumerate(fusion_opps[:20], 1):
             chain_short = " -> ".join(fo["kernel_chain"][:4])
@@ -1298,15 +1241,9 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
         underfeed_ratio = bubble["underfeed_ratio"]
 
         q1 = "YES" if bubble["underfeed_ratio"] >= 0.10 else "NO"
-        w(
-            f"1. Are there significant device idle bubbles? **{q1}** "
-            f"(underfeed={bubble['underfeed_ratio']:.1%})"
-        )
+        w(f"1. Are there significant device idle bubbles? **{q1}** (underfeed={bubble['underfeed_ratio']:.1%})")
 
-        w(
-            f"2. Which step type/group do they concentrate in? "
-            f"Step {step['id']} (`{step['marker_name']}`)"
-        )
+        w(f"2. Which step type/group do they concentrate in? Step {step['id']} (`{step['marker_name']}`)")
 
         dominant = "none"
         if bubble["prelaunch_gap_ms"] >= max(1.0, 0.05 * bubble["service_ms"]):
@@ -1315,10 +1252,7 @@ def render_profiling_report(ctx: ProfilingContext) -> str:
             dominant = f"{dominant}/tail" if dominant != "none" else "tail"
         if bubble["internal_bubble_total_ms"] >= max(1.0, 0.05 * bubble["service_ms"]):
             dominant = f"{dominant}/internal" if dominant != "none" else "internal"
-        w(
-            f"3. Are they primarily prelaunch / tail / internal / inter-step? "
-            f"**{dominant or 'none'}**"
-        )
+        w(f"3. Are they primarily prelaunch / tail / internal / inter-step? **{dominant or 'none'}**")
 
         w(
             f"4. Is there significant host-originated risk? "
@@ -1440,8 +1374,7 @@ def _generate_recommendations(ctx, underfeed, exposed_aicpu):
                 (
                     "P1",
                     "DiT MatMul dominant",
-                    "MatMul quantization direction — consult docs/zh/features/quantization.md "
-                    "for available algorithms",
+                    "MatMul quantization direction — consult docs/zh/features/quantization.md for available algorithms",
                     "docs/zh/features/quantization.md §Linear量化",
                 )
             )
@@ -1451,8 +1384,10 @@ def _generate_recommendations(ctx, underfeed, exposed_aicpu):
                 (
                     "P1",
                     "DiT FA dominant",
-                    "Attention optimization direction — consult docs/zh/features/quantization.md "
-                    "for FA quantization + sparse.md options",
+                    (
+                        "Attention optimization direction — consult docs/zh/features/quantization.md "
+                        "for FA quantization + sparse.md options"
+                    ),
                     "docs/zh/features/quantization.md §FA量化 + sparse.md",
                 )
             )
@@ -1462,8 +1397,7 @@ def _generate_recommendations(ctx, underfeed, exposed_aicpu):
                 (
                     "P1",
                     "DiT Vector dominant",
-                    "Compilation fusion direction — consult docs/zh/features/compilation.md "
-                    "for Pattern switch options",
+                    "Compilation fusion direction — consult docs/zh/features/compilation.md for Pattern switch options",
                     "pattern-dev",
                 )
             )
@@ -1473,8 +1407,7 @@ def _generate_recommendations(ctx, underfeed, exposed_aicpu):
                 (
                     "P1",
                     "Communication exposed",
-                    "Communication hiding direction — consult docs/zh/features/parallelism.md "
-                    "for RSP/USP options",
+                    "Communication hiding direction — consult docs/zh/features/parallelism.md for RSP/USP options",
                     "docs/zh/features/parallelism.md",
                 )
             )
@@ -1484,8 +1417,7 @@ def _generate_recommendations(ctx, underfeed, exposed_aicpu):
                 (
                     "P1",
                     "VAE MatMul dominant",
-                    "ACLGraph acceleration direction — consult docs/zh/features/compilation.md "
-                    "for compilation options",
+                    "ACLGraph acceleration direction — consult docs/zh/features/compilation.md for compilation options",
                     "pattern-dev",
                 )
             )
@@ -1519,8 +1451,10 @@ def _generate_recommendations(ctx, underfeed, exposed_aicpu):
             (
                 "P2",
                 f"Fusion opportunity: {fo['pattern']}",
-                f"Estimated {fo['savings_pct']:.0f}% savings "
-                f"({fo['current_dur_ms']:.1f}ms). Requires custom implementation.",
+                (
+                    f"Estimated {fo['savings_pct']:.0f}% savings "
+                    f"({fo['current_dur_ms']:.1f}ms). Requires custom implementation."
+                ),
                 "通用融合，需自行实现",
             )
         )
@@ -1545,8 +1479,7 @@ def _generate_recommendations(ctx, underfeed, exposed_aicpu):
                 (
                     "P2",
                     "DiT is bottleneck stage",
-                    f"DiT accounts for {dit_pct:.0%} of time. "
-                    f"Prioritize DiT optimization over VAE.",
+                    f"DiT accounts for {dit_pct:.0%} of time. Prioritize DiT optimization over VAE.",
                     "profiling-analyze §Layer 1",
                 )
             )
@@ -1610,15 +1543,9 @@ def render_architecture_report(
     w("|---|---|---|")
     w(f"| Steps detected | {len(steps)} | high |")
     w(f"| Structures segmented | {len(structures)} | medium |")
-    w(
-        f"| Distinct structure types | "
-        f"{len({s.get('type', 'unknown') for s in structures})} | medium |"
-    )
+    w(f"| Distinct structure types | {len({s.get('type', 'unknown') for s in structures})} | medium |")
     w()
-    w(
-        "Given the dummy run uses Wan2.2 with 2 transformer blocks per stream, "
-        "the model structure is:"
-    )
+    w("Given the dummy run uses Wan2.2 with 2 transformer blocks per stream, the model structure is:")
     w()
     w("```")
     w("TextEncoder -> Transformer(block_0) -> Transformer_2(block_0) [-> VAE(optional)]")
@@ -1670,10 +1597,7 @@ def render_architecture_report(
         w()
         w(f"- Wall time: {s['wall_ms']:.2f} ms")
         w(f"- Kernel count: {s['kernel_count']}")
-        w(
-            f"- AI_CORE: {s['ai_core_pct']:.0%}, AI_CPU: {s['ai_cpu_pct']:.0%}, "
-            f"HCCL: {s['hccl_pct']:.0%}"
-        )
+        w(f"- AI_CORE: {s['ai_core_pct']:.0%}, AI_CPU: {s['ai_cpu_pct']:.0%}, HCCL: {s['hccl_pct']:.0%}")
         w()
 
         # Top kernels in this structure
@@ -1682,9 +1606,7 @@ def render_architecture_report(
             by_name: dict[str, list[KernelInfo]] = defaultdict(list)
             for k in kernels_in:
                 by_name[k.name].append(k)
-            ranked = sorted(
-                by_name.items(), key=lambda x: sum(kk.dur_us for kk in x[1]), reverse=True
-            )
+            ranked = sorted(by_name.items(), key=lambda x: sum(kk.dur_us for kk in x[1]), reverse=True)
 
             w("| Operator | Count | Total Dur (ms) | Share of Layer |")
             w("|---|---|---|---|")
@@ -1720,10 +1642,7 @@ def render_architecture_report(
         hidden_bar = '#' * max(1, comm_pct_hidden)
         exposed_bar = '.' * max(1, comm_pct_exposed)
         w(f"  Compute [{'=' * 40}] {compute_total:.1f}ms")
-        w(
-            f"  Comm    [{hidden_bar}{exposed_bar}] {comm_total:.1f}ms "
-            f"(hidden={hidden:.1f}ms exposed={exposed:.1f}ms)"
-        )
+        w(f"  Comm    [{hidden_bar}{exposed_bar}] {comm_total:.1f}ms (hidden={hidden:.1f}ms exposed={exposed:.1f}ms)")
         w("```")
     else:
         w("No HCCL communication detected (single card).")
@@ -1800,9 +1719,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Analyze Ascend NPU profiling trace (CANN or Chrome Trace JSON format)"
     )
-    parser.add_argument(
-        "--profile-dir", required=True, help="Directory containing profiling output"
-    )
+    parser.add_argument("--profile-dir", required=True, help="Directory containing profiling output")
     parser.add_argument("--output-dir", default="./", help="Directory for output reports")
     parser.add_argument("--model", default="Wan2.2", help="Model name for report titles")
     args = parser.parse_args()
@@ -1851,12 +1768,7 @@ def main():
             for ev in all_trace_events:
                 if "Step#" in ev.name or "Iteration" in ev.name or "ProfilerStep" in ev.name:
                     step_markers.append(ev)
-                elif (
-                    "AllReduce" in ev.name
-                    or "AllGather" in ev.name
-                    or "Hcom" in ev.name
-                    or ev.cat == "HostToDevice"
-                ):
+                elif "AllReduce" in ev.name or "AllGather" in ev.name or "Hcom" in ev.name or ev.cat == "HostToDevice":
                     comm_events.append(ev)
                 elif ev.cat == "" and ev.name in ("Computing", "Free"):
                     pass  # Runtime overhead events, not host ops
@@ -2196,9 +2108,7 @@ def _detect_warmup(steps: list[dict[str, Any]], kernels: list[KernelInfo]) -> di
     first_step = step_durs[0]
     first_vs_avg = first_step / avg if avg > 0 else 1.0
 
-    compile_kernels = sum(
-        1 for k in kernels if "compile" in k.name.lower() or "jit" in k.name.lower()
-    )
+    compile_kernels = sum(1 for k in kernels if "compile" in k.name.lower() or "jit" in k.name.lower())
 
     if first_vs_avg > 1.5 or compile_kernels > 0:
         return {
@@ -2245,7 +2155,7 @@ def _get_csv_raw_t0(csv_path: str) -> float:
                         t0 = ts
                 except (ValueError, KeyError):
                     pass
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - CSV 缺失/损坏/编码异常都只降级为警告，不能中断 t0 推断
         logger.warning("Failed to read CSV for t0: %s", exc)
     return t0 or 0.0
 

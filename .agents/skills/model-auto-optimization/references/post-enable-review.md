@@ -64,12 +64,12 @@
 
 | 使能 | 复核发现 | 去向 |
 |---|---|---|
-| INT8 online（w8a8） | 266 MatMul → 6 遗留 + 260 对 DQ/QuantBatchMatmulV3（2885 行，零新增布局）；GEMM 级已融合 → 新机会 O1–O7（O1/O6 优先） | §D + 归档 `H3_w8a8_fusion_analysis.md` |
+| INT8 online（w8a8） | 以计数契约核对：原 MatMul 应成规模消失、新增 DQ→QuantBatchMatmulV3 对的调用次数与站点数对齐、kernel 行数与布局搬运计数不新增（读数见归档）；GEMM 级已融合 → 新机会 O1–O7（O1/O6 优先） | §D + 归档 `H3_w8a8_fusion_analysis.md` |
 | INT8 | Comm(未重叠) 单步耗时基本不变、占比随量化逐档抬升（+mix 后更高、Overlapped=0，具体占比见归档 `{run_results_dir}/archive/`）→ 量化通信/GEMM-comm 重叠候选 | §E |
 | INT8 降显存 | 高序列并行形态 + DLO 解锁（无损 / 有损档均跑通）；质量补测按「vs 同构 lossless」绝对口径（读数见归档 `{run_results_dir}/archive/`） | §B + overview §5.2 |
 | 单独 Cache | 组合表缺「单点行」被审阅发现 → 补测单点行（与另一分辨率负载的单点降幅**交叉一致**）→ 单点行纳入报表强制项 | overview-report §2.3 |
 | 显式 TORCH_SDPA 基线（editable mindiesd 宿主，env A） | 不显式指定时默认路由 FLASH_ATTN → 基线口径污染；显式 backend + resolve 日志 + 输出 md5 三方一致才视为冻结 | troubleshooting-vllm-omni §P0（基线显式化最佳实践） |
-| mxfp8+FFN-MX+Cache 组合（60 步 TP2，env A） | 融合计数 fused 0→52/52、Qmm/DxQ 各 -52（kernel csv 交叉）；质量数值在阈值之上（阈值与读数见运行 profile 与归档）但视觉 inconclusive → 不宣称质量通过 | 计数契约核验；视觉不确定不宣称 pass |
+| mxfp8+FFN-MX+Cache 组合（60 步 TP2，env A） | 以计数契约核对（kernel csv 交叉）：融合 kernel 实际执行数应由 0 变为与站点数一致、被替换的 Qmm/DxQ 计数应同步下降；质量数值在阈值之上（阈值与读数见运行 profile 与归档）但视觉 inconclusive → 不宣称质量通过 | 计数契约核验；视觉不确定不宣称 pass |
 | 稀疏 rf_v2（end_step 语义，env A） | `end_step` 误设（=全程保留 dense）时输出与上档 md5 一致 = staying-dense no-op；正确档才真实参与 → 参数语义先核 + 输出 off-identity 确认参与 | staying-dense 检查链（fail-closed） |
 | 共享宿主多租户热节流（env A） | 同档 e2e 高 20-100% 的异常窗 → 剔除留痕；结论取同窗相邻对（r1/r3 稳定对）+ 反转 AB | troubleshooting-vllm-omni §P0（时间窗纪律） |
 

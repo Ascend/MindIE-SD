@@ -19,6 +19,7 @@ Usage (as a library):
 Usage (self-demo):
     python bit_exact_harness.py --demo
 """
+
 from __future__ import annotations
 
 import argparse
@@ -48,18 +49,29 @@ class HarnessReport:
     def dump(self) -> None:
         n_shapes = len(self.by_shape)
         all_exact = all(v["exact"] for v in self.by_shape.values())
-        print("== 自验证报告 tag=%s  覆盖形状 %d 个  全部逐位=%s" % (self.tag, n_shapes, all_exact))
+        print(f"== 自验证报告 tag={self.tag}  覆盖形状 {n_shapes} 个  全部逐位={all_exact}")
         for shape, v in sorted(self.by_shape.items(), key=lambda x: str(x[0])):
-            print("   shape=%-34s calls=%-5d max|d|=%-10g exact=%s" % (str(shape), v["calls"], v["max_abs"], v["exact"]))
+            print(f"   shape={shape!s:<34} calls={v['calls']:<5d} max|d|={v['max_abs']:<10g} exact={v['exact']}")
         if self.skips:
             print("   -- 前置条件不满足而回退的调用 --")
             for shape, reason in self.skips:
-                print("      shape=%-34s %s" % (str(shape), reason))
-        print("   结论：%s（覆盖形状数 > 1 才能支撑'逐形状验证过'的说法）" % ("逐位等价" if all_exact else "存在非逐位形状"))
+                print(f"      shape={shape!s:<34} {reason}")
+        print(
+            f"   结论：{'逐位等价' if all_exact else '存在非逐位形状'}（覆盖形状数 > 1 才能支撑'逐形状验证过'的说法）"
+        )
 
 
-def install(module, new_impl, reference=None, *, report: HarnessReport | None = None,
-            strict: bool = True, precondition=None, tag: str = "", log_once: bool = True):
+def install(
+    module,
+    new_impl,
+    reference=None,
+    *,
+    report: HarnessReport | None = None,
+    strict: bool = True,
+    precondition=None,
+    tag: str = "",
+    log_once: bool = True,
+):
     """Replace module.forward by new_impl with a bitwise assertion against reference.
 
     precondition(callable) -> (ok: bool, reason: str); when it returns False the original forward is
@@ -79,7 +91,7 @@ def install(module, new_impl, reference=None, *, report: HarnessReport | None = 
                 shape = tuple(getattr(x, "shape", ()))
                 if log_once and shape not in seen_skip:
                     seen_skip.add(shape)
-                    print("[harness] fast path skipped for shape=%s: %s" % (shape, reason), file=sys.stderr)
+                    print(f"[harness] fast path skipped for shape={shape}: {reason}", file=sys.stderr)
                 rep.record_skip(shape, reason)
                 return orig(*args, **kwargs)
 
@@ -87,14 +99,14 @@ def install(module, new_impl, reference=None, *, report: HarnessReport | None = 
         if strict:
             y_ref = ref(*args, **kwargs)
             if y_new.shape != y_ref.shape:
-                raise AssertionError("%s shape mismatch %s vs %s" % (tag, tuple(y_new.shape), tuple(y_ref.shape)))
+                raise AssertionError(f"{tag} shape mismatch {tuple(y_new.shape)} vs {tuple(y_ref.shape)}")
             max_abs = float((y_new.float() - y_ref.float()).abs().max())
             exact = bool(torch.equal(y_new, y_ref))
             rep.record(y_new.shape, max_abs, exact)
             if not exact:
                 raise AssertionError(
-                    "%s NOT bit-exact: max|d|=%g (断言失败即视为不等价；不要用平均误差替代)"
-                    % (tag, max_abs))
+                    f"{tag} NOT bit-exact: max|d|={max_abs:g} (断言失败即视为不等价；不要用平均误差替代)"
+                )
         return y_new
 
     module.forward = forward
@@ -118,21 +130,19 @@ class _Patch:
 
 
 def _fast(x: torch.Tensor) -> torch.Tensor:
-    return x.repeat_interleave(2, dim=x.dim() - 1 if x.dim() else 0) if x.dim() == 1 else \
-        x.repeat_interleave(2, dim=-1)
+    return x.repeat_interleave(2, dim=x.dim() - 1 if x.dim() else 0) if x.dim() == 1 else x.repeat_interleave(2, dim=-1)
 
 
 def _precondition(x: torch.Tensor):
     # 演示"条件性等价"：只在长度 ≤ 6 时假定安全（真实场景里这个条件来自实测，不要凭感觉设）
     if x.shape[-1] > 6:
-        return False, "len=%d > 6 (demo condition)" % x.shape[-1]
+        return False, f"len={x.shape[-1]} > 6 (demo condition)"
     return True, ""
 
 
 def demo() -> int:
     m = _Patch()
-    _, rep = install(m, _fast, reference=_Patch().forward, precondition=_precondition,
-                     tag="demo-upsample", strict=True)
+    _, rep = install(m, _fast, reference=_Patch().forward, precondition=_precondition, tag="demo-upsample", strict=True)
     for shape in ((2, 3, 4), (1, 5, 6), (1, 5, 8)):
         x = torch.randn(*shape)
         y = m(x)

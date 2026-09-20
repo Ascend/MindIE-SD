@@ -35,6 +35,8 @@ description: >
 
 **不含（near-miss）**：并发 / 吞吐 / 批处理调度 / 队列与限流（**不属本技能**）；
 VAE / TAE 解码段（→ `vae-opt`）；DiT 计算（→ `dit-perf-opt`）；
+**DiT 步内的 host / 下发**（发起次数、host 阻塞型回读、下引发的设备空转 → `dit-perf-opt`；
+本技能只管**非 DiT 段**的固定开销）；
 多卡并行与通信（→ `dit-parallel-opt`）；装库 / 权重下载 / 镜像构建 / 容器创建（→ `env-install`）。
 
 不做的事：**不定位瓶颈**（阶段账、占比与标签归编排层 `model-auto-optimization`）、

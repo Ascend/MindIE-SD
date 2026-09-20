@@ -33,6 +33,18 @@
         "给出重新采集建议（warmup 步数）",
         "说明 warmup 未剔除会影响分析结论"
       ]
+    },
+    {
+      "id": 4,
+      "prompt": "我把 kernel_details 里所有流的 Duration 加起来，得到每层 84.53 ms，所以通信占了很大一块；另外我在 device 3 上量到某个集合通信核 1.2 ms，换到 device 5 复采同一配置却变成 2.2 ms，说明卡 5 有问题吧？还有，我按你给的字段说明筛了『算子类型 = COMMUNICATION』的行来统计通信——这么算对吗？",
+      "expected_output": "三处都要按「读表口径与可复现性」纠正（判据见 SKILL.md 该节）。① **跨流 ΣDuration 会把被重叠的通信重复计入**：`Duration` 是逐 task 的，把所有流相加 ≠ 某资源耗时 —— 本仓实测 ΣDuration 口径 84.53 ms/层，而**纯计算忙碌只有 60.17 ms/层**（占该层 span 97.1%）、通信另加 24.36 ms ⇒ **报数必须声明口径**，并用 `step_trace_time` 的 `Computing / Communication / Overlapped / Free` 四元组把两个口径对上（重叠占比读法见 dit-parallel-opt 归因方法 §2；上限账/绑定约束见 perf-gate measurement-discipline §10）。② **逐 kernel 计时不可复现**：同一配置两次独立采集实测，**81 个算子名字族调用次数完全相同、Top 集合相同、总量差仅 1.562%**，但**通信类差 +16.56%、单核差 +82.9%** ⇒ 单核毫秒数**不可在 ±10% 内引用**、**不能用来判某张卡有问题**；跨设备只用**调用次数与占比**。③ **列语义必须实测自证**：`COMMUNICATION` / `MIX_AIC` / `AI_*` 这类值在 **`Accelerator Core`** 列（== `op_statistic` 的 `Core Type`），名为 **`Type`** 的列才是**算子类型**（== `OP Type`）⇒ 先对候选列取**去重值集合**判定它是什么，并写明证据；顺带可用一次便宜核对：trace 的 `Communication` 应与 `hcom_*` 行 ΣDuration **精确相等**（本仓偏差 0.0000%）⇒ 证明表与 trace 同源、解析正确。",
+      "expectations": [
+        "指出跨流 ΣDuration 会重复计入被重叠的通信，报『每层耗时』必须声明是 ΣDuration 还是纯计算忙碌，并用 step_trace_time 四元组对上口径",
+        "指出逐 kernel 计时不可复现（两设备对照：调用次数/Top 集合/总量差约 1.5% 可信，单核差可达 +82.9%）⇒ 单核毫秒数不可在 ±10% 内引用、不能据此判某卡有问题",
+        "指出列语义要实测自证：COMMUNICATION/MIX_AIC 之类值属 Accelerator Core 列，Type 列才是算子类型；用去重值集合判定并写明证据",
+        "给出便宜的交叉核对：trace 的 Communication 与 hcom_* 行 ΣDuration 精确相等（偏差 0.0000%）⇒ 表与 trace 同源、解析正确"
+      ],
+      "files": []
     }
   ]
 }

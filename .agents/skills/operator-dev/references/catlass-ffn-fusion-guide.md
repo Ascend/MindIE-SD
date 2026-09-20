@@ -1,8 +1,8 @@
 # 只读 catlass 融合算子开发与真图使能（MindIE-SD 编排）
 
 > 场景：在 MindIE-SD 内把「量化 matmul + 激活(swiglu/gelu) epilogue + 输出 MX 量化」做成
-> 融合算子并在 compile 图真实命中。案例：MiniMax-H3 `mm_swiglu_mxquant`（2026-09 真图 3/3、
-> 位级）与 FLUX/Wan/Qwen `mm_gelu_mxquant`（GraphPatternEntry 真图；站点计数/收益排序见
+> 融合算子并在 compile 图真实命中。案例：MiniMax-H3 `mm_swiglu_mxquant`（真图命中、位级一致；
+> 计数与日期见会话产物归档 `{run_results_dir}/archive/`）与 FLUX/Wan/Qwen `mm_gelu_mxquant`（GraphPatternEntry 真图；站点计数/收益排序见
 > pattern-dev `fusion-enablement-notes.md` §3，集成侧细节见 `mindiesd-fusion-notes.md` §7）。
 > 机制细节不在此重复：pattern/graph-entry 写法 → pattern-dev `graph-pattern-rewrite-guide.md`；
 > ASC 混编/构建/torch custom op → `catlass-kernel-integration.md`；开关治理/载体 → pattern-dev
@@ -38,13 +38,13 @@ P4 mindiesd 集成 -> P5 compile 真图使能 -> P6 验证、报告与开关治�
 1. 用 dummy run（`--quant w8a8 --compile --profile`）kernel 序确认目标链真实形态。同族差异：
    h3 = [S,2F]+swiglu（宽度减半、需行重排）；flux/wan/qwen = [S,F]+gelu（无减半、无重排，
    需能容忍 `reshape`）；激活语义按模型代码核实。
-2. 找语义锚点：ops-nn `matmul/quant_matmul_activation_quant`（A5：fp8 MX mm + gelu + 输出 MX
-   量化）——部署 CANN 未注册该 aclnn 时，其文档仍是公式/布局权威参考；catlass 65
+2. 找语义锚点：ops-nn `matmul/quant_matmul_activation_quant`（某设备档：fp8 MX mm + gelu + 输出 MX
+   量化；档位与代际的映射见 `../../dit-perf-opt/references/quant-tier-device-mapping.md`，不在本文件写死）——部署 CANN 未注册该 aclnn 时，其文档仍是公式/布局权威参考；catlass 65
    `mm+swiglu+mxquant` 给出底座与三段指数域量化（`ComputeMaxExp/ComputeScale/QuantToFp8`）。
 3. 核实真实模型量化事实再开工：FFN 上/下投影 **bias 是否为 0**（flux 实测全 0；非零才需要
    kernel bias 支持）；输出 scale 布局与 torch `npu_dynamic_mx_quant` 字节一致即零转换直供。
-4. 验收口径前置：设备档（A5/MXFP8 需自研；A2/A3 INT8 常可直接用 torch 现成
-   `npu_quant_matmul_gelu`）、目标线（≥1%/step 等）、报告模板（dummy-run §C）。
+4. 验收口径前置：设备档（MXFP8 档需自研；INT8 档常可直接用现成 torch 算子
+   `npu_quant_matmul_gelu`——档位映射现场查（设备属性 / `npu-smi`））、目标线（≥1%/step 等）、报告模板（dummy-run §C）。
 
 ## 2. P2 vendored kernel 开发
 
@@ -57,14 +57,46 @@ P4 mindiesd 集成 -> P5 compile 真图使能 -> P6 验证、报告与开关治�
   **MTE2_V**（DataCopy 是 MTE2；MTE3_V 会竞态）；bias 的 UB 位置（VECIN/VECOUT/VECCALC）
   以实际编译+对拍为准。API 错用史与"列加没加对"判别法见 `mindiesd-fusion-notes.md` §7.2。
 
+### 2.1 落码前先做**片上资源预算**（三行算术，能省掉一次重写）
+
+融合改动常常要把**两份中间结果同时留在片上**（两个 L0C 累加器）或**让某个操作数常驻**（A 留在 L1）。
+这两件事都受**硬容量**约束，且**事先可算**——本仓实测两次教训（一次是方案被否、一次是白写一版 kernel）：
+
+```text
+L0C 需容纳    累加器份数 × L1_TILE_M × L0_TILE_N × 4 B        ≤  L0C 容量
+L1  需容纳    A 的全部 strip 数 × L1_TILE_M × L1_TILE_K × 1 B  ≤  L1 容量
+```
+
+- **累加器**：本仓交付形状 `L0_TILE_N = 256` 下两份 fp32 累加器需 `2 × 128 KiB = 256 KiB`，
+  而**现场取到的 L0C 容量正好被这两份占满**（容量按设备属性现取），**没有余量留给 L0C↔UB 的 fixpipe 管线**
+  ⇒ **在该形状下交错不可能**；把 `L0_TILE_N` 降到 128（`2 × 64 KiB`）才装得下。
+  即"交错"这个动作**要求先改 N 粒度**，而那是 **host 侧 tile 形状**改动，不是 kernel 头文件能解决的。
+- **操作数常驻**：本仓 A 的足迹（`strip 数 × L1_TILE_M × L1_TILE_K × 1 B`）**远超现场取到的 L1 容量**
+  ⇒ **一次最多常驻少数 strip**，"让 A 常驻 L1 以免二次搬运"这条捷径**不成立**——
+  两个 K 循环仍然各自从 GM 流全部 strip。**唯一可行的是在一个 K 循环内逐 strip 共享**，
+  也就是必须走交错形态。
+
+**纪律**：先算这两行，再决定改动形态；**"看起来低风险"的方案往往在容量上就不存在**。
+把算出来的数字写进方案（维护者据此判断可行性），别等编译器/运行期报错才发现。
+**前置关系（强制）**：这两行算术**同时是收益判定阶段的前置关**——`fusion-scope-analyze` 出
+"建议融合"之前必须先算过（判据单点在
+`../../fusion-scope-analyze/references/fusion-benefit-method.md` §8 最后一条）；本文件是它的**修法侧**。
+
 ## 3. P3 standalone 数值与计时
 
 - 对拍对象 = torch 参考链（同量化输入 → Qmm → 激活 → DxQ），比 fp8 输出与 scale：字节一致率
   98%+/解码 rel≈1e-3 即通过（fp8 量化级）；位级一致是特例（h3 swiglu），别默认要求。
 - 判别"没加/加错列/精度差"：用**常数/ramp bias**（列不敏感）+ 逐列误差统计，别在随机 bias 里
   猜列错位（fp8 边界翻转会放大随机噪声）——证据与数字见 `mindiesd-fusion-notes.md` §7.2。
-- 计时（同窗同卡）：fused vs 现役链；收敛预期 fused ≈ Qmm 耗时，收益 = 被吸收的小 kernel
-  （激活 + 输出 DxQ）及其 HBM 往返。
+- 计时（同窗同卡）：fused vs 现役链；**预期形态**是 `fused ≈ Qmm 耗时`，收益 = 被吸收的小 kernel
+  （激活 + 输出 DxQ）及其 HBM 往返。这是**待验证的预期，不是保证**：融合核自身的核芯效率可能低于
+  被替换的 Qmm（头号嫌疑：输出拆半 ⇒ 同一归约轴跑两遍、操作数装载重复；或 tile 被累加器共存挤小，
+  见本节末）。
+- **实测收益打平或为负时，禁止直接判"融合无收益"**：先按
+  `../../fusion-scope-analyze/references/fusion-benefit-method.md` **§10** 做**等功忙计数对照**
+  ——等 MAC 数下比核芯忙计数与搬运忙计数，并把 `duration − 核芯忙计数` 取作 epilogue 增量。
+  判为"缺陷在融合核自身"即回到 §2 的 kernel 侧修（本技能承接）；判为"结构性受限"才可关闭该项。
+  同窗必须带一个**未触碰算子的负对照**；邻近算子**在管道占比不变的前提下**变慢属频率效应，另行报账。
 
 ## 4. P4 mindiesd 集成
 
@@ -109,7 +141,7 @@ P4 mindiesd 集成 -> P5 compile 真图使能 -> P6 验证、报告与开关治�
 
 | 文件 | 加载时机 |
 |------|---------|
-| `mindiesd-fusion-notes.md` §7 | P1-P7 实战对照（真实图链/bias=0/装载坑/工程坑；本站案例已并入该节） |
+| `mindiesd-fusion-notes.md` §7 | P1-P7 实战对照（真实图链/bias=0/装载坑/工程坑；本站案例的集成侧要点在该节） |
 | `catlass-kernel-integration.md` | P4：ASC 混编/CMake/链接/torch custom op 细节 |
 | `../../pattern-dev/references/graph-pattern-rewrite-guide.md` | P5：GraphPatternEntry 四条硬规则与 handler 写法 |
 | `../../pattern-dev/references/fusion-enablement-notes.md` | §1/§2 开关治理 R1-R7 与现状清单；§4 compile 阶段适配动作（阶段 2） |

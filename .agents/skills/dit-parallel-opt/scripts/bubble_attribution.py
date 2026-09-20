@@ -98,9 +98,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--profile-dir", required=True)
     ap.add_argument("--layers", type=int, default=50, help="layers per step (splits the groups)")
-    ap.add_argument(
-        "--collective", default="alltoall", help="kernel-name substring of the collective"
-    )
+    ap.add_argument("--collective", default="alltoall", help="kernel-name substring of the collective")
     ap.add_argument(
         "--group-split",
         type=int,
@@ -169,8 +167,7 @@ def main() -> int:
     reverse = [iv for i, iv in enumerate(coll) if (i % per_layer) >= per_layer - rev_n]
 
     span = (
-        max(e for v in per_stream.values() for _s, e in v)
-        - min(s for v in per_stream.values() for s, _e in v)
+        max(e for v in per_stream.values() for _s, e in v) - min(s for v in per_stream.values() for s, _e in v)
     ) / 1000.0
     device_busy = union_ms([iv for v in per_stream.values() for iv in v])
     gap_total = sum(e - s for s, e in gaps) / 1000.0
@@ -196,9 +193,7 @@ def main() -> int:
     # release test: a gap caused by a collective ends when that collective ends
     coll_end = sorted(e for s, e in coll)
     delta = args.release_delta
-    released = (
-        sum((e - s) for s, e in gaps if any(abs(ce - e) <= delta for ce in coll_end)) / 1000.0
-    )
+    released = sum((e - s) for s, e in gaps if any(abs(ce - e) <= delta for ce in coll_end)) / 1000.0
     print(
         f"  released by a collective end: {released:.1f} ms "
         f"({100 * released / gap_total if gap_total else 0:.1f}%)"
@@ -232,10 +227,7 @@ def main() -> int:
                 "   -> large values mean that collective ran AHEAD (not the bottleneck)"
             )
     print()
-    print(
-        f"collectives `{args.collective}` : n={len(coll)} per layer={per_layer} "
-        f"(reverse group = last {rev_n})"
-    )
+    print(f"collectives `{args.collective}` : n={len(coll)} per layer={per_layer} (reverse group = last {rev_n})")
     for label, grp in (("forward", forward), ("reverse", reverse)):
         total = sum(e - s for s, e in grp) / 1000.0
         in_gap = overlap_ms(grp, gaps)

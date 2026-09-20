@@ -17,6 +17,7 @@
     python ascii_luma_preview.py --input <A> --compare <B> --json compare.json
 退出码：0 = 完成；1 = 输入不可读 / 帧数或尺寸不匹配。
 """
+
 from __future__ import annotations
 
 import argparse
@@ -55,7 +56,7 @@ def _unfilter(raw: bytes, height: int, bpp: int, stride: int) -> list[bytes]:
     for _ in range(height):
         ftype = raw[pos]
         pos += 1
-        line = bytearray(raw[pos:pos + stride])
+        line = bytearray(raw[pos : pos + stride])
         pos += stride
         if ftype == 1:
             for i in range(bpp, stride):
@@ -89,9 +90,9 @@ def load_png(path: Path) -> tuple[int, int, bytes]:
     bit_depth = color_type = 0
     idat = bytearray()
     while pos + 8 <= len(data):
-        (length,) = struct.unpack(">I", data[pos:pos + 4])
-        ctype = data[pos + 4:pos + 8]
-        body = data[pos + 8:pos + 8 + length]
+        (length,) = struct.unpack(">I", data[pos : pos + 4])
+        ctype = data[pos + 4 : pos + 8]
+        body = data[pos + 8 : pos + 8 + length]
         pos += 12 + length
         if ctype == b"IHDR":
             head = struct.unpack(">IIBBBBB", body)
@@ -128,15 +129,15 @@ def _read_pgm_tokens(data: bytes) -> tuple[list[bytes], int]:
     tokens: list[bytes] = []
     idx = 0
     while len(tokens) < 4 and idx < len(data):
-        ch = data[idx:idx + 1]
+        ch = data[idx : idx + 1]
         if ch.isspace():
             idx += 1
         elif ch == b"#":
-            while idx < len(data) and data[idx:idx + 1] not in (b"\n", b"\r"):
+            while idx < len(data) and data[idx : idx + 1] not in (b"\n", b"\r"):
                 idx += 1
         else:
             start = idx
-            while idx < len(data) and not data[idx:idx + 1].isspace():
+            while idx < len(data) and not data[idx : idx + 1].isspace():
                 idx += 1
             tokens.append(data[start:idx])
     return tokens, idx + 1
@@ -151,7 +152,7 @@ def load_pgm(path: Path) -> tuple[int, int, bytes]:
     width, height, maxval = int(tokens[1]), int(tokens[2]), int(tokens[3])
     if maxval != 255:
         raise ValueError(f"{path.name}：仅支持 maxval=255（实际 {maxval}）")
-    gray = data[start:start + width * height]
+    gray = data[start : start + width * height]
     if len(gray) != width * height:
         raise ValueError(f"{path.name}：像素数据不足")
     return width, height, bytes(gray)
@@ -171,9 +172,7 @@ def list_frames(directory: Path) -> list[Path]:
     """按文件名序收集目录下的帧文件（非递归）。"""
     if not directory.is_dir():
         raise ValueError(f"{directory}：不是目录")
-    frames = sorted(
-        p for p in directory.iterdir() if p.is_file() and p.suffix.lower() in FRAME_SUFFIXES
-    )
+    frames = sorted(p for p in directory.iterdir() if p.is_file() and p.suffix.lower() in FRAME_SUFFIXES)
     if not frames:
         raise ValueError(f"{directory}：未找到 {'/'.join(FRAME_SUFFIXES)} 帧")
     return frames
@@ -249,9 +248,7 @@ def _fmt_metrics(tag: str, m: dict[str, float]) -> str:
     )
 
 
-def render_single(
-    frames: list[Path], cols: int, rows: int, max_maps: int
-) -> tuple[list[str], dict]:
+def render_single(frames: list[Path], cols: int, rows: int, max_maps: int) -> tuple[list[str], dict]:
     """单目录预览：指标表 + ASCII 图。"""
     lines: list[str] = []
     report: dict = {"frames": [], "metrics": {}}
@@ -357,9 +354,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         if args.compare is not None:
-            lines, report = render_compare(
-                args.input, args.compare, args.cols, args.rows, args.max_maps
-            )
+            lines, report = render_compare(args.input, args.compare, args.cols, args.rows, args.max_maps)
         else:
             frames = list_frames(args.input)
             lines, report = render_single(frames, args.cols, args.rows, args.max_maps)

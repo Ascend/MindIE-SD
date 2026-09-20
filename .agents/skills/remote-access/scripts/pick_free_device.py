@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# coding=utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
 """Detect the Ascend NPU card with the lowest HBM usage.
 
@@ -35,7 +34,7 @@ def pick_free_device(ssh_client, container="", num_cards=8):
         Tuple (device_id, hbm_usage_pct).
     """
     cmd = f"docker exec {container} bash -lc 'npu-smi info -t usages -i 0-{num_cards - 1}'"
-    _stdin, stdout, stderr = ssh_client.exec_command(cmd, timeout=15)
+    _stdin, stdout, _stderr = ssh_client.exec_command(cmd, timeout=15)
     output = stdout.read().decode("utf-8", errors="replace")
 
     best_dev, best_usage = 0, 100

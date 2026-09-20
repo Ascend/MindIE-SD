@@ -28,8 +28,7 @@
 | trace 式可表达（含 `nn.Module` 权重作 pattern 输入） | `register_replacement`（PatternBase） | mindie 主流路径；weight 收进 `inputs()`/`pattern()`/`replacement()` 参数，freeze 前命中（参考 `rms_norm_pattern.py`） |
 | **pattern 中间含动态 shape 节点（view 尺寸随 S/batch 变）** | **GraphPatternEntry + 手动改写 handler（本文件）** | trace 式会把动态常量固化 → 永不命中；`Ignored()` 可通配 |
 
-> ⛔ 自定义 FX Graph Pass（手写 graph traversal）已废弃删除——旧文档 `custom-graph-pass-guide.md` 已退役
-> （`git rm`，仅历史留档）；不得使用，需手动改图一律走本文件的 GraphPatternEntry。
+> ⛔ **禁止自定义 FX Graph Pass（手写 graph traversal）**——不得使用，需手动改图一律走本文件的 GraphPatternEntry。
 
 **典型失败信号**：pattern 注册成功、单元测试通过，但 compile kernel csv 中融合
 kernel 数 = 0；pre-pattern dump 显示目标链里夹着 `view([1, S, 2F])` 之类尺寸随
@@ -49,8 +48,8 @@ batch 变化的节点，且同一图内不同 site 的 S 不同。
 
 `CallFunction` 的 kwargs 匹配会把 pattern 列出的 kwargs 与真实 node kwargs 逐键比较；
 即使值写成 `Ignored()`/`KeywordArg`，一旦结构对不上（真实多了 `bias`、或 kwarg 值
-类型不同）就整链失败。实测：Qmm 节点 `Arg×3 + kwargs` matched 0，`Arg×3`（无 kwargs）
-matched 28。
+类型不同）就整链失败。**实测：带 kwargs 的 Qmm 节点 matched 0，去掉 kwargs（纯 `Arg×3`）即命中**
+（计数见会话产物归档 `{run_results_dir}/archive/`）。
 
 ```python
 # ✅ 正确：只列位置参数
@@ -188,8 +187,9 @@ p4 = mul(getitem(p3,0), silu(getitem(p3,1)))     # +激活（注意共享节点 
 ...
 ```
 
-实测序列（MiniMax FFN）：p1 matched 28 → p2 25 → p3 3 → p4（独立 getitem 实例）0 →
-**修正共享节点为同一实例后 p4/p5/p6/p7 全 3**。断点瞬间暴露"共享节点实例"问题，
+**前缀隔离的实测形态**（MiniMax FFN）：p1 有命中 → 逐级加节点后命中数单调下降 → 到"独立 getitem
+实例"那一级掉到 0 → **修正共享节点为同一实例后后续各级全部命中**
+（matched 计数见会话产物归档 `{run_results_dir}/archive/`）。断点瞬间暴露"共享节点实例"问题，
 免去整链盲试。
 
 ### 5.3 命中判定

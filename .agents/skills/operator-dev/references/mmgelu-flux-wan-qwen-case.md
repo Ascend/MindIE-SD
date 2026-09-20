@@ -1,8 +1,10 @@
 # 案例：mm_gelu_mxquant（FLUX/Wan/Qwen FFN 融合）实战细节
 
-> 2026-09，A310-50（A5/MXFP8），diffusers 0.40（qwen 0.38）。与 h3 `mm_swiglu_mxquant`
-> 同族；工作流见 `catlass-ffn-fusion-guide.md`。数据/报告：`tmp/wanflux_ffn/`（ge_hit、
-> compilation_ffn_fusion_report.md、phase1_3_delivery_report.md）。
+> **本件是案例细节留档，不作为推荐加载入口**：常规路径读 `mindiesd-fusion-notes.md` §7 的集成侧要点；
+> 只有在需要本文 §1–§5 的原始细节（真实图链、bias 实况、装载 API 坑、图级计数）时才读本件。
+> 2026-09，目标设备档为 MXFP8 代际（`{soc_version}`，现场取）；框架/依赖版本按现场实际安装
+> （版本坐标与复核方式见会话产物归档 `{run_results_dir}/archive/`）。与 h3 `mm_swiglu_mxquant`
+> 同族；工作流见 `catlass-ffn-fusion-guide.md`。数据/报告：会话产物归档 `{run_results_dir}/archive/`。
 
 ## 1. 语义与真实图链
 
@@ -37,13 +39,16 @@
 
 ## 4. 结果（同窗同卡，compile w8a8）
 
-| 模型 | off→on (ms) | 收益 | fused | gelu(残) | Qmm | 验证 |
-|---|---:|---:|---:|---:|---:|---:|
-| FLUX.1-dev | 15.24 → 14.37 | −5.7% | ×4 | 2 | 50→46 | PASSED |
-| Wan2.2 | (≈841.8) → 835.05 | ≈−0.8% | ×2 | 1 | 24→22 | PASSED |
-| Qwen-Image | (≈7.01) → 6.72 | ≈−4% | ×3 | 0 | 31→28 | PASSED |
+三个模型均为**正收益**：两个在**个位数百分比量级**、一个在**亚百分比量级**（同窗同卡 off→on 读数见会话产物归档 `{run_results_dir}/archive/`）。
 
-- 计数契约/off-identity ✓（off: fused 0/gelu 6；on: fused 4/gelu 2）。
+| 模型 | 收益量级 | 计数契约 | 验证 |
+|---|---|---|---|
+| FLUX.1-dev | 个位数百分比 | off-identity + fused 数 == 命中站点数 | PASSED |
+| Wan2.2 | 亚百分比 | 同上 | PASSED |
+| Qwen-Image | 个位数百分比 | 同上 | PASSED |
+
+- 计数契约/off-identity ✓：**off 臂 fused 计数 = 0 且原链计数不变；on 臂 fused 数 == 命中站点数**
+  （各模型的具体计数见会话产物归档 `{run_results_dir}/archive/`）。
 - 未覆盖：flux single-block（2，act_mlp→concat→proj_out 非 FeedForward）、wan refiner（1）——
   §C 未实现行标注。
 - 数值 fp8 级近似（smoke：no-bias 98.3%）；真机质量门未跑（报告标注）。
@@ -52,17 +57,16 @@
 
 - 同步同 basename 的 ops/plugin cpp 互相覆盖（上传用不同暂存名）。
 - 共享远端 .so 可能被他方构建（不同 torch ABI）覆盖 → 复现前 `check_mindie_operator_exists`。
-- qwen-image diffusers 0.40 `QwenEmbedRope` str-device bug → 用 0.38。
+- qwen-image 在该 diffusers 版本线上有 `QwenEmbedRope` str-device bug ⇒ 降档到可用版本（版本坐标与复核方式见会话产物归档 `{run_results_dir}/archive/`）。
 - profile 并行必须 `--profile-dir` 隔离。
 
 ## 6. 维护与更新
 
-- **触发条件**：本件声明的数据/报告真源 `tmp/wanflux_ffn/`（`ge_hit`、
-  `compilation_ffn_fusion_report.md`、`phase1_3_delivery_report.md`）更新，或按数字纪律迁往
-  `{run_results_dir}/archive/`；§4 结果表的 off→on / fused / gelu(残) / Qmm 计数在 FLUX.1-dev /
+- **触发条件**：本件声明的数据/报告先出库到会话产物归档 `{run_results_dir}/archive/` 后有更新；
+  §4 结果表的收益量级与命中站点数在 FLUX.1-dev /
   Wan2.2 / Qwen-Image 任一新跑中变化；§1 站点链、§2 kernel 要点、§3 pattern 树随
   `catlass-ffn-fusion-guide.md` 与 `mindiesd-fusion-notes.md` §7 更新。
-- **复核方法**：逐条比对 `mindiesd-fusion-notes.md` §7 与本文 §1–§5（operator-dev SKILL 已记录本件
-  "并入该节并删除"），并核对本文 §4 计数契约（off: fused 0/gelu 6；on: fused 4/gelu 2）与 §3 的
+- **复核方法**：逐条比对 `mindiesd-fusion-notes.md` §7 与本文 §1–§5，
+  并核对本文 §4 计数契约（off 臂 fused=0 且原链计数不变；on 臂 fused 数 == 命中站点数）与 §3 的
   `enable_flux_wan_ffn_gelu_fusion` 注册路径；同时按 `.agents/README.md` §7 的 `-case.md` 政策核对
   本件在 SKILL.md 的登记状态与实测数字出库情况。

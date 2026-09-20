@@ -90,14 +90,14 @@ pipe = FluxPipeline(
 > 不得当作该模型/该配置的预期值引用。
 
 ```text
-transformer params:       14.29 B
-Total params:             34.38 B
-Estimated memory (bf16):  64.0 GB
+transformer params:       <值> B
+Total params:             <值> B
+Estimated memory (bf16):  <值> GB
 
 [CPU offload mode]
-Build time:               359.1 s
-Inference time:           122.1 s (2 steps, 5 frames)
-Peak NPU memory:          18.74 GB
+Build time:               <值> s
+Inference time:           <值> s (2 steps, 5 frames)
+Peak NPU memory:          <值> GB
 Verification:             PASSED
 ```
 
@@ -157,15 +157,15 @@ Verification:             PASSED
 | MiniMax-H3 (dummy，FFN 融合 compile pattern 承载) | 三模型里加速幅度最大（本组合观测） |
 | FLUX.1-dev (dummy) | compile 全面小幅加速（本组合观测） |
 
-> 并行复现口径：每模型独立卡、eager→compile 同卡先后；`PYTHONPATH=/tmp/dif040_site`
-> （diffusers 0.40 隔离安装，MiniMax-H3 需要）；qwen_image 在 0.40 broken 排除。
+> 并行复现口径：每模型独立卡、eager→compile 同卡先后；MiniMax-H3 需**按目标 diffusers 版本隔离安装**
+> （安装路径自定，用 `PYTHONPATH` 指向隔离目录即可）；**该版本下 qwen_image 不可用**——换版本先复核再决定是否排除。
 > MiniMax-H3 的 mm_swiglu_mxquant 融合**不接入 eager**（dummy 无 layer-route patch），
 > 由 compile 侧 pattern `enable_minimax_h3_ffn_fusion`（默认 True）在图编译期命中承载；
 > kernel 级 §C 双报表见 `references/compile-ab-report-template.md` §3
-> 与 `{run_results_dir}/dummy_ab_reports_mmx_fusion_default_on.md`。
+> 与 `{run_results_dir}/`（归档目录，报表文件名以归档为准）。
 >
 > ⚠️ 历史教训：w8a8/mxfp8 compile 曾比 eager 慢数个数量级（最坏达两个数量级），根因是量化层 forward 内就地改
-> `self.bias` dtype 导致 Dynamo guard 每次失败重编译（单次重编译为秒级开销）。已修复（局部变量）。
+> `self.bias` dtype 导致 Dynamo guard 每次失败重编译（单次重编译为秒级开销）；修法 = 不再就地改 `self.bias` dtype，改用局部变量。
 > 遇到 compile 远慢于 eager 先跑 `TORCH_LOGS=recompiles`，详见 pattern-dev §4。
 
 ---
@@ -208,8 +208,9 @@ Verification:             PASSED
   回传/聚合，不要事后从共享 `profile_l1` 猜归属。纯 wall timed（无 `--profile`）无此冲突。
 - **口径与判别单点**（为什么必须隔离、如何判"是被覆盖而不是没采到"）见
   `../profiling-collect/references/profile-dir-isolation.md`——**本处不复制**。
-- 版本绑定坑（用前先复核，不复现即删除）：qwen_image dummy 在 diffusers 0.40 broken
-  （`QwenEmbedRope._compute_video_freqs` 对 str device 调 `.type`）⇒ 该版本下全模型 AB 排除之。
+- 版本绑定坑（用前先复核，不复现即删除）：diffusers 曾有一版使 qwen_image dummy broken
+  （`QwenEmbedRope._compute_video_freqs` 对 str device 调 `.type`）⇒ 该版本下全模型 AB 排除之；
+  修复合入后即不再排除（**版本取值按本机现场取证**）。
 
 ---
 

@@ -159,6 +159,14 @@ functionalization 引入的拷贝（见 `pattern-dev` Phase 7）。
   `references/troubleshooting-vllm-omni.md` §E1/E2（**本文件只留指针，不复制命令**）。
 - **权重落位**：按 `env-install/references/weights-prep.md` §2.2「落位约定」书写
   （模型根目录直接 serve，模型名之下不再加厂商 / 组织层；框架侧历史写法已弃用）。
+- **无服务的本地 pipeline 快验（先排除服务层噪声）**：`from_pretrained` 装载 + **单步推理**是
+  "该特性有没有改变输出 / 有没有报错"的最短代码路径——
+  `<Pipeline>.from_pretrained({model_weight_dir}, torch_dtype=torch.bfloat16).to(device)` →
+  `<pipeline>(prompt=..., num_inference_steps=1, output_type="latent")` → 校验输出 shape / dtype / 非全零，
+  并与「同 seed、同 prompt、关掉该特性」的基线逐元素比一次（判据分层见 `accuracy-gate`）。
+  它只用于**快验与定位**（不覆盖服务层调度 / 批处理面，给不出吞吐结论）；收益仍须按上面的
+  服务化骨架 + §1.4 计数契约测。Cache 系特性的开启姿势见 `references/cache-dit-enablement.md` /
+  `references/cache-enablement-pattern.md`，装载与编译期异常见 `§5 故障排查`。
 
 **验证通过标准**（框架无关四项）：推理无异常（无 `RuntimeError` / `OOM` / `CANN error`）；输出合法
 （shape > 0、非全零、产物字节数与预期一致）；显存峰值 < 物理显存 90%；特性叠加的开关生效**且过
@@ -276,7 +284,8 @@ functionalization 引入的拷贝（见 `pattern-dev` Phase 7）。
    不静默回退、backend 实例单例、collective 留 eager（先例：LightX2V #1471 `hccl_eager`）。
 6. **回填**：更新 `framework-support-matrix.md`（状态 / 新特性行 + 证据码 + 版本 + 日期）、
    在对应框架的 `{framework}-*-enablement.md` / `-notes.md` 补开启方式与坑
-   （`-case.md` 类别已取消，见 `.agents/README.md` §7 四分类），需要时增补本技能 evals。
+   （`-case.md` **受限保留**：须在 Reference Files 登记 + 标注「不作为推荐加载入口」+ 实测数字出库，
+   见 `.agents/README.md` §7），需要时增补本技能 evals。
 
 ### 2.3 注入点与代码组织（分类，逐框架实例见 §3 真源）
 
@@ -344,24 +353,24 @@ functionalization 引入的拷贝（见 `pattern-dev` Phase 7）。
 > 单次结论不迁移：案例中"某修复必要 / 有效 / 无效"仅在该框架 + 并行配置下成立；
 > 换框架 / 换配置必须按 §1 回路重新验证。
 
-## 4. 存量待处置 references（7 件；政策待父 agent 统一处置）
+## 4. 存量 `-case.md` / `-notes.md` 登记（受限保留）
 
-`.agents/README.md` §7 已取消 `-case.md` 类别（案例按「方法 / 开启方式 / 底座 notes / 实测出库」四分类
-落位，实测表先导出到会话产物目录再删 skills 内副本）。以下 7 件为**存量未迁移**，**当前不作为推荐
-加载入口**（`README.md` §7 需与现状对齐后统一处置，本批次不擅自删除）：
+`.agents/README.md` §7：`-case.md` **受限保留**——须在所属技能的 Reference Files 登记并标注
+「**不作为推荐加载入口**」，且**实测数字按数字纪律一律出库**（`{run_results_dir}/archive/`，
+skill 内只留判据）。本表只登记在库事实、可迁移内容的真源归属与加载时机：
 
-| 存量文件 | 建议处置（报父 agent） |
-|---|---|
-| `references/diffsynth-engine-case.md` | 与 `diffsynth-engine-enablement.md` / `-notes.md` 合并（README “批 3 收尾”记为已合一，需核对）→ 实测表出库后删 |
-| `references/cache-dit-minimax-h3-case.md` | 实测表出库（`{run_results_dir}/archive/`），结论已在 `cache-dit-enablement.md` → 删 |
-| `references/lightx2v-mindiesd-case.md` | 同上（README 已记归档路径）→ 删 |
-| `references/vllm-omni-case.md` | 并入 `vllm-omni-enablement.md` 后删 |
-| `references/vllm-omni-minimax-h3-case.md` | 并入 `vllm-omni-enablement.md` §3/§5 后删 |
-| `references/vllm-omni-qwen-image-case.md` | 并入 `vllm-omni-enablement.md` §3.5 后删 |
-| `references/diffsynth-engine-notes.md`（非 case） | README 记两件已并入 `diffsynth-engine-enablement.md`，但本文件仍在库 → 核对其独有内容后并入删；若保留则补登 §3 |
+| 存量文件 | 真源归属（可迁移内容的落点） | 加载时机（均**不作为推荐加载入口**） |
+|---|---|---|
+| `references/cache-dit-minimax-h3-case.md` | `cache-dit-enablement.md`（trunk 托管链 / 部署前置 / Cache 主导旋钮与计数契约） | 需回看 cache-dit 链原始读数时（读数已出库 `{run_results_dir}/archive/cache-dit-minimax-h3-case.md`） |
+| `references/diffsynth-engine-case.md` | `diffsynth-engine-enablement.md`（命中与使能）＋ `diffsynth-engine-notes.md`（模型结构与几何契约） | 需回看 DSE 链原始读数时（读数已出库 `{run_results_dir}/archive/diffsynth-engine-case.md`） |
+| `references/diffsynth-engine-notes.md` | `diffsynth-engine-enablement.md`（前置与版本边界） | 需回看 Qwen-Image 侧结构 / 几何契约原文时 |
+| `references/lightx2v-mindiesd-case.md` | `lightx2v-enablement.md`（注册表接入 / 平台注册懒工厂 / 三条必修坑） | 需回看 LightX2V 链原始读数时（读数已出库 `{run_results_dir}/archive/lightx2v-mindiesd-case.md`） |
+| `references/vllm-omni-case.md` | `vllm-omni-enablement.md`（0.28 使能面 / 计数契约 / `[探针]` 清单） | 需回看 V1 图像链原始读数时（读数已出库 `{run_results_dir}/archive/`） |
+| `references/vllm-omni-minimax-h3-case.md` | `vllm-omni-enablement.md` §3/§5（开启方式与单步 profile 面） | 需回看 V1 视频链原始读数时（读数已出库 `{run_results_dir}/archive/vllm-omni-minimax-h3-case.md`） |
+| `references/vllm-omni-qwen-image-case.md` | `vllm-omni-enablement.md` §3.5（compile 输出非无损否决） | 需回看 V3 图像链原始读数时（读数已出库 `{run_results_dir}/archive/`） |
 
-> 处置纪律：先按 README §7「经验 vs 探针」三问分类，再「实测表出库 → 删 skills 内副本」；
-> 删除动作留给统一执行该政策的批次，本技能只登记现状与建议。
+> 默认加载链路一律走 §3 真源表；本表各件与 §6 同列，**均不作为推荐加载入口**。
+> 各件实测表内的绝对读数按数字纪律改写为量级 / 比值并附归档指针（**表与文件保留**）。
 
 ## 5. 故障排查
 
@@ -380,8 +389,14 @@ functionalization 引入的拷贝（见 `pattern-dev` Phase 7）。
 
 ## 6. Reference Files
 
-- 本技能的 references **全部单点登记于 §3**（真源 / 覆盖 / 加载时机），此处不重复登记；
+- 本技能**默认加载入口**的 references 全部单点登记于 §3（真源 / 覆盖 / 加载时机），此处不重复登记；
   `references/framework-support-matrix.md` 为状态查询入口，其余为框架差异与方法件。
+- **存量 `-case.md` / `-notes.md`（受限保留；不作为推荐加载入口）**：
+  `references/cache-dit-minimax-h3-case.md`、`references/diffsynth-engine-case.md`、
+  `references/diffsynth-engine-notes.md`、`references/lightx2v-mindiesd-case.md`、
+  `references/vllm-omni-case.md`、`references/vllm-omni-minimax-h3-case.md`、
+  `references/vllm-omni-qwen-image-case.md` —— 真源归属与加载时机见 §4 登记表；**只在 §3 真源件
+  未覆盖的历史细节上回查**（其中绝对读数以 `{run_results_dir}/archive/` 为准）时读。
 - 跨技能接线（环境 / 证据 / 验收口径 / 实现层 / 快验 / 编排）→ §3 末「接线」段。
 - 开发流程与复盘规范 → `dev-workflow/SKILL.md`。
 

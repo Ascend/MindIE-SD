@@ -8,31 +8,31 @@
 - **INFERENCE 阶段**：通过 `register_forward_pre_hook` / `register_forward_hook` 挂载到 pipe 的 `text_encoder`、`transformer`、`transformer_2`、`vae` 子模块，自动记录每次 forward 耗时和内存快照
 - **Warmup/Timed 分离**：先 `capture_warmup()` 消除 NPU 算子冷启动，再 `capture_timed()` 精确计时
 
-典型输出为 BUILD + INFERENCE 两段式汇总：
+典型输出为 BUILD + INFERENCE 两段式汇总（**以下为格式示意，数值以 `<值>` 占位**）：
 
 ```text
 ======================================================================
   BUILD                                     Time(s)    Mem(GB)
   ----------------------------------------------------------
-  Transformer                                   0.1       3.49
-  Transformer_2                                 0.1       6.97
-  VAE                                           0.1       7.44
-  Text encoder + scheduler + tokenizer          1.4      18.03
-  Move to device                                0.0      18.03
+  Transformer                                   <值>      <值>
+  Transformer_2                                 <值>      <值>
+  VAE                                           <值>      <值>
+  Text encoder + scheduler + tokenizer          <值>      <值>
+  Move to device                                <值>      <值>
   ----------------------------------------------------------
-  BUILD TOTAL                                   1.7
+  BUILD TOTAL                                   <值>
 
   INFERENCE                                 Time(s)    Mem(GB)   Peak(GB)
   --------------------------------------------------------------------
   -- Warmup --
-  text_encoder                                  0.4      18.03      18.09
-  transformer                                   7.2      18.09      18.09
+  text_encoder                                  <值>      <值>      <值>
+  transformer                                   <值>      <值>      <值>
 
   -- Timed --
-  text_encoder                                  0.1      18.07      18.09
-  transformer                                   7.1      18.09      18.09
+  text_encoder                                  <值>      <值>      <值>
+  transformer                                   <值>      <值>      <值>
   --------------------------------------------------------------------
-  OVERALL TOTAL                                 8.8                 18.09
+  OVERALL TOTAL                                 <值>                <值>
 ======================================================================
 ```
 

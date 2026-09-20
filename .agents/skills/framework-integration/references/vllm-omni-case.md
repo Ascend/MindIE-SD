@@ -3,7 +3,7 @@
 > ⚠️ **本文件是 vLLM-Omni 特定实例**。全栈构建/启动排障见
 > `framework-integration/references/troubleshooting-vllm-omni.md`（互补，不重复）；
 > 本文聚焦**性能使能方法 + 使能判断**，按 `vllm-omni-enablement.md` §1.1「画像速答」组织
-> （存量 `-case.md`，类别已取消，处置建议见 `../SKILL.md` §4）。
+> （存量 `-case.md`，**受限保留**：须在所属 SKILL.md 的 Reference Files 登记并标注「不作为推荐加载入口」且实测数字出库 `{run_results_dir}/archive/`，见 `.agents/README.md` §7 与 `../SKILL.md` §4）。
 > vLLM-Omni 托管 Qwen-Image / Wan2.2 / MiniMax-H3 等，**使能结论在对应模型 + 环境成立**。
 
 ## 1. 框架画像（画像速答）
@@ -56,7 +56,6 @@ compiled = torch.compile(pipe.transformer, backend=MindieSDBackend())
 
 > ⚠️ 以上为**推断**，vLLM-Omni 场景尚未实测；接入时必须按 `vllm-omni-enablement.md`
 > §1.3「使能判断口径（与 dummy run 对比 + 三层证据）」与 §3.6「计数契约与真实性核验」验证。
-> （原文写「按 §6 协议验证」，而本文件原无 §6 —— 既有空指，已改指真源；勿再引用本节号。）
 
 ## 3. 使能判断（与 dummy run 对比）
 
@@ -88,9 +87,7 @@ compiled = torch.compile(pipe.transformer, backend=MindieSDBackend())
 
 ## 6. 维护与更新
 
-- **触发（存量件处置）**：本件为存量 `-case.md`（类别已取消，`../SKILL.md` §4 登记的建议处置为
-  「并入 `vllm-omni-enablement.md` 后删」）——一旦并入 / 归档完成即整体删除；在此之前只作参照，
-  不新增实测内容（新内容写入 `vllm-omni-enablement.md` 与矩阵格）。
+- **触发（存量件归属）**：本件为存量 `-case.md`（**受限保留**：登记于 `../SKILL.md` §4/§6，**不作为推荐加载入口**；实测数字出库 `{run_results_dir}/archive/vllm-omni-case.md`）。新内容写入 `vllm-omni-enablement.md` 与矩阵格，本件不再新增实测内容。
 - **触发（推断转实测）**：§2.3「预期必要的修复」整表原文自述为**推断**（「vLLM-Omni 场景尚未实测」）；
   vLLM-Omni 版本跨越 0.28 后，a2a/ring collective 留 eager（`torch._dynamo.disable`）、backend 实例复用、
   pattern 图形态三项一律以 `vllm-omni-enablement.md` §3.5/§4 的实测结论为准，本表不得当结论引用；

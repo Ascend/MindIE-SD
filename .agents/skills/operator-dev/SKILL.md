@@ -44,8 +44,11 @@ VV（纯 vector elementwise）推荐 triton**（细则见「使用约束」）�
 | **MindIE-SD/CANN 集成侧经验**：kernel 改动"没生效"排障（tiling-key .o 缓存/全清重建/sentinel 法）、CANN 同名内建算子冲突与改名陷阱、AscendC bf16 Muls/Gather 语义坑、triton 短行地板判定、w8a8 与融合 pattern 冲突；**融合收益前置评估已归 `fusion-scope-analyze`**（实现前/中向它取收益评估结论），本文件只留集成侧事实与坑 | `references/mindiesd-fusion-notes.md` |
 | **自研算子运行期部署校验**：`inferShape function does not exist`（`import mindiesd` 顺序 / 算子包未进运行 CANN）、"跑的是不是我改的 kernel"（sentinel / 计数）、golden 通过判据（阈值以各 op 的 golden 文件为准） | `references/custom-op-runtime-deploy-verify.md`（顺序机制真源在 `framework-integration/SKILL.md` §1.5） |
 | **外部/三方 AscendC kernel 接入 mindiesd 内部**（catlass 类）：形态选型（单 .so ASC 混编为终态）、CMake/ASC 链接与静态运行时链接坑、torch custom op C++ 形态（tuple 返回/PrivateUse1/stream）、设备/运行时事实、集成侧数值验证（位级仅 h3 特例，一般融合为 fp8 量化级；接入 compile 图的约束与 compile 前后收益核验归 pattern-dev） | `references/catlass-kernel-integration.md` |
-| **只读 catlass 融合算子全链开发**（量化 matmul+激活+输出量化，vendored 头、standalone 对拍计时、mindiesd 集成、compile GraphPatternEntry 真图使能、开关治理）：六段流水线与决策，案例 mm_swiglu_mxquant/mm_gelu_mxquant | `references/catlass-ffn-fusion-guide.md` |
+| **只读 catlass 融合算子全链开发**（量化 matmul+激活+输出量化，vendored 头、standalone 对拍计时、mindiesd 集成、compile GraphPatternEntry 真图使能、开关治理）：六段流水线与决策；**落码前先做 §2.1 片上资源预算**（三行算术：累加器份数 ≤ L0C / 操作数常驻 ≤ L1，本仓两例方案都是"容量上不存在"） | `references/catlass-ffn-fusion-guide.md` |
 | mm_gelu_mxquant（FLUX/Wan/Qwen）案例细节：真实图链/bias=0/装载 API 坑/计数与 AB/工程坑 | `references/mindiesd-fusion-notes.md` §7（集成侧要点）+ `references/mmgelu-flux-wan-qwen-case.md`（案例细节记录） |
+| **环境事实：设备 fp64 在本环境真实可用**（**推翻**旧记载的"被静默降级为 fp32"：可分辨 fp32 表示不了的最小增量、设备 vs CPU 的 fp64 sum/mean **逐位一致**）⇒ 需要高精度参照时可直接用 fp64；**警告文本 ≠ 事实，一律实测** | `references/triton-ascend-lowering-pitfalls.md`（§三 归约逆向用得上 fp64 参照） |
+| **库归约的逆向方法**：先判"形状相关性"（改调用内份数看结果是否变）⇒ 再**按族**穷举（相邻配对 / 对折 / 跨步 / 分块）；本仓在相邻配对族试数十种全败、换**对折树**一个式子逐位命中 | `references/triton-ascend-lowering-pitfalls.md` §三 |
+| **per-program 固定成本受限**（"**更少更胖的 program**"）：耗时与工作量不成比例、却与 **program 个数**成比例；识别（判型第三类 + D1–D4 检测器）归 `fusion-scope-analyze`；修法（减少 program 数、**并发在飞装载**、preload vs unroll 的分辨、`num_stages` 无效时的处置、跨 rank 整除性守卫） | 识别 `../fusion-scope-analyze/references/fusion-benefit-method.md` §1.1；修法 `references/per-program-fixed-cost.md` |
 
 ## 使用约束
 
@@ -82,13 +85,34 @@ VV（纯 vector elementwise）推荐 triton**（细则见「使用约束」）�
 - 🧩 `references/mindiesd-fusion-notes.md` — 加载时机: kernel 改动未生效/同名算子冲突/AscendC 集成调试时（MindIE-SD/CANN 特有经验，与 cannbot 并行使用）；**融合收益评估改由 `../fusion-scope-analyze/SKILL.md` 承担**（**可选**调用：本技能在用户输入下直接实现算子，不受融合交付件门禁约束），本文件不再承载该判据
 - 🚚 `references/custom-op-runtime-deploy-verify.md` — 加载时机: 自研算子运行期报 `aclnnXxx … inferShape function does not exist`、怀疑"跑的不是我改的算子"、或需要给出部署侧通过证据（可见性 → 走的是哪一个 → golden 数值）时
 - 🔌 `references/catlass-kernel-integration.md` — 加载时机: 把 catlass/类 catlass 外部 AscendC kernel 以标准算子形态接入 mindiesd（单 .so ASC 混编、ASC 链接/静态运行时、torch custom op C++ 形态、设备事实、集成侧验证）时；接入 compile 图的 fake/无状态约束与 compile 前后收益核验 → `../pattern-dev/references/pattern-dev-notes.md` §5
-- 🔗 `references/catlass-ffn-fusion-guide.md` — 加载时机: 开发/复刻「量化 matmul+激活+输出量化」catlass 类融合算子（vendored 头、bias、GraphPatternEntry 真图命中、开关治理）时（六段流水线；案例 mm_swiglu_mxquant/mm_gelu_mxquant）
-- 📋 `references/mindiesd-fusion-notes.md` §7 — 加载时机: 对照 mm_gelu_mxquant 案例（真实图链/bias 实况/装载 API 坑/工程坑）时（原 `mmgelu-flux-wan-qwen-case.md` 已并入该节并删除）
+- 🔗 `references/catlass-ffn-fusion-guide.md` — 加载时机: 开发/复刻「量化 matmul+激活+输出量化」catlass 类融合算子（vendored 头、bias、GraphPatternEntry 真图命中、开关治理）时（六段流水线；案例 mm_swiglu_mxquant/mm_gelu_mxquant）；**落码前先读 §2.1 片上资源预算**（三行算术定"做不做得出来"：累加器份数 ≤ L0C 容量、操作数常驻 ≤ L1 容量）
+- 📋 `references/mindiesd-fusion-notes.md` §7 — 加载时机: 对照 mm_gelu_mxquant 案例（真实图链/bias 实况/装载 API 坑/工程坑）时
+- 🧷 `references/mmgelu-flux-wan-qwen-case.md` — 加载时机: 需要 mm_gelu_mxquant（FLUX/Wan/Qwen）案例的**原始细节记录**（真实图链、bias 实况、装载 API 坑、图级计数、结果表）时；**不作为推荐加载入口**——常规路径读 `references/mindiesd-fusion-notes.md` §7 的集成侧要点，本件只作案例细节留档
 - 🧱 `references/vertical-fusion-notes.md` — 加载时机: 实施**垂直融合**（VV 融合、含逐元素/归一化/激活的融合内核）、写 Ascend 融合内核时（内核级陷阱与实现事实：UB/wave 硬约束、一 program 一行反模式等）；**边界判定、判型与收益判定归 `../fusion-scope-analyze/SKILL.md`**——实现前先向它取边界与收益结论
+
+- 🐍 `references/triton-ascend-lowering-pitfalls.md` — 加载时机: 用 triton-ascend 写/调 VV 融合内核时——**编译通过但结果"接近但不相等"**（标量 bf16 往返被消除、gather 式载入改变 `x/scale` 的 lower〔该条**未独立验证**〕、`tl.sum(axis=0)` 在本后端是顺序求和〔已复现，带能失败的对照〕），或**同语义换写法性能差数倍**（折叠大量小算子时收益来自下发次数——设备侧已复测；bulk 拷贝慢于库算子一项**在本环境尚未独立验证**，只当选型提示）时；量化契约本体见 `../quantization-dev/SKILL.md` §三.2 与 §四
 
 ## Bundled Scripts
 
 - `scripts/install_cannbot.sh` / `scripts/install_cannbot.ps1` — cannbot-skills 安装/校验/更新（使用 cannbot 特性前执行）
+
+## 性能门控的旁路会静默丢功能：等价性结论必须在"组件启用"下复测
+
+**规则：一个"快路径"门控如果绕过的是 `...WithLoRA` / hook / 插件包装层，那它绕过的不只是耗时，
+而是**该包装层要做的功能**（权重应用、缩放、状态更新）。这类旁路的**等价性必须在组件真正启用的条件下**测量。**
+
+事故现场：`OMNI_H3_FUSED_FFN_MXQ=1` 时 `MiniMaxH3MLP.forward` 提前返回融合快路径，直接调
+`mm_swiglu_mxquant` + `fc2.quant_method._quant_matmul`，**从不调用 `fc1(...)`/`fc2(...)`** ⇒ vLLM 的
+LoRA `apply()` 不执行 ⇒ `mlp.fc1`/`mlp.fc2` 的 rank-64 delta 被**静默丢弃**。权重是绑定的（校验器会对
+未绑定 key 抛错，而运行通过），所以**没有任何告警**。此前"三门控融合逐字节一致"的结论，是在**没有适配器**
+的条件下得出的，因此成立但不覆盖真实场景。
+
+**可 falsify 的判定法（判别力已验证）**：预测"若快路径丢了这项功能，则关掉门控后 profile 每步应多出
+N 次某形状的算子"。实测门控 ON 时该形状算子计数为 **0**、OFF 时为**每步 O(层数 × 分片数) 次**
+（读数见会话产物归档 `{run_results_dir}/archive/`）。
+
+**执行清单**：门控类改动必须记录 (a) 旁路了哪个包装层、(b) 该层原本做什么、(c) 复测时**启用组件**
+（适配器/插件）后的逐字节或量化结论、(d) 一个能证伪的计数预测。
 
 ## 维护与更新
 

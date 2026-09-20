@@ -3,7 +3,7 @@
 > ⚠️ **本文件是 DiffSynth-Engine 特定实例**。部署/compile 接入细节见
 > `framework-integration/references/diffsynth-engine-notes.md`（互补，不重复）；
 > 本文聚焦**性能使能方法 + kernel 级验证**，按 `diffsynth-engine-enablement.md` §1「画像速答」组织
-> （存量 `-case.md`，类别已取消，处置建议见 `../SKILL.md` §4）。
+> （存量 `-case.md`，**受限保留**：须在所属 SKILL.md 的 Reference Files 登记并标注「不作为推荐加载入口」且实测数字出库 `{run_results_dir}/archive/`，见 `.agents/README.md` §7 与 `../SKILL.md` §4）。
 > 结论仅在该框架 + Qwen-Image + 该容器环境成立；移植他处需重新验证。
 
 ## 1. 框架画像（画像速答）
@@ -45,7 +45,7 @@ LightX2V 的运行时接入路径（§5.1）**不适用**，必须走 compile（
 | GELU | `FastGelu` | ✅ | ✅ |
 
 > ⚠️ 使能判断**不依赖层数/权重**（pattern 匹配基于图结构）→ 用 dummy run（2 层）
-> 即可验证"外部框架下 pattern 是否使能"，真实权重（60 层）直接复用结论。
+> 即可验证"外部框架下 pattern 是否使能"，真实权重（层数/规模见归档）直接复用结论。
 
 ### 3.2 三个陷阱
 
@@ -55,7 +55,7 @@ LightX2V 的运行时接入路径（§5.1）**不适用**，必须走 compile（
 2. **图命中 ≠ 运行期全部生效**：`residual_gate_add` 对 4D attention 张量运行期
    fallback（日志 `fallback (ndim)`）→ 看 kernel_details.csv 中融合 kernel 的
    **实际执行次数**（3D 站点融合、4D 站点原生）
-3. **不做耗时比较**：dummy（2 层 0.72B）vs 真实（60 层 20B）耗时由层数主导，
+3. **不做耗时比较**：dummy（2 层 0.72B）vs 真实（层数/规模见归档）耗时由层数主导，
    dummy 编译的融合收益被新增 kernel 淹没 → "dummy 反而更慢"是假象。
    耗时评估必须真实权重 + kernel diff
 
@@ -70,7 +70,7 @@ LightX2V 的运行时接入路径（§5.1）**不适用**，必须走 compile（
 
 > 结论：**backend 实例复用是跨框架通用**；a2a/pattern 形态是**框架特定**，必须各自验证。
 
-## 5. 实测结论（真实权重 60 层，已完成）
+## 5. 实测结论（真实权重）
 
 - 使能集合与 dummy 一致 → 融合 kernel 实际生效（rope/rms/gate/adaln/gelu），
   kernel diff 显示融合 kernel 出现（`residual_gate_add_kernel` / `AdaLayerNormV2` /
@@ -170,4 +170,4 @@ DiTBlockCache 参数矩阵（CFG-off 单调用路径，compile 基线；绝对�
 - 触发（框架 / 环境）：DiffSynth-Engine 版本或其 pyproject 锁定的 transformers / diffusers 版本、Qwen-Image 权重层数或容器环境变化时，开篇「结论仅在该框架 + Qwen-Image + 该容器环境成立」失效——§1 画像速答与 §2 的三处改动（`_compiled_call_impl` 原地写入、RoPE 实数域改写、text encoder key 归一化）须重验。
 - 触发（pattern 使能集合）：`qwen_rope`、`wan_residual_gate`、`fast_gelu`、`rms_norm`、`adaln` 等融合 pattern 的注册集合或命中形态变化（含 §6.4 的 text-rope 4D 误匹配被补变体吃掉）时，§3.1 使能集合表、§6.2 逐 pass AB 排序与 §6.4 的 fallback 结论须重测。
 - 触发（有损接线）：§6.5 的档位全部来自 mindiesd 库现有 CacheAgent（DiTBlockCache / AttentionCache）在 bench 脚本侧的接入（DSE 源码零改动）——库侧 cache 接口、计数契约（reuse / compute）或双缓存互斥语义变化时，该节档位与质量门禁结论须重跑。
-- 复核：最小核对 = 用 dummy run（2 层）确认 §3.1 的融合 kernel 是否仍使能（pattern 匹配基于图结构、不依赖层数/权重），再在真实权重（60 层）上确认 `kernel_details.csv` 中 `RotaryPositionEmbeddingV2` / `RmsNorm` / `residual_gate_add_kernel` / `AdaLayerNormV2` / `FastGelu` 的实际执行次数且逐元素 `Mul`/`Stack`/`Cat` 仍大幅减少——日志 2048 截断会误判 0 命中，须以 `graph_log_url` 落盘 DOT 或 kernel csv 为准。
+- 复核：最小核对 = 用 dummy run（2 层）确认 §3.1 的融合 kernel 是否仍使能（pattern 匹配基于图结构、不依赖层数/权重），再在真实权重（层数/规模见归档）上确认 `kernel_details.csv` 中 `RotaryPositionEmbeddingV2` / `RmsNorm` / `residual_gate_add_kernel` / `AdaLayerNormV2` / `FastGelu` 的实际执行次数且逐元素 `Mul`/`Stack`/`Cat` 仍大幅减少——日志 2048 截断会误判 0 命中，须以 `graph_log_url` 落盘 DOT 或 kernel csv 为准。

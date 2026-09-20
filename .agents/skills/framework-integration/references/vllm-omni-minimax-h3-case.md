@@ -1,4 +1,4 @@
-# 实例：MiniMax-H3 × vLLM-Omni 0.28（NPU 950PR）无损+有损全特性叠加
+# 实例：MiniMax-H3 × vLLM-Omni 0.28 无损+有损全特性叠加
 
 > 2026-09-05 实测。目标仓库：vllm-omni（0.28.0 时代 e305afba + NPU fork 补丁）、MindIE-SD（dev-skills 549bc60 重建）。
 > 环境：env B {env_host} / 容器 {env_container} / venv /opt/omni28 =
@@ -41,6 +41,8 @@
 | 备选 TP1×USP4+INT8 | 约降三成 | 约 1.4 倍 | SSIM 降约三成 |
 | 备选 TP1×USP4+INT8+mix | 约降五成半 | 约 2.3 倍 | SSIM 降约五成 |
 
+（原始读数见 `{run_results_dir}/archive/vllm-omni-minimax-h3-case.md`）
+
 ### S4-2 组合搜索增量（2026-09-05，combination-search 协议首案例校准；60 步 steady；质量=21 采样帧 vs lossless）
 
 | # | 组合（TP2×USP2 基底） | seam | steady | 质量变化度 vs lossless | 结论 |
@@ -52,6 +54,8 @@
 | 层回退探针 | int8+稀疏 bf16 0.8 start_step=2 | step 窗口前移 | 约降三成半（本窗） | SSIM 降约四成半 | start_step 保真≈ss0（同窗），收益有限 |
 | 层回退探针 | int8+稀疏 bf16 **0.6** | attention 降档 | 约降三成（本窗） | SSIM 降约五成 | **质量非线性**（0.6 档 SSIM 反低于 0.8 档）→ 稀疏档须逐档端到端验证，勿按密度外推 |
 
+（原始读数见 `{run_results_dir}/archive/vllm-omni-minimax-h3-case.md`）
+
 - 计数契约（真实性核验）：RAINFUSION 日志含 `staying dense`（无 video 段 role 走 dense 兜底）；Cache-DiT 有
   Parallelism/Quantization config 缺失告警但缓存增益实存；INT8 层宽超限自动回退见日志。
 - 跨窗口漂移声明：不同窗口绝对值可比性受热/同机负载影响（同档历史窗与本窗差异可达一成量级）——
@@ -60,16 +64,16 @@
   特性名固定名词 + `量化(w8a8/f8/w8a8f8)` 修饰符（w8a8=线性层 8bit；f8=注意力侧 8bit——本任务 mix 的 int8
   仅覆盖稀疏块路径，dense FA 兜底 bf16，表述须写明覆盖范围；全注意力 FA 8bit 未实现标 ❓ 不虚列）；
   质量一律 vs 同构 lossless 绝对值（USP4 行已由交叉值改为绝对值）。
-- **量化后融合重审实例（w8a8，2026-09-06，对应 SKILL S4 纪律 6 / methodology-notes §D）**：使能 INT8
-  online 后单步 kernel 序列 2625→2885 行——266 MatMul → 6 遗留 + **260 对 `DynamicQuantV2`（占比约 1%）→
-  `QuantBatchMatmulV3`（占比约一成半）**（每 DiT block 恰 5 个量化 GEMM：qkv/out/fc1-merged/down/adaln），
-  零新增布局搬运（MOVE/COPY 971 不变）、无独立 dequant → **GEMM 级融合已到位**，新机会集中在
+- **量化后融合重审实例（w8a8，对应 SKILL S4 纪律 6 / methodology-notes §D）**：使能 INT8
+  online 后单步 kernel 序列基本等长——原 MatMul 几近全部被 **`DynamicQuantV2` → `QuantBatchMatmulV3`**
+  接管（每 DiT block 恰 5 个量化 GEMM：qkv/out/fc1-merged/down/adaln），
+  零新增布局搬运（MOVE/COPY 计数不变）、无独立 dequant → **GEMM 级融合已到位**，新机会集中在
   DQ 上游 epilogue（norm/SwiGlu）、A 侧动态量化并入 GEMM、FA 路径布局、量化域贯通、通信重叠与
   新序列 compile 重测（O1–O7 完整清单与证据见归档 `H3_w8a8_fusion_analysis.md`；**报表归属：实施后
   的量化使能融合收益按 overview-report.md §2.4 归入 `量化(w8a8)` 行、拆分在量化子表展示，
   当前未实施项标 ❓ 不计入行收益**）；**通信面（对应
   SKILL S4 纪律 6 / methodology-notes §E）**：+INT8 后单步 Comm(未重叠) 耗时不变但占比
-  上升（约六分之一 → 约五分之一；叠加 mix 后约三成，Overlapped=0）→ 量化后须按新占比重估掩盖空间并审视量化/压缩通信
+  上升（由约六分之一升至约五分之一；叠加 mix 后约三成，Overlapped=0）→ 量化后须按新占比重估掩盖空间并审视量化/压缩通信
   （TP allreduce 部分和、USP 注意力 K/V 交换低精度传输）；候选实现若属框架结构性缺口走
   `../SKILL.md` §2 分支 B，不静默改三方框架。
 
@@ -83,7 +87,7 @@
    attn_mask 且 RainFusion 拒 mask（layer.py:498-502 raise "does not support attn_mask"）。
    ⚠️ 必须是 classmethod 而非类属性（调用方 `backend.supports_packed_mask_free()` → 属性会报 `'bool' object is not callable`）。
 2. **MindIE compile 注入（S1 融合链）**：interface.py 默认方法 + diffusion_model_runner.py 平台分发 + NPU platform 实现
-   （env `OMNI_MINDIE_COMPILE=1` 门控、backend 单例、regional 粒度）——52 block 编译成功、pattern 注册、输出逐字节一致，
+   （env `OMNI_MINDIE_COMPILE=1` 门控、backend 单例、regional 粒度）——全部 block 编译成功、pattern 注册、输出逐字节一致，
    但 **kernel 级验证为负**（见 §6）→ 默认关。
 3. **通用 kernel 采集 hook**（NPU platform，env `OMNI_KPROF/OMNI_KPROF_AFTER/OMNI_KPROF_DIR`）：rank0 第 N 次
    `MiniMaxH3DiTModel.forward` 用 torch_npu.profiler(Level1)+tensorboard_trace_handler 包一次 forward →
@@ -97,7 +101,7 @@
 ② 对照 **mindiesd + CANN 融合能力**（npu_rms_norm/npu_rotary_mul/npu_swiglu/FA/fused qk-norm-rope 等）识别融合位置与
 **需额外准备的融合算子**；③ 对每个候选做**独立验证**（kernel diff / 墙钟）辨识是否真生效。
 
-- 实测：H3 DiT 热路径 eager 已被 mindiesd/CANN 单算子覆盖（RmsNorm n=210/step、RotaryV2、FA 54/step、编码器 swiglu）。
+- 实测：H3 DiT 热路径 eager 已被 mindiesd/CANN 单算子覆盖（每步按站点数出现 RmsNorm / RotaryV2 / FA、编码器 swiglu；站点计数见归档）。
 - MindIE compile 单步 kernel diff：kernel 数与 Copy/Move 数上升、Computing 与步墙钟抬高，
   输出不变 → **未产生收益反增开销 → 不采纳（默认关）**；结论：真正热路径 eager 已融合，
   剩余 split/silu/cat/index 等候选融合收益不足以抵消 compile 图内拷贝/调度开销（10 步墙钟中性一致）。
@@ -119,19 +123,20 @@
 
   → **Overlapped=0（框架零重叠）**；未重叠通信占比 USP2>TP4>USP4；vllm-omni 0.28 无 comm-stream 掩盖 →
   实现候选参照 mindiesd/parallel + LightX2V `hccl_eager`；掩盖收益上限随策略为步时的一到三成，本尺寸 compute-bound，先长视频重测再投入。
-- **特性叠加的 kernel 演化**（单 forward，576p）：lossless FA 2625 kernel/步（FA 54、MatMul 266、Copy 470）→
-  +INT8：QuantBatchMatmulV3+DynamicQuantV2 接管 MatMul（266→6，Quant 520），步墙钟降约一成半 →
-  +mix 稀疏：EagleQuantBlockSparseAttention 承接 attention（+FA dense 兜底），小 kernel/copy 增多（Copy 470→1270）但
+- **特性叠加的 kernel 演化**（单 forward，576p）：lossless FA 态下 MatMul / FA / Copy 各按站点数出现 →
+  +INT8：QuantBatchMatmulV3+DynamicQuantV2 接管 MatMul（被替代链计数归零，Quant 按站点数出现），步墙钟降约一成半 →
+  +mix 稀疏：EagleQuantBlockSparseAttention 承接 attention（+FA dense 兜底），小 kernel/copy 计数增长但
   Computing 再降、步墙钟降约三成；Cache 不改单 forward kernel（作用=步级跳过 forward）。
-- **内存受限解锁并行**（用户经验，2026-09-05 已实证）：当更优并行策略因显存不可行（如 H3 BF16 单 rank 全量
-  超出单卡 128GB 容量，无法 TP1×USP4）时，**先在无损阶段尝试 offload 类特性降显存解锁**，而非直接放弃或跳到有损：
-  - vllm-omni 实测：`--enable-distributed-layerwise-offload`（DLO，默认 AllGather 路径：host 存 1/DP + H2D/AllGather
-    重叠）在 4×950PR 上解锁 **TP1×USP4 BF16 无损** —— 与 TP2×USP2 相当（60 步略优，约 3% 量级）；
-    日志：`Distributed layer-wise offloading enabled on 52 blocks ...
+  （原始计数见 `{run_results_dir}/archive/vllm-omni-minimax-h3-case.md`）
+- **内存受限解锁并行**（用户经验）：当更优并行策略因显存不可行（如 H3 BF16 单 rank 全量
+  超出单卡容量，无法 TP1×USP4）时，**先在无损阶段尝试 offload 类特性降显存解锁**，而非直接放弃或跳到有损：
+  - vllm-omni：`--enable-distributed-layerwise-offload`（DLO，默认 AllGather 路径：host 存 1/DP + H2D/AllGather
+    重叠）在 4 卡上解锁 **TP1×USP4 BF16 无损** —— 与 TP2×USP2 相当（较高步数略优，约 3% 量级）；
+    日志：`Distributed layer-wise offloading enabled on ... blocks ...
     dp_size=1, sp_size=4`。**DLO no-AllGather（rank-local H2D）慢数倍（host-bound）→ 选 AllGather 路径**。
   - mindiesd `enable_offload`；PyTorch FSDP/CPU-offload 语义开关（按框架命名查）。
-  - ⚠️ 互斥/副作用：FastH3 拒绝任何 offload；950PR 上普通 `--enable-layerwise-offload` 会触发 OOM killer（用 DLO）。
-- **有损完成后复查被显存卡住的通信组合**（已实证）：量化（INT8 online）降显存后解锁 TP1×USP4
+  - ⚠️ 互斥/副作用：FastH3 拒绝任何 offload；普通 `--enable-layerwise-offload` 会触发 OOM killer（用 DLO）。
+- **有损完成后复查被显存卡住的通信组合**：量化（INT8 online）降显存后解锁 TP1×USP4
   （较 USP2-int8 约降一成）与 +EagleQBSA mix（降幅更大）；即每个量化档落地后回跑「并行×显存余量」候选。
 
 ## 8. 证据落点

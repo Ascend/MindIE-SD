@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """闸①：CPU 等价性对拍 —— 整段解码 vs 分段解码必须逐位一致。
 
 用法
@@ -19,6 +18,7 @@
 
 退出码：0=PASS，1=FAIL（可直接用作 CI / 门禁）。
 """
+
 from __future__ import annotations
 
 import argparse
@@ -44,7 +44,7 @@ def _load_spec(spec: str):
     mod = importlib.import_module(mod_name)
     fn = getattr(mod, fn_name, None)
     if fn is None:
-        raise SystemExit("模块 %s 中找不到 %s" % (mod_name, fn_name))
+        raise SystemExit(f"模块 {mod_name} 中找不到 {fn_name}")
     built = fn()
     if isinstance(built, dict):
         whole, sliced = built.get("whole"), built.get("sliced")
@@ -62,17 +62,22 @@ def _demo_pair(shape):
         import sliced_state_decode as sd
     except ModuleNotFoundError:
         import os
+
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import sliced_state_decode as sd
-    import torch.nn as nn
+    from torch import nn
 
     torch.manual_seed(0)
     act = nn.ReLU(inplace=True)
     model = nn.Sequential(
-        nn.Conv2d(shape[2], 16, 3, padding=1), act,
-        sd._MemBlock(16, 16, act), sd._MemBlock(16, 16, act),
-        nn.Upsample(scale_factor=2, mode="nearest"), sd._TGrow(16, 2),
-        nn.Conv2d(16, 8, 3, padding=1), sd._MemBlock(8, 8, act),
+        nn.Conv2d(shape[2], 16, 3, padding=1),
+        act,
+        sd._MemBlock(16, 16, act),
+        sd._MemBlock(16, 16, act),
+        nn.Upsample(scale_factor=2, mode="nearest"),
+        sd._TGrow(16, 2),
+        nn.Conv2d(16, 8, 3, padding=1),
+        sd._MemBlock(8, 8, act),
         nn.Conv2d(8, 12, 3, padding=1),
     ).eval()
 
@@ -81,7 +86,7 @@ def _demo_pair(shape):
         bt, c, h, w = flat.shape
         return flat.view(n, bt // n, c, h, w)
 
-    is_mem = lambda b: isinstance(b, sd._MemBlock)  # noqa: E731 - demo predicate
+    is_mem = lambda b: isinstance(b, sd._MemBlock)
 
     def whole(x):
         with torch.no_grad():
@@ -98,12 +103,12 @@ def check(whole, sliced, shape, pieces_list, dtype, seed, rtol):
     torch.manual_seed(seed)
     x = torch.randn(*shape, dtype=dtype)
     ref = whole(x)
-    print("整段输出: shape=%s dtype=%s absmax=%.4g" % (tuple(ref.shape), ref.dtype, ref.abs().max().item()))
+    print(f"整段输出: shape={tuple(ref.shape)} dtype={ref.dtype} absmax={ref.abs().max().item():.4g}")
     bad = 0
     for p in pieces_list:
         got = sliced(x, p)
         if tuple(got.shape) != tuple(ref.shape):
-            print("  %d 段: **shape 不一致** %s vs %s => FAIL" % (p, tuple(got.shape), tuple(ref.shape)))
+            print(f"  {p} 段: **shape 不一致** {tuple(got.shape)} vs {tuple(ref.shape)} => FAIL")
             bad += 1
             continue
         d = (got - ref).abs().max().item()
@@ -116,7 +121,7 @@ def check(whole, sliced, shape, pieces_list, dtype, seed, rtol):
         else:
             verdict = "**FAIL**（相对 %.3e）" % (d / absmax)
             bad += 1
-        print("  %d 段: max|d| = %.6e  %s" % (p, d, verdict))
+        print(f"  {p} 段: max|d| = {d:.6e}  {verdict}")
     return bad
 
 
@@ -141,7 +146,9 @@ def main() -> int:
 
     dtype = torch.float32 if args.dtype == "float32" else torch.float64
     bad = check(whole, sliced, args.shape, args.pieces, dtype, args.seed, args.rtol)
-    print("\n结论: %s" % ("全部逐位等价 [PASS]" if bad == 0 else "存在不一致 [FAIL]（先查 state 语义/切分点/首段 pad）"))
+    print(
+        "\n结论: %s" % ("全部逐位等价 [PASS]" if bad == 0 else "存在不一致 [FAIL]（先查 state 语义/切分点/首段 pad）")
+    )
     return 0 if bad == 0 else 1
 
 

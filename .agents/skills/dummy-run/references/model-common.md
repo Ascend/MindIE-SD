@@ -11,7 +11,7 @@ examples/dummy_run/model/
 ├── __init__.py            # 基础设施: check_npu / resolve_config_path / _PhaseTimer
 ├── flux_model.py ...      # 各模型 builder（模型特有）
 └── common/
-    ├── __init__.py        # 统一导出面（7 个符号）
+    ├── __init__.py        # 统一导出面
     ├── precision.py       # 精度类: bf16/fp32 模型级机制（--quant bf16/fp32）
     ├── compile_patches.py # 性能补丁类: compile 图层性能问题的模型层替换
     └── quantization.py    # 量化类: W8A8 在线量化，设备感知（--quant w8a8）
@@ -45,7 +45,7 @@ examples/dummy_run/model/
 | 函数 | 职责 |
 |---|---|
 | `apply_w8a8_quant(pipe, attrs, dtype, fallback_layers, algorithm=None)` | 主入口：只量化 `nn.Linear`（Matmul），其余向量运算保持 bf16；`algorithm=None` 按设备自动选择 |
-| `_resolve_w8a8_algorithm()` | `NPUDevice.A5` → `W8A8_MXFP8`；A2/A3/Duo → `W8A8_DYNAMIC`（INT8） |
+| `_resolve_w8a8_algorithm()` | 按 `get_npu_device()` 返回的代际**查框架侧映射**选算法（新代际 → MXFP8 路径、旧代际 → dynamic INT8 路径）；代际名与映射**勿硬编码**，以框架代码 / 日志现场取证 |
 | `apply_mxfp8_quant(...)` | 兼容别名（强制 MXFP8，历史脚本使用） |
 | `report_quant_layers(pipe, attrs)` | 汇总量化命中（quant linear / remaining nn.Linear） |
 | `_align_bias_dtype(module, dtype)` | 兜底：量化层 bias 对齐 bf16（防 Dynamo guard 失败重编译） |
@@ -73,7 +73,7 @@ dummy run 保持最小代码改动）：
 ```python
 if args.quant == "w8a8":
     apply_compute_precision(pipe, "bf16")          # bf16 基座
-    apply_w8a8_quant(pipe, attrs=("transformer",)) # 设备感知: A5->MXFP8 / A2,A3->INT8
+    apply_w8a8_quant(pipe, attrs=("transformer",)) # 设备感知: 代际 → 算法由框架侧映射决定（现场取证，勿硬编码代际名）
     report_quant_layers(pipe, attrs=("transformer",))
     # FFN 融合: 无 eager patch; compile(--compile)时 pattern 命中
 else:
