@@ -18,7 +18,7 @@ jobs:
     name: Test
     select: selected_by_default
     needs: [ ]
-    runs-on: [ 'dedicate-hosted', '${{ inputs.runs_on_arch }}', '2xlarge' ]
+    runs-on: [ self-hosted, default, arm, cpu=30 ]
     container:
       image: ${{ inputs.CP_DOCKER_IMG }}
     steps:

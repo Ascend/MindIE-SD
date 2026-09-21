@@ -24,7 +24,7 @@ jobs:
     name: Compile
     select: selected_by_default
     needs: [ ]
-    runs-on: [ 'dedicate-hosted', '${{ inputs.runs_on_arch }}', '2xlarge' ]
+    runs-on: [ self-hosted, default, arm, cpu=30 ]
     container:
       image: ${{ inputs.CP_DOCKER_IMG }}
       options: --user root
@@ -36,27 +36,214 @@ jobs:
           repository: ${{atomgit.repositoryurl}}
           ref: refs/merge-requests/${{ inputs.pr_id }}/merge
 
+      - name: oidc-auth
+        uses: huaweicloud-oidc-auth
+        with:
+          audience: mindie_pr_trust
+          region: cn-north-4
+          agency_urn: iam::0d335fcedd00f3140f8ac01eaca892e0:agency:mindie_pr_trust
+          provider_urn: iam::0d335fcedd00f3140f8ac01eaca892e0:oidcProvider:mindie_pr_trust
+
       - name: Execute_shell
+        id: exec_shell_step
         run: |-
-          abi_type=${{ inputs.abi_type }}
-          arch=`uname -m`
-          WORKSPACE=${{atomgit.workspace}}
-          cd ${WORKSPACE}
-          python_version_major=$(python --version 2>&1 |awk '{print $2}' | cut -d. -f1,2)
-          # check python & abi version
-          if [ "${python_version_major}" != "3.11" ]; then
-              echo "Error: note that the required python version is 3.11, but the actual python version is ${python_version_major}"
-              exit 1
-          else
-              echo "python_version_major: ${python_version_major}"
-          fi
-          echo "abi version: ${abi_type}"
-          if [ "${abi_type}"x == "0"x ]; then
-              export PATH=/opt/rh/devtoolset-7/root/usr/bin:${PATH}
-              gcc --version
-          else
-              gcc --version
-          fi
-          source /usr/local/Ascend/ascend-toolkit/set_env.sh
-          export USER_ABI_VERSION="${abi_type}" && python setup.py bdist_wheel
-          ls -l dist/*
+            set -e
+            PR_BASE_REF="${{ atomgit.event.pull_request.base.ref }}"
+            CHANGED_FILES=""
+
+            check_csrc_git_change() {
+                local start_time
+                start_time=$(date +%s)
+                if [[ -z "${PR_BASE_REF}" ]]; then
+                    echo "[git‑check] Not PR event(target_branch empty), treat csrc as changed"
+                    return 0
+                fi
+                git fetch origin
+                BASE_BRANCH="origin/${PR_BASE_REF}"
+                mapfile -t CHANGED_FILES_CSRC < <(git diff --name-only "${BASE_BRANCH}" HEAD)
+
+                csrc_git_changed=0
+                for f in "${CHANGED_FILES_CSRC[@]}"; do
+                    if [[ "${f}" =~ ^csrc/ ]]; then
+                        echo "[git‑check] csrc files changed, must rebuild operator"
+                        csrc_git_changed=1
+                        return 0   # 0：有改动
+                        break
+                    fi
+                done
+
+                if [[ ${csrc_git_changed} -eq 0 ]]; then
+                    echo "[git‑check] csrc no file changed"
+                    return 1   # 1：无改动"
+                fi
+            }
+
+            abi_type=${{ inputs.abi_type }}
+            arch=$(uname -m)
+            endpoint='obs.cn-north-4.myhuaweicloud.com'
+            obs_base_path="obs://mindie-pr/monitor/ascend/MindIE-SD"
+
+            source /usr/local/Ascend/ascend-toolkit/set_env.sh
+            REAL_CANN_HOME=$(realpath -e /usr/local/Ascend/ascend-toolkit)
+            echo "workaround: REAL_CANN_HOME=${REAL_CANN_HOME}"
+            CANN_LINK="/usr/local/Ascend/cann-9.0.0"
+            if [ -e "${CANN_LINK}" ]; then
+                if [ -L "${CANN_LINK}" ]; then
+                    rm -f "${CANN_LINK}"
+                elif [ -d "${CANN_LINK}" ]; then
+                    if ! rmdir "${CANN_LINK}"; then
+                        mv "${CANN_LINK}" "${CANN_LINK}.bak.$$"
+                        echo "workaround: backup real dir ${CANN_LINK} -> ${CANN_LINK}.bak.$$"
+                    fi
+                fi
+            fi
+            ln -sf "${REAL_CANN_HOME}" "${CANN_LINK}"
+            echo "workaround: create symlink ${CANN_LINK} -> ${REAL_CANN_HOME}"
+            realpath -e "${CANN_LINK}"
+            python_version_major=$(python --version 2>&1 |awk '{print $2}' | cut -d. -f1,2)
+            # check python & abi version
+            if [ "${python_version_major}" != "3.11" ]; then
+                echo "Error: note that the required python version is 3.11, but the actual python version is ${python_version_major}"
+            else
+                echo "python_version_major: ${python_version_major}"
+            fi
+            echo "abi version: ${{ inputs.abi_type }}"
+            # set/update compiler
+            if [ "${{ inputs.abi_type }}"x == "0"x ]; then
+                export PATH=/opt/rh/devtoolset-7/root/usr/bin:${PATH}
+                gcc --version
+            else
+                gcc --version
+            fi
+            ARCH=$(uname -m)
+            ABI=${{ inputs.abi_type }}
+            OBS_CCACHE_PATH="${obs_base_path}/${{ inputs.pr_id }}/build/sd/CCACHE/${ARCH}/abi${ABI}.tar.gz"
+            rm -rf "${WORKSPACE}/ccache_aarch64_abi${ABI}"
+            rm -rf "${WORKSPACE}/ccache_x86_64_abi${ABI}"
+            mkdir -p "${WORKSPACE}/ccache_aarch64_abi${ABI}"
+            mkdir -p "${WORKSPACE}/ccache_x86_64_abi${ABI}"
+            sleep 1
+            tar -zcvf "${WORKSPACE}/ccache_aarch64_abi${ABI}/dummy.tar.gz" -T /dev/null >/dev/null 2>&1
+            tar -zcvf "${WORKSPACE}/ccache_x86_64_abi${ABI}/dummy.tar.gz" -T /dev/null 2>&1
+            mkdir -p "${WORKSPACE}/aarch64"
+            mkdir -p "${WORKSPACE}/x86_64"
+            touch "${WORKSPACE}/aarch64/dummy_aarch64.whl"
+            touch "${WORKSPACE}/x86_64/dummy_x86_64.whl"
+            export PATH="/usr/lib/ccache:$PATH"
+            export CCACHE_DIR="${WORKSPACE}/.ccache"
+            export CCACHE_SIZE="50G"
+            export CCACHE_COMPRESS="true"
+            export CXXFLAGS="-Wno-error"
+            export CFLAGS="-Wno-error"
+            mkdir -p "${CCACHE_DIR}"
+
+            obs_proto_removed="${OBS_CCACHE_PATH#obs://}"
+            bucket="${obs_proto_removed%%/*}"
+            obj_key="${obs_proto_removed#${bucket}/}"
+            obs_http_url="https://${bucket}.${endpoint}/${obj_key}"
+            set +e
+            wget --spider --no-check-certificate -q "${obs_http_url}" >/dev/null 2>&1
+            obs_exist=$?
+            check_csrc_git_change
+            csrc_git_changed=$?
+            set -e
+
+            echo "[git-check] csrc_git_changed=${csrc_git_changed}"
+            DIR_LIST=("build" "csrc" "mindiesd" "tests" "setup.py")
+            NEED_BUILD=0
+            BASE_BRANCH="origin/${PR_BASE_REF}"
+
+            git fetch origin
+            mapfile -t CHANGED_FILES < <(git diff --name-only "${BASE_BRANCH}" HEAD)
+
+            for check_item in "${DIR_LIST[@]}"; do
+                echo "[BuildCheck] check path prefix: ${check_item}"
+                for f in "${CHANGED_FILES[@]}"; do
+                    if [[ "${f}" =~ ^"${check_item}" ]]; then
+                        echo "[BuildCheck] ${check_item} has changes compared to ${GITCODE_BASE_REF}, trigger build"
+                        NEED_BUILD=1
+                        break
+                    fi
+                done
+            done
+            echo "[BuildCheck] Final NEED_BUILD=${NEED_BUILD}"
+
+            if [ ${obs_exist} -eq 0 ] && [ ${NEED_BUILD} -eq 1 ] && [ ${csrc_git_changed} -eq 1 ]; then
+                echo "缓存存在 && csrc无变更，开始下载..."
+                wget --no-cache -q --no-check-certificate -O "/tmp/ccache.tar.gz" "${obs_http_url}"
+                download_ret=$?
+                if [ $download_ret -eq 0 ]; then
+                    echo "ccache 缓存下载成功"
+                    tar -xf /tmp/ccache.tar.gz -C "${WORKSPACE}" || echo "解压缓存失败，但继续编译"
+                    tar -tf /tmp/ccache.tar.gz
+                else
+                    echo "ccache 缓存下载失败，直接编译"
+                fi
+            else
+                if [ ${obs_exist} -eq 0 ] && [ ${NEED_BUILD} -eq 1 ] && [ ${csrc_git_changed} -eq 0 ]; then
+                    echo "缓存存在，但csrc源码发生变更，不下载远端ccache，使用全新本地缓存"
+                    rm -rf "${CCACHE_DIR:?}"/*
+                else
+                    echo "ccache 缓存不存在，跳过下载，使用全新缓存编译"
+                fi
+            fi
+            ccache -M 50G >/dev/null 2>&1 || true
+            sleep 1
+            tar -zcvf "${WORKSPACE}/ccache_aarch64_abi${ABI}/dummy.tar.gz" -T /dev/null >/dev/null 2>&1
+            tar -zcvf "${WORKSPACE}/ccache_x86_64_abi${ABI}/dummy.tar.gz" -T /dev/null 2>&1
+            cd "${WORKSPACE}"
+            if [ "${{ inputs.abi_type }}" == "1" ]; then
+                export USER_ABI_VERSION=1
+            fi
+            export CCACHE_BASEDIR="${WORKSPACE}"
+            export CCACHE_NOHASHDIR=1
+            export CCACHE_SLOPPINESS="file_macro,include_file_mtime,time_macros"
+
+            if [ "${csrc_git_changed}" -eq 0 ]; then
+                export SKIP_ALL_OPS_PLUGIN_BUILD=0
+            else
+                export SKIP_ALL_OPS_PLUGIN_BUILD=1
+            fi
+
+            echo "===== BEFORE OPS BUILD ccache -s ====="
+            ccache -s
+            ccache -M 50G >/dev/null 2>&1 || true
+            if [ ${NEED_BUILD} -eq 1 ]; then
+                echo "[BuildCheck] build/csrc/mindiesd/tests has changes, run python setup.py bdist_wheel"
+                python setup.py bdist_wheel
+                ccache -s
+                ls -la "${WORKSPACE}"
+                echo "=== 打包 ccache + csrc 源码到产物目录"
+                ( cd "${PWD}" && tar cf "/tmp/ccache.tar.gz" .ccache csrc build/build ) >/dev/null 2>&1 || true
+                mv /tmp/ccache.tar.gz /tmp/abi${ABI}.tar.gz
+                if [ "$(uname -m)" == "aarch64" ]; then
+                    cp "/tmp/abi${ABI}.tar.gz" "${WORKSPACE}/ccache_aarch64_abi${ABI}/"
+                fi
+                if [ "$(uname -m)" == "x86_64" ]; then
+                    cp "/tmp/abi${ABI}.tar.gz" "${WORKSPACE}/ccache_x86_64_abi${ABI}/"
+                fi
+                rm -f "/tmp/abi${ABI}.tar.gz"
+                ls -l dist/*
+            else
+                echo "[BuildCheck] NO changes in build/csrc/mindiesd/tests, skip whole setup.py build"
+            fi
+
+      - name: upload aarch64 ccache
+        id: upload_obs_aarch64
+        if: inputs.arch == 'aarch64'
+        uses: obs-upload
+        with:
+          endpoint: "https://obs.cn-north-4.myhuaweicloud.com"
+          bucket: "mindie-pr"
+          artifact-path: ccache_aarch64_abi${{ inputs.abi_type }}/*.tar.gz
+          object-prefix: monitor/ascend/MindIE-SD/${{ inputs.pr_id }}/build/sd/CCACHE/aarch64
+
+      - name: upload x86_64 ccache
+        id: upload_obs_x86_64
+        if: inputs.arch == 'x86_64'
+        uses: obs-upload
+        with:
+          endpoint: "https://obs.cn-north-4.myhuaweicloud.com"
+          bucket: "mindie-pr"
+          artifact-path: ccache_x86_64_abi${{ inputs.abi_type }}/*.tar.gz
+          object-prefix: monitor/ascend/MindIE-SD/${{ inputs.pr_id }}/build/sd/CCACHE/x86_64
