@@ -467,7 +467,7 @@ std::string ToString(const std::vector<const gert::Shape*> &v)
     return oss.str();
 }
 
-std::string ToString(const gert::Shape &shape)
+inline std::string ToString(const gert::Shape &shape)
 {
     return ToString(ToVector(shape));
 }
