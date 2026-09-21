@@ -746,3 +746,83 @@ def eagle_ffn_linear_fake(
         )
     out_last = w2d0 if is_linear else w2d1
     return torch.empty(x.shape[:-1] + (out_last,), dtype=x.dtype, device=x.device)
+
+
+# ============================================================================
+# quant_four_over_six_a5（dynamic MX quant，46 自适应：bf16 -> FLOAT4_E2M1）
+# 注册名: quant_four_over_six_a5（仅 aclnn v2 直调路径，无 torch_npu 内置对应）
+# T9b: 仅保留 46 自适应路径（dst_type_max=4.0, scale_alg=2, blocksize=32, 尾轴, bf16）。
+# 非 46 组合（dst_type 41/36/35、scale_alg 0/1、dst_type_max 0/6/7、fp16 输入）已随
+# 清理删除——host tiling / plugin / fake 三层校验保持一致。
+# 注：float4 输出在 torch 层以 uint8 呈现（npu_dtype_cast 后 tensor.dtype == torch.uint8）。
+# ============================================================================
+_QUANT_DST_TYPE_TO_DTYPE = {
+    40: torch.uint8,  # FLOAT4_E2M1（4bit 打包，torch 层 uint8 呈现）
+}
+
+
+def _quant_dst_type_to_dtype(dst_type: int) -> torch.dtype:
+    dtype = _QUANT_DST_TYPE_TO_DTYPE.get(dst_type)
+    if dtype is None:
+        raise ParametersInvalid(
+            f"dst_type must be 40 (FLOAT4_E2M1, 4/6 adaptive is the only remaining path), but got {dst_type}"
+        )
+    return dtype
+
+
+def _quant_scale_dtype() -> torch.dtype:
+    # mxscale 为 E8M0（torch 层同样以 uint8 呈现，与 C++ 输出一致）
+    return torch.uint8
+
+
+def quant_four_over_six_a5(
+    x: torch.Tensor,
+    axis: int = -1,
+    round_mode: str = "rint",
+    dst_type: int = 40,
+    blocksize: int = 32,
+    scale_alg: int = 2,
+    dst_type_max: float = 4.0,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """dynamic MX 量化（46 自适应）：y = fp4 打包数据（float4 每字节 2 元素），mxscale 为 E8M0 缩放。
+
+    仅支持 46 自适应组合：bf16 输入、dst_type=40、scale_alg=2、dst_type_max=4.0、
+    blocksize=32、量化轴为尾轴（其余组合已随清理删除，非法入参由 NPU 侧报错）。
+    返回 (y, mxscale)，y 形状 = x 形状最后一维减半（uint8 打包呈现），mxscale 形状
+    为 x 在 axis 维按 ceil(ceil(dim/blocksize)/2) 压缩并 append 2（与 infershape 公式一致）。
+    """
+    return getattr(torch.ops.mindiesd, "quant_four_over_six_a5")(
+        x=x,
+        axis=axis,
+        round_mode=round_mode,
+        dst_type=dst_type,
+        blocksize=blocksize,
+        scale_alg=scale_alg,
+        dst_type_max=dst_type_max,
+    )
+
+
+@register_ops.register_mindie_fake_op("quant_four_over_six_a5")
+def quant_four_over_six_a5_fake(
+    x: torch.Tensor,
+    axis: int = -1,
+    round_mode: str = "rint",
+    dst_type: int = 40,
+    blocksize: int = 32,
+    scale_alg: int = 2,
+    dst_type_max: float = 4.0,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """占位 fake：只推导形状与 dtype，不做计算。
+
+    y 为 float4 打包输出，torch 层以 uint8 呈现（每字节 2 个 4bit 元素），
+    形状 = x 形状最后一维减半（与 C++ 实现/CollectB4ShapeInfo 语义一致）。
+    """
+    dim = axis if axis >= 0 else axis + x.dim()
+    # float4 打包：torch 层 uint8，形状最后一维减半
+    y_shape = list(x.shape[:-1]) + [x.shape[-1] // 2]
+    y = torch.empty(y_shape, dtype=_quant_dst_type_to_dtype(dst_type), device=x.device)
+    scale_shape = list(x.shape)
+    scale_shape[dim] = ((x.shape[dim] + blocksize - 1) // blocksize + 1) // 2
+    scale_shape.append(2)
+    mxscale = torch.empty(scale_shape, dtype=_quant_scale_dtype(), device=x.device)
+    return y, mxscale

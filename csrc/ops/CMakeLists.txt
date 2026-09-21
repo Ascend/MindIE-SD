@@ -285,6 +285,13 @@ if (base_aclnn_srcs)
             list(APPEND generate_aclnn_headers ${base_aclnn_binary_dir}/aclnn_${_op_name}.h)
             list(APPEND generate_proto_srcs    ${generate_proto_dir}/${_op_name}_proto.cpp)
             list(APPEND generate_proto_headers ${generate_proto_dir}/${_op_name}_proto.h)
+            # Version(2) attr 算子：op_build 会额外生成 aclnn_<op>_v2.cpp/.h
+            # （v1 为转调 v2 的薄包装）。须并入 ops_aclnn 源列表，
+            # 否则 libcust_opapi.so 缺 aclnn<Op>V2 符号（加载/调用失败）。
+            if (_op_name STREQUAL "quant_four_over_six_a5")
+                list(APPEND generate_aclnn_srcs ${base_aclnn_binary_dir}/aclnn_${_op_name}_v2.cpp)
+                list(APPEND generate_aclnn_headers ${base_aclnn_binary_dir}/aclnn_${_op_name}_v2.h)
+            endif ()
         endif ()
     endforeach ()
 else ()
