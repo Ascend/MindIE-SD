@@ -351,6 +351,7 @@ class TestMapper:
             ],
             "mindiesd/layers/_custom_ops.py": [
                 "tests/layers/test_custom_ops.py",
+                "tests/layers/test_apply_rotary_pos_emb.py",
             ],
             "mindiesd/layers/register_ops.py": [
                 "tests/layers/test_register_ops.py",

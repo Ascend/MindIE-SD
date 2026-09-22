@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # coding=utf-8
-# Copyright (c) Huawei Technologies Co., Ltd. 2024-2025. All rights reserved.
+# Copyright (c) Huawei Technologies Co., Ltd. 2024-2026. All rights reserved.
 # MindIE is licensed under Mulan PSL v2.
 # You can use this software according to the terms and conditions of the Mulan PSL v2.
 # You may obtain a copy of Mulan PSL v2 at:
@@ -14,9 +14,9 @@ from .flash_attn.attention_forward import attention_forward
 from .flash_attn.quant_flash_attn import quant_attention
 from .flash_attn.attention_forward_varlen import attention_forward_varlen
 from .flash_attn.sparse_flash_attn import sparse_attention
-from ._custom_ops import frequency_regulator
+from ._custom_ops import apply_rotary_pos_emb, frequency_regulator
 from .activation import get_activation_layer
-from .norm import RMSNorm, fast_layernorm
+from .norm import RMSNorm, add_layer_norm, add_rms_norm, fast_layernorm
 from .adalayernorm import layernorm_scale_shift
 from .muls_add import muls_add
 from .residual_gate_add import residual_gate_add
@@ -27,6 +27,9 @@ from .flash_attn import SparseLinearAttention
 
 __all__ = [
     "RMSNorm",
+    "add_layer_norm",
+    "add_rms_norm",
+    "apply_rotary_pos_emb",
     "attention_forward",
     "quant_attention",
     "attention_forward_varlen",

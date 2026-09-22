@@ -235,6 +235,9 @@ out = sparse_attention(
 | 接口名 | 类型 | 功能描述 |
 |--------|------|----------|
 | `rotary_position_embedding` | 函数 | 旋转位置编码（RoPE）融合算子 |
+| `apply_rotary_pos_emb` | 函数 | 复用 PTA，融合并原地更新 query 和 key 的 RoPE 算子 |
+| `add_layer_norm` | 函数 | 残差 Add 与 LayerNorm 融合算子 |
+| `add_rms_norm` | 函数 | 残差 Add 与 RMSNorm 融合算子 |
 | `RMSNorm` | 类 | RMS 归一化融合算子 |
 | `fast_layernorm` | 函数 | 高性能 LayerNorm 融合算子 |
 | `layernorm_scale_shift` | 函数 | 自适应 LayerNorm（AdaLayerNorm）融合算子 |
@@ -291,6 +294,216 @@ out = rotary_position_embedding(x, cos, sin, rotated_mode="rotated_half", head_f
 
 - **rotated_half**：适用于 OpenSoraPlan、Stable Audio 等模型，将 `x` 拆分为前后两半进行旋转。
 - **rotated_interleaved**：适用于 HunyuanDiT、OpenSora、Flux、CogVideox 等模型，将 `x` 按相邻元素交错进行旋转。
+
+---
+
+### apply_rotary_pos_emb
+
+将 query 和 key 两路 RoPE 计算融合，并原地更新这两个张量。此接口直接封装 `torch_npu.npu_apply_rotary_pos_emb`，不再单独注册 MindIE-SD C++ 算子。
+
+```python
+from mindiesd import apply_rotary_pos_emb
+```
+
+也可以从 `mindiesd.layers` 导入同一个函数。
+
+#### 函数签名
+
+```python
+apply_rotary_pos_emb(
+    query, key, cos, sin,
+    layout="BSND",
+    rotary_mode="half"
+) -> tuple[torch.Tensor, torch.Tensor]
+```
+
+#### 参数说明
+
+| 参数 | 类型 | 必选 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `query` | `torch.Tensor` | 是 | - | NPU 查询张量，调用后原地覆盖 |
+| `key` | `torch.Tensor` | 是 | - | NPU 键张量，调用后原地覆盖；注意力头数可与 query 不同 |
+| `cos` | `torch.Tensor` | 是 | - | NPU 余弦缓存，形状需与所选布局兼容 |
+| `sin` | `torch.Tensor` | 是 | - | NPU 正弦缓存，形状和数据类型与 `cos` 相同 |
+| `layout` | `str` | 否 | `"BSND"` | `BSND`、`SBND`、`BNSD`、`TND` 之一，实际支持情况取决于设备和后端 |
+| `rotary_mode` | `str` | 否 | `"half"` | `half`、`interleave`、`quarter` 之一，实际支持情况取决于设备和后端 |
+
+各张量应位于同一 NPU，并使用相同数据类型。支持的浮点类型取决于设备和后端，见下方约束说明。包装层显式向 PTA 传递 `layout`：本接口默认值是 `BSND`，不是 PTA 的 `BSH`；本接口不接受 `BSH`。
+
+`B` 表示批大小，`S` 表示序列长度，`Nq`/`Nk` 表示查询/键的注意力头数，`D` 表示每个头的维度（不是总隐藏维度），`T` 表示打包布局中的 token 数。query 和 key 除头数外的维度一致。不使用批维广播时，缓存形状如下：
+
+| 布局 | query 形状 | key 形状 | `cos` / `sin` 形状 |
+|------|------|------|------|
+| `BSND` | `[B,S,Nq,D]` | `[B,S,Nk,D]` | `[B,S,1,D]` |
+| `SBND` | `[S,B,Nq,D]` | `[S,B,Nk,D]` | `[S,B,1,D]` |
+| `BNSD` | `[B,Nq,S,D]` | `[B,Nk,S,D]` | `[B,1,S,D]` |
+| `TND` | `[T,Nq,D]` | `[T,Nk,D]` | `[T,1,D]` |
+
+缓存的头维度为 1，沿注意力头广播。Ascend 950 上缓存的批维度也可以为 1；A2/A3 上必须与输入批大小一致。与 `rotary_position_embedding` 不同，本接口不会自动把二维 `[S,D]` 缓存转换成所需形状。
+
+#### 旋转模式
+
+对 query 和 key 分别计算 `x * cos + rotate(x) * sin`。以下操作均沿最后一维进行：
+
+- `half`：将 `x` 等分为两段 `[x1, x2]`，`rotate(x) = [-x2, x1]`。
+- `interleave`：将每对相邻元素 `[a, b]` 旋转为 `[-b, a]`。
+- `quarter`：将 `x` 等分为四段 `[x1, x2, x3, x4]`，`rotate(x) = [-x2, x1, -x4, x3]`。
+
+`half` 和 `interleave` 要求 `D` 为偶数；`quarter` 要求 `D` 能被 4 整除。缓存的坐标配对方式必须与旋转模式及模型配置一致，同时仍须满足后端的形状和对齐限制。
+
+#### 返回值与原地更新
+
+`tuple[torch.Tensor, torch.Tensor]`：依次返回旋转后的 query 和 key。各输出的形状、数据类型、设备与对应输入相同，并且**与对应输入共享存储，不是独立副本**。
+
+**调用会覆盖传入的 query 和 key。** 指向相同存储的别名或视图也会观察到更新。如果后续还需要未旋转的值，应在调用前克隆 query 和 key，或者把克隆后的张量传给此函数。对同一组张量再次调用，会再次施加 RoPE。
+
+#### 设备与版本约束
+
+本接口**仅支持 NPU**，没有 `fused` 开关，也没有 CPU/原生参考回退路径。安装的 `torch_npu` 必须提供 `npu_apply_rotary_pos_emb`，否则包装层抛出带升级提示的 `RuntimeError`。非法布局或模式名称会抛出 `ParametersInvalid`；张量及设备相关限制交由 PTA/CANN 检查。
+
+下表摘录 [CANN ApplyRotaryPosEmbV2 约束](https://gitcode.com/cann/ops-transformer/blob/master/posembedding/apply_rotary_pos_emb/docs/aclnnApplyRotaryPosEmbV2.md)中 A2/A3 和 950 的支持范围。这些是后端能力，不代表每个 PTA/CANN 版本都已开放所有组合。
+
+| 产品 | 布局 | 旋转模式 | 每头维度 `D` | 数据类型 |
+|------|------|------|------|------|
+| Atlas A2/A3 训练及推理系列产品 | `BSND`、`TND` | `half` | 64 或 128 | `float16`、`bfloat16`、`float32` |
+| Ascend 950PR / 950DT | `BSND`、`SBND`、`BNSD`、`TND` | `half`、`interleave`、`quarter` | 不超过 1024，且满足模式和后端限制 | `float16`、`bfloat16`、`float32` |
+
+上表 A2/A3 范围不包含 Atlas 200I/500 A2 推理产品，引用的 CANN 接口不支持这些产品。其他产品及版本差异请查阅 [PTA 接口文档](https://gitcode.com/Ascend/op-plugin/blob/master/docs/zh/custom_APIs/torch_npu/torch_npu-apply_rotary_pos_emb.md)与安装版本对应的 CANN 文档。通过 Python 包装层的布局/模式校验，不代表可以绕过上述限制。
+
+当前 RoPE 回归用例已在 Ascend 950PR、`torch-npu 2.9.0.post4`、CANN 9.1 上验证；这不代表已覆盖所有设备、版本、每头维度或布局/模式/数据类型组合。
+
+#### 与 rotary_position_embedding 的区别
+
+| 对比项 | `rotary_position_embedding` | `apply_rotary_pos_emb` |
+|------|------|------|
+| 输入与输出 | 一个 `x`，返回一个结果张量 | 同时输入 query 和 key，返回两个结果张量 |
+| 输入修改 | 返回新结果，不覆盖 `x` | 原地覆盖 query/key，输出与输入共享存储 |
+| PTA 融合接口 | `torch_npu.npu_rotary_mul` | `torch_npu.npu_apply_rotary_pos_emb` |
+| 模式参数 | `rotated_mode`：`rotated_half`、`rotated_interleaved` | `rotary_mode`：`half`、`interleave`、`quarter` |
+| 布局处理 | 四维输入配合 `head_first`；自动调整支持的二维缓存 | 显式 `layout`，包括三维 `TND`；不自动调整缓存形状 |
+| 参考实现 | 可通过 `fused=False` 使用 | 无，仅 NPU |
+
+两者不能直接相互替换。迁移时除 RoPE 数学公式外，还必须核对输入是否修改、缓存形状、模式名称和设备支持范围。
+
+#### 使用示例
+
+示例使用 `BSND`、FP16 和 `D=64`。实际模型应使用其位置编码配置生成的余弦/正弦缓存。
+
+```python
+import torch
+import torch_npu
+from mindiesd import apply_rotary_pos_emb
+
+query = torch.randn(2, 8, 6, 64, device="npu", dtype=torch.float16)
+key = torch.randn(2, 8, 2, 64, device="npu", dtype=torch.float16)
+angles = torch.randn(2, 8, 1, 32, device="npu", dtype=torch.float16)
+angles = torch.cat((angles, angles), dim=-1)
+cos, sin = angles.cos(), angles.sin()
+
+query_out, key_out = apply_rotary_pos_emb(
+    query, key, cos, sin, layout="BSND", rotary_mode="half"
+)
+assert query_out.data_ptr() == query.data_ptr()
+assert key_out.data_ptr() == key.data_ptr()
+```
+
+---
+
+### add_layer_norm
+
+融合残差加法与 LayerNorm，并同时返回归一化结果和残差加法结果。
+
+```python
+from mindiesd import add_layer_norm
+```
+
+#### 函数签名
+
+```python
+add_layer_norm(
+    x, residual, weight, bias,
+    eps=1e-5,
+    fused=True
+) -> tuple[torch.Tensor, torch.Tensor]
+```
+
+#### 参数说明
+
+| 参数 | 类型 | 必选 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `x` | `torch.Tensor` | 是 | - | 输入张量，维度范围为 2~8 |
+| `residual` | `torch.Tensor` | 是 | - | 残差张量，形状、数据类型和设备与 `x` 一致 |
+| `weight` | `torch.Tensor` | 是 | - | 一维权重，长度等于 `x` 的最后一维 |
+| `bias` | `torch.Tensor` | 是 | - | 一维偏置，形状与 `weight` 一致 |
+| `eps` | `float` | 否 | `1e-5` | 有限正数，用于保证数值稳定性 |
+| `fused` | `bool` | 否 | `True` | `True` 时使用 NPU 融合算子；`False` 时使用 PyTorch 参考实现 |
+
+`x`、`residual`、`weight` 和 `bias` 支持 `float16`、`bfloat16` 和 `float32`。融合模式仅支持 NPU 张量。
+
+#### 返回值
+
+`tuple[torch.Tensor, torch.Tensor]`：依次返回归一化结果和 `x + residual`，两个张量的形状、数据类型和设备均与 `x` 一致。
+
+#### 使用示例
+
+```python
+import torch
+from mindiesd import add_layer_norm
+
+x = torch.randn(2, 4096, 1024, device="npu", dtype=torch.float16)
+residual = torch.randn_like(x)
+weight = torch.ones(1024, device="npu", dtype=torch.float16)
+bias = torch.zeros(1024, device="npu", dtype=torch.float16)
+out, residual_out = add_layer_norm(x, residual, weight, bias)
+```
+
+---
+
+### add_rms_norm
+
+融合残差加法与 RMSNorm，并同时返回归一化结果和残差加法结果。
+
+```python
+from mindiesd import add_rms_norm
+```
+
+#### 函数签名
+
+```python
+add_rms_norm(
+    x, residual, weight,
+    eps=1e-6,
+    fused=True
+) -> tuple[torch.Tensor, torch.Tensor]
+```
+
+#### 参数说明
+
+| 参数 | 类型 | 必选 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `x` | `torch.Tensor` | 是 | - | 输入张量，维度范围为 2~8 |
+| `residual` | `torch.Tensor` | 是 | - | 残差张量，形状、数据类型和设备与 `x` 一致 |
+| `weight` | `torch.Tensor` | 是 | - | 一维权重，长度等于 `x` 的最后一维 |
+| `eps` | `float` | 否 | `1e-6` | 有限正数，用于保证数值稳定性 |
+| `fused` | `bool` | 否 | `True` | `True` 时使用 NPU 融合算子；`False` 时使用 PyTorch 参考实现 |
+
+`x`、`residual` 和 `weight` 支持 `float16`、`bfloat16` 和 `float32`。融合模式仅支持 NPU 张量。
+
+#### 返回值
+
+`tuple[torch.Tensor, torch.Tensor]`：依次返回归一化结果和 `x + residual`，两个张量的形状、数据类型和设备均与 `x` 一致。
+
+#### 使用示例
+
+```python
+import torch
+from mindiesd import add_rms_norm
+
+x = torch.randn(2, 4096, 1024, device="npu", dtype=torch.float16)
+residual = torch.randn_like(x)
+weight = torch.ones(1024, device="npu", dtype=torch.float16)
+out, residual_out = add_rms_norm(x, residual, weight)
+```
 
 ---
 
