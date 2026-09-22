@@ -40,6 +40,8 @@ def activate_pattern_once():
             # Qwen-Image RoPE 同规则: 必须先于 wan_residual_gate 注册, 防止其误匹配
             # rope 的 add(mul(x,cos), mul(x_rot,sin)) 子图 (qwen 4D fallback 实测)
             "enable_qwen_rope": ("QwenRopePatternGroup", "..patterns"),
+            # Register after Qwen RoPE to avoid matching RoPE add-mul subgraphs.
+            "enable_qwen_residual_gate": ("QwenResidualGatePatternGroup", "..patterns"),
             "enable_wan_residual_gate": ("WanResidualGatePatternGroup", "..patterns"),
             "enable_wan_rmsnorm": ("WanRmsNormPatternGroup", "..patterns"),
             "enable_minimax_h3_gate": ("MiniMaxH3GatePatternGroup", "..patterns"),
