@@ -2,7 +2,7 @@
 
 ## Overview
 
-`fused_moe` is the MindIE-SD entry point for MoE, responsible for expert selection, token dispatch, expert computation, and result combining in MoE forward inference on NPU. This API targets open-source framework integration scenarios: callers provide activations, router logits, expert weights, and communication configurations, and the unified entry handles the entire routed experts forward computation.
+`fused_moe` is the MindIE SD entry point for MoE, responsible for expert selection, token dispatch, expert computation, and result combining in MoE forward inference on NPU. This API targets open-source framework integration scenarios: callers provide activations, router logits, expert weights, and communication configurations, and the unified entry handles the entire routed experts forward computation.
 
 In MoE models, each token selects a small number of experts based on router output. Compared to dense MLP, MoE can expand model capacity while controlling the actual computation per inference step, but introduces additional flows including token-to-expert routing, reordering, cross-card communication, and result recovery. `fused_moe` encapsulates these flows in a unified API, reducing repetitive adaptation costs on the framework side and enabling reuse of a single MoE computation entry across different parallelism strategies.
 
@@ -58,7 +58,7 @@ fused_moe(
 | `w2_weight` | `torch.Tensor` | Yes | - | Down projection weight, shape `[local_experts, intermediate_size, hidden_size]`, must have the same `local_experts` as `w13_weight`. |
 | `w13_bias` | `torch.Tensor` / `None` | No | `None` | Gate/up projection bias, shape `[local_experts, 2 * intermediate_size]`, must match `w13_weight` expert and output dimensions. |
 | `w2_bias` | `torch.Tensor` / `None` | No | `None` | Down projection bias, shape `[local_experts, hidden_size]`, must match `w2_weight` expert and output dimensions. |
-| `quant_config` | `QuantConfig` / `None` | No | `None` | MindIE-SD quantization config for enabling quantization in the MoE forward flow. |
+| `quant_config` | `QuantConfig` / `None` | No | `None` | MindIE SD quantization config for enabling quantization in the MoE forward flow. |
 | `w13_weight_scale` | `torch.Tensor` / `None` | No | `None` | Quantization scale for `w13_weight`. |
 | `w2_weight_scale` | `torch.Tensor` / `None` | No | `None` | Quantization scale for `w2_weight`. |
 | `tp_group` | `dist.ProcessGroup` / `None` | No | `None` | TP communication group. Takes effect when EP is not enabled and TP group size > 1. |
@@ -109,7 +109,20 @@ Two token dispatch strategies are supported:
 - **static dispatcher**: Uses a static token dispatch path, suitable for single-card, TP, and some EP scenarios. This path completes token sorting, expert token statistics, and result recovery via NPU MoE routing operators.
 - **dynamic dispatcher**: Uses a dynamic token dispatch path, suitable for EP scenarios. This path performs all-to-all communication based on token-to-expert distribution and restores token order before and after expert computation.
 
-When `dispatcher_type=None`, the API auto-selects based on communication mode and NPU model: Atlas 800I A3 SuperPoD Server / Ascend 950PR / Ascend 950DT  uses dynamic dispatcher in EP scenarios, Atlas 800I A2 inference server uses static dispatcher; non-EP scenarios (single-card/TP) always use static dispatcher. You can also explicitly specify via `dispatcher_type="static"` or `dispatcher_type="dynamic"`.
+When `dispatcher_type=None`, the API auto-selects based on communication mode and NPU model: 
+
+<!-- npu="A3" id1 -->
+- Atlas 800I A3 SuperPoD Server use dynamic dispatcher in EP scenarios.
+<!-- end id1 -->
+<!-- npu="950" id2 -->
+- 950PR&950DT products use dynamic dispatcher in EP scenarios.
+<!-- end id2 -->
+<!-- npu="910b" id3 -->
+- Atlas 800I A2 inference server use static dispatcher.
+<!-- end id3 -->
+- non-EP scenarios (single-card/TP) always use static dispatcher. 
+
+You can also explicitly specify via `dispatcher_type="static"` or `dispatcher_type="dynamic"`.
 
 ### Communication Configuration
 
@@ -221,7 +234,7 @@ out = fused_moe(
 
 #### INT8 Dynamic Quant MoE
 
-The INT8 path requires `w13_weight` and `w2_weight` to be `torch.int8`, along with corresponding quantization scales. MindIE-SD checks weight format before MLP computation; if weights are not in NPU NZ format, they are automatically converted to NZ before calling INT8 grouped MLP operators.
+The INT8 path requires `w13_weight` and `w2_weight` to be `torch.int8`, along with corresponding quantization scales. MindIE SD checks weight format before MLP computation; if weights are not in NPU NZ format, they are automatically converted to NZ before calling INT8 grouped MLP operators.
 
 ```python
 import torch

@@ -40,7 +40,7 @@ English | [简体中文](./README.md)
 - 08/03/2026: Completed [high-performance MiniMax-H3 inference adaptation and optimization on Ascend](examples/minimax-h3/infer.md) 🚀
 - 07/2026: [RotateAttention](docs/tech_report/RotateAttention.pdf) was accepted to ECCV 2026 🏆
 - 06/2026: Enhanced low-precision inference, multimodal MoE, sparse attention, and the deployment ecosystem ⚡
-- 05/28/2026: [Cache-DiT completed its MindIE-SD integration](https://github.com/vipshop/cache-dit/pull/1004) 🤝
+- 05/28/2026: [Cache-DiT completed its MindIE SD integration](https://github.com/vipshop/cache-dit/pull/1004) 🤝
 - 05/2026: Completed multimodal MoE inference capability development and multi-model adaptation validation 🧠
 - 04/2026: Enhanced graph compilation, operator fusion, and sparse computation capabilities ⚙️
 - 03/2026: Extended W4A4 and MXFP4 quantization capabilities ⚡
@@ -98,7 +98,7 @@ The following projects have integrated MindIE SD as a multimodal inference backe
 
 ## Contact Us
 
-Join the MindIE-SD WeChat community by scanning the group QR code below. If the group QR code has expired, scan the personal WeChat QR code to request an invitation.
+Join the MindIE SD WeChat community by scanning the group QR code below. If the group QR code has expired, scan the personal WeChat QR code to request an invitation.
 
 <div align="center">
 

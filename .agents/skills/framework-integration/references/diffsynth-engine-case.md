@@ -115,7 +115,7 @@ LightX2V 的运行时接入路径（§5.1）**不适用**，必须走 compile（
 - 姿势：`USPAttention.forward` 的 `@torch.compiler.disable` 仅在 SP 多卡路径保留
   （collective 留 eager），单卡路径放行进图。kernel 级降幅可忽略（仅边界 copy 小减），
   FA 本体 kernel 不变（eager 与图内均为同一 fused FA）；interleaved A/B 墙钟中性~略慢。
-- 附加风险：Ascend950 上 `npu_fusion_attention` 被 compile 后 seed/offset 可能被优化，
+- 附加风险：Ascend 950PR&950DT系列产品上 `npu_fusion_attention` 被 compile 后 seed/offset 可能被优化，
   固定 seed 时结果可能偏离 eager（torch_npu 官方警告）。
 - 结论：**单卡 attention 进图无收益且引入 seed 语义风险 → 回退**；FA 区段收益
   应找 FA 算子侧/布局侧，不是"把它编进 compile 图"。

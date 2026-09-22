@@ -33,16 +33,18 @@ RainFusion2.0 是一种在线自适应的块稀疏注意力方案，通过以下
 
 详细技术说明请参见 [RainFusion2.0 技术报告](../../tech_report/RainFusion2.0.pdf)。
 
+<!-- npu="950" id1 -->
 ### rf_v3（RainFusion3.0 / BSA）
 
-面向昇腾 950（A5）芯片的块稀疏注意力方案。掩码生成与空时重排复用 rf_v2 的策略（代表 Token 预测、空时感知重排、首帧保护），算子侧通过 `aclnnBlockSparseAttention` 系列 kernel 执行块稀疏计算，加载时自动探测 V3→V2→V1 并降级。`precision` 参数支持四档执行精度：
+面向 Ascend 950PR&950DT系列产品的块稀疏注意力方案。掩码生成与空时重排复用 rf_v2 的策略（代表 Token 预测、空时感知重排、首帧保护），算子侧通过 `aclnnBlockSparseAttention` 系列 kernel 执行块稀疏计算，加载时自动探测 V3→V2→V1 并降级。`precision` 参数支持四档执行精度：
 
 - `"bf16"`（默认）：不量化，纯 BF16 稀疏注意力。
 - `"mix"`：EagleQBSA 混合精度（Q/K 分块 INT8 + V 逐通道 FP8）。
 - `"fp8"`：Q/K 先做 Hadamard 旋转打散离群值，再对 Q/K/V 做 FP8 块量化（依赖 V2 及以上版本 kernel）。
-- `"mxfp4"`：走 `aclnnBlockSparseAttentionV3` 的 MXFP4 通路——保留 Q/K 的 Hadamard 旋转后量化为 FP4 E2M1 数据 + E8M0 缩放（Q/K 沿头维、V 沿序列维按 32 元素分组）。`mxfp4_dst_type_max` 选择量程策略：`0` 为 OCP（quantMode=2，floor），正值（常用 6~12）为 CX（quantMode=3，ceil，量程标定推荐 7.25）。仅 950 芯片支持。
+- `"mxfp4"`：走 `aclnnBlockSparseAttentionV3` 的 MXFP4 通路——保留 Q/K 的 Hadamard 旋转后量化为 FP4 E2M1 数据 + E8M0 缩放（Q/K 沿头维、V 沿序列维按 32 元素分组）。`mxfp4_dst_type_max` 选择量程策略：`0` 为 OCP（quantMode=2，floor），正值（常用 6~12）为 CX（quantMode=3，ceil，量程标定推荐 7.25）。仅 Ascend 950PR&950DT系列产品支持。
 
 接口参数与调用示例参见 [core_layers.md 中的 sparse_attention 章节](core_layers.md#sparse_attention)。
+<!-- end id1 -->
 
 ### ada_bsa（自适应块稀疏）
 
@@ -51,7 +53,9 @@ RainFusion2.0 是一种在线自适应的块稀疏注意力方案，通过以下
 **推荐方案：**
 
 - **优先使用 rf_v2（RainFusion2.0）**：端到端加速 1.5–1.8×，质量基本无损，覆盖图像和视频模型。
-- **950（A5）芯片使用 rf_v3**：rf_v2 在 A5 上自动路由到 rf_v3；需要量化加速时可选 `precision="fp8"` 或 `"mxfp4"`。
+<!-- npu="950" id2 -->
+- **Ascend 950PR&950DT系列产品使用 rf_v3**：rf_v2 在 Ascend 950PR&950DT系列产品上自动路由到 rf_v3；需要量化加速时可选 `precision="fp8"` 或 `"mxfp4"`。
+<!-- end id2 -->
 - **ada_bsa 备选**：当 rf_v2 不满足模型兼容性要求时尝试。
 - **默认 sparsity 建议**：图像任务从 0.6 起步，视频任务从 0.8 起步，根据生成质量微调。
 

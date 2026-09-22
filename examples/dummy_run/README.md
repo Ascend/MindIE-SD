@@ -50,7 +50,7 @@ python <model>_infer.py --device_id <N> --num_layers <N>
 | `--compile` | False | 使能 MindieSDBackend 编译 |
 | `--profile` | False | 使能 NPU profiling (level=l1) |
 | `--skip-vae` / `--no-skip-vae` | True | 跳过 VAE decode（默认）。`--no-skip-vae` 开启（Wan2.2 / Qwen-Image / FLUX.1-dev） |
-| `--quant` | bf16 | 量化/计算模式 `bf16` / `w8a8` / `fp32`（Wan2.2 / MiniMax-H3 / Qwen-Image / FLUX.1-dev）。bf16 = 模型层权重 cast + 激活原生 bf16，编译侧零隐式精度转换（GEMM ~15× 加速）；w8a8 = W8A8 在线量化（Matmul，FA 未使能，格式按设备：A5→MXFP8，A2/A3→INT8）；fp32 = 原 fp32 计算 |
+| `--quant` | bf16 | 量化/计算模式 `bf16` / `w8a8` / `fp32`（Wan2.2 / MiniMax-H3 / Qwen-Image / FLUX.1-dev）。bf16 = 模型层权重 cast + 激活原生 bf16，编译侧零隐式精度转换（GEMM ~15× 加速）；w8a8 = W8A8 在线量化（Matmul，FA 未使能，格式按设备：Ascend 950PR&950DT系列产品→MXFP8，Atlas 800I A2推理服务器/Atlas 800I A3超节点服务器→INT8）；fp32 = 原 fp32 计算 |
 
 MiniMax-H3 额外参数（见 [MiniMax-H3](#minimax-h3) 小节）：`--height`、`--width`、`--num_frames`、`--num_inference_steps`，无 `--skip-vae`（固定输出 latent，不解码）。
 
@@ -227,7 +227,7 @@ python minimax_h3_infer.py --device_id 0                    # 默认 bf16
 python minimax_h3_infer.py --device_id 0 --num_layers 4
 python minimax_h3_infer.py --device_id 0 --height 512 --width 768
 python minimax_h3_infer.py --device_id 0 --quant fp32   # 对照 fp32（慢 ~10x）
-python minimax_h3_infer.py --device_id 0 --quant w8a8   # W8A8 在线量化（A5→MXFP8 / A2,A3→INT8）
+python minimax_h3_infer.py --device_id 0 --quant w8a8   # W8A8 在线量化（Ascend 950PR&950DT系列产品→MXFP8，Atlas 800I A2推理服务器/Atlas 800I A3超节点服务器→INT8）
 python minimax_h3_infer.py --device_id 0 --config_cache /path/to/config
 python minimax_h3_infer.py --device_id 0 --compile
 python minimax_h3_infer.py --device_id 0 --profile
@@ -266,7 +266,18 @@ python minimax_h3_infer.py --device_id 0 --profile
 | `model/common/compile_patches.py` | compile 图层性能补丁（dropout kernel 浪费、qwen pos_embed 热点） | `replace_zero_dropout` / `replace_pos_embed_with_buffers` |
 | `model/common/quantization.py` | W8A8 在线量化，设备感知（`--quant w8a8`） | `apply_w8a8_quant` / `report_quant_layers` |
 
-`--quant w8a8` 按设备自动选格式：**A5（950PR）→ MXFP8**，**A2/A3（910B/910C）→ INT8**；
+`--quant w8a8` 按设备自动选格式：
+
+<!-- npu="950" id1 -->
+- **Ascend 950PR&950DT系列产品→ MXFP8**。
+<!-- end id1 -->
+<!-- npu="910b" id2 -->
+- **Atlas 800I A2推理服务器（910B）→ INT8**；
+<!-- end id2 -->
+<!-- npu="A3" id3 -->
+- **Atlas 800I A3超节点服务器（910C）→ INT8**；
+<!-- end id3 -->
+
 只量化 Matmul（`nn.Linear`），其余向量运算保持 bf16，FA 不量化（kernel 实证，图中无 fp32 计算节点）。
 
 > 完整模块职责 / API / 接入方式见 dummy-run-dev skill 的 `references/model-common.md`。

@@ -1,4 +1,4 @@
-# MindIE-SD
+# MindIE SD
 
 ## 快速参考
 
@@ -8,9 +8,9 @@
 | **Tags** | `v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64` |
 | | `v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64` |
 | | `v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64` |
-| **基础镜像** | Atlas 800I A2 推理服务器：`quay.io/ascend/vllm-omni:v0.28.0` |
-| | Atlas 800I A3 超节点服务器：`quay.io/ascend/vllm-omni:v0.28.0-a3` |
-| | 昇腾 A5 系列产品：`quay.io/ascend/vllm-omni:v0.28.0-a5` |
+| **基础镜像** | Atlas 800I A2推理服务器：`quay.io/ascend/vllm-omni:v0.28.0` |
+| | Atlas 800I A3超节点服务器：`quay.io/ascend/vllm-omni:v0.28.0-a3` |
+| | Ascend 950PR&950DT系列产品：`quay.io/ascend/vllm-omni:v0.28.0-a5` |
 | **架构** | `linux/amd64`（x86_64） |
 | **操作系统** | Ubuntu 22.04 |
 | **Python** | 3.12 |
@@ -23,19 +23,19 @@
 获取帮助：
 
 - [MindIE 镜像仓库](https://www.hiascend.com/developer/ascendhub/detail/af85b724a7e5469ebd7ea13c3439d48f)
-- [MindIE-SD 文档](https://gitcode.com/Ascend/MindIE-SD/blob/master/docs/zh/index.md)
+- [MindIE SD 文档](https://gitcode.com/Ascend/MindIE-SD/blob/master/docs/zh/index.md)
 - [昇腾开发者社区](https://www.hiascend.com/developer)
 - [问题反馈](https://gitcode.com/Ascend/MindIE-SD/issues)
 
 ## 镜像介绍
 
-本镜像将 **vLLM-Omni** 与 **MindIE-SD**（Mind Inference Engine Stable Diffusion）集成在单一容器中，支持在昇腾 NPU 上同时进行多模态大语言模型推理和 Stable Diffusion 图像生成。
+本镜像将 **vLLM-Omni** 与 **MindIE SD**（Mind Inference Engine Stable Diffusion）集成在单一容器中，支持在昇腾 NPU 上同时进行多模态大语言模型推理和 Stable Diffusion 图像生成。
 
 镜像基于 `quay.io/ascend/vllm-omni` 基础镜像构建（已包含 CANN 9.1.0、torch、TorchNPU、vllm 及 vllm_ascend），提供三个版本以适配不同的 NPU 系列：
 
-- **Atlas 800I A2 推理服务器**：基于 `quay.io/ascend/vllm-omni:v0.28.0`，适用于Atlas 800I A2 推理服务器
-- **Atlas 800I A3 超节点服务器**：基于 `quay.io/ascend/vllm-omni:v0.28.0-a3`，适用于Atlas 800I A3 超节点服务器
-- **昇腾 A5 系列产品**：基于 `quay.io/ascend/vllm-omni:v0.28.0-a5`，适用于昇腾 A5 系列产品
+- **Atlas 800I A2推理服务器**：基于 `quay.io/ascend/vllm-omni:v0.28.0`，适用于Atlas 800I A2推理服务器
+- **Atlas 800I A3超节点服务器**：基于 `quay.io/ascend/vllm-omni:v0.28.0-a3`，适用于Atlas 800I A3超节点服务器
+- **Ascend 950PR&950DT系列产品**：基于 `quay.io/ascend/vllm-omni:v0.28.0-a5`，适用于Ascend 950PR&950DT系列产品
 
 三个基础镜像标签仅提供 `linux/amd64`。
 
@@ -59,19 +59,19 @@
 
 | 系列 | 示例 Tag | 基础镜像 |
 |------|----------|----------|
-| Atlas 800I A2 推理服务器 | `v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64` | `quay.io/ascend/vllm-omni:v0.28.0` |
-| Atlas 800I A3 超节点服务器 | `v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64` | `quay.io/ascend/vllm-omni:v0.28.0-a3` |
-| 昇腾 A5 系列产品 | `v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64` | `quay.io/ascend/vllm-omni:v0.28.0-a5` |
+| Atlas 800I A2推理服务器 | `v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64` | `quay.io/ascend/vllm-omni:v0.28.0` |
+| Atlas 800I A3超节点服务器 | `v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64` | `quay.io/ascend/vllm-omni:v0.28.0-a3` |
+| Ascend 950PR&950DT系列产品 | `v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64` | `quay.io/ascend/vllm-omni:v0.28.0-a5` |
 
 ### v3.1.0 版本 Dockerfile 目录
 
-每个系列均有独立 Dockerfile，存放于 MindIE-SD 源码仓库的 `docker/omni` 目录：
+每个系列均有独立 Dockerfile，存放于 MindIE SD 源码仓库的 `docker/omni` 目录：
 
 | 系列 | 示例 Tag | Dockerfile |
 |------|----------|------------|
-| Atlas 800I A2 推理服务器 | `v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a2.ubuntu) |
-| Atlas 800I A3 超节点服务器 | `v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a3.ubuntu) |
-| 昇腾 A5 系列产品 | `v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a5.ubuntu) |
+| Atlas 800I A2推理服务器 | `v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a2.ubuntu) |
+| Atlas 800I A3超节点服务器 | `v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a3.ubuntu) |
+| Ascend 950PR&950DT系列产品 | `v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a5.ubuntu) |
 
 历史版本（包括 v3.0.0）的镜像 Tag 见 [Supported Tags](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/supported_tags.md)。
 
@@ -81,29 +81,36 @@
 
 浏览所有可用 Tag：[quay.io/ascend/vllm-omni](https://quay.io/repository/ascend/vllm-omni?tab=tags)。
 
-Atlas 800I A2 推理服务器：
+<!-- npu="910b" id1 -->
+Atlas 800I A2推理服务器：
 
 ```bash
 docker pull quay.io/ascend/vllm-omni:v0.28.0
 ```
+<!-- end id1 -->
 
-Atlas 800I A3 超节点服务器：
+<!-- npu="A3" id2 -->
+Atlas 800I A3超节点服务器：
 
 ```bash
 docker pull quay.io/ascend/vllm-omni:v0.28.0-a3
 ```
+<!-- end id2 -->
 
-昇腾 A5 系列产品：
+<!-- npu="950" id3 -->
+Ascend 950PR&950DT系列产品：
 
 ```bash
 docker pull quay.io/ascend/vllm-omni:v0.28.0-a5
 ```
+<!-- end id3 -->
 
 > **提示：** 如果使用 Podman 作为容器运行时，可将 `docker pull` 替换为 `podman pull`。
 
 ### 运行容器
 
-Atlas 800I A2 推理服务器：
+<!-- npu="910b" id4 -->
+Atlas 800I A2推理服务器：
 
 ```bash
 docker run -it --rm --name=mindiesd \
@@ -125,8 +132,10 @@ docker run -it --rm --name=mindiesd \
     mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64 \
     bash
 ```
+<!-- end id4 -->
 
-Atlas 800I A3 超节点服务器：
+<!-- npu="A3" id5 -->
+Atlas 800I A3超节点服务器：
 
 ```bash
 docker run -it --rm --name=mindiesd \
@@ -148,8 +157,10 @@ docker run -it --rm --name=mindiesd \
     mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64 \
     bash
 ```
+<!-- end id5 -->
 
-昇腾 A5 系列产品：
+<!-- npu="950" id6 -->
+Ascend 950PR&950DT系列产品：
 
 ```bash
 docker run -it --rm --name=mindiesd \
@@ -171,14 +182,16 @@ docker run -it --rm --name=mindiesd \
     mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64 \
     bash
 ```
+<!-- end id6 -->
 
 > **注意：** `--privileged` 和设备映射是访问 NPU 的必要条件。需要将宿主机的驱动库（`/usr/local/Ascend/driver/lib64`）、驱动版本信息、DCMI、`npu-smi` 及昇腾安装信息挂载到容器中。
 
 ### 本地构建
 
-克隆 MindIE-SD 仓库后，进入 `docker/omni` 目录执行构建：
+克隆 MindIE SD 仓库后，进入 `docker/omni` 目录执行构建：
 
-Atlas 800I A2 推理服务器：
+<!-- npu="910b" id7 -->
+Atlas 800I A2推理服务器：
 
 ```bash
 git clone https://gitcode.com/Ascend/MindIE-SD.git
@@ -189,8 +202,10 @@ cd docker/omni
 docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64 \
     -f Dockerfile.a2.ubuntu .
 ```
+<!-- end id7 -->
 
-Atlas 800I A3 超节点服务器：
+<!-- npu="A3" id8 -->
+Atlas 800I A3超节点服务器：
 
 ```bash
 git clone https://gitcode.com/Ascend/MindIE-SD.git
@@ -201,8 +216,10 @@ cd docker/omni
 docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64 \
     -f Dockerfile.a3.ubuntu .
 ```
+<!-- end id8 -->
 
-昇腾 A5 系列产品：
+<!-- npu="950" id9 -->
+Ascend 950PR&950DT系列产品：
 
 ```bash
 git clone https://gitcode.com/Ascend/MindIE-SD.git
@@ -213,6 +230,7 @@ cd docker/omni
 docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64 \
     -f Dockerfile.a5.ubuntu .
 ```
+<!-- end id9 -->
 
 ### 二次开发
 
@@ -231,7 +249,7 @@ WORKDIR /workspace/your-app
 
 ## 兼容性变更说明
 
-请参考 [MindIE-SD 文档](https://gitcode.com/Ascend/MindIE-SD/blob/master/docs/zh/index.md) 获取最新的版本发布说明和兼容性信息。
+请参考 [MindIE SD 文档](https://gitcode.com/Ascend/MindIE-SD/blob/master/docs/zh/index.md) 获取最新的版本发布说明和兼容性信息。
 
 ## 许可证/免责声明
 

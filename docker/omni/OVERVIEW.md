@@ -1,4 +1,4 @@
-# MindIE-SD
+# MindIE SD
 
 ## Quick Reference
 
@@ -10,7 +10,7 @@
 | | `v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64` |
 | **Base Images** | Atlas 800I A2 inference server: `quay.io/ascend/vllm-omni:v0.28.0` |
 | | Atlas 800I A3 SuperPoD Server: `quay.io/ascend/vllm-omni:v0.28.0-a3` |
-| | Ascend A5 series products: `quay.io/ascend/vllm-omni:v0.28.0-a5` |
+| | 950PR&950DT products: `quay.io/ascend/vllm-omni:v0.28.0-a5` |
 | **Architecture** | `linux/amd64` (x86_64) |
 | **OS** | Ubuntu 22.04 |
 | **Python** | 3.12 |
@@ -23,19 +23,19 @@ This image is maintained by the [MindIE community](https://www.hiascend.com/en/d
 Get help:
 
 - [MindIE image repository](https://www.hiascend.com/developer/ascendhub/detail/af85b724a7e5469ebd7ea13c3439d48f)
-- [MindIE-SD documentation](https://gitcode.com/Ascend/MindIE-SD/blob/master/docs/en/index.md)
+- [MindIE SD documentation](https://gitcode.com/Ascend/MindIE-SD/blob/master/docs/en/index.md)
 - [Atlas Developer Community](https://www.hiascend.com/developer)
 - [Issue feedback](https://gitcode.com/Ascend/MindIE-SD/issues)
 
 ## Image Overview
 
-This image combines **vLLM-Omni** and **MindIE-SD** (Mind Inference Engine Stable Diffusion) into a single container, enabling both multi-modal LLM inference and Stable Diffusion image generation on Atlas NPUs.
+This image combines **vLLM-Omni** and **MindIE SD** (Mind Inference Engine Stable Diffusion) into a single container, enabling both multi-modal LLM inference and Stable Diffusion image generation on Atlas NPUs.
 
 It is built on top of the `quay.io/ascend/vllm-omni` base image (which includes CANN 9.1.0, torch, TorchNPU, vllm, and vllm_ascend). Three variants are provided for different NPU series:
 
 - **Atlas 800I A2 inference server**: based on `quay.io/ascend/vllm-omni:v0.28.0`, for Atlas 800I A2 inference server
 - **Atlas 800I A3 SuperPoD Server**: based on `quay.io/ascend/vllm-omni:v0.28.0-a3`, for Atlas 800I A3 SuperPoD Server
-- **Ascend A5 series products**: based on `quay.io/ascend/vllm-omni:v0.28.0-a5`, for Ascend A5 series products
+- **950PR&950DT products**: based on `quay.io/ascend/vllm-omni:v0.28.0-a5`, for 950PR&950DT products
 
 All three base tags publish `linux/amd64` only.
 
@@ -61,17 +61,17 @@ All three variants add the following Atlas tuning and debugging tools:
 |--------|-------------|------------|
 | Atlas 800I A2 inference server | `v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64` | `quay.io/ascend/vllm-omni:v0.28.0` |
 | Atlas 800I A3 SuperPoD Server | `v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64` | `quay.io/ascend/vllm-omni:v0.28.0-a3` |
-| Ascend A5 series products | `v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64` | `quay.io/ascend/vllm-omni:v0.28.0-a5` |
+| 950PR&950DT products | `v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64` | `quay.io/ascend/vllm-omni:v0.28.0-a5` |
 
 ### v3.1.0 Version Dockerfile Directory
 
-Each series has a dedicated Dockerfile, archived in the `docker/omni` directory of the MindIE-SD source repository:
+Each series has a dedicated Dockerfile, archived in the `docker/omni` directory of the MindIE SD source repository:
 
 | Series | Example Tag | Dockerfile |
 |--------|-------------|------------|
 | Atlas 800I A2 inference server | `v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a2.ubuntu) |
 | Atlas 800I A3 SuperPoD Server | `v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a3.ubuntu) |
-| Ascend A5 series products | `v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a5.ubuntu) |
+| 950PR&950DT products | `v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a5.ubuntu) |
 
 Historical image tags, including v3.0.0, are listed in [Supported Tags](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/supported_tags.md).
 
@@ -81,28 +81,35 @@ Historical image tags, including v3.0.0, are listed in [Supported Tags](https://
 
 Browse all available tags at [quay.io/ascend/vllm-omni](https://quay.io/repository/ascend/vllm-omni?tab=tags).
 
+<!-- npu="910b" id1 -->
 Atlas 800I A2 inference server:
 
 ```bash
 docker pull quay.io/ascend/vllm-omni:v0.28.0
 ```
+<!-- end id1 -->
 
+<!-- npu="A3" id2 -->
 Atlas 800I A3 SuperPoD Server:
 
 ```bash
 docker pull quay.io/ascend/vllm-omni:v0.28.0-a3
 ```
+<!-- end id2 -->
 
-Ascend A5 series products:
+<!-- npu="950" id3 -->
+950PR&950DT products:
 
 ```bash
 docker pull quay.io/ascend/vllm-omni:v0.28.0-a5
 ```
+<!-- end id3 -->
 
 > **Tip:** You can also use `podman pull` in place of `docker pull` if you prefer Podman as your container runtime.
 
 ### Run the Container
 
+<!-- npu="910b" id4 -->
 Atlas 800I A2 inference server:
 
 ```bash
@@ -125,7 +132,9 @@ docker run -it --rm --name=mindiesd \
     mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64 \
     bash
 ```
+<!-- end id4 -->
 
+<!-- npu="A3" id5 -->
 Atlas 800I A3 SuperPoD Server:
 
 ```bash
@@ -148,8 +157,10 @@ docker run -it --rm --name=mindiesd \
     mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64 \
     bash
 ```
+<!-- end id5 -->
 
-Ascend A5 series products:
+<!-- npu="950" id6 -->
+950PR&950DT products:
 
 ```bash
 docker run -it --rm --name=mindiesd \
@@ -171,13 +182,15 @@ docker run -it --rm --name=mindiesd \
     mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64 \
     bash
 ```
+<!-- end id6 -->
 
 > **Note:** The `--privileged` flag and device mappings are required for NPU access. The host must mount driver libraries (`/usr/local/Ascend/driver/lib64`), driver version info, DCMI, `npu-smi`, and Atlas install info into the container.
 
 ### Build Locally
 
-Clone the MindIE-SD repository and build from the `docker/omni` directory:
+Clone the MindIE SD repository and build from the `docker/omni` directory:
 
+<!-- npu="910b" id7 -->
 Atlas 800I A2 inference server:
 
 ```bash
@@ -189,7 +202,9 @@ cd docker/omni
 docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64 \
     -f Dockerfile.a2.ubuntu .
 ```
+<!-- end id7 -->
 
+<!-- npu="A3" id8 -->
 Atlas 800I A3 SuperPoD Server:
 
 ```bash
@@ -201,8 +216,10 @@ cd docker/omni
 docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64 \
     -f Dockerfile.a3.ubuntu .
 ```
+<!-- end id8 -->
 
-Ascend A5 series products:
+<!-- npu="950" id9 -->
+950PR&950DT products:
 
 ```bash
 git clone https://gitcode.com/Ascend/MindIE-SD.git
@@ -213,6 +230,7 @@ cd docker/omni
 docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64 \
     -f Dockerfile.a5.ubuntu .
 ```
+<!-- end id9 -->
 
 ### Customize (Secondary Development)
 
@@ -231,7 +249,7 @@ WORKDIR /workspace/your-app
 
 ## Compatibility Changes
 
-Refer to the [MindIE-SD documentation](https://gitcode.com/Ascend/MindIE-SD/blob/master/docs/en/index.md) for the latest release notes and compatibility information.
+Refer to the [MindIE SD documentation](https://gitcode.com/Ascend/MindIE-SD/blob/master/docs/en/index.md) for the latest release notes and compatibility information.
 
 ## License & Disclaimer
 

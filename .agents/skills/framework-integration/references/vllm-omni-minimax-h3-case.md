@@ -20,7 +20,7 @@
 | FLASH_ATTN | backend 未配置且 `find_spec("mindiesd")`（platform.py:156-165） | SDPA → FA 单点为正（@10 步 TP2，约一成） |
 | 单算子替换 | norm/rope/adaln 层 CustomOp dispatch（fast_layernorm / rotary_position_embedding / layernorm_scale_shift）；RMSNorm eager 即 `npu_rms_norm` | 与 FA 同开 |
 | 编码器 patch | NPU 平台 init_diffusion_model_runner_runtime（fused RoPE + GQA-SDPA + packed GEMM+npu_swiglu） | 文本编码亚秒量级 |
-| MINDIE_SD_FA_TYPE | mindiesd manual 分支枚举 {prompt_flash_attn, fused_attn_score, ascend_laser_attention}；vllm-omni 只比 ==ascend_laser_attention（flash_attn.py:564） | 950PR 未 AB（勿在 950PR/950DT 设） |
+| MINDIE_SD_FA_TYPE | mindiesd manual 分支枚举 {prompt_flash_attn, fused_attn_score, ascend_laser_attention}；vllm-omni 只比 ==ascend_laser_attention（flash_attn.py:564） | 950PR 未 AB（勿在Ascend 950PR&950DT系列产品设） |
 
 ## 3. 无损叠加结果（10 步稳态；60 步括号）
 

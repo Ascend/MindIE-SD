@@ -119,7 +119,7 @@ cached 步的三类 kernel（FA / Matmul / RMSNorm）计数相对 eager 步**骤
 #### 路径 1：eager rf_v3（vllm-omni RAINFUSION 后端现走路径）——「能生效但收益有限」
 
 - 0.26 后端只调 `mindiesd.sparse_attention(sparse_type="rf_v2")`；950PR（soc_version=260 属 mindiesd
-  A5 类）→ **rf_v2 被自动路由到 rf_v3**（`aclnnBlockSparseAttentionV2`，inner_precise 强制 4）。
+  Ascend 950PR&950DT系列产品类）→ **rf_v2 被自动路由到 rf_v3**（`aclnnBlockSparseAttentionV2`，inner_precise 强制 4）。
 - 配置语义：`sparsity` = 每 query block **丢弃** key block 名义比例（mindiesd `keep_len=ceil(cols×(1-sparsity))`，
   内容相关 mask：pooled q/k 相似度 softmax→topk→阈值，**每层每步重建**）；`start_step` = 前 N 步 dense；
   `skip_layers` 豁免指定 block。

@@ -40,7 +40,7 @@
 - 08/03/2026: 完成 [MiniMax-H3 昇腾高性能推理适配与优化](examples/minimax-h3/infer.md) 🚀
 - 07/2026: [RotateAttention](docs/tech_report/RotateAttention.pdf) 已被 ECCV 2026 录用 🏆
 - 06/2026: 完成低精度推理、多模态 MoE、稀疏注意力和部署生态增强 ⚡
-- 05/28/2026: [Cache-DiT 完成 MindIE-SD 接入](https://github.com/vipshop/cache-dit/pull/1004) 🤝
+- 05/28/2026: [Cache-DiT 完成 MindIE SD 接入](https://github.com/vipshop/cache-dit/pull/1004) 🤝
 - 05/2026: 完成多模态 MoE 推理能力建设和多模型适配验证 🧠
 - 04/2026: 完成图编译、算子融合与稀疏计算能力增强 ⚙️
 - 03/2026: 扩展 W4A4 与 MXFP4 量化能力 ⚡
@@ -100,7 +100,7 @@ MindIE SD 架构和关键特性详见[架构介绍](docs/zh/architecture.md)。
 
 欢迎通过 [GitCode Issues](https://gitcode.com/Ascend/MindIE-SD/issues) 直接参与讨论与反馈。
 
-为了更便捷地交流并获得更快的响应，我们建立了 MindIE-SD 微信交流群。您可以扫描左侧的微信群二维码加入交流群；若群二维码已失效，请扫描右侧的个人微信二维码，添加好友后由其邀请您加入交流群。
+为了更便捷地交流并获得更快的响应，我们建立了 MindIE SD 微信交流群。您可以扫描左侧的微信群二维码加入交流群；若群二维码已失效，请扫描右侧的个人微信二维码，添加好友后由其邀请您加入交流群。
 
 <div align="center">
 

@@ -2,7 +2,7 @@
 
 ## 功能概述
 
-`fused_moe` 是 MindIE-SD 提供的 MoE 对外入口，用于在 NPU 上完成 MoE 前向推理中的专家选择、Token 分发、专家计算和结果合并。该接口面向开源框架集成场景，调用方传入激活、路由 logits、专家权重和通信配置后，即可通过统一入口完成 routed experts 的前向计算。
+`fused_moe` 是 MindIE SD 提供的 MoE 对外入口，用于在 NPU 上完成 MoE 前向推理中的专家选择、Token 分发、专家计算和结果合并。该接口面向开源框架集成场景，调用方传入激活、路由 logits、专家权重和通信配置后，即可通过统一入口完成 routed experts 的前向计算。
 
 MoE 模型中，每个 Token 会根据 router 输出选择少量 experts 参与计算。相比 dense MLP，MoE 可以在扩大模型容量的同时控制单次推理的实际计算量，但也引入了 Token 到 expert 的路由、重排、跨卡通信和结果恢复等额外流程。`fused_moe` 将这些流程封装在统一接口中，减少框架侧重复适配成本，并便于在不同并行策略下复用同一套 MoE 计算入口。
 
@@ -58,7 +58,7 @@ fused_moe(
 | `w2_weight` | `torch.Tensor` | 是 | - | down 投影权重，形状为 `[local_experts, intermediate_size, hidden_size]`，必须与 `w13_weight` 具有相同的 `local_experts`。 |
 | `w13_bias` | `torch.Tensor` / `None` | 否 | `None` | gate/up 投影 bias，形状为 `[local_experts, 2 * intermediate_size]`，需与 `w13_weight` 的 expert 和输出维度一致。 |
 | `w2_bias` | `torch.Tensor` / `None` | 否 | `None` | down 投影 bias，形状为 `[local_experts, hidden_size]`，需与 `w2_weight` 的 expert 和输出维度一致。 |
-| `quant_config` | `QuantConfig` / `None` | 否 | `None` | MindIE-SD 量化配置，用于选择 MoE 前向流程的量化算法。 |
+| `quant_config` | `QuantConfig` / `None` | 否 | `None` | MindIE SD 量化配置，用于选择 MoE 前向流程的量化算法。 |
 | `w13_weight_scale` | `torch.Tensor` / `None` | 否 | `None` | `w13_weight` 的 quantization scale。 |
 | `w2_weight_scale` | `torch.Tensor` / `None` | 否 | `None` | `w2_weight` 的 quantization scale。 |
 | `tp_group` | `dist.ProcessGroup` / `None` | 否 | `None` | TP 通信组。未启用 EP 且 TP group size 大于 1 时生效。 |
@@ -109,7 +109,20 @@ fused_moe(
 - **static dispatcher**：使用静态 Token 分发路径，适用于单卡、TP 场景，以及部分 EP 场景。该路径通过 NPU MoE routing 算子完成 Token 排序、expert token 统计和结果恢复。
 - **dynamic dispatcher**：使用动态 Token 分发路径，适用于 EP 场景。该路径会根据 Token 到 expert 的分布执行 all-to-all 通信，并在专家计算前后完成 Token 顺序恢复。
 
-当 `dispatcher_type=None` 时，接口根据通信模式和 NPU 型号自动选择：EP 场景下 Atlas 800I A3 超节点服务器 / Ascend 950PR / Ascend 950DT 使用 dynamic dispatcher，Atlas 800I A2 推理服务器使用 static dispatcher；非 EP 场景（单卡/TP）始终使用 static dispatcher。也可以通过 `dispatcher_type="static"` 或 `dispatcher_type="dynamic"` 显式指定。
+当 `dispatcher_type=None` 时，接口根据通信模式和 NPU 型号自动选择：
+
+<!-- npu="A3" id1 -->
+- EP 场景下Atlas 800I A3超节点服务器使用 dynamic dispatcher。
+<!-- end id1 -->
+<!-- npu="950" id2 -->
+- EP 场景下Ascend 950PR&950DT系列产品使用 dynamic dispatcher。
+<!-- end id2 -->
+<!-- npu="910b" id3 -->
+- EP 场景下Atlas 800I A2推理服务器static dispatcher。
+<!-- end id3 -->
+- 非 EP 场景（单卡/TP）始终使用 static dispatcher。
+
+也可以通过 `dispatcher_type="static"` 或 `dispatcher_type="dynamic"` 显式指定。
 
 ### 通信配置
 
@@ -125,8 +138,12 @@ fused_moe(
 
 未传入 `quant_config`，或 `quant_config.quant_algo` 为 `None` / `NO_QUANT` 时，按非量化方式执行 MoE 前向流程。当前支持以下量化配置：
 
-- `QuantConfig(quant_algo=QuantAlgorithm.W8A8_DYNAMIC)`：W8A8 dynamic quantization，支持 Atlas 800I A2 推理服务器 / Atlas 800I A3 超节点服务器。
-- `QuantConfig(quant_algo=QuantAlgorithm.W8A8_MXFP8)`：W8A8 MXFP8 quantization，支持Ascend 950PR / Ascend 950DT。
+<!-- npu="A3,910b" id4 -->
+- `QuantConfig(quant_algo=QuantAlgorithm.W8A8_DYNAMIC)`：W8A8 dynamic quantization，支持 Atlas 800I A2推理服务器 / Atlas 800I A3超节点服务器。
+<!-- end id4 -->
+<!-- npu="950" id5 -->
+- `QuantConfig(quant_algo=QuantAlgorithm.W8A8_MXFP8)`：W8A8 MXFP8 quantization，支持 Ascend 950PR&950DT系列产品。
+<!-- end id5 -->
 
 ### 路由选择
 
@@ -220,10 +237,11 @@ out = fused_moe(
 )
 ```
 
-#### W8A8 dynamic quant MoE（Atlas 800I A2 推理服务器 / Atlas 800I A3 超节点服务器）
+<!-- npu="A3,910b" id6 -->
+#### W8A8 dynamic quant MoE（Atlas 800I A2推理服务器 / Atlas 800I A3超节点服务器）
 
 W8A8 dynamic quant 路径要求 `w13_weight` 和 `w2_weight` 为 `torch.int8`，并传入对应的
-quantization scale。MindIE-SD 会在 MLP 计算前检查权重格式；若权重不是 NPU NZ 格式，会自动转换为
+quantization scale。MindIE SD 会在 MLP 计算前检查权重格式；若权重不是 NPU NZ 格式，会自动转换为
 NZ 后再调用 INT8 grouped MLP 算子。
 
 ```python
@@ -273,8 +291,10 @@ out = fused_moe(
     inputs_sharded=False,
 )
 ```
+<!-- end id6 -->
 
-#### MXFP8 dynamic quant MoE（Ascend 950PR / Ascend 950DT）
+<!-- npu="950" id7 -->
+#### MXFP8 dynamic quant MoE（Ascend 950PR&950DT系列产品）
 
 MXFP8 路径使用 `QuantAlgorithm.W8A8_MXFP8` 量化配置，`w13_weight` 和 `w2_weight` 使用
 `torch.float8_e4m3fn`，并传入对应的 quantization scale。
@@ -338,6 +358,7 @@ out = fused_moe(
     inputs_sharded=False,
 )
 ```
+<!-- end id7 -->
 
 #### TP static MoE
 

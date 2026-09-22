@@ -35,7 +35,7 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 |--|--|
 |LD_LIBRARY_PATH|动态库的查找路径。|
 |ASCEND_CUSTOM_OPP_PATH|推理引擎自定义算子包安装路径。|
-|ASCEND_RT_VISIBLE_DEVICES|指定当前进程所用的昇腾AI处理器的逻辑ID，如有需要请自行配置。<br>配置示例："0,1,2"或"0-2"；昇腾AI处理器的逻辑ID间使用“,”表示分割，使用“-”表示连续。|
+|ASCEND_RT_VISIBLE_DEVICES|指定当前进程所用的昇腾AI处理器的逻辑ID，如有需要请自行配置。<br>配置示例："0,1,2"或"0-2"；昇腾AI处理器的逻辑ID间使用“,”表示分隔，使用“-”表示连续。|
 
 ### 快速安装
 
@@ -92,24 +92,32 @@ pip install mindiesd
 
 ## 镜像安装（vLLM-Omni）
 
-除 Python 包安装外，我们还提供集成 **vLLM-Omni + MindIE-SD** 的 Docker 镜像，支持在昇腾 NPU 上同时进行多模态大模型推理与 Stable Diffusion 图像生成。镜像基于 `quay.io/ascend/vllm-omni` 基础镜像构建，提供以下两个版本：
+除 Python 包安装外，我们还提供集成 **vLLM-Omni + MindIE SD** 的 Docker 镜像，支持在昇腾 NPU 上同时进行多模态大模型推理与 Stable Diffusion 图像生成。镜像基于 `quay.io/ascend/vllm-omni` 基础镜像构建，提供以下两个版本：
 
 | 适用产品 | 镜像 Tag | 基础镜像 |
 |--|--|--|
-| Atlas 800I A2 推理服务器 | `v3.0.0-cann8.5.1-torch_npu2.9.0-a2-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0` |
-| Atlas 800I A3 超节点服务器 | `v3.0.0-cann8.5.1-torch_npu2.9.0-a3-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0-a3` |
+| Atlas 800I A2推理服务器 | `v3.0.0-cann8.5.1-torch_npu2.9.0-a2-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0` |
+| Atlas 800I A3超节点服务器 | `v3.0.0-cann8.5.1-torch_npu2.9.0-a3-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0-a3` |
 
 **获取镜像（二选一）：**
 
 * 从 [MindIE 镜像仓库](https://www.hiascend.com/developer/ascendhub/detail/7c3b1b7c5151469a98ac08b868dab45f) 拉取已构建好的 `mindiesd` 镜像（推荐）。
 * 本地构建：克隆仓库后进入 `docker/omni` 目录，使用对应产品的 Dockerfile 构建：
 
+  <!-- npu="910b" id2 -->
   ```bash
+  # Atlas 800I A2推理服务器
   git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD/docker/omni
-  # Atlas 800I A2 推理服务器
   docker build -t mindiesd:v3.0.0-cann8.5.1-torch_npu2.9.0-a2-ubuntu22.04-py3.11-aarch64 -f Dockerfile.a2.ubuntu .
-  # Atlas 800I A3 超节点服务器
+  ```
+  <!-- end id2 -->
+  
+  <!-- npu="A3" id1 -->
+  ```bash
+  # Atlas 800I A3超节点服务器
+  git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD/docker/omni
   docker build -t mindiesd:v3.0.0-cann8.5.1-torch_npu2.9.0-a3-ubuntu22.04-py3.11-aarch64 -f Dockerfile.a3.ubuntu .
   ```
+  <!-- end id1 -->
 
 镜像的运行参数、硬件要求与二次开发等详细说明，请参考 [vLLM-Omni 镜像说明](../../docker/omni/OVERVIEW.zh.md)。

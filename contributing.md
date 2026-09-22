@@ -113,7 +113,7 @@ maintainer。
 ### 评审、合入与治理
 
 角色名单以 Ascend community 中的
-[MindIE-SD SIG 配置](https://gitcode.com/Ascend/community/blob/master/MindIE/sigs/MindIE-SD/sig-info.yaml)
+[MindIE SD SIG 配置](https://gitcode.com/Ascend/community/blob/master/MindIE/sigs/MindIE-SD/sig-info.yaml)
 为准：
 
 - **Reviewer** 提供技术评审、协助问题复现，并审核代码、测试和文档。
@@ -272,7 +272,7 @@ a maintainer when trigger permission is required.
 ### Review, Merge, and Governance
 
 The role roster is maintained in the Ascend community
-[MindIE-SD SIG configuration](https://gitcode.com/Ascend/community/blob/master/MindIE/sigs/MindIE-SD/sig-info.yaml):
+[MindIE SD SIG configuration](https://gitcode.com/Ascend/community/blob/master/MindIE/sigs/MindIE-SD/sig-info.yaml):
 
 - **Reviewers** provide technical review, assist with issue reproduction, and
   review code, tests, and documentation.

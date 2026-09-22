@@ -158,7 +158,7 @@ FA（Flash Attention）量化针对注意力计算中的 Q/K/V 激活值进行�
 
 **FP8 Attention**
 
-通过 MindIE-SD 自带的 `torch.ops.mindiesd.fused_infer_attention_score_v2`
+通过 MindIE SD 自带的 `torch.ops.mindiesd.fused_infer_attention_score_v2`
 算子进入本仓迁移的 `FusedInferAttentionScore` 实现，在 FP8 域内完成注意力计算，
 输出结果反量化为原始精度。`FP8RotateQuantFA` 用枚举 `FP8FAMode` 一次选定量化块、`value_quant_mode` 和 `inner_precise`，避免这三项各自开关、彼此对不齐。
 
@@ -234,7 +234,7 @@ FA 没有离线权重约束，因此可以在不同时间步选择任意算法�
 
 #### 注意事项
 
-- 硬件要求：仅 Atlas 800I A2 推理服务器支持此特性。
+- 硬件要求：仅 Atlas 800I A2推理服务器支持此特性。
 - Q/K/V 输入布局支持 `BNSD` 和 `BSND`。
 - K/V 头数可以少于 Q（GQA, Grouped Query Attention, 分组查询注意力）。`FP8RotateQuantFA` 按 K 的头数向 FIA 传入 `num_key_value_heads`。
 - 旋转矩阵（`q_rot`、`k_rot`）可选。若使用，需通过大模型压缩工具 msmodelslim 预先导出，详情请参见 msmodelslim 工具说明；权重中没有这两项时，`FP8RotateQuantFA` 跳过旋转。

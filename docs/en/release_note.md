@@ -75,7 +75,7 @@ API changes include additions, modifications, deprecations, and removals. API ch
 
 | No. | Category | Issue Description |
 | :--- | :----------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------- |
-| 1 | Installation & Compatibility | libopapi.so missing when running tests after installing compiled MindIE-SD, affecting post-installation testing and basic functionality verification. |
+| 1 | Installation & Compatibility | libopapi.so missing when running tests after installing compiled MindIE SD, affecting post-installation testing and basic functionality verification. |
 | 2 | Installation & Compatibility | Insufficient compatibility with newer torch versions, affecting integration with newer inference images. |
 | 3 | Installation & Compatibility | Build package missing plugin, affecting package completeness and plugin capability loading. |
 | 4 | Operator & Compilation | Flux.1-dev failing aclnnAdaLayerNorm call with compile enabled in new environments, blocking compilation acceleration path. |

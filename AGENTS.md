@@ -1,4 +1,4 @@
-# MindIE-SD Agent Rules
+# MindIE SD Agent Rules
 
 ## 1. 定位
 
@@ -127,7 +127,7 @@
   - **瓶颈点已明确**（用户带一句实测锚点，或编排层已给出瓶颈标签）：可直接读取
     `.agents/skills/performance-optimization/SKILL.md`（优化域入口 L2），由它按标签分发到四个优化模块
     （`dit-perf-opt` / `dit-parallel-opt` / `vae-opt` / `host-opt`）。
-  - MindIE-SD 代码开发类任务（本仓 pattern / 算子 / 图下发 / 测试 / 文档）：走 `dev-workflow`；
+  - MindIE SD 代码开发类任务（本仓 pattern / 算子 / 图下发 / 测试 / 文档）：走 `dev-workflow`；
     三方框架侧特性落地（缺失或使能）走 `framework-integration`。
 - **验收标准是强制引用**：性能结论按 `.agents/skills/perf-gate/SKILL.md`（**只有验收态结果可写入总览表**）；
   "改动不应改变结果"的场合按 `.agents/skills/accuracy-gate/SKILL.md`（等价分层 + 三级验收）。

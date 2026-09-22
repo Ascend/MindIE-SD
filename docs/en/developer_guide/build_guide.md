@@ -2,7 +2,7 @@
 
 ## Build Instructions
 
-This document describes how to build MindIE-SD from source. For installing the compiled `.whl` package, see [Installation Guide](../installation.md#source-build).
+This document describes how to build MindIE SD from source. For installing the compiled `.whl` package, see [Installation Guide](../installation.md#source-build).
 
 ## Build and Install
 
