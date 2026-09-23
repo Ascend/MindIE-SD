@@ -30,6 +30,10 @@ add_ops_compile_options(
                 # G3(kernel 侧): opc 默认 include 根不含 op_common 系，
                 # op_kernel/math_util.h、op_kernel/platform_util.h 需此根
                 -I${ASCEND_CANN_PACKAGE_PATH}/include/op_common
+                -I${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/pkg_inc/op_common
+                -I${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/pkg_inc/op_common/op_host
+                -I${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/include/op_common
+                -I${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/include/op_common/op_host
 )
 
 set(quant_four_over_six_a5_depends quant_four_over_six_a5 PARENT_SCOPE)
@@ -61,6 +65,15 @@ target_include_directories(optiling PRIVATE
         ${ASCEND_CANN_PACKAGE_PATH}/include/op_common
         ${ASCEND_CANN_PACKAGE_PATH}/include/op_common/op_host
         ${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/pkg_inc/op_common
+        # CANN 9.0.1：util/math_util.h、util/shape_util.h 在 pkg_inc/include 的 op_common/op_host
+        ${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/pkg_inc/op_common/op_host
+        ${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/include/op_common
+        ${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/include/op_common/op_host
+        # broadcast_tiling 相对包含 pkg_inc/op_common/log/log.h，其 #include "dlog_pub.h"
+        ${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/pkg_inc/base
+        ${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/include/base
+        ${ASCEND_CANN_PACKAGE_PATH}/pkg_inc/base
+        ${ASCEND_CANN_PACKAGE_PATH}/include/base
 )
 
 target_include_directories(opsproto PRIVATE
@@ -69,6 +82,10 @@ target_include_directories(opsproto PRIVATE
         ${ASCEND_CANN_PACKAGE_PATH}/include/op_common
         ${ASCEND_CANN_PACKAGE_PATH}/include/op_common/op_host
         ${ASCEND_CANN_PACKAGE_PATH}/include/exe_graph
+        ${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/pkg_inc/op_common
+        ${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/pkg_inc/op_common/op_host
+        ${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/include/op_common
+        ${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/include/op_common/op_host
 )
 
 target_include_directories(op_host_aclnn PRIVATE
