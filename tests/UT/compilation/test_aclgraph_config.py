@@ -201,6 +201,20 @@ class TestAclGraphConfig(unittest.TestCase):
         self.CC.aclgraph_with_compile = True
         self.assertEqual((self._orig_aclgraph_only, self._orig_aclgraph_with_compile), (False, False))
 
+    def test_fused_attention_sync_is_enabled_only_for_aclgraph(self):
+        fused_attn_score = importlib.import_module("mindiesd.layers.flash_attn.fused_attn_score")
+
+        self.CC.aclgraph_only = False
+        self.CC.aclgraph_with_compile = False
+        self.assertFalse(fused_attn_score._aclgraph_fa_sync_enabled())
+
+        self.CC.aclgraph_only = True
+        self.assertTrue(fused_attn_score._aclgraph_fa_sync_enabled())
+
+        self.CC.aclgraph_only = False
+        self.CC.aclgraph_with_compile = True
+        self.assertTrue(fused_attn_score._aclgraph_fa_sync_enabled())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -81,6 +81,7 @@ class PatternMatchPass(GraphModulePass):
         pattern: Callable[..., Any],
         replacement: Callable[..., Any],
         example_inputs: List[torch.Tensor],
+        extra_check: Optional[Callable[[pm.Match], bool]] = None,
     ):
         if name in self.pattern_replacements:
             logger.error(
@@ -123,12 +124,16 @@ class PatternMatchPass(GraphModulePass):
                 )
 
         try:
+            register_kwargs = {}
+            if extra_check is not None:
+                register_kwargs["extra_check"] = extra_check
             pm.register_replacement(
                 pattern,
                 replacement,
                 example_inputs,
                 fwd_only_with_custom_decomp,
                 self.pattern_pass.patterns,
+                **register_kwargs,
             )
             logger.debug("Successfully register pattern: %s", name)
         except RuntimeError as e:
