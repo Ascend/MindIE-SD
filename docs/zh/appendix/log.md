@@ -14,7 +14,7 @@
 |MINDIE_LOG_LEVEL|INFO|统一设置MindIE各组件日志级别。<br>日志级别取值 [CRITICAL, ERROR, WARN, INFO, DEBUG]；取值为 null 时关闭日志。|
 |MINDIE_LOG_TO_FILE|true|统一设置MindIE各组件日志是否写入文件。<br>取值范围为：[false, true]，且支持[0, 1]。|
 |MINDIE_LOG_TO_STDOUT|true|统一设置MindIE各组件是否打印日志。<br>取值范围为：[false, true]，且支持[0, 1]。|
-|MINDIE_LOG_VERBOSE|true|统一设置MindIE各组件日志中是否加入可选日志内容，当前日志分为固定日志内容和可选日志内容。完整调试日志格式：**[date time]** [pid] [tid] [组件名称]**[大写日志级别]** [file:line] : **[error code] [*] log message**；非加粗内容为可选内容，当环境变量设置为true时会加入可选内容。<br>取值范围为：[false, true]，且支持[0, 1]。<br>**日志格式中的[*]表示子组件或更小单位模块的名称，可以选择将其呈现在日志中，方便更好的定位问题。**|
+|MINDIE_LOG_VERBOSE|true|统一设置MindIE各组件日志中是否加入可选日志内容，当前日志分为固定日志内容和可选日志内容。完整调试日志格式：**[date time]** [pid] [tid] [组件名称]**[大写日志级别]** [file:line] : **[error code] [*] log message**；非加粗内容为可选内容，当环境变量设置为true时会加入可选内容。<br>取值范围为：[false, true]，且支持[0, 1]。<br>**日志格式中的[*]表示子组件或更小单位模块的名称，可以选择将其呈现在日志中，方便更好地定位问题。**|
 |MINDIE_LOG_PATH|~/mindie/log|统一设置MindIE各组件日志写入文件的保存目录。|
 |MINDIE_LOG_ROTATE|<ul><li>s：默认值为 daily / 30</li><li>fs：默认值为20 (MB)</li><li>r：默认值为10</li></ul>|统一设置MindIE各组件日志轮转。<br>设置某个组件的日志轮转格式为：*组件名称* : -s *cycle* -fs *filesize* -r *rotate*<ul><li>如果":"前无组件名称，则默认为对所有组件统一进行设置；</li><li>*cycle*表示时间轮转周期，可取 daily/weekly/monthly/yearly，或1～180的天数，默认 daily、周期为30。</li><li>*filesize*表示每个日志文件大小（单位MB），取值范围 [1, 500]。</li><li>*rotate*表示每个进程可保留的最多日志文件个数，取值范围 [1, 64]。</li></ul>|
 
@@ -46,7 +46,7 @@
 |**date time**|日期时间。|
 |pid|进程号。|
 |tid|线程号。|
-|组件名称|MindIE的组件名称，MindIE-SD在日志中固定呈现为[MindIE-SD]。|
+|组件名称|MindIE的组件名称，MindIE SD在日志中固定呈现为[MindIE-SD]。|
 |**大写日志级别**|日志级别的大写形式，日志级别请参见[表4 日志级别](#table4)。|
 |file:line|文件名:代码行号。|
 |error code|Error级别日志的错误码，错误码请参见《[MindIE SD错误码参考](error_code.md)》。|

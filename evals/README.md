@@ -1,4 +1,4 @@
-# MindIE-SD Evals — 生成质量门禁
+# MindIE SD Evals — 生成质量门禁
 
 有损优化（S4 量化/稀疏/缓存/步数裁剪等）的**端到端生成质量**评估承载目录，与
 `benchmarks/`（算子级速度基准，mindie_bench）分工互补：

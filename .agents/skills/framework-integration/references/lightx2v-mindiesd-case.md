@@ -281,7 +281,7 @@ warmup 5 步在 profiler 外；只 rank0 采集；产出 `ASCEND_PROFILER_OUTPUT
   历史「sp0.3-0.6 平台 0.82-0.84」**证伪**（早期轮次与 dense 基线不同配置/seed/口径混淆所致，
   证据作废）。eager 形态质量可用（采纳档 sp≤0.5）；**compile×rf3 仍有 Dynamo trace 期错误**
   （首步取证未完）→ 生产叠加需先解 compile×rf3；vllm-omni RAINFUSION 几何契约（video 为
-  packed tail + 不规则尾 promote 进 prefix + prefix 全保留；A5 上与 LightX2V 同为 mindiesd rf_v3
+  packed tail + 不规则尾 promote 进 prefix + prefix 全保留；Ascend 950PR&950DT系列产品上与 LightX2V 同为 mindiesd rf_v3
   路径）本轮证明非质量必需（未加契约梯度已正常）
 - **S4 量化阻塞**：H3 `dit_quantized` 需 Ascend int8/fp8 GEMM kernel——本机 triton int8 GEMM
   MLIR 编译失败、fp8-triton Assertion、vllm/sgl/q8f 等第三方方案在昇腾无可用 kernel（格式已查明：
@@ -350,7 +350,7 @@ warmup 5 步在 profiler 外；只 rank0 采集；产出 `ASCEND_PROFILER_OUTPUT
 - **P2**：rf_v2（docs 主表，V1 视频档约三成收益实证；rf3 质量受限时的另路，需核验 npu FA rf_v2
   在 950PR 可用性）；TP×USP 组合复测（V1 最优无损为 TP2×USP2）；offload 档位对齐 DLO（15s/
   长序列启动时）；comm masking 在 15s/长序列（通信占大头）重估
-- **P3（硬前置/负证据）**：FA 量化（mindiesd FP8/MXFP8 FA——**A5 已微测可用**（`npu_fused_infer_attention_score_v2` fp8，量化级精度，2026-09），端到端质量/收益未验证；LightX2V 未接线）、RSP（Ring 不支持 attn_mask，上游）、CFG 并行
+- **P3（硬前置/负证据）**：FA 量化（mindiesd FP8/MXFP8 FA——**在 Ascend 950PR&950DT系列产品上已微测可用**（`npu_fused_infer_attention_score_v2` fp8，量化级精度，2026-09），端到端质量/收益未验证；LightX2V 未接线）、RSP（Ring 不支持 attn_mask，上游）、CFG 并行
 - **移植纪律**：vllm-omni 的 compile 为负收益而 LightX2V 为正（架构/热路径差异）——上表任何
   补充都必须按「使能与验证回路」在 LightX2V 本体重验（kernel diff + rank0 墙钟 + 质量门禁），
   不直接照搬其他框架数字

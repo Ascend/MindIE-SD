@@ -2,7 +2,7 @@
 
 ## 编译说明
 
-本文档介绍如何从源码编译MindIE-SD。安装已编译的 `.whl` 包请参见[安装指导](../installation.md#源码安装)。
+本文档介绍如何从源码编译MindIE SD。安装已编译的 `.whl` 包请参见[安装指导](../installation.md#源码安装)。
 
 ## 编译安装
 

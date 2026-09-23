@@ -119,7 +119,7 @@ Dynamically quantize Q/K/V into FP8 (`float8_e4m3fn`) block by block via `npu_dy
 
 **FP8 Attention**
 
-Invoke MindIE-SD's own `torch.ops.mindiesd.fused_infer_attention_score_v2` operator, which routes to the migrated `FusedInferAttentionScore` implementation
+Invoke MindIE SD's own `torch.ops.mindiesd.fused_infer_attention_score_v2` operator, which routes to the migrated `FusedInferAttentionScore` implementation
 in this repository, to perform attention computation in the FP8 domain with
 outputs dequantized back to original precision. `FP8RotateQuantFA` selects the quantization blocks, `value_quant_mode`, and `inner_precise` together through the `FP8FAMode` enum, so those switches stay aligned.
 
@@ -169,7 +169,7 @@ FA quantization layers are implemented through the `FP8RotateQuantFA` module. Se
 
 #### Notes
 
-- Hardware requirement: Only Atlas 800I A2 inference servers support this feature.
+- Hardware requirement: Only Atlas 800I A2 inference server support this feature.
 - Q/K/V input layout supports both `BNSD` and `BSND`.
 - K/V may have fewer heads than Q (GQA, Grouped Query Attention). `FP8RotateQuantFA` passes `num_key_value_heads` from the K head count.
 - Rotation matrices (`q_rot`, `k_rot`) are optional. When used, they must be pre-exported with the msmodelslim model compression tool; see the msmodelslim documentation. If the two tensors are absent, `FP8RotateQuantFA` skips rotation.

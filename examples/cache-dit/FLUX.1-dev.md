@@ -1,6 +1,6 @@
 # FLUX.1-dev 模型推理优化指南
 
-使能MindIE-SD的编译优化功能和Cache-DiT的DBCache功能，实现FLUX.1-dev模型的推理加速。
+使能MindIE SD的编译优化功能和Cache-DiT的DBCache功能，实现FLUX.1-dev模型的推理加速。
 
 > 本文面向部署 FLUX.1-dev 推理服务的终端用户，是可直接运行的端到端案例。
 > 特性实现原理与接口说明（CompilationConfig、CacheConfig 等）请参见开发者的[编译特性](../../docs/zh/features/compilation.md)与[以存代算](../../docs/zh/features/cache.md)。
@@ -27,12 +27,12 @@
 
 ### 1.1 基础环境安装（昇腾 NPU）
 
-请参考 [MindIE-SD 安装指导](../../docs/zh/installation.md) 完成基础环境搭建，包括：
+请参考 [MindIE SD 安装指导](../../docs/zh/installation.md) 完成基础环境搭建，包括：
 
 - 驱动固件安装
 - CANN 安装
 - PyTorch 和 Torch NPU 安装
-- MindIE-SD 安装
+- MindIE SD 安装
 
 ### 1.2 安装 Diffusers 和 Cache-DiT
 
@@ -57,7 +57,7 @@ pip install cache-dit
 
 ### 2.1 最简单的验证（基于 cache-dit CLI）
 
-无需编写推理代码，使用 cache-dit 自带的 `generate` 命令即可快速验证 MindIE-SD 编译优化效果：
+无需编写推理代码，使用 cache-dit 自带的 `generate` 命令即可快速验证 MindIE SD 编译优化效果：
 
 ```bash
 # 设置 FLUX.1-dev 权重路径
@@ -66,7 +66,7 @@ export FLUX_PATH=/path/to/FLUX.1-dev
 # 非编译（基线）
 python3 -m cache_dit.generate flux --model-path $FLUX_PATH
 
-# 使能 MindIE-SD 编译优化
+# 使能 MindIE SD 编译优化
 python3 -m cache_dit.generate flux --model-path $FLUX_PATH --compile
 ```
 
@@ -109,16 +109,16 @@ with torch.inference_mode():
     output.save("flux_out.png")
 ```
 
-### 2.3 使能编译优化（cache-dit 原生支持 MindIE-SD）
+### 2.3 使能编译优化（cache-dit 原生支持 MindIE SD）
 
-cache-dit 在昇腾 NPU 环境检测到已安装 mindiesd 时，会自动使用 MindIE-SD 的 `MindieSDBackend()` 对 transformer 进行编译优化（与 `torch.compile(pipe.transformer, backend=MindieSDBackend())` 等价），RMSNorm、RoPE、AdaLayerNorm、fastGELU 等算子会被自动替换为融合算子，**无需修改推理代码**。首次推理因包含编译预热，耗时较久，从第二次起才是真实推理速度。
+cache-dit 在昇腾 NPU 环境检测到已安装 mindiesd 时，会自动使用 MindIE SD 的 `MindieSDBackend()` 对 transformer 进行编译优化（与 `torch.compile(pipe.transformer, backend=MindieSDBackend())` 等价），RMSNorm、RoPE、AdaLayerNorm、fastGELU 等算子会被自动替换为融合算子，**无需修改推理代码**。首次推理因包含编译预热，耗时较久，从第二次起才是真实推理速度。
 
 ```bash
 python3 -m cache_dit.generate flux --model-path $FLUX_PATH --compile
 ```
 
 > [!NOTE]说明
-> torch_npu 2.9 起（MR 30358）移除了 `Tensor.to` 的 NPU 过适配，编译图中的 dtype cast 由 `torch.ops.npu._npu_dtype_cast` 变为 `torch.ops.aten._to_copy`。MindIE-SD 3.0.0 已按 torch 版本自动适配，无需额外配置；若在 torch 2.9+ 环境观察到 RMSNorm / RoPE 融合未生效，请确认 MindIE-SD 版本已包含该版本适配。
+> torch_npu 2.9 起（MR 30358）移除了 `Tensor.to` 的 NPU 过适配，编译图中的 dtype cast 由 `torch.ops.npu._npu_dtype_cast` 变为 `torch.ops.aten._to_copy`。MindIE SD 3.0.0 已按 torch 版本自动适配，无需额外配置；若在 torch 2.9+ 环境观察到 RMSNorm / RoPE 融合未生效，请确认 MindIE SD 版本已包含该版本适配。
 
 ### 2.4 使能Cache-DiT的DBCache功能
 
@@ -156,7 +156,7 @@ pipe = FluxPipeline.from_pretrained(
 ).to(device)
 
 # 使能Cache-DiT的DBCache功能
-# （MindIE-SD 编译优化由 cache-dit 在 CLI --compile 模式下自动启用，无需在此配置）
+# （MindIE SD 编译优化由 cache-dit 在 CLI --compile 模式下自动启用，无需在此配置）
 cache_dit.enable_cache(
     BlockAdapter(
         transformer=pipe.transformer,
@@ -212,6 +212,6 @@ with torch.inference_mode():
 
 ## 参考链接
 
-- [MindIE-SD 编译特性文档](../../docs/zh/features/compilation.md)
+- [MindIE SD 编译特性文档](../../docs/zh/features/compilation.md)
 - [Cache-DiT 使用说明](https://gitcode.com/vipshop/cache-dit)
 - [FLUX.1-dev 模型](https://huggingface.co/black-forest-labs/FLUX.1-dev)

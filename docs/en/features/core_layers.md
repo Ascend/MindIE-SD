@@ -193,7 +193,7 @@ sparse_attention(
 | `is_causal` | `bool` | No | `False` | Whether to use causal attention mask |
 | `head_num` | `int` | No | `1` | Number of attention heads |
 | `input_layout` | `str` | No | `"BNSD"` | Tensor layout, supports `"BNSD"` or `"BSND"` |
-| `inner_precise` | `int` | No | `0` | Computation precision mode, `0` for high precision, `1` for high performance. On A5 devices, `sparse_type="rf_v3"` requires `4` (enforced at the entry) |
+| `inner_precise` | `int` | No | `0` | Computation precision mode, `0` for high precision, `1` for high performance. On 950PR&950DT products, `sparse_type="rf_v3"` requires `4` (enforced at the entry) |
 | `sparse_type` | `str` | No | `None` | Sparse type, supports `None`, `"rf_v2"`, `"rf_v3"`, `"ada_bsa"` |
 | `txt_len` | `int` | No | `0` | Text sequence length, effective when `sparse_type="rf_v2"` or `"rf_v3"` |
 | `block_size` | `int` | No | `128` | Block size, currently only supports `128` |
