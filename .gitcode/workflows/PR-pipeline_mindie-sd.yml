@@ -8,6 +8,7 @@ on:
 
 env:
   pr_id: ${{ atomgit.event.pull_request.number }}
+  owner_name: Ascend
 
 permissions:
   project: read
@@ -24,9 +25,9 @@ stages:
 
       CodeCheck_pre_commit:
         name: CodeCheck_pre_commit
-        runs-on: [ self-hosted, default, x86, cpu=30 ]
+        runs-on: [ self-hosted, default, x86, cpu=4 ]
         container:
-          image: swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_x86:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311
+          image: swr.cn-north-4.myhuaweicloud.com/atlas-ci/common:latest
         steps:
           - name: checkout
             uses: checkout
@@ -44,9 +45,9 @@ stages:
 
       Detect_file_changes:
         name: Detect_file_changes
-        runs-on: [ self-hosted, default, x86, cpu=30 ]
+        runs-on: [ self-hosted, default, x86, cpu=4 ]
         container:
-          image: swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_x86:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311
+          image: swr.cn-north-4.myhuaweicloud.com/atlas-ci/common:latest
         outputs:
           need_build: ${{ steps.set-skip.outputs.need_build }}
         steps:
@@ -63,7 +64,7 @@ stages:
               base: ${{ atomgit.event.pull_request.base.ref }}
               repo: ${{ atomgit.repository }}
               number: ${{ env.pr_id }}
-              token: ${{ atomgit.ATOMGIT_TOKEN }}
+              token: ${{ secrets.GIT_TOKEN }}
               list-files: json
               predicate-quantifier: every
               filters: |
@@ -91,9 +92,9 @@ stages:
 
       sca-pr:
         name: sca-pr
-        runs-on: [ self-hosted, default, x86, cpu=30 ]
+        runs-on: [ self-hosted, default, x86, cpu=4 ]
         container:
-          image: swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_x86:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311
+          image: swr.cn-north-4.myhuaweicloud.com/atlas-ci/common:latest
           options: --user root
         steps:
           - name: checkout
@@ -104,9 +105,9 @@ stages:
               project-name: MindIE
       malicious-scan:
         name: antipoison
-        runs-on: [ self-hosted, default, x86, cpu=30 ]
+        runs-on: [ self-hosted, default, x86, cpu=4 ]
         container:
-          image: swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_x86:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311
+          image: swr.cn-north-4.myhuaweicloud.com/atlas-ci/common:latest
           options: --user root
         steps:
           - name: checkout
@@ -116,6 +117,25 @@ stages:
             with:
               project-name: MindIE
               # rule、debug、platform-domain 等为可选项
+      associate_pr_comment:
+        name: associate_pr_comment
+        select: selected_by_default
+        runs-on: [ self-hosted, default, x86, cpu=16 ]
+        container:
+          image: swr.cn-north-4.myhuaweicloud.com/atlas-ci/common:latest
+        steps:
+          - name: associate-pr-comment
+            uses: associate-pr-comment
+          - name: pre_pipeline
+            id: pre_pipeline
+            uses: cann/.gitcode/actions/pre-pipeline@689551d6b29a77d8c2a005b8f1b3883db24820ef
+            with:
+              owner: ${{ env.owner_name }}
+              repo: ${{ atomgit.event.repository.name }}
+              pr_number: ${{ atomgit.event.pull_request.number }}
+              token: ${{ secrets.GIT_TOKEN }}
+              apply_label: 'true'
+              run_url: https://gitcode.com/${{ env.owner_name }}/${{ atomgit.event.repository.name }}/actions/runs/${{ atomgit.workflow_run_id }}
 
   stage2:
     name: Build
@@ -162,3 +182,23 @@ stages:
           CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_aarch64:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311"
           runs_on_arch: "arm64"
           pr_id: "${{ atomgit.event.pull_request.number }}"
+
+post:
+  jobs:
+    query_pipeline:
+      name: associate_pr_comment
+      select: selected_by_default
+      runs-on: [ self-hosted, default, x86, cpu=4 ]
+      container:
+        image: swr.cn-north-4.myhuaweicloud.com/atlas-ci/common:latest
+      steps:
+        - name: query_pipeline
+          id: query_pipeline
+          uses: cann/.gitcode/actions/query-pipeline@689551d6b29a77d8c2a005b8f1b3883db24820ef
+          with:
+            owner: ${{ env.owner_name }}
+            repo: ${{ atomgit.event.repository.name }}
+            run_id: ${{ atomgit.workflow_run_id }}
+            token: ${{ secrets.GIT_TOKEN }}
+            pr_number: ${{ atomgit.event.pull_request.number }}
+            apply_label: 'true'
