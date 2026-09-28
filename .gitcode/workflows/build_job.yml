@@ -13,8 +13,9 @@ on:
         required: true
         type: string
       runs_on_arch:
-        required: true
+        required: false
         type: string
+        default: "x64"
       arch:
         required: true
         type: string
@@ -24,7 +25,7 @@ jobs:
     name: Compile
     select: selected_by_default
     needs: [ ]
-    runs-on: [ self-hosted, default, arm, cpu=32 ]
+    runs-on: [ self-hosted, default, "${{ inputs.runs_on_arch }}", cpu=32 ]
     container:
       image: ${{ inputs.CP_DOCKER_IMG }}
       options: --user root
