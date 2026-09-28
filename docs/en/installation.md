@@ -86,31 +86,45 @@ Follow these steps to install MindIE SD from source:
 >
 > Dependencies are split by purpose in the repository; install the ones you need:
 >
-> - `requirements.txt`: core runtime dependencies (minimal install; only torch/TorchNPU pinned, others loose).
-> - `examples/dummy_run/requirements.txt`: dependencies for the `dummy_run` model inference example (diffusers/transformers/etc.).
-> - `examples/service/requirements.txt`: serving-example dependencies (ray, fastapi, uvicorn, pydantic, Pillow).
-> - Testing, linting, and docs-build dependencies are in `requirements-test.txt`, `requirements-lint.txt`, and `docs/requirements-docs.txt` respectively (see the developer guide).
+> * `requirements.txt`: core runtime dependencies (minimal install; only torch/TorchNPU pinned, others loose).
+> * `examples/dummy_run/requirements.txt`: dependencies for the `dummy_run` model inference example (diffusers/transformers/etc.).
+> * `examples/service/requirements.txt`: serving-example dependencies (ray, fastapi, uvicorn, pydantic, Pillow).
+> * Testing, linting, and docs-build dependencies are in `requirements-test.txt`, `requirements-lint.txt`, and `docs/requirements-docs.txt` respectively (see the developer guide).
 
 ## Installation via Image (vLLM-Omni)
 
-In addition to the Python package installation, we provide a Docker image that bundles **vLLM-Omni + MindIE-SD**, enabling simultaneous multimodal LLM inference and Stable Diffusion image generation on Ascend NPUs. The image is built upon the `quay.io/ascend/vllm-omni` base image and offers two variants:
+The Docker image combines **vLLM-Omni + MindIE SD**. MindIE-SD 3.1.0 provides three product variants:
 
-| Product | Image Tag | Base Image |
-|--|--|--|
-| Atlas 800I A2 Inference Server | `v3.0.0-cann8.5.1-torch_npu2.9.0-a2-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0` |
-| Atlas 800I A3 SuperPoD Server | `v3.0.0-cann8.5.1-torch_npu2.9.0-a3-ubuntu22.04-py3.11-aarch64` | `quay.io/ascend/vllm-omni:v0.20.0-a3` |
+| Supported Product | Image Tag | Base Image |
+| --- | --- | --- |
+| Atlas 800I A2 inference server | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0` |
+| Atlas 800I A3 SuperPoD Server | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0-a3` |
+| 950PR&950DT products | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0-a5` |
 
-**Obtaining the Image (Two Methods):**
+Pull a published `mindiesd` image from the [MindIE image repository](https://www.hiascend.com/developer/ascendhub/detail/7c3b1b7c5151469a98ac08b868dab45f), or build locally from the `dev` branch. The current base images provide `linux/amd64` only.
 
-* (Recommended) Pull the pre-built `mindiesd` image from the [MindIE Image Registry](https://www.hiascend.com/developer/ascendhub/detail/7c3b1b7c5151469a98ac08b868dab45f).
-* Build locally: clone the repository and navigate to the `docker/omni` directory, then build using the Dockerfile for your product:
+<!-- npu="910b" id1 -->
+```bash
+git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
+git checkout v3.1.0 && cd docker/omni
+docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12 -f Dockerfile.a2.ubuntu .
+```
+<!-- end id1 -->
 
-  ```bash
-  git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD/docker/omni
-  # For Atlas 800I A2 Inference Server
-  docker build -t mindiesd:v3.0.0-cann8.5.1-torch_npu2.9.0-a2-ubuntu22.04-py3.11-aarch64 -f Dockerfile.a2.ubuntu .
-  # For Atlas 800I A3 SuperPoD Server
-  docker build -t mindiesd:v3.0.0-cann8.5.1-torch_npu2.9.0-a3-ubuntu22.04-py3.11-aarch64 -f Dockerfile.a3.ubuntu .
-  ```
+<!-- npu="A3" id2 -->
+```bash
+git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
+git checkout v3.1.0 && cd docker/omni
+docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12 -f Dockerfile.a3.ubuntu .
+```
+<!-- end id2 -->
 
-For details on runtime parameters, hardware requirements, and development, refer to the [vLLM-Omni Image Guide](../../docker/omni/OVERVIEW.md).
+<!-- npu="950" id3 -->
+```bash
+git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
+git checkout v3.1.0 && cd docker/omni
+docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12 -f Dockerfile.a5.ubuntu .
+```
+<!-- end id3 -->
+
+See the [vLLM-Omni image overview](../../docker/omni/OVERVIEW.md) for runtime options and hardware requirements. The full image Tag list is in [Supported Tags](../../docker/supported_tags.md).

@@ -17,7 +17,7 @@
 #   quay.io/ascend/vllm-omni:v0.28.0 (CANN-based, Ubuntu, linux/amd64)
 #
 # Build:
-#   docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64 \
+#   docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12 \
 #       -f Dockerfile.a2.ubuntu .
 #
 # Run:
@@ -37,7 +37,7 @@
 #       -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
 #       -v /etc/ascend_install.info:/etc/ascend_install.info \
 #       -v /root/.cache:/root/.cache \
-#       mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64 \
+#       mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12 \
 #       bash
 # ============================================================================
 
