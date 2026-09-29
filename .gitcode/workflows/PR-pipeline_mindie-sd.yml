@@ -160,7 +160,7 @@ stages:
           abi_type: "1"
           arch: "aarch64"
           CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_aarch64:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311"
-          runs_on_arch: "arm64"
+          runs_on_arch: "arm"
           pr_id: "${{ atomgit.event.pull_request.number }}"
 
       Build_linux_arm_abi0:
@@ -171,7 +171,7 @@ stages:
           abi_type: "0"
           arch: "aarch64"
           CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_aarch64:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311"
-          runs_on_arch: "arm64"
+          runs_on_arch: "arm"
           pr_id: "${{ atomgit.event.pull_request.number }}"
 
       UT_linux_arm:
@@ -180,7 +180,7 @@ stages:
         uses: .gitcode/workflows/ut_job.yml
         with:
           CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_aarch64:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311"
-          runs_on_arch: "arm64"
+          runs_on_arch: "arm"
           pr_id: "${{ atomgit.event.pull_request.number }}"
 
 post:
