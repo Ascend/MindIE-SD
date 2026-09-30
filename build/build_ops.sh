@@ -71,10 +71,8 @@ function remove_ops_from_semicolon_list() {
 
 # ascend950 backend requires CANN 9.0+; remove ascend950 when CANN < 9.0
 default_compute_unit='ascend910;ascend910b;ascend910_93;ascend950'
-# Ops whose OpDef registers ascend950 as its only AICore().AddConfig() soc. With the
-# ascend950 backend disabled they would keep no soc version at all and op_build would
-# reject them ("The soc version of op X is not configured"), so they leave the op list
-# together with the backend.
+# Ops whose OpDef registers ascend950 as its only AICore().AddConfig() soc.
+# Exclude their sources entirely on CANN < 9.0, which does not support this backend.
 ascend950_only_ops='quant_flash_attn;quant_flash_attn_metadata;fused_infer_attention_score;eagle_ffn;eagle_quant_block_sparse_attention;quant_four_over_six_a5'
 # Ops whose sources use CANN 9+ only APIs even when built for ascend910b/ascend910_93:
 # eagle_block_sparse_attention pulls in the MXFP4 type fp4x2_e2m1_t (arch35 only, not
@@ -92,7 +90,7 @@ if [ -f "${cann_version_file}" ] && grep -Eq '^Version=([0-8])(\.|$)' "${cann_ve
 fi
 ascend_compute_unit=${ASCEND_COMPUTE_UNIT:-${default_compute_unit}}
 # OpDef files consult this variable while op_build loads the op host .so (see
-# IsSocEnabled in quant_flash_attn_def.cpp), so it has to reach op_build's environment
+# IsSocEnabled in norm_rope_concat_def.cpp), so it has to reach op_build's environment
 # and not only the CMake cache.
 export ASCEND_COMPUTE_UNIT="${ascend_compute_unit}"
 

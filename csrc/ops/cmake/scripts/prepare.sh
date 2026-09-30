@@ -99,6 +99,7 @@ function set_env() {
     CONVERT_OPS_COMPILE_OPTIONS="$(convert_string ${OPS_COMPILE_OPTIONS})"
 
     CONVERT_ASCEND_COMPUTE_UNIT="$(convert_string ${ASCEND_COMPUTE_UNIT})"
+    export ASCEND_COMPUTE_UNIT="${CONVERT_ASCEND_COMPUTE_UNIT}"
 }
 
 function build() {
