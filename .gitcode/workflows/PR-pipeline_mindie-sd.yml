@@ -28,6 +28,8 @@ stages:
         runs-on: [ self-hosted, default, x86, cpu=4 ]
         container:
           image: swr.cn-north-4.myhuaweicloud.com/atlas-ci/common:latest
+        env:
+          SKIP_CLANG_TIDY_SLEEP: "1"
         steps:
           - name: checkout
             uses: checkout
