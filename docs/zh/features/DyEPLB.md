@@ -4,7 +4,7 @@
 
 随着视觉生成模型向 DiT 架构演进，引入 MoE 机制以突破 Scaling Law 已成为行业共识。然而，DiT-MoE 庞大的参数规模迫使我们采用专家并行（EP）策略。与 LLM 不同，视觉数据的强空间局部性极易诱发特定专家过载，导致严重的计算负载不均。更进一步，扩散模型的去噪过程中专家激活分布呈现出显著的时序动态变化，这意味着传统的静态负载均衡策略在面对这种时空双重异构性时彻底失效。
 
-![](../../figures/dyeplb_image_1.png)
+![动态专家负载均衡流程](../../figures/dyeplb_image_1.png)
 
 ## 技术特点
 
@@ -38,7 +38,9 @@
    | `max_move` | — | EX 模式下最大移动专家数量 |
    | `redundant` | — | 冗余专家数 |
    | `mode` | 必填 | A2A / AG / EX |
-   | `auth_key` | `secret_key` | 默认读取环境变量 `EPLB_AUTH_KEY` |
+   | `auth_key` | 自动生成随机密钥 | 优先使用 `--auth_key`，其次使用 `EPLB_AUTH_KEY`，两者均未设置时自动生成随机密钥 |
+
+   调度器和所有 worker 主机必须配置相同的非空密钥。例如，使用 `python -c "import secrets; print(secrets.token_hex(16))"` 生成密钥，并在所有主机上将 `EPLB_AUTH_KEY` 设置为该值。空字符串或仅含空白的密钥会被拒绝。调度器自动生成的密钥不会写入日志或分发给 worker；需要 worker 连接时请配置共享密钥。
 
    ```shell
    python -m mindiesd.eplb.eplb_scheduler \
@@ -51,6 +53,8 @@
 2. 引入负载采集器和调度器，初始化后启动 worker 线程。
 
    ```python
+   import os
+
    from mindiesd.eplb.dispatcher import DynamicDispatcher
    from mindiesd.eplb.collector import ExpertLoadCollector
    from mindiesd.eplb.task_manager import construct_expert_info_transfer_pool
@@ -61,6 +65,7 @@
    model.moe_module.block.dispatcher = DynamicDispatcher(expert_num, weight1, weight2, rank_in_group, ep_size)
 
    if eplb_enabled:
+       auth_key = os.environ["EPLB_AUTH_KEY"]
        construct_expert_info_transfer_pool(
            module=model, rank_in_group=rank_in_group, device=device,
            ip=host, port=port, auth_key=auth_key
@@ -137,4 +142,4 @@ from mindiesd.eplb.task_manager import construct_expert_info_transfer_pool
 | `device` | `int` | 是 | - | rank 对应的 device 编号 |
 | `ip` | `str` | 是 | - | 与服务端 ip 一致 |
 | `port` | `int` | 是 | - | 与服务端 port 一致 |
-| `auth_key` | `str` | 否 | `secret_key` | 默认读取环境变量 `EPLB_AUTH_KEY` |
+| `auth_key` | `str` | 是 | - | 显式传入与调度器相同的非空密钥；worker 接口不会自动读取环境变量 |

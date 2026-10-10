@@ -11,6 +11,7 @@
 # See the Mulan PSL v2 for more details.
 
 import os
+import secrets
 import multiprocessing
 from multiprocessing.managers import BaseManager
 from dataclasses import dataclass
@@ -59,13 +60,38 @@ def get_args():
     parser.add_argument("--max_move", type=int, default=5)
     parser.add_argument("--redundant", type=int, default=0)
     parser.add_argument("--mode", type=str, default="A2A")
-    parser.add_argument("--auth_key", type=str, default=os.environ.get("EPLB_AUTH_KEY", "secret_key"))
+    parser.add_argument(
+        "--auth_key",
+        type=str,
+        default=None,
+        help="Auth key for scheduler IPC. Set via EPLB_AUTH_KEY or this flag. "
+        "A random key is generated if neither is provided.",
+    )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.auth_key is None:
+        args.auth_key = os.environ.get("EPLB_AUTH_KEY")
+    if args.auth_key is not None and not args.auth_key.strip():
+        parser.error("--auth_key and EPLB_AUTH_KEY must not be empty")
+    if args.auth_key is None:
+        args.auth_key = secrets.token_hex(16)
+        logger.warning(
+            "[MindIE-SD/eplb] No auth key configured. issue=using auto-generated random key. "
+            "possible_cause=neither --auth_key nor EPLB_AUTH_KEY env var was set. "
+            "Troubleshooting: set EPLB_AUTH_KEY=<shared-secret> on all scheduler and worker hosts "
+            "so they can authenticate with the scheduler."
+        )
+    return args
+
+
+def _encode_auth_key(auth_key):
+    if not isinstance(auth_key, str) or not auth_key.strip():
+        raise ValueError("EPLB auth key must be a non-empty string")
+    return auth_key.encode('utf-8')
 
 
 def start_manager_server(addr, auth_key):
-    auth_bytes = auth_key.encode('utf-8')
+    auth_bytes = _encode_auth_key(auth_key)
     multiprocessing.current_process().authkey = auth_bytes
     manager = ScheduleManager(address=addr, authkey=auth_bytes)
     try:
@@ -88,7 +114,7 @@ def start_manager_server(addr, auth_key):
 
 
 def get_manager_client(addr, auth_key):
-    auth_bytes = auth_key.encode('utf-8')
+    auth_bytes = _encode_auth_key(auth_key)
     manager = ScheduleManager(address=addr, authkey=auth_bytes)
     return manager
 

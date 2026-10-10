@@ -115,23 +115,23 @@ function gen_bisheng(){
     local gen_bisheng_dir=${BUILD_DIR}/gen_bisheng_dir
 
     if [ ! -d "${gen_bisheng_dir}" ];then
-        mkdir -p ${gen_bisheng_dir}
+        mkdir -p "${gen_bisheng_dir}"
     fi
 
-    pushd ${gen_bisheng_dir}
-    $(> bisheng)
+    pushd "${gen_bisheng_dir}"
+    : > bisheng
     echo "#!/bin/bash" >> bisheng
-    echo "ccache_args=""\"""${ccache_program} ${BISHENG_REAL_PATH}""\"" >> bisheng
-    echo "args=""$""@" >> bisheng
 
+    # Bake each executable path into the wrapper as a shell-escaped word. Keep
+    # compiler arguments as separate positional parameters all the way through.
     if [ "${VERBOSE}" == "true" ];then
-        echo "echo ""\"""$""{ccache_args} ""$""args""\"" >> bisheng
+        printf 'printf "%%q " %q %q "$@"; printf "\\n"\n' "${ccache_program}" "${BISHENG_REAL_PATH}" >> bisheng
     fi
 
-    echo "eval ""\"""$""{ccache_args} ""$""args""\"" >> bisheng
+    printf 'exec %q %q "$@"\n' "${ccache_program}" "${BISHENG_REAL_PATH}" >> bisheng
     chmod +x bisheng
 
-    export PATH=${gen_bisheng_dir}:$PATH
+    export PATH="${gen_bisheng_dir}:$PATH"
     popd
 }
 
@@ -245,7 +245,7 @@ fi
 ccache_system=$(which ccache || true)
 if [ -n "${ccache_system}" ];then
     CUSTOM_OPTION="${CUSTOM_OPTION} -DENABLE_CCACHE=ON -DCUSTOM_CCACHE=${ccache_system}"
-    gen_bisheng ${ccache_system}
+    gen_bisheng "${ccache_system}"
 fi
 
 
