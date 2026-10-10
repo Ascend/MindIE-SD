@@ -10,8 +10,11 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+import contextlib
+import importlib
 import os
 import unittest
+from unittest.mock import MagicMock, patch
 
 import torch
 import torch.nn.functional as F
@@ -43,6 +46,37 @@ class _VariableLenModel(torch.nn.Module):
 
     def forward(self, x):
         return self.fc(x)
+
+
+class TestAclGraphEventOrdering(unittest.TestCase):
+    def test_copy_uses_events_without_host_synchronize(self):
+        aclgraph_backend = importlib.import_module("mindiesd.compilation.aclgraph_backend")
+        current_stream = MagicMock()
+        copy_stream = MagicMock()
+        input_ready_event = object()
+        copy_complete_event = object()
+        current_stream.record_event.return_value = input_ready_event
+        copy_stream.record_event.return_value = copy_complete_event
+        entry = aclgraph_backend._ACLGraphEntry(
+            aclgraph=MagicMock(),
+            static_inputs=[],
+            output=MagicMock(),
+            copy_stream=copy_stream,
+        )
+        static_input = torch.zeros(2, 2)
+        dynamic_input = torch.ones(2, 2)
+
+        with (
+            patch.object(aclgraph_backend.torch.npu, "current_stream", return_value=current_stream),
+            patch.object(aclgraph_backend.torch.npu, "stream", return_value=contextlib.nullcontext()),
+        ):
+            aclgraph_backend._copy_inputs_on_stream(entry, [(static_input, dynamic_input)])
+
+        current_stream.synchronize.assert_not_called()
+        copy_stream.wait_event.assert_called_once_with(input_ready_event)
+        copy_stream.record_event.assert_called_once_with()
+        current_stream.wait_event.assert_called_once_with(copy_complete_event)
+        self.assertTrue(torch.equal(static_input, dynamic_input))
 
 
 @unittest.skipIf(
@@ -129,6 +163,19 @@ class TestAclGraphBackend(unittest.TestCase):
 
         out2 = compiled(x)
         self.assertTrue(torch.allclose(model(x), out2))
+
+    def test_same_shape_with_new_storage_uses_async_copy(self):
+        CompilationConfig.aclgraph_only = True
+        CompilationConfig.aclgraph_with_compile = False
+
+        model = _SingleIOModel()
+        compiled = torch.compile(model, backend=MindieSDBackend())
+        captured = torch.randn(4, 4, dtype=torch.float32, device="npu")
+        dynamic = torch.randn(4, 4, dtype=torch.float32, device="npu")
+
+        compiled(captured)
+        output = compiled(dynamic)
+        self.assertTrue(torch.allclose(model(dynamic), output), "Async copy replay output mismatch")
 
     def test_different_shape_triggers_recapture(self):
         CompilationConfig.aclgraph_only = True

@@ -20,12 +20,34 @@ import torch
 
 from ..passes.register_pattern_to_pass import PatternBase
 
-if hasattr(torch.npu, "is_available"):
-    npu_available = torch.npu.is_available()
+npu_available = (
+    hasattr(torch, "npu")
+    and hasattr(torch.npu, "is_available")
+    and torch.npu.is_available()
+)
 if npu_available:
     import torch_npu  # noqa: F401
 
     import mindiesd
+
+
+def _is_wan_residual_gate_match(match) -> bool:
+    try:
+        residual = match.kwargs["x"].meta["val"]
+        branch = match.kwargs["y"].meta["val"]
+        gate = match.kwargs["gate"].meta["val"]
+    except (AttributeError, KeyError):
+        return False
+    if not all(isinstance(value, torch.Tensor) for value in (residual, branch, gate)):
+        return False
+    if residual.dim() != 3 or branch.dim() != 3 or gate.dim() != 3:
+        return False
+    batch, _, dim = residual.shape
+    return (
+        residual.shape == branch.shape
+        and gate.shape == (batch, 1, dim)
+        and residual.dtype == branch.dtype == gate.dtype
+    )
 
 
 def create(dtype):
@@ -54,6 +76,8 @@ def create(dtype):
                 return mindiesd.layers.residual_gate_add(x, y, gate)
 
             return func(x, y, gate)
+
+        extra_check = staticmethod(_is_wan_residual_gate_match)
 
     return WanResidualGatePattern
 

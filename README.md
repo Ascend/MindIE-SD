@@ -35,6 +35,7 @@
 
 ## 📢 Latest News
 
+- 09/23/2026: [MXAttention 论文](docs/tech_report/MXAttention.pdf) 已投稿 ICLR（[arXiv:2607.24377](https://arxiv.org/abs/2607.24377)）📄
 - 09/20/2026: 完成 [Qwen-Image-2.1 昇腾高性能推理适配与优化](examples/qwen-image-2.1/infer.md) 🚀
 - 09/04/2026: MindIE SD支持Lightx2v框架实现MiniMax H3在A5的加速
 - 08/03/2026: 完成 [MiniMax-H3 昇腾高性能推理适配与优化](examples/minimax-h3/infer.md) 🚀

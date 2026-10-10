@@ -22,7 +22,7 @@ class FusionPatterns:
     enable_wan_adalayernorm: bool = True
     # FLUX/Qwen norm_out 融合: (1+scale)[:,None] 调制形态(norm1/norm2 的 modulation 不同)
     enable_norm_out_adaln: bool = True
-    # 残差+gate 融合: `x + y*gate` pattern, 注册顺序在 adaLN/rope 之后避免误匹配
+    # Wan residual + gate fusion.  Model-specific setup disables it for Qwen.
     enable_wan_residual_gate: bool = True
     enable_wan_rope: bool = True
     # qk_norm(RMSNorm)融合: npu_rms_norm 在 eager GraphModule 下不会被 torch_npu
@@ -46,6 +46,8 @@ class FusionPatterns:
     # Qwen-Image RoPE 融合(register_replacement,见 patterns/qwen_rope_pattern.py):
     # 实数域等价 complex rotary → npu_rotary_mul; 需先于 wan_residual_gate 注册(F2 同源)
     enable_qwen_rope: bool = True
+    # Qwen residual + gate fusion with [B, 1, D] token-axis broadcasting.
+    enable_qwen_residual_gate: bool = True
 
 
 class CompilationConfig:

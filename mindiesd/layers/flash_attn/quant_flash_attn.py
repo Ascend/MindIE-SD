@@ -64,10 +64,11 @@ def quant_attention(
             Defaults to D ** -0.5 when scale is None.
         q_rot (torch.Tensor, optional, defaults to None):
             Optional [D, D] matrix applied as query @ q_rot before quantization.
-            Must share query's device and dtype. None leaves query unchanged.
+            Must share query's device; cast to query's dtype before use.
+            None leaves query unchanged.
         k_rot (torch.Tensor, optional, defaults to None):
             Optional [D, D] matrix applied as key @ k_rot before quantization.
-            Must share key's device and dtype. Independent of q_rot: either
+            Must share key's device; cast to key's dtype before use. Independent of q_rot: either
             may be omitted. The caller supplies rotations preserving the
             desired attention semantics; this function does not generate them.
         pre_tokens (int, optional, defaults to 2147483647):
@@ -149,8 +150,8 @@ def quant_attention(
     if kwargs:
         raise TypeError(f"Unexpected options for {precision} quantized attention: {', '.join(sorted(kwargs))}.")
     _, _, _, head_dim = _validate_quant_attention_inputs(query, key, value, layout=layout, layout_kv=layout_kv)
-    _validate_rotation(query, q_rot, "q_rot")
-    _validate_rotation(key, k_rot, "k_rot")
+    q_rot = _validate_rotation(query, q_rot, "q_rot")
+    k_rot = _validate_rotation(key, k_rot, "k_rot")
     scale = head_dim**-0.5 if scale is None else scale
     if precision == "mxfp8":
         return _mxfp8_attention_forward(
@@ -230,10 +231,17 @@ def _validate_quant_attention_inputs(query, key, value, *, layout, layout_kv=Non
 
 
 def _validate_rotation(tensor, rotation, name):
+    """Validate an optional rotation and return it cast to the input dtype."""
     if rotation is None:
-        return
+        return None
+    if not isinstance(rotation, torch.Tensor):
+        raise ValueError(f"{name} must be a torch.Tensor, but got {type(rotation).__name__}.")
     expected = (tensor.shape[-1], tensor.shape[-1])
-    if not isinstance(rotation, torch.Tensor) or rotation.shape != expected:
-        raise ValueError(f"{name} must be a tensor with shape {expected}.")
-    if rotation.device != tensor.device or rotation.dtype != tensor.dtype:
-        raise ValueError(f"{name} must match its input device and dtype.")
+    if rotation.shape != expected:
+        raise ValueError(f"{name} must have shape {expected}, but got {tuple(rotation.shape)}.")
+    if rotation.device != tensor.device:
+        raise ValueError(
+            f"{name} must match its input device, "
+            f"but got {name}.device={rotation.device} and input.device={tensor.device}."
+        )
+    return rotation.to(dtype=tensor.dtype)

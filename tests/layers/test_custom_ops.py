@@ -14,10 +14,15 @@ import unittest
 from unittest.mock import Mock, patch
 
 import torch
+import torch_npu
 
+import mindiesd
+from mindiesd import apply_rotary_pos_emb as top_level_apply_rotary_pos_emb
 from mindiesd.compilation import MindieSDBackend  # pylint: disable=no-name-in-module
+from mindiesd.layers import apply_rotary_pos_emb as public_apply_rotary_pos_emb
 from mindiesd.layers._custom_ops import (
     FREQUENCY_REGULATOR_MAX_FREQ,
+    apply_rotary_pos_emb,
     frequency_regulator,
     frequency_regulator_fake,
     laser_attention,
@@ -25,6 +30,58 @@ from mindiesd.layers._custom_ops import (
 )
 from mindiesd.utils import ParametersInvalid
 from mindiesd.utils.get_platform import is_a5_device
+
+
+class TestApplyRotaryPosEmbWrapper(unittest.TestCase):
+    def setUp(self):
+        self.query = torch.empty((2, 8, 6, 64), device="meta", dtype=torch.float16)
+        self.key = torch.empty((2, 8, 2, 64), device="meta", dtype=torch.float16)
+        self.cos = torch.empty((2, 8, 1, 64), device="meta", dtype=torch.float16)
+        self.sin = torch.empty_like(self.cos)
+
+    def test_public_api_is_exported(self):
+        self.assertIs(public_apply_rotary_pos_emb, apply_rotary_pos_emb)
+
+    def test_top_level_api_is_exported(self):
+        self.assertIs(top_level_apply_rotary_pos_emb, apply_rotary_pos_emb)
+        self.assertIn("apply_rotary_pos_emb", mindiesd.__all__)
+        self.assertIn("apply_rotary_pos_emb", mindiesd.layers.__all__)
+
+    def test_wrapper_forwards_default_arguments(self):
+        expected = (self.query, self.key)
+        mock_op = Mock(return_value=expected)
+
+        with patch.object(torch_npu, "npu_apply_rotary_pos_emb", mock_op, create=True):
+            result = apply_rotary_pos_emb(self.query, self.key, self.cos, self.sin)
+
+        self.assertEqual(result, expected)
+        mock_op.assert_called_once_with(
+            self.query, self.key, self.cos, self.sin, layout="BSND", rotary_mode="half"
+        )
+
+    def test_wrapper_forwards_explicit_arguments(self):
+        expected = (self.query, self.key)
+        mock_op = Mock(return_value=expected)
+
+        with patch.object(torch_npu, "npu_apply_rotary_pos_emb", mock_op, create=True):
+            result = apply_rotary_pos_emb(
+                self.query, self.key, self.cos, self.sin, layout="TND", rotary_mode="interleave"
+            )
+
+        self.assertEqual(result, expected)
+        mock_op.assert_called_once_with(
+            self.query, self.key, self.cos, self.sin, layout="TND", rotary_mode="interleave"
+        )
+
+    def test_unsupported_layout_is_rejected(self):
+        with patch.object(torch_npu, "npu_apply_rotary_pos_emb", Mock(), create=True):
+            with self.assertRaisesRegex(ParametersInvalid, "layout must be"):
+                apply_rotary_pos_emb(self.query, self.key, self.cos, self.sin, layout="INVALID")
+
+    def test_unsupported_rotary_mode_is_rejected(self):
+        with patch.object(torch_npu, "npu_apply_rotary_pos_emb", Mock(), create=True):
+            with self.assertRaisesRegex(ParametersInvalid, "rotary_mode must be"):
+                apply_rotary_pos_emb(self.query, self.key, self.cos, self.sin, rotary_mode="INVALID")
 
 
 class TestFrequencyRegulatorWrapper(unittest.TestCase):

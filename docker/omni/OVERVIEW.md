@@ -5,9 +5,9 @@
 | Item | Value |
 |------|-------|
 | **Image** | `mindiesd` |
-| **Tags** | `v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64` |
-| | `v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64` |
-| | `v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64` |
+| **Tags** | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12` |
+| | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12` |
+| | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12` |
 | **Base Images** | Atlas 800I A2 inference server: `quay.io/ascend/vllm-omni:v0.28.0` |
 | | Atlas 800I A3 SuperPoD Server: `quay.io/ascend/vllm-omni:v0.28.0-a3` |
 | | 950PR&950DT products: `quay.io/ascend/vllm-omni:v0.28.0-a5` |
@@ -54,14 +54,14 @@ All three variants add the following Atlas tuning and debugging tools:
 ### Tag Naming Convention
 
 ```text
-{version}-{cann version}-{torch_npu version}-{supported product}-{os}-{python version}-{architecture}-{others}
+{version}-{cann version}-{torch_npu version}-{supported product}-{os}-{python version}
 ```
 
 | Series | Example Tag | Base Image |
 |--------|-------------|------------|
-| Atlas 800I A2 inference server | `v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64` | `quay.io/ascend/vllm-omni:v0.28.0` |
-| Atlas 800I A3 SuperPoD Server | `v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64` | `quay.io/ascend/vllm-omni:v0.28.0-a3` |
-| 950PR&950DT products | `v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64` | `quay.io/ascend/vllm-omni:v0.28.0-a5` |
+| Atlas 800I A2 inference server | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0` |
+| Atlas 800I A3 SuperPoD Server | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0-a3` |
+| 950PR&950DT products | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0-a5` |
 
 ### v3.1.0 Version Dockerfile Directory
 
@@ -69,11 +69,11 @@ Each series has a dedicated Dockerfile, archived in the `docker/omni` directory 
 
 | Series | Example Tag | Dockerfile |
 |--------|-------------|------------|
-| Atlas 800I A2 inference server | `v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a2.ubuntu) |
-| Atlas 800I A3 SuperPoD Server | `v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a3.ubuntu) |
-| 950PR&950DT products | `v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a5.ubuntu) |
+| Atlas 800I A2 inference server | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a2.ubuntu) |
+| Atlas 800I A3 SuperPoD Server | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a3.ubuntu) |
+| 950PR&950DT products | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a5.ubuntu) |
 
-Historical image tags, including v3.0.0, are listed in [Supported Tags](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/supported_tags.md).
+Released image tags, including v3.0.0, are listed in [Supported Tags](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/supported_tags.md).
 
 ## Quick Start
 
@@ -129,7 +129,7 @@ docker run -it --rm --name=mindiesd \
     -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
     -v /etc/ascend_install.info:/etc/ascend_install.info \
     -v /root/.cache:/root/.cache \
-    mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64 \
+    mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12 \
     bash
 ```
 <!-- end id4 -->
@@ -154,7 +154,7 @@ docker run -it --rm --name=mindiesd \
     -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
     -v /etc/ascend_install.info:/etc/ascend_install.info \
     -v /root/.cache:/root/.cache \
-    mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64 \
+    mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12 \
     bash
 ```
 <!-- end id5 -->
@@ -179,7 +179,7 @@ docker run -it --rm --name=mindiesd \
     -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
     -v /etc/ascend_install.info:/etc/ascend_install.info \
     -v /root/.cache:/root/.cache \
-    mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64 \
+    mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12 \
     bash
 ```
 <!-- end id6 -->
@@ -199,7 +199,7 @@ cd MindIE-SD
 git checkout dev
 cd docker/omni
 
-docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64 \
+docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12 \
     -f Dockerfile.a2.ubuntu .
 ```
 <!-- end id7 -->
@@ -213,7 +213,7 @@ cd MindIE-SD
 git checkout dev
 cd docker/omni
 
-docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a3-ubuntu22.04-py3.12-x86_64 \
+docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12 \
     -f Dockerfile.a3.ubuntu .
 ```
 <!-- end id8 -->
@@ -227,7 +227,7 @@ cd MindIE-SD
 git checkout dev
 cd docker/omni
 
-docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a5-ubuntu22.04-py3.12-x86_64 \
+docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12 \
     -f Dockerfile.a5.ubuntu .
 ```
 <!-- end id9 -->
@@ -237,7 +237,7 @@ docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0
 To add your own dependencies or application code, create a new Dockerfile based on this image:
 
 ```dockerfile
-FROM mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0-a2-ubuntu22.04-py3.12-x86_64
+FROM mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12
 
 # Add your custom packages
 RUN pip install --no-cache-dir your-package

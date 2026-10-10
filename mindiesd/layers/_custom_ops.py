@@ -13,10 +13,67 @@
 from typing import Tuple, List, Optional
 import math
 import torch
+import torch_npu
 from . import register_ops
 from ..utils import ParametersInvalid
 
 FREQUENCY_REGULATOR_MAX_FREQ = 0xFFFFFFFF
+APPLY_ROTARY_POS_EMB_LAYOUTS = ("BSND", "SBND", "BNSD", "TND")
+APPLY_ROTARY_POS_EMB_ROTARY_MODES = ("half", "interleave", "quarter")
+
+
+def apply_rotary_pos_emb(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    cos: torch.Tensor,
+    sin: torch.Tensor,
+    layout: str = "BSND",
+    rotary_mode: str = "half",
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Apply rotary position embedding to query and key in place on NPU.
+
+    Delegates to Pytorch Adapter (PTA) `torch_npu.npu_apply_rotary_pos_emb` without a CPU
+    fallback or a `fused=False` path. The wrapper explicitly forwards `layout`, preserving
+    its `BSND` default instead of PTA's `BSH` default. Supported layouts, modes, dtypes and
+    head dimensions also depend on the NPU model and the installed torch_npu/CANN versions;
+    accepting a layout or mode here does not guarantee support on every device.
+
+    Warning:
+        Both query and key are overwritten. Clone them before this call if their unrotated
+        values are needed later. Unlike `rotary_position_embedding`, which processes one
+        tensor and returns a new result, this API processes both query and key in place.
+
+    Args:
+        query (torch.Tensor): NPU query tensor. Updated in place.
+        key (torch.Tensor): NPU key tensor. Updated in place.
+        cos (torch.Tensor): NPU cosine cache with a backend-supported broadcast shape.
+        sin (torch.Tensor): NPU sine cache with the same shape and dtype as cos.
+        layout (str): Input layout, one of `BSND`, `SBND`, `BNSD` or `TND`. Defaults to `BSND`.
+        rotary_mode (str): One of `half`, `interleave` or `quarter`. Defaults to `half`.
+
+    Returns:
+        Tuple[torch.Tensor, torch.Tensor]: The rotated query and key, sharing storage with
+        the corresponding input tensors, not independent copies.
+
+    Raises:
+        ParametersInvalid: If `layout` or `rotary_mode` is unsupported.
+        RuntimeError: If the installed torch_npu does not provide `npu_apply_rotary_pos_emb`.
+    """
+    if layout not in APPLY_ROTARY_POS_EMB_LAYOUTS:
+        raise ParametersInvalid(
+            f"apply_rotary_pos_emb: layout must be one of {APPLY_ROTARY_POS_EMB_LAYOUTS}, but got {layout}."
+        )
+    if rotary_mode not in APPLY_ROTARY_POS_EMB_ROTARY_MODES:
+        raise ParametersInvalid(
+            f"apply_rotary_pos_emb: rotary_mode must be one of {APPLY_ROTARY_POS_EMB_ROTARY_MODES}, "
+            f"but got {rotary_mode}."
+        )
+    if not hasattr(torch_npu, "npu_apply_rotary_pos_emb"):
+        raise RuntimeError(
+            "apply_rotary_pos_emb requires torch_npu.npu_apply_rotary_pos_emb, which is missing in the "
+            "installed torch_npu version. Please upgrade torch_npu to a version that provides this API."
+        )
+    return torch_npu.npu_apply_rotary_pos_emb(query, key, cos, sin, layout=layout, rotary_mode=rotary_mode)
 
 
 def frequency_regulator(freq: int) -> torch.Tensor:

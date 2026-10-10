@@ -76,6 +76,30 @@ class TestQuantFlashAttn(unittest.TestCase):
             torch.testing.assert_close(quantize.call_args_list[0].args[0], 2 * self.q)
             self.assertIs(quantize.call_args_list[1].args[0], self.q)
 
+    def test_rotation_is_cast_to_input_dtype_before_dispatch(self):
+        entry = importlib.import_module("mindiesd.layers.flash_attn.quant_flash_attn")
+        dtypes = (torch.float16, torch.bfloat16, torch.float32)
+        for precision, dtype, rotation_dtype in product(("fp8", "mxfp8", "mxfp4"), dtypes, dtypes):
+            query = self.q.to(dtype=dtype)
+            q_rot = 2 * torch.eye(64, dtype=rotation_dtype)
+            k_rot = 3 * torch.eye(64, dtype=rotation_dtype)
+            with (
+                self.subTest(precision=precision, dtype=dtype, rotation_dtype=rotation_dtype),
+                patch.object(entry, f"_{precision}_attention_forward", return_value=query) as execute,
+            ):
+                result = quant_attention(query, query, query, precision=precision, q_rot=q_rot, k_rot=k_rot)
+                self.assertIs(result, query)
+                execute.assert_called_once()
+                for name, original, factor in (("q_rot", q_rot, 2), ("k_rot", k_rot, 3)):
+                    rotation = execute.call_args.kwargs[name]
+                    self.assertEqual(rotation.dtype, dtype)
+                    self.assertEqual(rotation.device, query.device)
+                    torch.testing.assert_close(torch.matmul(query, rotation), factor * query)
+                    self.assertEqual(original.dtype, rotation_dtype)
+                    torch.testing.assert_close(original, factor * torch.eye(64, dtype=rotation_dtype))
+                    if dtype == rotation_dtype:
+                        self.assertIs(rotation, original)
+
     def test_float_rejected_before_execution(self):
         with (
             patch.object(torch_npu, "npu_fusion_attention", create=True) as floating,
@@ -145,8 +169,22 @@ class TestQuantFlashAttn(unittest.TestCase):
                 quant_attention(query, query, query, precision="fp8")
 
     def test_rotation_shape_rejected_before_matmul(self):
-        with self.assertRaisesRegex(ValueError, "q_rot.*shape"):
-            quant_attention(self.q, self.q, self.q, q_rot=torch.ones(64, 32))
+        for name in ("q_rot", "k_rot"):
+            with self.subTest(name=name), patch.object(torch, "matmul") as rotate:
+                with self.assertRaisesRegex(ValueError, name + ".*shape") as error:
+                    quant_attention(self.q, self.q, self.q, **{name: torch.ones(64, 32)})
+                self.assertIn("(64, 64)", str(error.exception))
+                self.assertIn("got (64, 32)", str(error.exception))
+                rotate.assert_not_called()
+
+    def test_rotation_device_error_reports_both_devices(self):
+        for name in ("q_rot", "k_rot"):
+            with self.subTest(name=name), patch.object(torch, "matmul") as rotate:
+                with self.assertRaisesRegex(ValueError, name + ".*device") as error:
+                    quant_attention(self.q, self.q, self.q, **{name: torch.eye(64, device="meta")})
+                self.assertIn(f"{name}.device=meta", str(error.exception))
+                self.assertIn("input.device=cpu", str(error.exception))
+                rotate.assert_not_called()
 
     def test_common_input_errors_stop_before_fp8_dispatch(self):
         entry = importlib.import_module("mindiesd.layers.flash_attn.quant_flash_attn")
@@ -515,7 +553,7 @@ class TestQuantAttentionMxfp4(unittest.TestCase):
     def test_invalid_options_fail_before_quantization(self):
         for options in (
             {"q_rot": torch.ones(64, 32)},
-            {"k_rot": torch.eye(64, dtype=torch.float16)},
+            {"k_rot": torch.eye(64, device="meta")},
             {"layout_out": "TND"},
         ):
             with self.subTest(options=options), patch.object(torch_npu, "npu_dynamic_mx_quant", create=True) as quant:
@@ -656,7 +694,7 @@ class TestQuantAttentionMxfp8(unittest.TestCase):
     def test_invalid_rotation_fails_before_quantization(self):
         for options in (
             {"q_rot": torch.ones(64, 32)},
-            {"k_rot": torch.eye(64, dtype=torch.float16)},
+            {"k_rot": torch.eye(64, device="meta")},
         ):
             with (
                 self.subTest(options=options),
