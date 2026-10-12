@@ -21,7 +21,7 @@ MindIE SD 提供两类量化能力，分别作用于模型的不同部分：
 
 下图展示了 INT8 量化示例，将 FP32 映射到 INT8。其中 `[-max(xf), max(xf)]` 是量化前浮点范围，`[-128, 127]` 是量化后范围。
 
-![](../../figures/int8_image.png)
+![INT8 量化示意图](../../figures/int8_image.png)
 
 ### 技术特点
 
@@ -138,25 +138,46 @@ for i, timestep in enumerate(timesteps):
 
 单卡量化时 `rank` 为 0，多卡并行时各 rank 分别对应其编号。
 
+#### 量化描述文件校验
+
+`quantize` 在构造量化配置和打开权重文件前，对描述文件进行整体校验。当前支持 MindIE SD 的扁平 JSON 格式：
+
+```json
+{
+  "model_quant_type": "W8A8",
+  "blocks.0.proj.weight": "W8A8",
+  "blocks.0.proj.bias": "FLOAT"
+}
+```
+
+- 文件必须为 UTF-8 编码的标准 JSON 对象，不能包含重复字段、未转义的控制字符或 `NaN`、`Infinity` 等非标准常量。
+- `model_quant_type` 必填，值必须为字符串，且精确匹配 `QuantAlgorithm` 的枚举值，例如 `W8A8` 或 `W4A4_MXFP4`。该字段是文件级元数据，不作为层配置。
+- 支持可选的 AscendV1 导出元数据：`version`、`kv_cache_type`、`kv_quant_type`、`fa_quant_type`、`reduce_quant_type` 必须为字符串；`group_size` 必须为非负整数，不能为布尔值；`metadata`、`optional` 必须为 JSON 对象。MindIE-SD 不消费的字符串字段不限制为当前导出器枚举值，以保持对新版本导出器的前向兼容。这些字段经校验后排除在层配置之外，不会启用分组、KV-cache、通信或旋转特性。`metadata`、`optional` 内部对象属于导出器扩展信息，不被解释，也不会用于打开额外文件。
+- 其余字段为动态层名或张量名，名称不能全为空白或包含 ASCII 控制字符；值必须为字符串，取值为 `QuantAlgorithm` 的枚举值（忽略大小写）或精确的 `FLOAT`。
+- 不符合上述格式的字段会被拒绝，不再被静默忽略。动态名称不是固定白名单：陌生名称只要对应合法算法值，仍作为层条目处理。包括元数据对象在内的所有 JSON 数值必须为有限值。
+- 校验失败抛出 `ParametersInvalid`，消息指明问题字段或 JSON 的行列位置；不会继续打开权重文件。
+
+此校验检查描述文件的结构、类型与取值，不验证动态名称是否对应真实模型层，也不验证权重张量的形状、数值或量化精度。原有路径、软链接、文件大小和权限检查仍然生效。
+
 ## FA量化
 
-### 通用原理
+### FA 通用原理
 
 FA（Flash Attention）量化针对注意力计算中的 Q/K/V 激活值进行低比特处理。将 Q/K/V 量化为 FP8 后再送入注意力计算内核，可显著降低显存带宽需求，提升推理吞吐。与权重量化不同，FA 量化处理的是推理过程中动态产生的激活值，需要块级别的动态量化策略来平衡精度和加速效果。
 
-### 技术特点
+### FA 技术特点
 
 本仓库通过 `FP8_DYNAMIC` 和 `MXFP4_DYNAMIC` 算法提供 FA 量化能力。`FP8_DYNAMIC` 使用 FP8 块量化；`MXFP4_DYNAMIC` 复用自定义 `quant_flash_attn` AICore 算子，并支持按时间步在 `MXFP4`、`FP8`、`FLOAT` 间切换。
 
-**旋转（Rotate）**
+#### 旋转（Rotate）
 
 若量化权重中存在预训练旋转矩阵（`q_rot`、`k_rot`），则对 Q 和 K 施加旋转，将异常值分散到各维度，缓解 FP8 量化对异常值的敏感性。权重中没有这两项时跳过旋转，模块初始化不会失败。
 
-**块量化（Block Quant）**
+#### 块量化（Block Quant）
 
 将 Q/K/V 按块动态量化为 FP8（`float8_e4m3fn`），通过 `npu_dynamic_block_quant` 完成。Q 的 token 块为 128，K 的 token 块为 256；V 的 token 块由下面的 `FP8FAMode` 决定。
 
-**FP8 Attention**
+#### FP8 Attention
 
 通过 MindIE SD 自带的 `torch.ops.mindiesd.fused_infer_attention_score_v2`
 算子进入本仓迁移的 `FusedInferAttentionScore` 实现，在 FP8 域内完成注意力计算，
@@ -177,7 +198,7 @@ FA 量化通过 `quantize` 接口统一触发，无需单独调用 FA 量化接�
 from mindiesd import quantize
 ```
 
-#### 使用示例
+#### FA 使用示例
 
 ```python
 from mindiesd import quantize

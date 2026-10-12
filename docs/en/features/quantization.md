@@ -21,7 +21,7 @@ Based on whether retraining is needed, quantization is divided into Post-Trainin
 
 The following diagram shows an INT8 quantization example, mapping FP32 to INT8. `[-max(xf), max(xf)]` is the pre-quantization float range, and `[-128, 127]` is the post-quantization range.
 
-![](../../figures/int8_image.png)
+![INT8 quantization diagram](../../figures/int8_image.png)
 
 ### Technical Features
 
@@ -99,25 +99,46 @@ Quantized weights and descriptor files are exported by the msmodelslim tool with
 
 For single-card quantization, `rank` is 0. For multi-card parallelism, each rank corresponds to its respective number.
 
+#### Quantization Descriptor Validation
+
+`quantize` validates the complete descriptor before constructing quantization configs or opening the weight file. The supported MindIE SD format is a flat JSON object:
+
+```json
+{
+  "model_quant_type": "W8A8",
+  "blocks.0.proj.weight": "W8A8",
+  "blocks.0.proj.bias": "FLOAT"
+}
+```
+
+- The file must be a UTF-8 standard JSON object without duplicate fields, unescaped control characters, or nonstandard constants such as `NaN` and `Infinity`.
+- `model_quant_type` is required. Its value must be a string that exactly matches a `QuantAlgorithm` enum value, such as `W8A8` or `W4A4_MXFP4`. It is file-level metadata, not a layer config.
+- Known AscendV1 exporter metadata is optional: `version`, `kv_cache_type`, `kv_quant_type`, `fa_quant_type`, and `reduce_quant_type` must be strings; `group_size` must be a non-negative integer, excluding booleans; `metadata` and `optional` must be JSON objects. The string values of fields that MindIE SD does not consume are intentionally not restricted to today's exporter enum values, so newer exporters remain forward compatible. These fields are validated and excluded from layer configs; they do not enable grouped, KV-cache, communication, or rotation features. Objects inside `metadata` and `optional` are exporter extensions and are not interpreted or used to open additional files.
+- All remaining fields are dynamic layer or tensor names. Names must not be entirely whitespace or contain ASCII control characters. Values must be strings containing a `QuantAlgorithm` enum value (case-insensitive) or exactly `FLOAT`.
+- Fields that violate this format are rejected instead of silently ignored. Dynamic names are not a fixed whitelist: an unfamiliar name with a valid algorithm value is a layer entry. All JSON numbers, including those in metadata objects, must be finite.
+- Validation failures raise `ParametersInvalid` with the field name or JSON line and column. The weight file is not opened after a validation failure.
+
+This checks the descriptor structure, types, and values. It does not verify that dynamic names correspond to actual model layers, or validate weight tensor shapes, values, or quantization accuracy. Existing path, symbolic link, file size, and permission checks still apply.
+
 ## FA Quantization
 
-### General Principles
+### FA General Principles
 
 FA (Flash Attention) quantization applies low-bit processing to Q/K/V activations in attention computation. Quantizing Q/K/V to FP8 before feeding into attention computation kernels significantly reduces memory bandwidth requirements and improves inference throughput. Unlike weight quantization, FA quantization processes dynamically generated activations during inference and requires block-level dynamic quantization strategies to balance accuracy and acceleration.
 
-### Technical Features
+### FA Technical Features
 
-This repository provides FA quantization via the `FP8_DYNAMIC` algorithm, with a three-step processing flow:
+This repository provides FA quantization via the `FP8_DYNAMIC` and `MXFP4_DYNAMIC` algorithms, with a three-step processing flow:
 
-**Rotate**
+#### Rotate
 
 If the quantized weights contain pre-trained rotation matrices (`q_rot`, `k_rot`), apply them to Q and K so outliers are spread across dimensions and FP8 quantization is less sensitive to those outliers. If the two tensors are absent, rotation is skipped and module initialization still succeeds.
 
-**Block Quantization**
+#### Block Quantization
 
 Dynamically quantize Q/K/V into FP8 (`float8_e4m3fn`) block by block via `npu_dynamic_block_quant`. Q uses a 128-token block and K uses a 256-token block; the V token block is selected by `FP8FAMode` below.
 
-**FP8 Attention**
+#### FP8 Attention
 
 Invoke MindIE SD's own `torch.ops.mindiesd.fused_infer_attention_score_v2` operator, which routes to the migrated `FusedInferAttentionScore` implementation
 in this repository, to perform attention computation in the FP8 domain with
