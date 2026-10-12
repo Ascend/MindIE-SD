@@ -4,6 +4,12 @@
 
 ## 快速开始
 
+运行 benchmark 前，请先在运行 benchmark 的 Python 环境中安装依赖（仓库根目录执行）：
+
+```bash
+python -m pip install -r benchmarks/requirements.txt
+```
+
 ```bash
 # 一键：序列扫描（FA/MM/GMM/BSA 四算子，1k→256k）+ 生成 HTML 报告
 bash benchmarks/example/run_benchmark.sh
