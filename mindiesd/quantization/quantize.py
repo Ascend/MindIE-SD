@@ -9,7 +9,6 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-import json
 import os
 from collections import OrderedDict
 from functools import wraps
@@ -18,6 +17,7 @@ import torch
 from torch import nn
 import safetensors
 from .mode import QuantAlgorithm
+from .description import DESCRIPTION_METADATA_FIELDS, parse_quant_description
 from .config import OnlineQuantConfig, QuantConfig, TimestepPolicyConfig
 from .mode import W4A4_LIST, W8A8_LIST
 from .utils import (
@@ -247,25 +247,23 @@ def modify_graph(model, modified_layers):
 def get_cfg_and_weights(quant_des_path):
     quant_des_path, filename, rank = replace_rank_suffix(quant_des_path)
     quant_algo_str = "quant_algo"
-    with file_utils.safe_open(
-        quant_des_path, "r", encoding="utf-8", permission_mode=file_utils.CONFIG_FILE_PERMISSION
-    ) as reader:
-        data = reader.read()
-    quant_des_dict = json.loads(data, strict=False)
+    try:
+        with file_utils.safe_open(
+            quant_des_path, "r", encoding="utf-8", permission_mode=file_utils.CONFIG_FILE_PERMISSION
+        ) as reader:
+            data = reader.read()
+    except UnicodeDecodeError as exc:
+        raise ParametersInvalid("Quantization description must be valid UTF-8.") from exc
+    quant_des_dict = parse_quant_description(data)
     logger.debug("[MindIE-SD/quantization] Quant description loaded. filename=%s.", filename)
 
-    if not quant_des_dict:
-        raise ParametersInvalid("quant_des_dict is none!")
-    exclude_layers = [k for k, v in quant_des_dict.items() if v == "FLOAT"]
-    valid_values = {item.value for item in QuantAlgorithm}  # 预计算有效值集合
+    exclude_layers = [k for k, v in quant_des_dict.items() if k not in DESCRIPTION_METADATA_FIELDS and v == "FLOAT"]
     quantized_layers = {
         k: {quant_algo_str: QuantAlgorithm(v.upper())}
         for k, v in quant_des_dict.items()
-        if isinstance(v, str) and v.upper() in valid_values
+        if k not in DESCRIPTION_METADATA_FIELDS and v != "FLOAT"
     }
-    quant_algo = quant_des_dict.get("model_quant_type", None)
-    if quant_algo is None:
-        raise ParametersInvalid("quant_algo must be the type of QuantAlgorithm.")
+    quant_algo = quant_des_dict["model_quant_type"]
 
     quant_config = {
         "quant_des_path": quant_des_path,
