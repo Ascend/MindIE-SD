@@ -167,7 +167,7 @@ FA（Flash Attention）量化针对注意力计算中的 Q/K/V 激活值进行�
 
 ### FA 技术特点
 
-本仓库通过 `FP8_DYNAMIC` 和 `MXFP4_DYNAMIC` 算法提供 FA 量化能力。`FP8_DYNAMIC` 使用 FP8 块量化；`MXFP4_DYNAMIC` 复用自定义 `quant_flash_attn` AICore 算子，并支持按时间步在 `MXFP4`、`FP8`、`FLOAT` 间切换。
+本仓库通过 `FP8_DYNAMIC` 和 `MXFP4_DYNAMIC` 算法提供 FA 量化能力。`FP8_DYNAMIC` 使用 FP8 块量化；`MXFP4_DYNAMIC` 复用自定义 `quant_flash_attn` AI Core 算子，并支持按时间步在 `MXFP4`、`FP8`、`FLOAT` 间切换。
 
 #### 旋转（Rotate）
 
