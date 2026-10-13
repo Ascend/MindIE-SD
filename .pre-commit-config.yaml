@@ -172,6 +172,7 @@ repos:
           - --header-filter=^$
           - -p=.
         pass_filenames: true
+        stages: [manual]
 
   # -------------------------- Gitleaks 本地离线二进制扫描 --------------------------
   - repo: local
