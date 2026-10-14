@@ -1,0 +1,4 @@
+# Optional benchmark dependencies for a configured Ascend environment.
+xpu-perf @ git+https://github.com/bytedance/xpu-perf.git@main
+# Required by the xpu-perf backend but missing from its package metadata.
+psutil
