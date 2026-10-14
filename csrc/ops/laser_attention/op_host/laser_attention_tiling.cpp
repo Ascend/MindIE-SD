@@ -22,24 +22,21 @@
 #include "register/op_def_registry.h"
 #include "tiling/platform/platform_ascendc.h"
 
-
 using namespace std;
 
 namespace {
-constexpr size_t CONST_ONES_SIZE = 16384 * 2;  // half
+constexpr size_t CONST_ONES_SIZE = 16384 * 2; // half
 constexpr size_t CONST_ZERO_SIZE = 32 * 128 * 4; // float
 constexpr size_t MAX_TOKEN = 2147483647;
 const int ALIGNNUM = 16;
-inline __attribute__((always_inline)) int32_t CeilDiv(int32_t num, int32_t div)
-{
+inline __attribute__((always_inline)) int32_t CeilDiv(int32_t num, int32_t div) {
     if (div == 0) {
         return 0;
     }
     return (num + div - 1) / div;
 }
 
-inline __attribute__((always_inline)) int32_t Align(int32_t num, int32_t alignNum)
-{
+inline __attribute__((always_inline)) int32_t Align(int32_t num, int32_t alignNum) {
     if (alignNum != 0) {
         return (num + alignNum - 1) / alignNum * alignNum;
     } else {
@@ -51,18 +48,17 @@ inline __attribute__((always_inline)) int32_t Align(int32_t num, int32_t alignNu
 
 namespace optiling {
 class LaserAttentionTiling {
-public:
+  public:
     LaserAttentionTilingData tilingData;
 
-    ge::graphStatus Tiling4LaserAttention(gert::TilingContext* context);
+    ge::graphStatus Tiling4LaserAttention(gert::TilingContext *context);
 
-    ge::graphStatus DoTiling(gert::TilingContext* context);
+    ge::graphStatus DoTiling(gert::TilingContext *context);
 
-    ge::graphStatus CheckTiling(gert::TilingContext* context);
+    ge::graphStatus CheckTiling(gert::TilingContext *context);
 };
 
-ge::graphStatus LaserAttentionTiling::DoTiling(gert::TilingContext* context)
-{
+ge::graphStatus LaserAttentionTiling::DoTiling(gert::TilingContext *context) {
     if (context == nullptr) {
         return ge::GRAPH_FAILED;
     }
@@ -80,17 +76,17 @@ ge::graphStatus LaserAttentionTiling::DoTiling(gert::TilingContext* context)
 
     int32_t coreNumPerGroup = 1;
     int32_t factor = 2;
-    if (col_size <= 8 * 1024 / factor) {    // value is 8 * 1024
+    if (col_size <= 8 * 1024 / factor) { // value is 8 * 1024
         coreNumPerGroup = 1;
-    } else if (col_size > 8 * 1024 / factor && col_size <= 16 * 1024 / factor) {    // value is 8、16、1024
-        coreNumPerGroup = 2;    // 2 is coreNumPerGroup
-    } else if (col_size > 16 * 1024 / factor && col_size <= 32 * 1024 / factor) {    // value is 16、32、1024
-        coreNumPerGroup = 4;    // 4 is coreNumPerGroup
+    } else if (col_size > 8 * 1024 / factor && col_size <= 16 * 1024 / factor) { // value is 8、16、1024
+        coreNumPerGroup = 2; // 2 is coreNumPerGroup
+    } else if (col_size > 16 * 1024 / factor && col_size <= 32 * 1024 / factor) { // value is 16、32、1024
+        coreNumPerGroup = 4; // 4 is coreNumPerGroup
     } else {
-        if (aicNum == 20) {    // 20 is aicNum
-            coreNumPerGroup = 4;    // 4 is coreNumPerGroup
+        if (aicNum == 20) { // 20 is aicNum
+            coreNumPerGroup = 4; // 4 is coreNumPerGroup
         } else {
-            coreNumPerGroup = 8;    // 8 is coreNumPerGroup
+            coreNumPerGroup = 8; // 8 is coreNumPerGroup
         }
     }
 
@@ -100,8 +96,7 @@ ge::graphStatus LaserAttentionTiling::DoTiling(gert::TilingContext* context)
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus LaserAttentionTiling::CheckTiling(gert::TilingContext* context)
-{
+ge::graphStatus LaserAttentionTiling::CheckTiling(gert::TilingContext *context) {
     if (context == nullptr) {
         return ge::GRAPH_FAILED;
     }
@@ -140,8 +135,7 @@ ge::graphStatus LaserAttentionTiling::CheckTiling(gert::TilingContext* context)
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus LaserAttentionTiling::Tiling4LaserAttention(gert::TilingContext* context)
-{
+ge::graphStatus LaserAttentionTiling::Tiling4LaserAttention(gert::TilingContext *context) {
     if (context == nullptr) {
         return ge::GRAPH_FAILED;
     }
@@ -216,8 +210,7 @@ ge::graphStatus LaserAttentionTiling::Tiling4LaserAttention(gert::TilingContext*
     return ge::GRAPH_SUCCESS;
 }
 
-static ge::graphStatus LaserAttentionTilingFunc(gert::TilingContext* context)
-{
+static ge::graphStatus LaserAttentionTilingFunc(gert::TilingContext *context) {
     if (context == nullptr) {
         return ge::GRAPH_FAILED;
     }
@@ -231,8 +224,8 @@ static ge::graphStatus LaserAttentionTilingFunc(gert::TilingContext* context)
     }
     const auto ascendcPlatform = platform_ascendc::PlatformAscendC(platformInfo);
     const auto aicNum = ascendcPlatform.GetCoreNumAic();
-    if (aicNum == 25) {    // 25 is aicNum
-        context->SetBlockDim(24);    // 24 is blockdim
+    if (aicNum == 25) { // 25 is aicNum
+        context->SetBlockDim(24); // 24 is blockdim
     } else {
         context->SetBlockDim(aicNum);
     }
@@ -250,12 +243,11 @@ static ge::graphStatus LaserAttentionTilingFunc(gert::TilingContext* context)
 
     auto groupNum = coreGrouNum * coreNumPerGroup;
     auto rowSumSize = batchSize * headNum * seqSize * sizeof(float);
-    workspaces[0] = groupNum * 128 * 128 * 32 * 2 * 4 +    // 128、32、2、4 is offset
-                    groupNum * 256 * 128 * 8 * 2 * 4 * 2 +    // 256、128、8、2、4 is offset
-                    rowSumSize + workspaceSize;
+    workspaces[0] = groupNum * 128 * 128 * 32 * 2 * 4 + // 128、32、2、4 is offset
+        groupNum * 256 * 128 * 8 * 2 * 4 * 2 + // 256、128、8、2、4 is offset
+        rowSumSize + workspaceSize;
 
-    tiling.tilingData.SaveToBuffer(context->GetRawTilingData()->GetData(),
-        context->GetRawTilingData()->GetCapacity());
+    tiling.tilingData.SaveToBuffer(context->GetRawTilingData()->GetData(), context->GetRawTilingData()->GetCapacity());
     context->GetRawTilingData()->SetDataSize(tiling.tilingData.GetDataSize());
 
     const auto inputData = context->GetInputTensor(0);
@@ -264,6 +256,8 @@ static ge::graphStatus LaserAttentionTilingFunc(gert::TilingContext* context)
     }
     auto dtype = inputData->GetDataType();
     if (dtype == ge::DT_BF16) {
+        workspaces[0] += batchSize * headNum * static_cast<size_t>(tiling.tilingData.get_qSeqLength()) *
+            static_cast<size_t>(tiling.tilingData.get_headDim()) * sizeof(float);
         context->SetTilingKey(1);
     } else {
         context->SetTilingKey(0); // FP16
@@ -272,11 +266,7 @@ static ge::graphStatus LaserAttentionTilingFunc(gert::TilingContext* context)
     return tiling.CheckTiling(context);
 }
 
-ge::graphStatus TilingPrepareForLaserAttention(gert::TilingParseContext* context)
-{
-    return ge::GRAPH_SUCCESS;
-}
-
+ge::graphStatus TilingPrepareForLaserAttention(gert::TilingParseContext *context) { return ge::GRAPH_SUCCESS; }
 
 IMPL_OP_OPTILING(LaserAttention)
     .Tiling(LaserAttentionTilingFunc)

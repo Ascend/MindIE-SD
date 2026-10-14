@@ -18,63 +18,48 @@ constexpr size_t MAX_TOKEN = 2147483647;
 
 namespace ops {
 class LaserAttention : public OpDef {
-public:
-    explicit LaserAttention(const char* name) : OpDef(name)
-    {
+  public:
+    explicit LaserAttention(const char *name) : OpDef(name) {
         this->Input("query")
-                .ParamType(REQUIRED)
-                .DataType({ge::DT_FLOAT16, ge::DT_BF16})
-                .Format({ge::FORMAT_ND, ge::FORMAT_ND});
+            .ParamType(REQUIRED)
+            .DataType({ge::DT_FLOAT16, ge::DT_BF16})
+            .Format({ge::FORMAT_ND, ge::FORMAT_ND});
         this->Input("key")
-                .ParamType(REQUIRED)
-                .DataType({ge::DT_FLOAT16, ge::DT_BF16})
-                .Format({ge::FORMAT_ND, ge::FORMAT_ND});
+            .ParamType(REQUIRED)
+            .DataType({ge::DT_FLOAT16, ge::DT_BF16})
+            .Format({ge::FORMAT_ND, ge::FORMAT_ND});
         this->Input("value")
-                .ParamType(REQUIRED)
-                .DataType({ge::DT_FLOAT16, ge::DT_BF16})
-                .Format({ge::FORMAT_ND, ge::FORMAT_ND});
+            .ParamType(REQUIRED)
+            .DataType({ge::DT_FLOAT16, ge::DT_FLOAT16})
+            .Format({ge::FORMAT_ND, ge::FORMAT_ND});
         this->Input("atten_mask")
-                .ParamType(OPTIONAL)
-                .DataType({ge::DT_FLOAT16, ge::DT_BF16})
-                .Format({ge::FORMAT_ND, ge::FORMAT_ND});
+            .ParamType(OPTIONAL)
+            .DataType({ge::DT_FLOAT16, ge::DT_BF16})
+            .Format({ge::FORMAT_ND, ge::FORMAT_ND});
         this->Input("alibi_mask")
-                .ParamType(OPTIONAL)
-                .DataType({ge::DT_FLOAT16, ge::DT_BF16})
-                .Format({ge::FORMAT_ND, ge::FORMAT_ND});
+            .ParamType(OPTIONAL)
+            .DataType({ge::DT_FLOAT16, ge::DT_BF16})
+            .Format({ge::FORMAT_ND, ge::FORMAT_ND});
         this->Input("drop_mask")
-                .ParamType(OPTIONAL)
-                .DataType({ge::DT_UINT8, ge::DT_UINT8})
-                .Format({ge::FORMAT_ND, ge::FORMAT_ND});
+            .ParamType(OPTIONAL)
+            .DataType({ge::DT_UINT8, ge::DT_UINT8})
+            .Format({ge::FORMAT_ND, ge::FORMAT_ND});
         // （qseqlen，1）
         this->Output("softmax_log_max_sum")
-                .ParamType(REQUIRED)
-                .DataType({ge::DT_FLOAT, ge::DT_FLOAT})
-                .Format({ge::FORMAT_ND, ge::FORMAT_ND});
+            .ParamType(REQUIRED)
+            .DataType({ge::DT_FLOAT, ge::DT_FLOAT})
+            .Format({ge::FORMAT_ND, ge::FORMAT_ND});
         this->Output("attention_out")
-                .ParamType(REQUIRED)
-                .DataType({ge::DT_FLOAT, ge::DT_FLOAT})
-                .Format({ge::FORMAT_ND, ge::FORMAT_ND});
-        this->Attr("scale_value")
-                .AttrType(REQUIRED)
-                .Float();
-        this->Attr("head_num")
-                .AttrType(REQUIRED)
-                .Int();
-        this->Attr("input_layout")
-                .AttrType(REQUIRED)
-                .String();
-        this->Attr("keep_prob")
-                .AttrType(OPTIONAL)
-                .Float(1.0);
-        this->Attr("pre_tokens")
-                .AttrType(OPTIONAL)
-                .Int(MAX_TOKEN);
-        this->Attr("next_tokens")
-                .AttrType(OPTIONAL)
-                .Int(1);
-        this->Attr("is_highPrecision")
-                .AttrType(OPTIONAL)
-                .Bool(true);
+            .ParamType(REQUIRED)
+            .DataType({ge::DT_FLOAT, ge::DT_BF16})
+            .Format({ge::FORMAT_ND, ge::FORMAT_ND});
+        this->Attr("scale_value").AttrType(REQUIRED).Float();
+        this->Attr("head_num").AttrType(REQUIRED).Int();
+        this->Attr("input_layout").AttrType(REQUIRED).String();
+        this->Attr("keep_prob").AttrType(OPTIONAL).Float(1.0);
+        this->Attr("pre_tokens").AttrType(OPTIONAL).Int(MAX_TOKEN);
+        this->Attr("next_tokens").AttrType(OPTIONAL).Int(1);
+        this->Attr("is_highPrecision").AttrType(OPTIONAL).Bool(true);
 
         this->AICore().AddConfig("ascend910");
         this->AICore().AddConfig("ascend910b");

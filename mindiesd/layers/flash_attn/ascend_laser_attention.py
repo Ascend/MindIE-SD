@@ -56,9 +56,7 @@ class AscendLaserAttention(AttentionOperateBase):
 
     @staticmethod
     def la_preprocess_input(query, key, value):
-        if query.dtype != torch.float16:
-            query = query.to(torch.float16)
-            key = key.to(torch.float16)
+        if value.dtype != torch.float16:
             value = value.to(torch.float16)
 
         query = AscendLaserAttention.pad(query, SEQLEN_BASE, SEQLEN_INDEX)

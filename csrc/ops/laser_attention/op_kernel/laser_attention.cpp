@@ -16,22 +16,16 @@
 
 using namespace AscendC;
 
-extern "C" __global__ __aicore__ void laser_attention(
-    __gm__ uint8_t * __restrict__ q_gm,
-    __gm__ uint8_t * __restrict__ k_gm,
-    __gm__ uint8_t * __restrict__ v_gm,
-    __gm__ uint8_t * __restrict__ atten_mask_gm,
+extern "C" __global__ __aicore__ void laser_attention(__gm__ uint8_t *__restrict__ q_gm,
+    __gm__ uint8_t *__restrict__ k_gm, __gm__ uint8_t *__restrict__ v_gm, __gm__ uint8_t *__restrict__ atten_mask_gm,
     __gm__ uint8_t *__restrict__ alibi_mask_gm, // ???
-    __gm__ uint8_t * __restrict__ drop_mask_gm, // ？？？
-    __gm__ uint8_t * __restrict__ softmax_log_max_sum_gm,
-    __gm__ uint8_t * __restrict__ attention_out_gm,
-    __gm__ uint8_t *__restrict__ workspace,
-    __gm__ uint8_t *__restrict__ tiling_para_gm)
-{
+    __gm__ uint8_t *__restrict__ drop_mask_gm, // ？？？
+    __gm__ uint8_t *__restrict__ softmax_log_max_sum_gm, __gm__ uint8_t *__restrict__ attention_out_gm,
+    __gm__ uint8_t *__restrict__ workspace, __gm__ uint8_t *__restrict__ tiling_para_gm) {
     GET_TILING_DATA(tiling_data_in, tiling_para_gm);
-    const LaserAttentionTilingData* __restrict tiling_data = &tiling_data_in;
+    const LaserAttentionTilingData *__restrict tiling_data = &tiling_data_in;
     SetSysWorkspace(workspace);
-    __gm__ uint8_t* user = GetUserWorkspace(workspace);
+    __gm__ uint8_t *user = GetUserWorkspace(workspace);
 
     int32_t y = tiling_data->coreNumPerGroup;
     int32_t f = tiling_data->coreGroupNum;
@@ -50,20 +44,34 @@ extern "C" __global__ __aicore__ void laser_attention(
     auto aicNum = y * f;
 
     // 尽量限制在192kb以下
-    __gm__ float * __restrict__ gm_attention_out = (__gm__ float *__restrict__)attention_out_gm; // cube最后的输出
-    __gm__ float* __restrict__ softmax_log_max_sum = (__gm__ float *__restrict__)softmax_log_max_sum_gm; // cube最后的输出
+    __gm__ float *__restrict__ gm_attention_out = (__gm__ float *__restrict__)attention_out_gm; // cube最后的输出
+    __gm__ float *__restrict__ softmax_log_max_sum =
+        (__gm__ float *__restrict__)softmax_log_max_sum_gm; // cube最后的输出
 
     // 第i个core的rowsum_diag地址 = 起始地址 + core_index * 128 *128* 2 * 2
-    __gm__ float * __restrict__ gm_rowmax_diag = (__gm__ float *__restrict__)user;  // 128*128*2 * 2 * aicNum;
-    __gm__ float * __restrict__ gm_rowsum_diag =
+    __gm__ float *__restrict__ gm_rowmax_diag = (__gm__ float *__restrict__)user; // 128*128*2 * 2 * aicNum;
+    __gm__ float *__restrict__ gm_rowsum_diag =
         (__gm__ float *__restrict__)(gm_rowmax_diag + 256 * 128 * 2 * MAX_SWITCH_TIME * aicNum);
-    __gm__ uint8_t * __restrict__ score_gm =
-        (__gm__ uint8_t *__restrict__)(gm_rowsum_diag + 256 * 128 * 2 * MAX_SWITCH_TIME* aicNum);
+    __gm__ uint8_t *__restrict__ score_gm =
+        (__gm__ uint8_t *__restrict__)(gm_rowsum_diag + 256 * 128 * 2 * MAX_SWITCH_TIME * aicNum);
+
+#if ORIG_DTYPE_QUERY == DT_BF16
+    TILING_KEY_IS(1);
+    // Keep online PV accumulation in FP32; only the normalized output is BF16.
+    gm_attention_out =
+        reinterpret_cast<__gm__ float *>(score_gm + static_cast<int64_t>(aicNum) * 128 * 128 * 32 * 2 * sizeof(float));
+#else
+    TILING_KEY_IS(0);
+#endif
 
 #ifdef __DAV_C220_CUBE__
+#if ORIG_DTYPE_QUERY == DT_BF16
+    CUBE_FORWARD_ONLINE::CubeForward<bfloat16_t, true, half> op;
+#else
     CUBE_FORWARD_ONLINE::CubeForward<half, false, half> op;
-    op.Init(q_gm, k_gm, v_gm, score_gm, gm_attention_out, gm_rowsum_diag, gm_rowmax_diag, softmax_log_max_sum,
-        y, f, b, n, s1, s2, d, g, qkTriangle, sparseMode, windowLen);
+#endif
+    op.Init(q_gm, k_gm, v_gm, score_gm, gm_attention_out, gm_rowsum_diag, gm_rowmax_diag, softmax_log_max_sum, y, f, b,
+        n, s1, s2, d, g, qkTriangle, sparseMode, windowLen, attention_out_gm);
     op.Run();
 #elif __DAV_C220_VEC__
     VectorForward<half, false, half> op;

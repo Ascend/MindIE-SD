@@ -138,9 +138,10 @@ def attention_fake(
     is_high_precision: bool = True,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     softmax_log_max_sum = torch.empty(
-        [query.shape[0], query.shape[1], query.shape[2]], device=query.device, dtype=query.dtype
+        [query.shape[0], query.shape[1], query.shape[2]], device=query.device, dtype=torch.float32
     )
-    output = torch.empty_like(query)
+    output_dtype = torch.bfloat16 if query.dtype == torch.bfloat16 else torch.float32
+    output = torch.empty_like(query, dtype=output_dtype)
     return softmax_log_max_sum, output
 
 
@@ -769,9 +770,7 @@ def eagle_ffn_linear(
     weight1/weight2 支持 linear [N,K]/[N,H] 与 canonical [K,N]/[H,N] 双布局（自动检测，
     方阵歧义默认 linear）；swiglu 使用单 matmul 形式 weight1=[2H,K]。
     """
-    return getattr(torch.ops.mindiesd, "eagle_ffn_linear")(
-        x, weight1, weight2, bias1, bias2, activation, inner_precise
-    )
+    return getattr(torch.ops.mindiesd, "eagle_ffn_linear")(x, weight1, weight2, bias1, bias2, activation, inner_precise)
 
 
 @register_ops.register_mindie_fake_op("eagle_ffn_linear")
@@ -798,9 +797,7 @@ def eagle_ffn_linear_fake(
     elif w1d0 == x_k and w1d1 == x_k:
         is_linear = not (w2d0 == hidden_w2 and w2d1 != hidden_w)
     else:
-        raise RuntimeError(
-            f"eagle_ffn_linear: weight1 shape [{w1d0}, {w1d1}] does not match x K={x_k}"
-        )
+        raise RuntimeError(f"eagle_ffn_linear: weight1 shape [{w1d0}, {w1d1}] does not match x K={x_k}")
     out_last = w2d0 if is_linear else w2d1
     return torch.empty(x.shape[:-1] + (out_last,), dtype=x.dtype, device=x.device)
 
