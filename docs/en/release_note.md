@@ -166,7 +166,11 @@ API changes include additions, modifications, deprecations, and removals. API ch
 
 # Virus Scan Results
 
-No virus scan results are available yet. They will be supplemented before the release.
+|Antivirus Software Name|Antivirus Software Version|Scan Time|Scan Result|
+|---|---|---|---|
+|QiAnXin|8.0.5.5260|2026-10-09 16:28:10|No viruses or malware.|
+|Kaspersky|12.0.0.6672|2026-10-09 16:28:10|No viruses or malware.|
+|Bitdefender|7.5.1.200224|2026-10-09 16:29:08|No viruses or malware.|
 
 # Vulnerability Patch List
 
