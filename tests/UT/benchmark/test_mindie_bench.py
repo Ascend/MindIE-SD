@@ -44,18 +44,14 @@ def test_parse_dict_lenient_with_func_dotted_name():
 
 
 def test_parse_dict_lenient_numbers_and_bool():
-    assert mb.parse_dict("{fa: {num_heads: 32, causal: false}}", "--op") == {
-        "fa": {"num_heads": 32, "causal": False}
-    }
+    assert mb.parse_dict("{fa: {num_heads: 32, causal: false}}", "--op") == {"fa": {"num_heads": 32, "causal": False}}
 
 
 def test_parse_dict_lenient_python_style_literals():
     # Python-style True/False/None normalize to JSON literals (True -> true)
     # instead of failing json.loads with a misleading "expecting value" error.
     assert mb.parse_op_spec("{fa: {causal: True}}") == {"fa": {"causal": True}}
-    assert mb.parse_dict("{bsa: {mask_type: None}}", "--op") == {
-        "bsa": {"mask_type": None}
-    }
+    assert mb.parse_dict("{bsa: {mask_type: None}}", "--op") == {"bsa": {"mask_type": None}}
 
 
 def test_parse_dict_invalid_raises():
@@ -77,9 +73,7 @@ def test_op_spec_empty_object():
     # unified defaults form: {} == "default"
     assert mb.parse_op_spec('{"fa": {}}') == {"fa": {}}
     assert mb.parse_op_spec('{fa: {}, mm: {}}') == {"fa": {}, "mm": {}}
-    assert mb.parse_op_spec("{fa: {}, mm: {}, gmm: {}, bsa: {}}") == {
-        op: {} for op in ("fa", "mm", "gmm", "bsa")
-    }
+    assert mb.parse_op_spec("{fa: {}, mm: {}, gmm: {}, bsa: {}}") == {op: {} for op in ("fa", "mm", "gmm", "bsa")}
 
 
 def test_op_spec_dict_params():
@@ -123,9 +117,7 @@ def test_op_spec_mm_scan_axis_rejected_case_insensitive():
     with pytest.raises(argparse.ArgumentTypeError):
         mb.parse_op_spec('{"mm": {"m": 8192}}')
     # structure params that merely contain "m" in their name still work
-    assert mb.parse_op_spec('{"mm": {"K": 5120, "N": 13824}}') == {
-        "mm": {"K": 5120, "N": 13824}
-    }
+    assert mb.parse_op_spec('{"mm": {"K": 5120, "N": 13824}}') == {"mm": {"K": 5120, "N": 13824}}
 
 
 def test_op_spec_list_value_rejected():
@@ -135,9 +127,7 @@ def test_op_spec_list_value_rejected():
 
 # --- parse_config -----------------------------------------------------------
 def test_config_normalizes_and_allows_scan_keys():
-    cfg = mb.parse_config(
-        '{"seqlen": [1024, 2048], "dtype": ["BF16", "fp8"], "sparse": [0.8], "quant": ["W8A8"]}'
-    )
+    cfg = mb.parse_config('{"seqlen": [1024, 2048], "dtype": ["BF16", "fp8"], "sparse": [0.8], "quant": ["W8A8"]}')
     assert cfg == {
         "seqlen": [1024, 2048],
         "dtype": ["bf16", "fp8"],
@@ -149,9 +139,7 @@ def test_config_normalizes_and_allows_scan_keys():
 def test_config_passes_through_peaks_seed_timeout():
     # Regression guard for CONFIG_ALLOWED_KEYS: seed/timeout/peak_flops/peak_bw
     # must survive parse and flow into every case template (MFU basis).
-    cfg = mb.parse_config(
-        '{"peak_flops": 560, "peak_bw": 1275, "seed": 42, "timeout": 300}'
-    )
+    cfg = mb.parse_config('{"peak_flops": 560, "peak_bw": 1275, "seed": 42, "timeout": 300}')
     assert cfg == {"peak_flops": 560, "peak_bw": 1275, "seed": 42, "timeout": 300}
     spec = mb.parse_op_spec('{"fa": "default"}')
     cases = mb.build_inline_cases(spec, cfg)
@@ -209,6 +197,15 @@ def test_build_inline_precedence_op_over_config():
     spec = mb.parse_op_spec('{"fa": {"num_heads": 16}}')
     cases = mb.build_inline_cases(spec, {"seqlen": [1024]})
     assert cases["fa"][0]["num_heads"] == 16
+
+
+def test_build_inline_sbe_seqlen_scans_kv_len():
+    spec = mb.parse_op_spec('{"sbe": {}}')
+    cases = mb.build_inline_cases(spec, {"seqlen": [30757, 65536], "dtype": ["bf16"]})
+    assert cases["sbe"][0]["kv_len"] == 30757
+    assert cases["sbe"][0]["q_len"] == 2304
+    assert cases["sbe"][1]["kv_len"] == 65536
+    assert cases["sbe"][0]["num_kv_heads"] == 4
 
 
 def test_build_inline_seqlen_maps_per_op_axis():
@@ -270,11 +267,11 @@ def test_parse_npu_smi_usage_bordered_table():
 
 
 def test_parse_npu_smi_usage_no_free():
-    assert mb._parse_npu_smi_usage("0 90.0\n1 88.0\n", threshold=50.0) == []
+    assert not mb._parse_npu_smi_usage("0 90.0\n1 88.0\n", threshold=50.0)
 
 
 def test_parse_npu_smi_usage_unparseable():
-    assert mb._parse_npu_smi_usage("no devices here\n", threshold=50.0) == []
+    assert not mb._parse_npu_smi_usage("no devices here\n", threshold=50.0)
 
 
 def test_resolve_devices_explicit():
@@ -338,9 +335,7 @@ def test_resolve_report_dir_explicit():
 
 def test_save_run_command_writes_file(tmp_path):
     ns = argparse.Namespace()
-    path = mb._save_run_command(
-        ns, str(tmp_path), {"fa": {}}, {"seqlen": [1024]}, "0"
-    )
+    path = mb._save_run_command(ns, str(tmp_path), {"fa": {}}, {"seqlen": [1024]}, "0")
     with open(path, encoding="utf-8") as fh:
         content = fh.read()
     assert "ops: {\"fa\": {}}" in content

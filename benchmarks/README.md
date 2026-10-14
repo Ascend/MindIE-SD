@@ -77,6 +77,14 @@ python benchmarks/scripts/mindie_bench.py report \
 python benchmarks/scripts/mindie_bench.py run --op "{fa: {}}" \
     --config "{seqlen: [1024, 4096, 16384, 65536], dtype: [bf16, mxfp8], timeout: 300, peak_flops: 377.78}"
 
+# sparse_block_estimate（Ascend 950，算子名 sbe）。Q 固定 [1,32,2304,128]，seqlen 扫 K。
+# 不要并进上面的四算子命令。peak_flops 换成该卡实测 CUBE 峰值后再看 MFU。
+python benchmarks/scripts/mindie_bench.py run --op "{sbe: {}}" \
+    --config "{seqlen: [30757, 65536, 425984], dtype: [bf16], timeout: 300, peak_flops: 377.78, peak_bw: 2000}" \
+    --report-dir reports/sbe
+
+python benchmarks/scripts/mindie_bench.py report --report-dir reports/sbe --baseline-dir baselines
+
 # BSA 稀疏度扫描
 python benchmarks/scripts/mindie_bench.py run --op "{bsa: {}}" \
     --config "{seqlen: [8192, 32768, 131072], dtype: [bf16], sparse: [0.6, 0.8, 0.95, 0.99], timeout: 300, peak_flops: 377.78}"

@@ -63,5 +63,20 @@ python "$ROOT/benchmarks/scripts/mindie_bench.py" report \
     --report-dir "$REPORT_DIR/seqlen_all" \
     --baseline-dir "$REPORT_DIR/baselines"
 
+# ============================================================
+# 4) sparse_block_estimate（Ascend 950）。不并进上面的四算子扫描：
+#    Q 固定 [1,32,2304,128]，seqlen 是 K 序列 30757 / 64K / 416K。
+#    peak_flops 请换成该卡实测 CUBE 峰值；示例 377.78 只用来把 MFU 算出来。
+#    只跑这一项时用 benchmarks/README.md 里的独立命令，不要跑整份脚本。
+# ============================================================
+python "$ROOT/benchmarks/scripts/mindie_bench.py" run \
+    --op "{sbe: {}}" \
+    --config "{seqlen: [30757, 65536, 425984], dtype: [bf16], timeout: 300, peak_flops: 377.78, peak_bw: 2000}" \
+    --report-dir "$REPORT_DIR/sbe"
+
+python "$ROOT/benchmarks/scripts/mindie_bench.py" report \
+    --report-dir "$REPORT_DIR/sbe" \
+    --baseline-dir "$REPORT_DIR/baselines"
+
 echo ""
 echo "HTML report: $(ls -t "$ROOT/benchmarks/reports/benchmark-report_"*.html 2>/dev/null | head -1)"

@@ -26,6 +26,11 @@ python benchmarks/scripts/mindie_bench.py run --op "{fa: {}}" \
     --config "{seqlen: [1024, 4096, 16384, 65536, 262144], dtype: [bf16, mxfp8], timeout: 300, peak_flops: 377.78}" \
     --report-dir reports/fa_sweep
 
+# sparse_block_estimate（Ascend 950）。单独跑，不进四算子扫描。
+python benchmarks/scripts/mindie_bench.py run --op "{sbe: {}}" \
+    --config "{seqlen: [30757, 65536, 425984], dtype: [bf16], timeout: 300, peak_flops: 377.78, peak_bw: 2000}" \
+    --report-dir reports/sbe
+
 # BSA 稀疏度扫描
 python benchmarks/scripts/mindie_bench.py run --op "{bsa: {}}" \
     --config "{seqlen: [8192, 32768, 131072], dtype: [bf16], sparse: [0.6, 0.8, 0.95, 0.99], timeout: 300, peak_flops: 377.78}" \

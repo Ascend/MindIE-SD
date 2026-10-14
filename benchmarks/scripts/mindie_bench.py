@@ -71,17 +71,33 @@ PLUGIN_DIR = BASE_DIR / "xpu-perf-plugin"
 sys.path.insert(0, str(BASE_DIR))
 from common.schema import OP_SEQ_AXIS as SEQ_AXIS  # noqa: E402
 
-VALID_OPS = ("fa", "bsa", "gmm", "mm")
+VALID_OPS = ("fa", "bsa", "gmm", "mm", "sbe")
 
 # --op must not carry scan keys; --config only carries these keys.
 # Keys are compared after _normalize_key() lowercases them, so use lowercase.
 OP_BLOCKED_KEYS = {
-    "seqlen", "seq_len", "q_len", "num_tokens", "m", "dtype", "sparse",
-    "sparsity", "quant_algo", "quant",
+    "seqlen",
+    "seq_len",
+    "q_len",
+    "num_tokens",
+    "m",
+    "dtype",
+    "sparse",
+    "sparsity",
+    "quant_algo",
+    "quant",
 }
 CONFIG_ALLOWED_KEYS = {
-    "seqlen", "seq_len", "dtype", "sparse", "sparsity", "quant_algo", "seed",
-    "timeout", "peak_flops", "peak_bw",
+    "seqlen",
+    "seq_len",
+    "dtype",
+    "sparse",
+    "sparsity",
+    "quant_algo",
+    "seed",
+    "timeout",
+    "peak_flops",
+    "peak_bw",
 }
 
 # built-in fixed-param defaults (aligned with the example 默认规格);
@@ -122,6 +138,21 @@ OP_DEFAULTS = {
         "quant_algo": "NO_QUANT",
         "group_size": 32,
         "scale_alg": 2,
+    },
+    # sparse_block_estimate on Ascend 950. seqlen scans kv_len; Q stays 2304.
+    "sbe": {
+        "arg_type": "default",
+        "batch_size": 1,
+        "num_heads": 32,
+        "num_kv_heads": 4,
+        "head_dim": 128,
+        "q_len": 2304,
+        "kv_len": 30757,
+        "causal": False,
+        "dtype": "bf16",
+        "threshold": 0.85,
+        "stride": 8,
+        "sparse_size": 128,
     },
 }
 
@@ -199,27 +230,20 @@ def parse_op_spec(op_str):
     for op, value in data.items():
         op = op.strip().lower()
         if op not in VALID_OPS:
-            raise argparse.ArgumentTypeError(
-                f"unknown op '{op}'; choose from {', '.join(VALID_OPS)}"
-            )
+            raise argparse.ArgumentTypeError(f"unknown op '{op}'; choose from {', '.join(VALID_OPS)}")
         if isinstance(value, str):
             if value != "default":
-                raise argparse.ArgumentTypeError(
-                    f"--op value for '{op}' must be {{}} or an object"
-                )
+                raise argparse.ArgumentTypeError(f"--op value for '{op}' must be {{}} or an object")
             params = {}
         elif isinstance(value, dict):
             params = value
         else:
-            raise argparse.ArgumentTypeError(
-                f"--op value for '{op}' must be {{}} or an object"
-            )
+            raise argparse.ArgumentTypeError(f"--op value for '{op}' must be {{}} or an object")
         for key, val in params.items():
             norm = _normalize_key(key)
             if norm in OP_BLOCKED_KEYS:
                 raise argparse.ArgumentTypeError(
-                    f"param '{key}' of op '{op}' is a scan key; "
-                    "put seqlen/dtype/sparse in --config"
+                    f"param '{key}' of op '{op}' is a scan key; put seqlen/dtype/sparse in --config"
                 )
             if isinstance(val, list):
                 raise argparse.ArgumentTypeError(
@@ -314,6 +338,7 @@ def _detect_free_npu_smi(threshold=50.0):
             capture_output=True,
             text=True,
             timeout=15,
+            check=False,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -337,8 +362,8 @@ def _resolve_devices(ns):
     """--devices value: explicit list, or 'auto' -> detect idle devices."""
     if ns.devices not in (None, "", "auto"):
         return ns.devices
-    free = detect_free_devices()
-    if free is None:
+    free = detect_free_devices() or []
+    if not free:
         print("WARNING: cannot detect free devices; falling back to device 0")
         return "0"
     print(f"Detected {len(free)} free device(s): {free} -> parallel runs")
@@ -440,15 +465,15 @@ def _print_run_config(ns, op_spec, config, devices, report_dir, test_cases):
     print(f"devices: {devices or '(all)'}  (default: 0)")
     print(f"report-dir: {report_dir}  (default: reports/run_<timestamp>)")
     if config:
-        print(f"CUBE peaks: peak_flops={config.get('peak_flops')} TFLOPS, "
-              f"peak_bw={config.get('peak_bw')} GB/s")
+        print(f"CUBE peaks: peak_flops={config.get('peak_flops')} TFLOPS, peak_bw={config.get('peak_bw')} GB/s")
     else:
         print("CUBE peaks: not provided — add --config {peak_flops: <TFLOPS>, peak_bw: <GB/s>}")
 
 
 def _save_run_command(ns, report_dir, op_spec, config, devices):
     """Record the executed command + config under the report dir so the HTML
-    report can show exactly how the run was produced."""
+    report can show exactly how the run was produced.
+    """
     os.makedirs(report_dir, exist_ok=True)
     lines = [
         " ".join(sys.argv),
@@ -578,27 +603,34 @@ def build_parser():
         "outer quotes",
     )
     grp2 = p_run.add_argument_group("runtime")
-    grp2.add_argument("--devices", default="0", metavar="IDS|auto",
-                      help="NPU logical device ids: comma list (default 0), or "
-                      "'auto' to detect idle devices via npu-smi; multiple "
-                      "devices run different cases in parallel")
-    grp2.add_argument("--report-dir", default=None, metavar="DIR",
-                      help="report output dir (default: reports/run_<timestamp>, "
-                      "so repeated runs never overwrite each other)")
+    grp2.add_argument(
+        "--devices",
+        default="0",
+        metavar="IDS|auto",
+        help="NPU logical device ids: comma list (default 0), or "
+        "'auto' to detect idle devices via npu-smi; multiple "
+        "devices run different cases in parallel",
+    )
+    grp2.add_argument(
+        "--report-dir",
+        default=None,
+        metavar="DIR",
+        help="report output dir (default: reports/run_<timestamp>, so repeated runs never overwrite each other)",
+    )
     p_run.set_defaults(func=cmd_run)
 
     p_rep = sub.add_parser("report", help="Export baselines + report snapshot + HTML")
-    p_rep.add_argument("--report-dir", default=_DEFAULT_REPORT_DIR, metavar="DIR",
-                       help="dir holding one or more runs; all jsonl under it are merged "
-                       "into a single HTML")
+    p_rep.add_argument(
+        "--report-dir",
+        default=_DEFAULT_REPORT_DIR,
+        metavar="DIR",
+        help="dir holding one or more runs; all jsonl under it are merged into a single HTML",
+    )
     p_rep.add_argument("--baseline-dir", default=_DEFAULT_BASELINE_DIR, metavar="DIR")
     p_rep.add_argument("--no-html", action="store_true", help="skip HTML rendering")
-    p_rep.add_argument("--render", action="store_true",
-                       help="re-render HTML from a snapshot (no recompute)")
-    p_rep.add_argument("--report-json", default=None, metavar="FILE",
-                       help="snapshot JSON for --render")
-    p_rep.add_argument("--html", default=None, metavar="FILE",
-                       help="HTML output path for --render")
+    p_rep.add_argument("--render", action="store_true", help="re-render HTML from a snapshot (no recompute)")
+    p_rep.add_argument("--report-json", default=None, metavar="FILE", help="snapshot JSON for --render")
+    p_rep.add_argument("--html", default=None, metavar="FILE", help="HTML output path for --render")
     p_rep.set_defaults(func=cmd_report)
 
     p_cmp = sub.add_parser("compare", help="Compare latest reports against baseline (drift gate)")

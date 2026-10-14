@@ -29,6 +29,7 @@ from op_defs._common import (
     attention_valid_parts,
     mx_scale_bytes,
     quant_flops,
+    sbe_qk_flops,
     tensor_bytes,
 )
 
@@ -144,6 +145,23 @@ def test_causal_square_uses_lower_triangle():
 
 def test_causal_rectangular_half():
     assert attention_valid_parts(100, 200, causal=True, sparsity=0.0) == 10_000
+
+
+def test_sbe_qk_flops_aligned_tile():
+    # q=256 -> 2 blocks * 16 rows; k=512 -> 64 packed cols; K=1024.
+    assert sbe_qk_flops(1, 1, 256, 512, 128, 8, 128) == 2 * 32 * 1024 * 64
+
+
+def test_sbe_qk_flops_pads_tail():
+    # kv_len 30757 packs to ceil(30757/8)=3845 columns.
+    aligned = sbe_qk_flops(1, 32, 2304, 30752, 128, 8, 128)
+    tail = sbe_qk_flops(1, 32, 2304, 30757, 128, 8, 128)
+    assert tail > aligned
+
+
+def test_sbe_qk_flops_rejects_bad_stride():
+    with pytest.raises(ValueError):
+        sbe_qk_flops(1, 1, 128, 128, 128, 7, 128)
 
 
 def test_causal_rectangular_with_sparsity():
@@ -283,6 +301,8 @@ class _FakeBaseOp:
 
 
 class _FakeOp(MfuMbuSummaryMixin, _FakeBaseOp):
+    executed_path: str
+
     def __init__(self):
         self.backend = _FakeBackend()
         self.args_dict = {"peak_flops": 560.0, "peak_bw": 1275.0}

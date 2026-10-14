@@ -27,6 +27,16 @@ OP_SLOT_ARGS = {
     "bsa": ("q_len", "kv_len", "batch_size", "num_heads", "head_dim", "sparsity", "dtype", "func"),
     "gmm": ("num_tokens", "hidden_size", "moe_inter", "experts", "top_k", "quant_algo"),
     "mm": ("M", "K", "N", "quant_algo"),
+    # sbe scans kv_len; q_len stays the production Q (2304) unless overridden.
+    "sbe": (
+        "q_len",
+        "kv_len",
+        "batch_size",
+        "num_heads",
+        "num_kv_heads",
+        "head_dim",
+        "dtype",
+    ),
 }
 
 # op seq-scan axis used for line charts
@@ -35,6 +45,7 @@ OP_SEQ_AXIS = {
     "bsa": "q_len",
     "gmm": "num_tokens",
     "mm": "M",
+    "sbe": "kv_len",
 }
 
 # op dtype/quant grouping key used to split sections/series
@@ -43,6 +54,7 @@ OP_SERIES_KEY = {
     "bsa": "dtype",
     "gmm": "quant_algo",
     "mm": "quant_algo",
+    "sbe": "dtype",
 }
 
 # metrics displayed in the HTML report per op. FA/BSA/MM are compute-bound and
@@ -53,6 +65,7 @@ OP_DISPLAY_METRICS = {
     "bsa": ("MFU",),
     "gmm": ("MFU", "MBU"),
     "mm": ("MFU",),
+    "sbe": ("MFU",),
 }
 
 # slot-level metrics carried by baselines and report snapshots

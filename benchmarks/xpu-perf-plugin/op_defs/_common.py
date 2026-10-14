@@ -110,6 +110,25 @@ def op_tensor_info(shape, dtype, device):
     return OpTensorInfo(shape=shape, dtype=torch_dtype, device=device)
 
 
+def sbe_qk_flops(batch_size, num_heads, q_len, kv_len, head_dim, stride, sparse_size):
+    """Cube FLOPs of sparse_block_estimate's packed QK GEMM.
+
+    A5 packs ``stride`` raw tokens into one row (K = stride * head_dim) and
+    one query block of ``sparse_size`` tokens into sparse_size/stride rows.
+    Softmax and the block reduction are vector work and are not charged, matching
+    FA's cube-only FLOP accounting. Ceiling matches the kernel's Q/K padding.
+    """
+    if min(batch_size, num_heads, q_len, kv_len, head_dim, stride, sparse_size) <= 0:
+        raise ValueError("sbe_qk_flops arguments must be positive")
+    if sparse_size % stride != 0:
+        raise ValueError(f"sparse_size {sparse_size} must be divisible by stride {stride}")
+    q_blocks = (q_len + sparse_size - 1) // sparse_size
+    q_rows = q_blocks * (sparse_size // stride)
+    k_cols = (kv_len + stride - 1) // stride
+    packed_k = stride * head_dim
+    return 2 * batch_size * num_heads * q_rows * packed_k * k_cols
+
+
 def attention_valid_parts(q_len, kv_len, causal, sparsity):
     """Effective QK/PV element count after causal and sparsity discounts.
 

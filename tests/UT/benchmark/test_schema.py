@@ -26,7 +26,7 @@ from common.schema import (
     SLOT_OMIT_WHEN_DEFAULT,
 )
 
-OPS = ("fa", "bsa", "gmm", "mm")
+OPS = ("fa", "bsa", "gmm", "mm", "sbe")
 
 
 def test_every_op_has_all_tables():
@@ -94,6 +94,8 @@ def test_display_metrics_per_op():
     assert OP_DISPLAY_METRICS["mm"] == ("MFU",)
     assert "MBU" in OP_DISPLAY_METRICS["gmm"]
     assert "MFU" in OP_DISPLAY_METRICS["gmm"]
+    assert OP_DISPLAY_METRICS["sbe"] == ("MFU",)
+    assert OP_SEQ_AXIS["sbe"] == "kv_len"
 
 
 def test_omit_pairs_are_only_for_kv_len():

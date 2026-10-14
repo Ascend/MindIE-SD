@@ -80,10 +80,7 @@ def _slot_for(op_name, arguments):
         value = arguments.get(key)
         if value is None:
             continue
-        if any(
-            key == omit_key and value == arguments.get(default_key)
-            for omit_key, default_key in omit
-        ):
+        if any(key == omit_key and value == arguments.get(default_key) for omit_key, default_key in omit):
             continue
         parts.append(f"{key}={value}")
     return "|".join(parts)
@@ -142,9 +139,7 @@ def collect_baseline(entries):
         if op not in OP_SLOT_ARGS:
             continue
         targets = e.get("targets", {})
-        if not targets or not any(
-            k in targets for k in ("latency(us)", "calc_flops_power(tflops)", "MFU", "MBU")
-        ):
+        if not targets or not any(k in targets for k in ("latency(us)", "calc_flops_power(tflops)", "MFU", "MBU")):
             # errored/skipped case: xpu-perf summary is empty -> no data
             continue
         args = e.get("arguments", {})
@@ -203,9 +198,7 @@ def compare(current_grouped, baseline_dir, threshold):
                     continue
                 checked += 1
                 if drift > threshold:
-                    violations.append(
-                        (op, slot, metric, f"drift={drift:.4f} cur={cur} base={base}")
-                    )
+                    violations.append((op, slot, metric, f"drift={drift:.4f} cur={cur} base={base}"))
     return checked, violations
 
 
@@ -234,10 +227,12 @@ def parse_slot(slot):
 def _series_label(op_name, parsed, series_key):
     """Series label: dtype/quant + heads/dim + kernel function (when present)."""
     label = parsed.get(series_key, "default")
-    if op_name in ("fa", "bsa"):
+    if op_name in ("fa", "bsa", "sbe"):
         parts = [label]
         if "num_heads" in parsed:
             parts.append(f"h{parsed['num_heads']}")
+        if op_name == "sbe" and "num_kv_heads" in parsed:
+            parts.append(f"kv{parsed['num_kv_heads']}")
         if "head_dim" in parsed:
             parts.append(f"d{parsed['head_dim']}")
         if "func" in parsed:
@@ -330,9 +325,7 @@ def _load_run_command(report_dir):
     return latest.read_text(encoding="utf-8").strip()
 
 
-def build_report_data(
-    grouped, peak_flops, peak_bw, info, command=None, generated_at=None, peaks=None
-):
+def build_report_data(grouped, peak_flops, peak_bw, info, command=None, generated_at=None, peaks=None):
     info = info or {}
     return {
         "generated_at": generated_at or datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -578,10 +571,7 @@ def line_chart_svg(title, series, x_values, series_metric):
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
         f'viewBox="0 0 {W} {H}" font-family="Segoe UI, Arial, sans-serif">'
     ]
-    parts.append(
-        f'<text x="{MARGIN["l"]}" y="16" font-size="15" font-weight="600" fill="#222">'
-        f"{safe_title}</text>"
-    )
+    parts.append(f'<text x="{MARGIN["l"]}" y="16" font-size="15" font-weight="600" fill="#222">{safe_title}</text>')
     for i in range(5):
         gy = y_min + (y_max - y_min) * i / 4
         yy = ys(gy)
@@ -640,10 +630,7 @@ def _legend_html(series_labels, metrics=("MFU", "MBU")):
     for idx, metric in enumerate(metrics):
         parts.append(f'<span class="sw" style="background:{PALETTE[idx]}"></span>{metric}')
     for idx, label in enumerate(series_labels):
-        parts.append(
-            f'<span class="dot" style="background:{PALETTE[idx % len(PALETTE)]}">'
-            f"</span>{html.escape(label)}"
-        )
+        parts.append(f'<span class="dot" style="background:{PALETTE[idx % len(PALETTE)]}"></span>{html.escape(label)}')
     parts.append("</div>")
     return "".join(parts)
 
@@ -675,10 +662,7 @@ def build_op_html(op_name, cases):
         all_x = sorted({x for label in agg.values() for x in label})
         series = {}
         for metric in display:
-            series[metric] = {
-                label: {x: agg[label].get(x, {}).get(metric) for x in all_x}
-                for label in sorted(agg)
-            }
+            series[metric] = {label: {x: agg[label].get(x, {}).get(metric) for x in all_x} for label in sorted(agg)}
 
     if all_x:
         legend_labels = [label for metric in display for label in series[metric]]
@@ -698,9 +682,7 @@ def build_op_html(op_name, cases):
                 header = [f"{metric} / sparsity"] + [_human(x) for x in xs]
                 rows = ""
                 for sp in sorted(by_sparsity, key=float):
-                    cells = [html.escape(sp)] + [
-                        _pct(by_sparsity[sp].get(x, {}).get(metric)) for x in xs
-                    ]
+                    cells = [html.escape(sp)] + [_pct(by_sparsity[sp].get(x, {}).get(metric)) for x in xs]
                     rows += "<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
                 parts.append(
                     "<table><thead><tr>"
@@ -741,13 +723,9 @@ def render_html(data, html_output):
     command = data.get("command")
     generated_at = html.escape(str(data.get("generated_at", "")))
     backend_html = "".join(
-        f"<tr><td>{html.escape(str(k))}</td><td>{html.escape(str(v))}</td></tr>"
-        for k, v in backend.items()
+        f"<tr><td>{html.escape(str(k))}</td><td>{html.escape(str(v))}</td></tr>" for k, v in backend.items()
     )
-    env_html = "".join(
-        f"<tr><td>{html.escape(str(k))}</td><td>{html.escape(str(v))}</td></tr>"
-        for k, v in env.items()
-    )
+    env_html = "".join(f"<tr><td>{html.escape(str(k))}</td><td>{html.escape(str(v))}</td></tr>" for k, v in env.items())
 
     sections = []
     ops = data.get("ops", {})
@@ -814,8 +792,7 @@ peak_flops {env.get('peak_flops', 'n/a')} TFLOPS · peak_bw {env.get('peak_bw', 
 # --- CLI --------------------------------------------------------------------
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="MindIE-SD benchmark report tool "
-        "(baseline export + report snapshot + HTML + compare)."
+        description="MindIE-SD benchmark report tool (baseline export + report snapshot + HTML + compare)."
     )
     sub = parser.add_subparsers(dest="cmd")
 
@@ -824,9 +801,7 @@ def build_parser():
         help="Export baseline JSON + timestamped report snapshot; render HTML by default.",
     )
     p_b.add_argument("--report_dir", default=DEFAULT_REPORT_DIR, help="Latest xpu-perf report dir")
-    p_b.add_argument(
-        "--baseline_dir", default=DEFAULT_BASELINE_DIR, help="Baseline JSON output dir"
-    )
+    p_b.add_argument("--baseline_dir", default=DEFAULT_BASELINE_DIR, help="Baseline JSON output dir")
     p_b.add_argument("--no-html", action="store_true", help="Skip HTML rendering")
     p_b.set_defaults(func=cmd_baseline)
 
@@ -836,9 +811,7 @@ def build_parser():
         default=None,
         help="Snapshot JSON path (default: latest benchmark-report_*.json under reports/)",
     )
-    p_r.add_argument(
-        "--html", default=None, help="HTML output path (default: next to the snapshot)"
-    )
+    p_r.add_argument("--html", default=None, help="HTML output path (default: next to the snapshot)")
     p_r.set_defaults(func=cmd_render)
 
     p_c = sub.add_parser("compare", help="Compare latest reports against baseline; drift gate.")
