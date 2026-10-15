@@ -36,19 +36,23 @@ class NPUFlashAttentionOp:
 
     def __init__(self, args_dict, backend, *args, **kwargs):
         super().__init__(args_dict, backend, *args, **kwargs)
+        # Set in vendor_impl_run; read via getattr by MfuMbuSummaryMixin.summary().
+        self.executed_path = None
 
     def vendor_impl_run(self, tensor_mapping):
         q = tensor_mapping["q"]
         k = tensor_mapping["k"]
         v = tensor_mapping["v"]
-        n = self.num_heads
-        d = self.head_dim
+        # num_heads/head_dim/dtype are set by the base op's prepare_args().
+        n = self.num_heads  # pylint: disable=no-member
+        d = self.head_dim  # pylint: disable=no-member
+        dtype = self.dtype  # pylint: disable=no-member
         scale = 1.0 / math.sqrt(d)
         # Record what actually executed so reports can tell real quantized
         # runs from bf16 fallbacks (see MfuMbuSummaryMixin.executed_path).
-        self.executed_path = self.dtype
+        self.executed_path = dtype
 
-        if self.dtype in ("fp8", "mxfp8"):
+        if dtype in ("fp8", "mxfp8"):
             try:
                 return self._quant_fa_fp8(q, k, v, n, d, scale)
             except RuntimeError as exc:
@@ -56,12 +60,12 @@ class NPUFlashAttentionOp:
                     raise
                 logger.warning(
                     "DynamicMxQuant unsupported on this platform; %s FA falls back to bf16",
-                    self.dtype,
+                    dtype,
                 )
                 self.executed_path = "bf16_fallback"
                 return self._bf16_fa(q, k, v, n, scale)
 
-        if self.dtype == "mxfp4":
+        if dtype == "mxfp4":
             try:
                 return self._quant_fa_mxfp4(q, k, v, n, d, scale)
             except RuntimeError as exc:
@@ -122,30 +126,29 @@ class NPUFlashAttentionOp:
         import torch
         import torch_npu
 
-        from mindiesd.layers.flash_attn.common import AttentionParam
-        from mindiesd.quantization.layer import (
+        from mindiesd.layers.flash_attn.quant_attention_mxfp4 import (
             MXFP4_FA_SEQ_PAD_BASE,
             MXFP4_K_QUANT_MODE,
             MXFP4_Q_QUANT_MODE,
             MXFP4_V_QUANT_MODE,
-            _dynamic_mx_quant_fa,
             _get_qfa_seqused,
             _pad_fa_seq_before_quant,
             _reshape_mxfp4_v_scale_for_fa,
         )
+        from mindiesd.quantization.layer import _dynamic_mx_quant
 
-        query, s, padded_s = _pad_fa_seq_before_quant(q, MXFP4_FA_SEQ_PAD_BASE, "BNSD")
-        key, kv_s, padded_kv_s = _pad_fa_seq_before_quant(k, MXFP4_FA_SEQ_PAD_BASE, "BNSD")
-        value, _, _ = _pad_fa_seq_before_quant(v, MXFP4_FA_SEQ_PAD_BASE, "BNSD")
+        s = q.shape[2]
+        query = _pad_fa_seq_before_quant(q, MXFP4_FA_SEQ_PAD_BASE, "BNSD")
+        key = _pad_fa_seq_before_quant(k, MXFP4_FA_SEQ_PAD_BASE, "BNSD")
+        value = _pad_fa_seq_before_quant(v, MXFP4_FA_SEQ_PAD_BASE, "BNSD")
         batch_size = query.shape[0]
-        seq_param = AttentionParam(
-            batch_size, n, d, padded_s, padded_kv_s, torch.int32, str(query.device)
-        )
-        seqused_q, seqused_kv = _get_qfa_seqused(seq_param)
+        padded_s = query.shape[2]
+        padded_kv_s = key.shape[2]
+        seqused_q, seqused_kv = _get_qfa_seqused(batch_size, padded_s, padded_kv_s, query.device)
 
-        quant_q, q_scale = _dynamic_mx_quant_fa(query, axis=-1)
-        quant_k, k_scale = _dynamic_mx_quant_fa(key, axis=-1)
-        quant_v, v_scale = _dynamic_mx_quant_fa(value, axis=2)
+        quant_q, q_scale = _dynamic_mx_quant(query, dst_type=torch_npu.float4_e2m1fn_x2, axis=-1)
+        quant_k, k_scale = _dynamic_mx_quant(key, dst_type=torch_npu.float4_e2m1fn_x2, axis=-1)
+        quant_v, v_scale = _dynamic_mx_quant(value, dst_type=torch_npu.float4_e2m1fn_x2, axis=2)
         v_scale = _reshape_mxfp4_v_scale_for_fa(v_scale, "BNSD")
 
         qfa_metadata = torch.ops.mindiesd.quant_flash_attn_metadata(

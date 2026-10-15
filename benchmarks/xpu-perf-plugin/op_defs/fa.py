@@ -12,6 +12,10 @@
 
 """Flash attention (BNSD layout, DiT-style)."""
 
+# prepare_args/flops_calc/vendor_impl follow the BasicOp lifecycle and populate
+# instance attributes there (same pattern as mm.py/bsa.py/gmm.py).
+# pylint: disable=attribute-defined-outside-init
+
 from xpu_perf.micro_perf.core.op import BasicOp, ProviderRegistry
 
 from ._common import (
@@ -74,7 +78,7 @@ class FlashAttentionOp(MfuMbuSummaryMixin, BasicOp):
         valid_parts = attention_valid_parts(self.q_len, self.kv_len, self.causal, self.sparsity)
         self.calc_flops = 2 * (self.batch_size * self.num_heads * self.head_dim * valid_parts * 2)
         # Quantized paths quantize q/k/v inside the timed region (npu_dynamic_mx_quant
-        # / _dynamic_mx_quant_fa); charge their elementwise work so MFU covers the
+        # / _dynamic_mx_quant); charge their elementwise work so MFU covers the
         # full measured op. Unpadded lengths are used (seqlen-scan configs are 2^k
         # so padded == unpadded for MXFP4_FA_SEQ_PAD_BASE=512).
         if self.dtype in ("fp8", "mxfp8", "mxfp4"):

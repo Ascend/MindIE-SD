@@ -23,8 +23,10 @@ from mindiesd.quantization.layer import (
     WeightQuantLinear,
     FP8RotateQuantFA,
     MXFP8RotateQuantFA,
+    MXFP4FourOverSixQuantFA,
     W8A8MXFP8QuantLinear,
     W4A4QuantLinear,
+    W4A4MXFP4FourOverSixQuantLinear,
     W4A4MXFP4QuantLinear,
 )
 from mindiesd.quantization.mode import FP8FAMode, QuantAlgorithm
@@ -197,6 +199,31 @@ class TestSmoothQuantize(unittest.TestCase):
         quant_layer, is_modified = smooth_quantize_w8a8("0", layer, cfg, create_mock_handler(self.weights6))
         self.assertIsInstance(quant_layer, W4A4MXFP4QuantLinear)
         self.assertTrue(is_modified)
+
+    def test_smooth_quantize_w4a4_mxfp4_fouroversix_with_linear(self):
+        # uint8 权重走 _prepare_mxfp4_weight 的已打包通路，无需 NPU 算子
+        weights = {
+            "0.weight": torch.ones(64, 64, dtype=torch.uint8),
+            "0.weight_scale": torch.ones(64, 2, dtype=torch.uint8),
+            "0.bias": torch.ones(64, dtype=torch.float32),
+        }
+        layer = nn.Linear(64, 64)
+        cfg = QuantConfig(quant_algo=QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC)
+        quant_layer, is_modified = smooth_quantize_w8a8("0", layer, cfg, create_mock_handler(weights))
+        self.assertIsInstance(quant_layer, W4A4MXFP4FourOverSixQuantLinear)
+        self.assertTrue(is_modified)
+        self.assertTrue(quant_layer.is_dynamic)
+
+    def test_smooth_quantize_w4a4_mxfp4_fouroversix_rejects_unaligned_features(self):
+        weights = {
+            "0.weight": torch.ones(48, 48, dtype=torch.uint8),
+            "0.weight_scale": torch.ones(48, 2, dtype=torch.uint8),
+            "0.bias": torch.ones(48, dtype=torch.float32),
+        }
+        layer = nn.Linear(48, 48)
+        cfg = QuantConfig(quant_algo=QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC)
+        with self.assertRaises(ParametersInvalid):
+            smooth_quantize_w8a8("0", layer, cfg, create_mock_handler(weights))
 
     def test_smooth_quantize_with_supported_algo(self):
         layer = nn.Linear(10, 10)
@@ -410,6 +437,29 @@ class TestQuantize(unittest.TestCase):
         mock_empty_cache.assert_called_once()
 
     @mock.patch.object(torch.npu, "empty_cache")
+    def test_online_quantize_with_fouroversix_mm_and_fa(self, mock_empty_cache):
+        model = nn.ModuleDict({"attn": FakeAttention(), "linear": nn.Linear(32, 32)})
+        config = OnlineQuantConfig(
+            quant_type=QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC,
+            fa_layers=("FakeAttention",),
+            fa_quant_type=QuantAlgorithm.MXFP4_FOUROVERSIX_DYNAMIC,
+        )
+        FakeOnlineQuantLinear.init_records = []
+
+        with mock.patch.dict(
+            quantize_module._ONLINE_QUANT_LAYER_MAP,
+            {QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC: FakeOnlineQuantLinear},
+        ):
+            quantized_model = _online_quantize_impl(model, config, dtype=torch.bfloat16)
+
+        self.assertIs(quantized_model, model)
+        self.assertIsInstance(model["linear"], FakeOnlineQuantLinear)
+        # fouroversix 属于 W4A4 系算法，在线路径需透传 quant_config
+        self.assertIsInstance(FakeOnlineQuantLinear.init_records[0]["quant_config"], QuantConfig)
+        self.assertIsInstance(model["attn"].fa_quant, MXFP4FourOverSixQuantFA)
+        mock_empty_cache.assert_called_once()
+
+    @mock.patch.object(torch.npu, "empty_cache")
     def test_online_quantize_fa_layers_no_match(self, mock_empty_cache):
         model = nn.ModuleDict({"attn": FakeAttention(), "linear": nn.Linear(8, 8)})
         config = OnlineQuantConfig(
@@ -618,6 +668,16 @@ class TestAddFAQuant(unittest.TestCase):
         add_fa_quant(layer, cfg, "test_layer", create_mock_handler(self.weights))
         self.assertTrue(hasattr(layer, 'fa_quant'))
         self.assertIsInstance(layer.fa_quant, MXFP8RotateQuantFA)
+
+    def test_add_fa_quant_with_fouroversix_mxfp4_layer(self):
+        class MockLayer(nn.Module):
+            pass
+
+        layer = MockLayer()
+        cfg = QuantConfig(quant_algo=QuantAlgorithm.MXFP4_FOUROVERSIX_DYNAMIC)
+        add_fa_quant(layer, cfg, "test_layer", create_mock_handler(self.weights))
+        self.assertTrue(hasattr(layer, 'fa_quant'))
+        self.assertIsInstance(layer.fa_quant, MXFP4FourOverSixQuantFA)
 
 
 @unittest.skipIf(

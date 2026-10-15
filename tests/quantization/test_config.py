@@ -13,7 +13,14 @@ import os
 import unittest
 from typing import Dict, List
 
-from mindiesd.quantization.config import QuantConfig, LayerQuantConfig, OnlineQuantConfig, TimestepPolicyConfig
+from mindiesd.quantization.config import (
+    QuantConfig,
+    LayerQuantConfig,
+    OnlineQuantConfig,
+    TimestepPolicyConfig,
+    SUPPORTED_ONLINE_FA_TYPES,
+    SUPPORTED_ONLINE_QUANT_TYPES,
+)
 from mindiesd.quantization.mode import FP8FAMode, QuantAlgorithm, QuantMode
 from mindiesd.utils import ModelInitError
 
@@ -129,6 +136,19 @@ class TestOnlineQuantConfig(unittest.TestCase):
         self.assertIs(config.timestep_config, timestep_config)
         self.assertEqual(config.mxfp4_scale_alg, 2)
         self.assertEqual(config.mxfp4_dst_type_max, 7.25)
+
+    def test_init_with_fouroversix_quant_and_fa_types(self):
+        config = OnlineQuantConfig(
+            quant_type=QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC,
+            fa_layers=("*.attn",),
+            fa_quant_type=QuantAlgorithm.MXFP4_FOUROVERSIX_DYNAMIC,
+        )
+
+        self.assertEqual(config.quant_type, QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC)
+        self.assertEqual(config.fa_quant_type, QuantAlgorithm.MXFP4_FOUROVERSIX_DYNAMIC)
+
+        self.assertIn(QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC, SUPPORTED_ONLINE_QUANT_TYPES)
+        self.assertIn(QuantAlgorithm.MXFP4_FOUROVERSIX_DYNAMIC, SUPPORTED_ONLINE_FA_TYPES)
 
     def test_parse_from_dict_and_serialize(self):
         config = OnlineQuantConfig.parse_from_dict(

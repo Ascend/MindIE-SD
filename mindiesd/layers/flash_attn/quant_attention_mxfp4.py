@@ -13,10 +13,11 @@
 
 """MXFP4 preparation, QuantFlashAttn execution and output restoration."""
 
-import torch
-import torch_npu
 import functools
+
+import torch
 import torch.nn.functional as F  # noqa: N812
+import torch_npu
 
 MXFP4_FA_SEQ_PAD_BASE = 512
 MXFP4_Q_QUANT_MODE = 3
@@ -39,6 +40,8 @@ def _mxfp4_attention_forward(
     k_rot=None,
     mxfp4_scale_alg=None,
     mxfp4_dst_type_max=None,
+    qk_quant_fn=None,
+    v_quant_fn=None,
     metadata=None,
     max_seqlen_q=-1,
     max_seqlen_kv=-1,
@@ -75,18 +78,22 @@ def _mxfp4_attention_forward(
     else:
         _, padded_kv_len, kv_heads, _ = key.shape
     seqused_q, seqused_kv = _get_qfa_seqused(batch, padded_q_len, padded_kv_len, query.device)
-    q, q_scale = torch_npu.npu_dynamic_mx_quant(query, dst_type=torch_npu.float4_e2m1fn_x2, axis=-1, **quant_options)
+
+    # Quantization hooks let callers swap the Q/K tail-axis and V seq-axis MXFP4
+    # quantizers (e.g. quant_four_over_six_a5) while keeping padding, descale
+    # reshaping and kernel invocation here.
+    def _default_quant(tensor, axis):
+        return torch_npu.npu_dynamic_mx_quant(tensor, dst_type=torch_npu.float4_e2m1fn_x2, axis=axis, **quant_options)
+
+    qk_quant = qk_quant_fn or functools.partial(_default_quant, axis=-1)
+    v_quant = v_quant_fn or _default_quant
+    q, q_scale = qk_quant(query)
     # QuantFlashAttn reads Q descales as BNSD even when Q itself is BSND
     # (GetQueryScaleGmFormat). K/V descales follow their own layout contracts.
     if layout == "BSND":
         q_scale = q_scale.transpose(1, 2).contiguous()
-    k, k_scale = torch_npu.npu_dynamic_mx_quant(key, dst_type=torch_npu.float4_e2m1fn_x2, axis=-1, **quant_options)
-    v, v_scale = torch_npu.npu_dynamic_mx_quant(
-        value,
-        dst_type=torch_npu.float4_e2m1fn_x2,
-        axis=2 if layout_kv == "BNSD" else 1,
-        **quant_options,
-    )
+    k, k_scale = qk_quant(key)
+    v, v_scale = v_quant(value, 2 if layout_kv == "BNSD" else 1)
     v_scale = _reshape_mxfp4_v_scale_for_fa(v_scale, layout_kv)
 
     # Metadata and execution must agree on layouts, lengths, quant modes and windows.

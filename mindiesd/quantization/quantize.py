@@ -32,16 +32,19 @@ from .utils import (
 from .layer import (
     W4A4QuantLinear,
     W4A4MXFP4DualQuantLinear,
+    W4A4MXFP4FourOverSixQuantLinear,
     W8A8QuantLinear,
     W8A8TimeStepQuantLinear,
     WeightQuantLinear,
     FP8RotateQuantFA,
     MXFP8RotateQuantFA,
+    MXFP4FourOverSixQuantFA,
     MXFP4QuantFA,
     W8A8MXFP8QuantLinear,
     W4A4MXFP4QuantLinear,
     W8A8OnlineQuantLinear,
     W8A8MXFP8OnlineQuantLinear,
+    W4A4MXFP4FourOverSixOnlineQuantLinear,
     W4A4MXFP4OnlineQuantLinear,
     W4A4MXFP4DualOnlineQuantLinear,
 )
@@ -113,6 +116,8 @@ def smooth_quantize_w8a8(name, layer, cfg, quant_weights, **kwargs):
         quant_candidates = OrderedDict([(nn.Linear, W4A4MXFP4DualQuantLinear)])
     elif cfg.quant_algo == QuantAlgorithm.W4A4_MXFP4_DYNAMIC:
         quant_candidates = OrderedDict([(nn.Linear, W4A4MXFP4QuantLinear)])
+    elif cfg.quant_algo == QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC:
+        quant_candidates = OrderedDict([(nn.Linear, W4A4MXFP4FourOverSixQuantLinear)])
     elif cfg.quant_algo == QuantAlgorithm.W4A4_MXFP4_SVD:
         raise ParametersInvalid("SVD Quant algorithm not supported!")
     else:
@@ -138,6 +143,7 @@ def smooth_quantize_w8a8(name, layer, cfg, quant_weights, **kwargs):
         QuantAlgorithm.W4A4_DYNAMIC,
         QuantAlgorithm.W4A4_MXFP4_DUALSCALE,
         QuantAlgorithm.W4A4_MXFP4_DYNAMIC,
+        QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC,
     ]:
         init_params['is_dynamic'] = True
 
@@ -166,6 +172,8 @@ def smooth_quantize(name, layer, cfg, quant_weights, **kwargs):
 def add_fa_quant(layer, cfg, prefix, quant_weights, **kwargs):
     if cfg.quant_algo in [QuantAlgorithm.MXFP4_DYNAMIC]:
         layer.fa_quant = MXFP4QuantFA(prefix, quant_weights, **kwargs)
+    elif cfg.quant_algo in [QuantAlgorithm.MXFP4_FOUROVERSIX_DYNAMIC]:
+        layer.fa_quant = MXFP4FourOverSixQuantFA(prefix, quant_weights, **kwargs)
     elif cfg.quant_algo in [QuantAlgorithm.FP8_DYNAMIC]:
         layer.fa_quant = FP8RotateQuantFA(prefix, quant_weights, **kwargs)
     elif cfg.quant_algo in [QuantAlgorithm.MXFP8_DYNAMIC]:
@@ -346,7 +354,7 @@ def quantize(model, quant_des_path=None, online_config=None, **kwargs):
 
     Args:
         model: Floating point models that need to be quantized.
-        quant_des_path: The absolute path of the quantized weight descripter exported by modelslim.
+        quant_des_path: The absolute path of the quantized weight descriptor exported by modelslim.
         **kwargs:
             quant_config: QuantConfig carries JSON path, JSON overrides, timestep, dtype and MXFP4 runtime settings.
             timestep_config: Compatibility input. Prefer quant_config.timestep_config.
@@ -427,12 +435,14 @@ _ONLINE_QUANT_LAYER_MAP = {
     QuantAlgorithm.W8A8_MXFP8: W8A8MXFP8OnlineQuantLinear,
     QuantAlgorithm.W4A4_MXFP4_DYNAMIC: W4A4MXFP4OnlineQuantLinear,
     QuantAlgorithm.W4A4_MXFP4_DUALSCALE: W4A4MXFP4DualOnlineQuantLinear,
+    QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC: W4A4MXFP4FourOverSixOnlineQuantLinear,
     QuantAlgorithm.W8A8: W8A8OnlineQuantLinear,
 }
 
 _W4A4_QUANT_TYPES = (
     QuantAlgorithm.W4A4_MXFP4_DYNAMIC,
     QuantAlgorithm.W4A4_MXFP4_DUALSCALE,
+    QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC,
 )
 
 

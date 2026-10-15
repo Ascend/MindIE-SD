@@ -51,6 +51,7 @@ This repository handles Linear quantization uniformly through the `quantize` API
 | W4A4_MXFP4_SVD | Per-layer | MXFP4 format quantization |
 | W4A4_MXFP4_DUALSCALE | Per-layer | MXFP4 dual-scale quantization |
 | W4A4_MXFP4_DYNAMIC | Per-token + per-channel | MXFP4 dynamic quantization |
+| W4A4_MXFP4_FOUROVERSIX_DYNAMIC | Per-token + per-channel | MXFP4 quantization with activations via `quant_four_over_six_a5` (4/6 adaptive) |
 
 ### API and Usage
 
@@ -89,6 +90,15 @@ for i, t in enumerate(timesteps):
     TimestepManager.set_timestep_idx(i)
     ...
 ```
+
+#### 4/6 Adaptive Activation Quantization (fouroversix)
+
+`W4A4_MXFP4_FOUROVERSIX_DYNAMIC` reuses the weight path of `W4A4_MXFP4_DYNAMIC` and replaces activation quantization with the custom operator `quant_four_over_six_a5`: each 32-element block adaptively selects between D4/D6 E8M0 scales based on quantization error. The `W4A8` timestep fallback behaves the same as `W4A4_MXFP4_DYNAMIC`.
+
+- Quantized weights are identical to those of `W4A4_MXFP4_DYNAMIC` and can be reused directly; when the descriptor `model_quant_type` is `W4A4_MXFP4_FOUROVERSIX`, the weight file follows the naming rule as `quant_model_weight_w4a4_mxfp4_fouroversix_{rank}.safetensors`.
+- The operator requires bf16 input and a 32-aligned activation tail axis (`in_features`), and is supported on Atlas A5 only; misaligned layers fail fast at construction time.
+- `mxfp4_scale_alg` / `mxfp4_dst_type_max` only affect weight quantization; activations always use the fixed 4/6 adaptive combination.
+- The online path is also supported: `OnlineQuantConfig(quant_type=W4A4_MXFP4_FOUROVERSIX_DYNAMIC)`.
 
 #### Quantized Weight File Naming
 
@@ -150,6 +160,8 @@ outputs dequantized back to original precision. `FP8RotateQuantFA` selects the q
 | `C8V16_TILING512` | `7/7/12` | `4` (C8V16) | 512×64 |
 
 Later features should be added as new enum members instead of unbound quant switches.
+
+In addition to `FP8_DYNAMIC` and `MXFP4_DYNAMIC`, `MXFP4_FOUROVERSIX_DYNAMIC` replaces the Q/K activation quantization of MXFP4 FA with `quant_four_over_six_a5` (4/6 adaptive). The operator only supports the tail axis, while `quant_flash_attn` requires V to be block-quantized along the sequence axis, so V still goes through `npu_dynamic_mx_quant`.
 
 ### API Reference
 

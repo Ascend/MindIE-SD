@@ -96,6 +96,10 @@ def quant_attention(
                 layout_kv/layout_out: BNSD or BSND; None uses layout.
                 mxfp4_scale_alg/mxfp4_dst_type_max: explicit MX quantization
                     parameters; None retains the installed operator defaults.
+                qk_quant_fn/v_quant_fn: optional callables overriding the Q/K
+                    tail-axis and V seq-axis MXFP4 quantizers; None quantizes
+                    with npu_dynamic_mx_quant. qk_quant_fn takes the padded
+                    tensor; v_quant_fn takes the padded tensor and its seq axis.
                 metadata: precomputed QFA metadata; None generates it.
                 num_key_value_heads: must match K/V heads if provided.
                 max_seqlen_q/max_seqlen_kv: native length bounds, default -1.
@@ -136,6 +140,8 @@ def quant_attention(
             raise ValueError("layout_out must be BNSD or BSND.")
         mxfp4_scale_alg = kwargs.pop("mxfp4_scale_alg", None)
         mxfp4_dst_type_max = kwargs.pop("mxfp4_dst_type_max", None)
+        qk_quant_fn = kwargs.pop("qk_quant_fn", None)
+        v_quant_fn = kwargs.pop("v_quant_fn", None)
         metadata = kwargs.pop("metadata", None)
         num_key_value_heads = kwargs.pop("num_key_value_heads", None)
         max_seqlen_q = kwargs.pop("max_seqlen_q", -1)
@@ -187,6 +193,8 @@ def quant_attention(
             win_right=next_tokens if win_right is None else win_right,
             mxfp4_scale_alg=mxfp4_scale_alg,
             mxfp4_dst_type_max=mxfp4_dst_type_max,
+            qk_quant_fn=qk_quant_fn,
+            v_quant_fn=v_quant_fn,
             metadata=metadata,
             max_seqlen_q=max_seqlen_q,
             max_seqlen_kv=max_seqlen_kv,

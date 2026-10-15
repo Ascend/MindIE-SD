@@ -51,6 +51,7 @@ MindIE SD 提供两类量化能力，分别作用于模型的不同部分：
 | W4A4_MXFP4_SVD | 逐层 | MXFP4 格式量化 |
 | W4A4_MXFP4_DUALSCALE | 逐层 | MXFP4 双尺度量化 |
 | W4A4_MXFP4_DYNAMIC | 逐 token + 逐通道 | MXFP4 动态量化 |
+| W4A4_MXFP4_FOUROVERSIX_DYNAMIC | 逐 token + 逐通道 | MXFP4 量化，激活走 `quant_four_over_six_a5`（4/6 自适应） |
 
 ### 接口和使用
 
@@ -129,6 +130,15 @@ for i, timestep in enumerate(timesteps):
 
 模型侧需要在每个 denoise step 前设置 `TimestepManager.set_timestep_idx(i)`。这和 Wan2.2 `wan/text2video.py` 中按 step 遍历 `timesteps` 的使用方式一致，但本仓的策略语义不同：这里的 Linear 是 `W4A4` 与 `W4A8` 切换，不是原有动静态量化切换。Linear/MM 回退只切换激活值量化精度，权重仍保持 MXFP4。
 
+#### 4/6 自适应激活量化（fouroversix）
+
+`W4A4_MXFP4_FOUROVERSIX_DYNAMIC` 复用 `W4A4_MXFP4_DYNAMIC` 的权重通路，将激活量化替换为自定义算子 `quant_four_over_six_a5`：每个 32 元素块在 D4/D6 两组 E8M0 缩放之间按量化误差自适应选择。时间步 `W4A8` 回退与 `W4A4_MXFP4_DYNAMIC` 一致。
+
+- 权重量化产物与 `W4A4_MXFP4_DYNAMIC` 完全一致，可直接复用其离线权重；描述符 `model_quant_type` 写 `W4A4_MXFP4_FOUROVERSIX` 时，按命名规则权重文件为 `quant_model_weight_w4a4_mxfp4_fouroversix_{rank}.safetensors`。
+- 算子要求 bf16 输入且激活尾轴（`in_features`）32 对齐，仅 Atlas A5 支持；不满足对齐要求时层构造期即报错。
+- `mxfp4_scale_alg` / `mxfp4_dst_type_max` 仅作用于权重量化；激活固定为 4/6 自适应组合。
+- 在线量化路径同样支持：`OnlineQuantConfig(quant_type=W4A4_MXFP4_FOUROVERSIX_DYNAMIC)`。
+
 #### 量化权重文件命名
 
 量化权重和描述符文件由 msmodelslim 工具导出，命名规则如下：
@@ -167,7 +177,7 @@ FA（Flash Attention）量化针对注意力计算中的 Q/K/V 激活值进行�
 
 ### FA 技术特点
 
-本仓库通过 `FP8_DYNAMIC` 和 `MXFP4_DYNAMIC` 算法提供 FA 量化能力。`FP8_DYNAMIC` 使用 FP8 块量化；`MXFP4_DYNAMIC` 复用自定义 `quant_flash_attn` AI Core 算子，并支持按时间步在 `MXFP4`、`FP8`、`FLOAT` 间切换。
+本仓库通过 `FP8_DYNAMIC` 和 `MXFP4_DYNAMIC` 算法提供 FA 量化能力。`FP8_DYNAMIC` 使用 FP8 块量化；`MXFP4_DYNAMIC` 复用自定义 `quant_flash_attn` AI Core 算子，并支持按时间步在 `MXFP4`、`FP8`、`FLOAT` 间切换。`MXFP4_FOUROVERSIX_DYNAMIC` 在 MXFP4 FA 的基础上，将 Q/K 的激活量化替换为 `quant_four_over_six_a5`（4/6 自适应）；该算子仅支持尾轴，而 `quant_flash_attn` 要求 V 沿序列轴分块量化，因此 V 仍走 `npu_dynamic_mx_quant`。
 
 #### 旋转（Rotate）
 
