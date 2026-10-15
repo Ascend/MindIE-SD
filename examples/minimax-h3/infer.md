@@ -66,6 +66,8 @@ docker run -it -u root --name ${CONTAINER_NAME} \
   /bin/bash
 ```
 
+Ascend 950 场景下，创建容器时需增加 `-v /usr/local/Ascend/driver/topo:/usr/local/Ascend/driver/topo`，将宿主机的驱动拓扑目录挂载到容器内的相同路径。
+
 #### 2）安装MindIE SD【可选】
 
 官方镜像中如未安装mindiesd，可源码编译安装，参考如下指导：
