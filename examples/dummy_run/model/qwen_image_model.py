@@ -27,19 +27,14 @@ from transformers import AutoConfig, Qwen2_5_VLForConditionalGeneration, Qwen2To
 logger = logging.getLogger(__name__)
 
 
-def _from_config_cpu(cls, cfg, npu_device, compute_dtype=None):
-    model = cls.from_config(cfg, torch_dtype=compute_dtype or torch.bfloat16)
+def _from_config_cpu(cls, cfg, npu_device):
+    model = cls.from_config(cfg, torch_dtype=torch.bfloat16)
     model.to(npu_device)
     return model
 
 
 def build_qwen_image_pipeline(
-    config_or_dir,
-    num_layers=None,
-    num_text_encoder_layers=None,
-    device=None,
-    timer=None,
-    compute_dtype=None,
+    config_or_dir, num_layers=None, num_text_encoder_layers=None, device=None, timer=None
 ):
     t_start = time.time()
     npu_device = torch.device(device) if device else torch.device("npu:0")
@@ -51,14 +46,14 @@ def build_qwen_image_pipeline(
         transformer_cfg["num_layers"] = num_layers
     t0 = time.time()
     transformer = _from_config_cpu(
-        QwenImageTransformer2DModel, transformer_cfg, npu_device, compute_dtype
+        QwenImageTransformer2DModel, transformer_cfg, npu_device
     )
     if timer:
         timer.record_build("Transformer", time.time() - t0)
 
     vae_cfg = AutoencoderKLQwenImage.load_config(config_or_dir, subfolder="vae")
     t0 = time.time()
-    vae = _from_config_cpu(AutoencoderKLQwenImage, vae_cfg, npu_device, compute_dtype)
+    vae = _from_config_cpu(AutoencoderKLQwenImage, vae_cfg, npu_device)
     if timer:
         timer.record_build("VAE", time.time() - t0)
 
@@ -80,7 +75,7 @@ def build_qwen_image_pipeline(
     with torch.device("meta"):
         text_encoder = Qwen2_5_VLForConditionalGeneration(text_encoder_cfg)
     text_encoder.to_empty(device=torch.device("cpu"))
-    text_encoder.to(npu_device, dtype=compute_dtype or torch.bfloat16)
+    text_encoder.to(npu_device, dtype=torch.bfloat16)
 
     tokenizer = Qwen2Tokenizer.from_pretrained(
         os.path.join(config_or_dir, "tokenizer")
