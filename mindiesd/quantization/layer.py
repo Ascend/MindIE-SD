@@ -152,11 +152,11 @@ class WeightQuantLinear(nn.Module):
         if kwargs.get('use_nz', False):
             weight = torch_npu.npu_format_cast(weight, 29).T
             if kwargs.get('is_w4', False):
-                weight = torch_npu.npu_convert_weight_to_int4pack(weight.npu().to(torch.int32))
+                weight = torch_npu.npu_convert_weight_to_int4pack(weight.npu().to(torch.int32).contiguous())
         else:
             weight = weight.T
             if kwargs.get('is_w4', False):
-                weight = torch_npu.npu_convert_weight_to_int4pack(weight.npu().to(torch.int32))
+                weight = torch_npu.npu_convert_weight_to_int4pack(weight.npu().to(torch.int32).contiguous())
         self.register_buffer("weight", weight, persistent=False)
 
         if bias:
