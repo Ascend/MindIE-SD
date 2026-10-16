@@ -175,6 +175,80 @@ def add_rms_norm(
     return normalized_output, residual_output
 
 
+def _check_group_norm_silu_inputs(input, weight, bias, group, eps, fused):
+    if not isinstance(input, torch.Tensor):
+        raise ParametersInvalid(f"The data type of input must be torch.Tensor, but got {type(input)}.")
+    if not isinstance(fused, bool):
+        raise ParametersInvalid(f"The data type of input fused must be bool, but got {type(fused)}.")
+    if input.dim() < 2 or input.dim() > 8:
+        raise ParametersInvalid("The input dimension must be between 2 and 8.")
+    if isinstance(group, bool) or not isinstance(group, int) or group <= 0:
+        raise ParametersInvalid(f"group must be a positive int, but got {group}.")
+    if input.shape[1] <= 0 or input.shape[1] % group != 0:
+        raise ParametersInvalid(
+            f"group must divide the number of channels, but got group={group} and channels={input.shape[1]}."
+        )
+    if isinstance(eps, bool) or not isinstance(eps, Real) or not math.isfinite(eps) or eps <= 0:
+        raise ParametersInvalid(f"The input eps must be a finite positive number, but got {eps}.")
+
+    for name, parameter in (("weight", weight), ("bias", bias)):
+        if parameter is None:
+            continue
+        if not isinstance(parameter, torch.Tensor):
+            raise ParametersInvalid(
+                f"The data type of input {name} must be torch.Tensor or None, but got {type(parameter)}."
+            )
+        if parameter.dim() != 1 or parameter.shape[0] != input.shape[1]:
+            raise ParametersInvalid(
+                f"The shape of {name} must match the channel dimension, but got "
+                f"{tuple(parameter.shape)} and {input.shape[1]}."
+            )
+        if parameter.device != input.device or parameter.dtype != input.dtype:
+            raise ParametersInvalid(f"The device and dtype of {name} must match input.")
+
+    if fused and input.device.type != "npu":
+        raise ParametersInvalid("The fused implementation only supports NPU tensors.")
+
+
+def group_norm_silu(
+    input: torch.Tensor,
+    weight: torch.Tensor | None,
+    bias: torch.Tensor | None,
+    group: int,
+    eps: float = 1e-5,
+    fused: bool = True,
+) -> torch.Tensor:
+    """Apply GroupNorm followed by SiLU.
+
+    Args:
+        input: Input tensor with 2 to 8 dimensions in (N, C, ...) format.
+        weight: Optional one-dimensional scale matching the channel dimension.
+        bias: Optional one-dimensional bias matching the channel dimension.
+        group: Number of groups. It must be a positive divisor of the channel dimension.
+        eps: Finite positive value added to the variance for numerical stability.
+        fused: Use torch_npu.npu_group_norm_silu when True. This mode requires NPU tensors.
+            When False, use the native PyTorch implementation.
+
+    Returns:
+        The activated tensor with the same shape, dtype and device as input.
+
+    Raises:
+        ParametersInvalid: If an input violates the documented type, shape, dtype or device constraints.
+        RuntimeError: If the fused TorchNPU operator is unavailable or returns an invalid result.
+    """
+    _check_group_norm_silu_inputs(input, weight, bias, group, eps, fused)
+    if fused:
+        result = torch_npu.npu_group_norm_silu(  # pylint: disable=no-member
+            input, weight, bias, group, float(eps)
+        )
+        if not isinstance(result, (tuple, list)) or not result or not isinstance(result[0], torch.Tensor):
+            raise RuntimeError("npu_group_norm_silu returned an invalid result")
+        return result[0]
+
+    normalized = F.group_norm(input, group, weight, bias, float(eps))
+    return F.silu(normalized)
+
+
 def check_input_params(layernorm, x, impl_mode, fused):
     if not isinstance(layernorm, torch.nn.LayerNorm):
         raise ParametersInvalid(f"The type of input layernorm must be torch.nn.LayerNorm, but got {type(layernorm)}.")

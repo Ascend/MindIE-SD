@@ -239,6 +239,7 @@ out = sparse_attention(
 | `add_layer_norm` | 函数 | 残差 Add 与 LayerNorm 融合算子 |
 | `add_rms_norm` | 函数 | 残差 Add 与 RMSNorm 融合算子 |
 | `RMSNorm` | 类 | RMS 归一化融合算子 |
+| `group_norm_silu` | 函数 | GroupNorm 与 SiLU 融合算子 |
 | `fast_layernorm` | 函数 | 高性能 LayerNorm 融合算子 |
 | `layernorm_scale_shift` | 函数 | 自适应 LayerNorm（AdaLayerNorm）融合算子 |
 | `get_activation_layer` | 函数 | 获取激活函数实例（含 NPU 加速版本） |
@@ -549,6 +550,38 @@ norm = RMSNorm(1024, eps=1e-6)
 x = torch.randn(2, 4096, 1024, device="npu", dtype=torch.float16)
 out = norm(x)
 ```
+
+---
+
+### group_norm_silu
+
+将 GroupNorm 和 SiLU 合并为一次 TorchNPU 融合算子调用，适用于 NCHW 等 channel-first 张量。
+
+```python
+from mindiesd import group_norm_silu
+```
+
+#### 函数签名
+
+```python
+group_norm_silu(input, weight, bias, group, eps=1e-5) -> torch.Tensor
+```
+
+`weight` 和 `bias` 可传入 `None`。输入维度须为 2~8，通道数（第 1 维）须能被 `group` 整除。算子支持的数据类型和设备范围由安装的 TorchNPU/CANN 版本决定。本接口仅支持 NPU，不提供 CPU 回退。
+
+#### 使用示例
+
+```python
+import torch
+from mindiesd import group_norm_silu
+
+x = torch.randn(2, 320, 32, 32, device="npu", dtype=torch.float16)
+weight = torch.ones(320, device="npu", dtype=x.dtype)
+bias = torch.zeros(320, device="npu", dtype=x.dtype)
+out = group_norm_silu(x, weight, bias, group=32, eps=1e-5)
+```
+
+在使用 `torch.compile(..., backend=MindieSDBackend())` 时，编译后端会自动融合支持的 `GroupNorm → SiLU` 图模式。
 
 ---
 

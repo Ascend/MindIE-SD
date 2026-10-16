@@ -241,6 +241,7 @@ The fused operator series interfaces provide Ascend high-performance fused opera
 | `add_layer_norm` | Function | Fused residual Add and LayerNorm operator |
 | `add_rms_norm` | Function | Fused residual Add and RMSNorm operator |
 | `RMSNorm` | Class | RMS normalization fused operator |
+| `group_norm_silu` | Function | Fused GroupNorm and SiLU operator |
 | `fast_layernorm` | Function | High-performance LayerNorm fused operator |
 | `layernorm_scale_shift` | Function | Adaptive LayerNorm (AdaLayerNorm) fused operator |
 | `get_activation_layer` | Function | Get activation function instance (with NPU-accelerated versions) |
@@ -551,6 +552,38 @@ norm = RMSNorm(1024, eps=1e-6)
 x = torch.randn(2, 4096, 1024, device="npu", dtype=torch.float16)
 out = norm(x)
 ```
+
+---
+
+### group_norm_silu
+
+Combines GroupNorm and SiLU into one TorchNPU fused operator call. It is intended for channel-first tensors such as NCHW.
+
+```python
+from mindiesd import group_norm_silu
+```
+
+#### Function Signature
+
+```python
+group_norm_silu(input, weight, bias, group, eps=1e-5) -> torch.Tensor
+```
+
+`weight` and `bias` may be `None`. The input rank must be 2 to 8, and its channel dimension (dimension 1) must be divisible by `group`. Supported dtypes and devices depend on the installed TorchNPU/CANN versions. This API requires an NPU and has no CPU fallback.
+
+#### Usage Example
+
+```python
+import torch
+from mindiesd import group_norm_silu
+
+x = torch.randn(2, 320, 32, 32, device="npu", dtype=torch.float16)
+weight = torch.ones(320, device="npu", dtype=x.dtype)
+bias = torch.zeros(320, device="npu", dtype=x.dtype)
+out = group_norm_silu(x, weight, bias, group=32, eps=1e-5)
+```
+
+When using `torch.compile(..., backend=MindieSDBackend())`, the compiler backend automatically fuses supported `GroupNorm → SiLU` graph patterns.
 
 ---
 

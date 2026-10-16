@@ -22,7 +22,7 @@ def activate_pattern_once():
         import importlib
 
         from ..compiliation_config import CompilationConfig
-        from .register_pattern_to_pass import register_pattern_to_pass
+        from .register_pattern_to_pass import patterns, register_pattern_to_pass
 
         pattern_registry = {
             "enable_rms_norm": ("RMSNormPatternGroup", "..patterns"),
@@ -58,6 +58,9 @@ def activate_pattern_once():
                 patterns_module = importlib.import_module(pattern_module, package=__package__)
                 pattern_group = getattr(patterns_module, pattern_group_name)
                 register_pattern_to_pass(pattern_group)
+
+        patterns_module = importlib.import_module("..patterns", package=__package__)
+        patterns_module.GroupNormSiLUPatternGroup.register(patterns.pattern_pass)
 
     if not once_flag.is_set():
         with _once_lock:

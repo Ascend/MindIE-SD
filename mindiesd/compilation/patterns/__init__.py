@@ -13,6 +13,7 @@
 
 __all__ = [
     'RMSNormPatternGroup',
+    'GroupNormSiLUPatternGroup',
     'RopePatternGroup',
     'QwenRopePatternGroup',
     'QwenResidualGatePatternGroup',
@@ -33,6 +34,7 @@ __all__ = [
 
 from .adalayernorm_pattern import AdaLayerNormPatternGroup
 from .gelu_pattern import GELUPatternGroup
+from .group_norm_silu_pattern import GroupNormSiLUPatternGroup
 from .minimax_h3_adaln_pattern import MiniMaxH3AdaLnPatternGroup
 from .minimax_h3_gate_pattern import MiniMaxH3GatePatternGroup
 from .minimax_h3_swiglu_pattern import MiniMaxH3SwigluPatternGroup

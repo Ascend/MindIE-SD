@@ -16,7 +16,7 @@ from .flash_attn.attention_forward_varlen import attention_forward_varlen
 from .flash_attn.sparse_flash_attn import sparse_attention
 from ._custom_ops import apply_rotary_pos_emb, frequency_regulator
 from .activation import get_activation_layer
-from .norm import RMSNorm, add_layer_norm, add_rms_norm, fast_layernorm
+from .norm import RMSNorm, add_layer_norm, add_rms_norm, fast_layernorm, group_norm_silu
 from .adalayernorm import layernorm_scale_shift
 from .muls_add import muls_add
 from .residual_gate_add import qwen_residual_gate_add, residual_gate_add
@@ -38,6 +38,7 @@ __all__ = [
     "frequency_regulator",
     "fused_moe",
     "get_activation_layer",
+    "group_norm_silu",
     "layernorm_scale_shift",
     "muls_add",
     "qwen_residual_gate_add",
