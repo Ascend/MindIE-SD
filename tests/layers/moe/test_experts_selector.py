@@ -10,6 +10,7 @@
 # MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+import os
 import unittest
 from unittest.mock import MagicMock
 
@@ -18,10 +19,11 @@ import torch
 from mindiesd.layers.moe.experts_selector import select_experts
 from mindiesd.layers.moe.moe_dataclass import MoERoutingInput
 
-from .common import cpu_test, npu_test
 
-
-@cpu_test
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
+    "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
+)
 class TestExpertsSelector(unittest.TestCase):
     def test_custom_router_output_is_forwarded(self):
         hidden_states = torch.randint(-8, 8, (2, 4), dtype=torch.int8)
@@ -97,15 +99,18 @@ def torch_softmax_topk_reference(router_logits, top_k):
     return topk_weights.to(dtype=dtype), topk_ids.to(torch.int32)
 
 
-@npu_test
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU",
+    "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.",
+)
 class TestExpertsSelectorNPU(unittest.TestCase):
     def test_gating_topk_matches_torch_reference(self):
         router_logits = torch.tensor(
             [[1.0, 4.0, 3.0, 2.0, 7.0, 5.0, 0.0, 6.0], [8.0, 2.0, 6.0, 1.0, 5.0, 3.0, 7.0, 4.0]],
             device="npu",
         )
-        base_cases = (
-            dict(name="softmax", norm_type=0, renormalize=True, group_select_mode=0),
+        cases = (
+            dict(name="softmax", norm_type=0, renormalize=True, group_select_mode=0, dtype=torch.bfloat16),
             dict(
                 name="grouped_softmax",
                 norm_type=0,
@@ -113,72 +118,97 @@ class TestExpertsSelectorNPU(unittest.TestCase):
                 k_group=1,
                 group_count=2,
                 group_select_mode=1,
+                dtype=torch.bfloat16,
             ),
-            dict(name="sigmoid", norm_type=1, group_select_mode=0),
+            dict(name="sigmoid", norm_type=1, group_select_mode=0, dtype=torch.bfloat16),
             dict(
                 name="grouped_sigmoid",
                 norm_type=1,
                 k_group=1,
                 group_count=2,
                 group_select_mode=1,
+                dtype=torch.bfloat16,
+            ),
+            dict(name="softmax", norm_type=0, renormalize=True, group_select_mode=0, dtype=torch.float16),
+            dict(
+                name="grouped_softmax",
+                norm_type=0,
+                renormalize=True,
+                k_group=1,
+                group_count=2,
+                group_select_mode=1,
+                dtype=torch.float16,
+            ),
+            dict(name="sigmoid", norm_type=1, group_select_mode=0, dtype=torch.float16),
+            dict(
+                name="grouped_sigmoid",
+                norm_type=1,
+                k_group=1,
+                group_count=2,
+                group_select_mode=1,
+                dtype=torch.float16,
             ),
         )
-        for dtype in (torch.bfloat16, torch.float16):
-            for case in base_cases:
-                with self.subTest(dtype=dtype, **case):
-                    case_kwargs = {key: value for key, value in case.items() if key != "name"}
-                    router_logits_with_dtype = router_logits.to(dtype=dtype)
-                    routing_input = MoERoutingInput(
-                        hidden_states=torch.randn(2, 4, device="npu", dtype=dtype),
-                        router_logits=router_logits_with_dtype,
-                        top_k=2,
-                        routed_scaling_factor=0.5,
-                        **case_kwargs,
-                    )
-                    topk_weights, topk_ids = select_experts(routing_input)
-                    expected_weights, expected_ids = torch_grouped_topk_reference(
-                        router_logits_with_dtype.cpu(),
-                        top_k=2,
-                        routed_scaling_factor=0.5,
-                        **case_kwargs,
-                    )
+        for case in cases:
+            with self.subTest(**case):
+                dtype = case["dtype"]
+                case_kwargs = {key: value for key, value in case.items() if key not in ("name", "dtype")}
+                router_logits_with_dtype = router_logits.to(dtype=dtype)
+                routing_input = MoERoutingInput(
+                    hidden_states=torch.randn(2, 4, device="npu", dtype=dtype),
+                    router_logits=router_logits_with_dtype,
+                    top_k=2,
+                    routed_scaling_factor=0.5,
+                    **case_kwargs,
+                )
+                topk_weights, topk_ids = select_experts(routing_input)
+                expected_weights, expected_ids = torch_grouped_topk_reference(
+                    router_logits_with_dtype.cpu(),
+                    top_k=2,
+                    routed_scaling_factor=0.5,
+                    **case_kwargs,
+                )
 
-                    torch.testing.assert_close(topk_weights.cpu(), expected_weights)
-                    self.assertTrue(torch.equal(topk_ids.cpu(), expected_ids))
+                torch.testing.assert_close(topk_weights.cpu(), expected_weights)
+                self.assertTrue(torch.equal(topk_ids.cpu(), expected_ids))
 
     def test_gating_topk_softmax_matches_torch_reference(self):
-        shapes = (
-            dict(B=2, num_experts=8, top_k=2),
-            dict(B=4, num_experts=16, top_k=4),
-            dict(B=1, num_experts=32, top_k=1),
-            dict(B=3, num_experts=64, top_k=8),
+        cases = (
+            dict(B=2, num_experts=8, top_k=2, dtype=torch.bfloat16),
+            dict(B=4, num_experts=16, top_k=4, dtype=torch.bfloat16),
+            dict(B=1, num_experts=32, top_k=1, dtype=torch.bfloat16),
+            dict(B=3, num_experts=64, top_k=8, dtype=torch.bfloat16),
+            dict(B=2, num_experts=8, top_k=2, dtype=torch.float16),
+            dict(B=4, num_experts=16, top_k=4, dtype=torch.float16),
+            dict(B=1, num_experts=32, top_k=1, dtype=torch.float16),
+            dict(B=3, num_experts=64, top_k=8, dtype=torch.float16),
         )
-        for dtype in (torch.bfloat16, torch.float16):
-            for case in shapes:
-                with self.subTest(dtype=dtype, **case):
-                    B = case["B"]
-                    top_k = case["top_k"]
-                    num_experts = case["num_experts"]
-                    router_logits = torch.stack(
-                        [torch.randperm(num_experts, device="npu").to(torch.float32) for _ in range(B)]
-                    ).to(dtype=dtype)
-                    routing_input = MoERoutingInput(
-                        hidden_states=torch.randn(B, 4, device="npu", dtype=dtype),
-                        router_logits=router_logits,
-                        top_k=top_k,
-                        renormalize=True,
-                    )
-                    topk_weights, topk_ids = select_experts(routing_input)
+        for case in cases:
+            with self.subTest(**case):
+                B = case["B"]
+                dtype = case["dtype"]
+                top_k = case["top_k"]
+                num_experts = case["num_experts"]
+                router_logits = torch.stack(
+                    [torch.randperm(num_experts, device="npu").to(torch.float32) for _ in range(B)]
+                ).to(dtype=dtype)
+                routing_input = MoERoutingInput(
+                    hidden_states=torch.randn(B, 4, device="npu", dtype=dtype),
+                    router_logits=router_logits,
+                    top_k=top_k,
+                    renormalize=True,
+                )
+                topk_weights, topk_ids = select_experts(routing_input)
 
-                    expected_weights, expected_ids = torch_softmax_topk_reference(router_logits.cpu(), top_k)
+                expected_weights, expected_ids = torch_softmax_topk_reference(router_logits.cpu(), top_k)
 
-                    torch.testing.assert_close(topk_weights.cpu(), expected_weights)
-                    self.assertTrue(
-                        torch.equal(
-                            topk_ids.cpu().sort(dim=-1).values,
-                            expected_ids.cpu().to(torch.int32).sort(dim=-1).values,
-                        )
+                torch.testing.assert_close(topk_weights.cpu(), expected_weights)
+                self.assertTrue(
+                    torch.equal(
+                        topk_ids.cpu().sort(dim=-1).values,
+                        expected_ids.cpu().to(torch.int32).sort(dim=-1).values,
                     )
+                )
 
 
 if __name__ == "__main__":
