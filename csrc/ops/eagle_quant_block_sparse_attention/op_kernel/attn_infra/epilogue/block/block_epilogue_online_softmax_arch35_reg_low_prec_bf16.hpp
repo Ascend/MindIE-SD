@@ -91,6 +91,7 @@ public:
 
         subBlockIdx_ = AscendC::GetSubBlockIdx();
         scaleValue = AscendC::ToBfloat16(scaleValue_);
+        MIN_VALUE = AscendC::ToBfloat16(-3.389531390315715675e+38);
 
         lsUbTensor = resource.ubBuf.template GetBufferByByte<ElementInput>(LS_UB_TENSOR_OFFSET);
         lpUbTensor = resource.ubBuf.template GetBufferByByte<ElementOutput>(LP_UB_TENSOR_OFFSET);
@@ -270,19 +271,17 @@ private:
     AscendC::LocalTensor<float> lmUbFloatTensor;
     AscendC::LocalTensor<float> llUbFloatTensor;
     uint32_t subBlockIdx_;
-
-    static constexpr ElementInput MIN_VALUE =
-        static_cast<ElementInput>(-3.389531390315715675e+38f);
+    ElementInput MIN_VALUE;
 
     template <KvBaseTileRegSplitStagesBf16 kvBaseTileRegSplitStages>
-    static __simd_vf__ inline void ComputeScaleAndMax(
+    __simd_vf__ inline void ComputeScaleAndMax(
         __ubuf__ ElementInput *srcUb, __ubuf__ float *newMaxUb,
         uint16_t m, uint32_t tailN, uint32_t nPadding, ElementInput dScale, uint16_t S2BaseSize)
     {
     }
     
     template <>
-    static __simd_vf__ inline void ComputeScaleAndMax<KvBaseTileRegSplitStagesBf16::ONE>(
+    __simd_vf__ inline void ComputeScaleAndMax<KvBaseTileRegSplitStagesBf16::ONE>(
         __ubuf__ ElementInput *srcUb, __ubuf__ float *newMaxUb,
         uint16_t m, uint32_t tailN, uint32_t nPadding, ElementInput dScale, uint16_t S2BaseSize)
     {
@@ -337,7 +336,7 @@ private:
     }
 
     template <>
-    static __simd_vf__ inline void ComputeScaleAndMax<KvBaseTileRegSplitStagesBf16::TWO>(
+    __simd_vf__ inline void ComputeScaleAndMax<KvBaseTileRegSplitStagesBf16::TWO>(
         __ubuf__ ElementInput *srcUb, __ubuf__ float *newMaxUb,
         uint16_t m, uint32_t tailN, uint32_t nPadding, ElementInput dScale, uint16_t S2BaseSize)
     {
@@ -397,7 +396,7 @@ private:
     }
 
     template <typename ElementS>
-    static __simd_vf__ inline void CastMax(
+    __simd_vf__ inline void CastMax(
         __ubuf__ ElementS *nowMaxUb, __ubuf__ float *nowMaxFloatUb, uint16_t mLoops, uint32_t tailM)
     {
         using namespace AscendC::MicroAPI;
@@ -428,7 +427,7 @@ private:
             nowMaxFloatUb + mLoops * FLOAT_REP_SIZE, nowMaxFloatVreg, pregFloatTailM);
     }
 
-    static __simd_vf__ inline void UpdateMax(
+    __simd_vf__ inline void UpdateMax(
         __ubuf__ float *nowMaxUb, __ubuf__ float *lastMaxUb, uint16_t mLoops, uint32_t tailM)
     {
         using namespace AscendC::MicroAPI;
@@ -452,7 +451,7 @@ private:
     }
 
     template <KvBaseTileRegSplitStagesBf16 kvBaseTileRegSplitStages>
-    static __simd_vf__ inline void ComputeExpSubSum16(
+    __simd_vf__ inline void ComputeExpSubSum16(
         __ubuf__ ElementOutput *expUb, __ubuf__ ElementInput *srcUb,
         __ubuf__ float *nowMaxUb, __ubuf__ float *expSumUb,
         uint16_t m, uint32_t tailN, uint32_t blockStride,
@@ -461,7 +460,7 @@ private:
     }
 
     template <>
-    static __simd_vf__ inline void ComputeExpSubSum16<KvBaseTileRegSplitStagesBf16::ONE>(
+    __simd_vf__ inline void ComputeExpSubSum16<KvBaseTileRegSplitStagesBf16::ONE>(
         __ubuf__ ElementOutput *expUb, __ubuf__ ElementInput *srcUb,
         __ubuf__ float *nowMaxUb, __ubuf__ float *expSumUb,
         uint16_t m, uint32_t tailN, uint32_t blockStride,
@@ -539,7 +538,7 @@ private:
     }
 
     template <>
-    static __simd_vf__ inline void ComputeExpSubSum16<KvBaseTileRegSplitStagesBf16::TWO>(
+    __simd_vf__ inline void ComputeExpSubSum16<KvBaseTileRegSplitStagesBf16::TWO>(
         __ubuf__ ElementOutput *expUb, __ubuf__ ElementInput *srcUb,
         __ubuf__ float *nowMaxUb, __ubuf__ float *expSumUb,
         uint16_t m, uint32_t tailN, uint32_t blockStride,
@@ -640,7 +639,7 @@ private:
         vstas(expSumUreg, expSumUb, 0, POST_UPDATE);
     }
 
-    static __simd_vf__ inline void UpdateExpSumAndExpMax(__ubuf__ float *sumUb, __ubuf__ float *expMaxUb,
+    __simd_vf__ inline void UpdateExpSumAndExpMax(__ubuf__ float *sumUb, __ubuf__ float *expMaxUb,
         __ubuf__ float *maxUb, __ubuf__ float *expSumUb, __ubuf__ float *nowMaxUb,
         uint16_t mLoops, uint32_t tailM)
     {
