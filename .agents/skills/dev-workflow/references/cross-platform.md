@@ -24,3 +24,7 @@ Windows 本地 GBK 编码可能与远端 UTF-8 输出冲突。处理方式：
 `pip install -e .` 在首次安装时扫描包目录并建立索引，后续新增的 `.py` 文件不会自动加入。新增 Python 文件后必须重新执行 `pip install -e .`。
 
 此规则仅适用于 `mindiesd/` 包目录和 `csrc/` 编译源码目录下的文件变更。`examples/`、`tests/`、`docs/` 等非包/非编译目录下的文件变更不需要重新执行 `pip install -e .`。
+
+## 维护与更新
+
+当跨平台部署或编码兼容问题出现新模式时，按 dev-workflow 的复盘流程更新本文件。

@@ -214,7 +214,7 @@ for step in range(1, world_size):
     seqlen_chunk = x.shape[1]
     x = x.reshape(batch, seqlen_chunk, head, -1)
 
-    # 3、调用all_to_all使能ulysess并行
+    # 3、调用all_to_all使能ulysses并行
     in_list =  [t.contiguous() for t in torch.tensor_split(x, world_size, 2)]
     output_list = [torch.empty_like(in_list[0]) for _ in range(world_size)]
     dist.all_to_all(output_list, in_list)

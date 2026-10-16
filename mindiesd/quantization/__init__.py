@@ -13,6 +13,7 @@
 from .quantize import quantize
 from .utils import TimestepManager
 from .config import OnlineQuantConfig, QuantConfig, TimestepPolicyConfig
+from .mode import FP8FAMode
 
 __all__ = [
     "quantize",
@@ -20,4 +21,5 @@ __all__ = [
     "OnlineQuantConfig",
     "QuantConfig",
     "TimestepPolicyConfig",
+    "FP8FAMode",
 ]

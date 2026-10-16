@@ -77,9 +77,74 @@ repos:
   - repo: https://gitcode.com/gh_mirrors/ma/markdownlint-cli
     rev: v0.44.0
     hooks:
+      # 全仓：manual 档，改动 .md 时按 governance §5.4 手动跑
       - id: markdownlint
+        alias: markdownlint-manual
         args: ["-c", ".markdownlint.json"]
+        exclude: ^\.agents/
         stages: [manual]
+      # .agents 知识层：提交/CI 强制（实测 pin 版 v0.44.0 下 0 违规；勿用更高版本，MD060 等
+      # 新规则会对同一批文件产生上千条版本性假违规 —— 见 .agents/README.md §7「校验」）
+      - id: markdownlint
+        alias: markdownlint-agents
+        args: ["-c", ".markdownlint.json"]
+        files: ^\.agents/.*\.md$
+
+  # 知识层结构门禁（.agents 技能库的链接图/接线/evals 契约；零网络零模型，纯 stdlib）
+  # 判据与规则清单以 .agents/scripts/kb_lint.py 的 RULES 为准，.agents/README.md §7 只做引用
+  - repo: local
+    hooks:
+      - id: kb-lint
+        name: kb-lint (.agents knowledge base structure)
+        entry: python .agents/scripts/kb_lint.py
+        language: system
+        files: ^\.agents/.*\.(md|json)$
+        pass_filenames: false
+      # 门禁自身的回归：改写规则后负样本必须仍能触发（防「门禁静默失效」）
+      - id: kb-lint-selftest
+        name: kb-lint selftest (negative samples)
+        entry: python .agents/scripts/kb_lint.py --selftest
+        language: system
+        files: ^\.agents/scripts/.*\.py$
+        pass_filenames: false
+      - id: run-evals-selftest
+        name: run-evals selftest (negative samples)
+        entry: python .agents/scripts/run_evals.py --selftest
+        language: system
+        files: ^\.agents/scripts/run_evals\.py$
+        pass_filenames: false
+      # 多 agent 契约门禁自身的回归（交接单字段/回执要素/指针链/租约的负样本必须仍被触发）
+      - id: stage-gate-selftest
+        name: stage-gate multi-agent contract selftest (negative samples)
+        entry: python .agents/skills/model-auto-optimization/scripts/stage_gate.py --selftest
+        language: system
+        files: ^\.agents/skills/model-auto-optimization/scripts/stage_gate\.py$
+        pass_filenames: false
+      # 交付件门禁自身的回归（列内容洁净：名/明细/次数/收益必须可机判）
+      - id: fusion-scope-selftest
+        name: fusion-scope deliverable gate selftest (column cleanliness)
+        entry: python .agents/skills/fusion-scope-analyze/scripts/check_fusion_scope.py --selftest
+        language: system
+        files: ^\.agents/skills/fusion-scope-analyze/.*\.(py|md)$
+        pass_filenames: false
+      # 采集侧完成检查门禁自身的回归（缺列/全 N/A/陈旧产物/只有表头 必须能被抓住）
+      # 退出码语义（**勿照抄成运行时判据**）：自测只允许 0；而真实运行 `check_output.py` 是
+      #   0 = 通过 / 1 = 有检查判失败 / 2 = 前置缺失 / 3 = 无法判定（**3 与 0 语义不同，不得混淆**）。
+      # 同理 `collect_profile.py` 真实运行也会透传 0/1/3，其中 3 = 未验证（含显式跳过门禁）。
+      - id: check-output-selftest
+        name: profiling-collect output gate selftest (negative samples)
+        entry: python .agents/skills/profiling-collect/scripts/check_output.py --selftest
+        language: system
+        files: ^\.agents/skills/profiling-collect/scripts/check_output\.py$
+        pass_filenames: false
+      # 采集脚本的门禁接线回归（只跑 --selftest：零 SSH / 零设备，夹具覆盖 0/1/3 三态）。
+      # ⚠️ 此处**只挂自测**，不挂真实采集路径（那会连 SSH 与设备，不属于 pre-commit 范围）。
+      - id: collect-profile-selftest
+        name: profiling-collect collect_profile gate wiring selftest (zero SSH)
+        entry: python .agents/skills/profiling-collect/scripts/collect_profile.py --selftest
+        language: system
+        files: ^\.agents/skills/profiling-collect/scripts/collect_profile\.py$
+        pass_filenames: false
 
   # C++ 核心检查
   - repo: https://gitcode.com/pre-commit-clang/mirrors-clang-format
@@ -91,7 +156,25 @@ repos:
           - "--style=file"
           - "--verbose"
           - "-i"
-# -------------------------- Gitleaks 本地离线二进制扫描 --------------------------
+
+  # 本地 clang-tidy
+  - repo: local
+    hooks:
+      - id: clang-tidy
+        name: clang-tidy
+        entry: clang-tidy
+        language: system
+        files: ^csrc/.*\.(cpp|cc|cxx|c)$
+        exclude: ^csrc/ops/
+        args:
+          - --config-file=.clang-tidy
+          - --quiet
+          - --header-filter=^$
+          - -p=.
+        pass_filenames: true
+        stages: [manual]
+
+  # -------------------------- Gitleaks 本地离线二进制扫描 --------------------------
   - repo: local
     hooks:
       - id: gitleaks-offline-scan

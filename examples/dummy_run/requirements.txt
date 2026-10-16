@@ -1,4 +1,4 @@
-diffusers==0.38.0
+diffusers==0.40.0
 transformers==5.2.0
 huggingface_hub>=0.23.0
 torch==2.9.0

@@ -50,9 +50,23 @@ class ShareMemoryManager:
             self.req_socket = ZMQ_CONTEXT.socket(zmq.REQ)
             self.req_socket.connect(f"tcp://{self.master_addr}:{self.rep_port}")
 
+    def close(self):
+        """Close all ZMQ sockets owned by this manager."""
+        for attr in ('rep_socket', 'pub_socket', 'sub_socket', 'req_socket'):
+            sock = getattr(self, attr, None)
+            if sock is not None:
+                try:
+                    sock.close(linger=0)
+                except Exception:
+                    logger.warning("Failed to close ZMQ socket '%s'", attr, exc_info=True)
+                setattr(self, attr, None)
+
     @classmethod
     def cleanup(cls):
-        global ZMQ_CONTEXT
+        global ZMQ_CONTEXT, manager
+        if manager is not None:
+            manager.close()
+            manager = None
         if ZMQ_CONTEXT:
             ZMQ_CONTEXT.term()
             ZMQ_CONTEXT = None
@@ -109,6 +123,8 @@ def init_share_memory(
         ShareMemoryManager: 单例管理器实例
     """
     global manager
+    if manager is not None:
+        manager.close()
     manager = ShareMemoryManager(instance_world_size, instance_id, master_addr, base_port)
     return manager
 

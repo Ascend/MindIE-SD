@@ -117,6 +117,8 @@ enum class FiaFullQuantMode : uint32_t {
     QKV_MXFP8_FULL_QUANT = 3,
     Q_PER_TOKEN_HEAD_KV_PER_TENSOR_FULL_QUANT = 4,
     QK_PER_TOKEN_HEAD_V_PER_HEAD = 5,
+    QKV_PER_BLOCK_K256_V512_D128_FULL_QUANT = 6,
+    QKV_PER_BLOCK_K256_V512_D64_FULL_QUANT = 7,
 };
 
 std::string QuantModeToSerialString(FiaQuantMode fiaQuantMode);
@@ -313,6 +315,7 @@ class FiaTilingInfo : public TilingInfo {
     MlaMode mlaMode = MlaMode::NO_MLA;
     FiaQuantMode quantMode = FiaQuantMode::NO_QUANT;
     FiaFullQuantMode fullQuantMode = FiaFullQuantMode::NO_FULL_QUANT;
+    bool enableC8V16 = false;
 
     // Layout
     FiaLayout qLayout = FiaLayout::BSND;

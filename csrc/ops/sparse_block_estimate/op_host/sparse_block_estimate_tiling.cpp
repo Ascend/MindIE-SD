@@ -10,34 +10,33 @@
  * See the Mulan PSL v2 for more details.
  */
 
-
-#include <queue>
 #include <vector>
 #include <string>
-// #include <iostream>  // 必须引入 std::cout/std::endl 头文件
 
-#include <unordered_map>
 #include "tiling/tiling_api.h"
 #include "tiling/platform/platform_ascendc.h"
 #include "register/op_def_registry.h"
 #include "register/tilingdata_base.h"
 #include "sparse_block_estimate_tiling.h"
 
+#include <cstddef>
 #include <cstdint>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <cstdlib>
-#include <dlfcn.h>
-#include <unistd.h>
-#include <cstdio>
-#include <numeric>
 #include <algorithm>
-#include <graph/utils/type_utils.h>
 
 using std::string;
 
 using namespace matmul_tiling;
+
+// Host tiling parameters corresponding to the arch35 kernel geometry.
+namespace SparseEstimateArch35 {
+constexpr uint32_t Q_RAW_TILE = 256U;
+constexpr uint32_t Q_TILES_PER_GROUP = 4U;
+constexpr uint32_t AIV_Q_ROWS = 64U;
+constexpr uint32_t K_PACKED_TILE = 64U;
+constexpr uint32_t KV_BLOCKS_PER_TILE = 4U;
+constexpr uint32_t MAX_KV_BLOCKS_ALIGNED = 256U;
+constexpr uint32_t MAX_K_SEQUENCE = 425984U;
+} // namespace SparseEstimateArch35
 
 namespace optiling {
 constexpr uint32_t NUM_2 = 2;
@@ -65,19 +64,16 @@ constexpr uint32_t DIM1_INDEX = 1;
 constexpr uint32_t DIM2_INDEX = 2;
 constexpr uint32_t DIM3_INDEX = 3;
 
-uint64_t BASE_TILING_KEY = 1000000000000000000;  // 默认 TILING_KEY
+uint64_t BASE_TILING_KEY = 1000000000000000000; // 默认 TILING_KEY
 
 void PromptFlashAttentionSplitNSNew(SparseBlockEstimateTilingData &tiling, uint32_t curCoreNum,
-    std::vector<int64_t> &actualSeqLengths, std::vector<int64_t> &actualSeqLengthsKV, int64_t actualSharedPrefixLen,
-    bool useBalanceTiling)
-{
+    std::vector<int64_t> &actualSeqLengths, std::vector<int64_t> &actualSeqLengthsKV, int64_t actualSharedPrefixLen) {
     SparseBlockEstimateSeqParams *seqParams = &tiling.sparseBlockEstimateSeqParams;
 
-    uint32_t arrayLen = tiling.get_batchSize();  // batch size
+    uint32_t arrayLen = tiling.get_batchSize(); // batch size
     uint32_t sOuterSize = SINGLE_CORE_MBASE * tiling.get_stride();
     uint32_t sInnerSize = SINGLE_CORE_NBASE * tiling.get_stride();
 
-    std::vector<uint32_t> accumSOuterTilingNums(static_cast<size_t>(arrayLen), 0U);
     std::vector<uint32_t> sInnerLoopTimes(static_cast<size_t>(arrayLen), 0U);
     std::vector<uint32_t> sOuterBlockNums(static_cast<size_t>(arrayLen), 0U);
 
@@ -91,39 +87,20 @@ void PromptFlashAttentionSplitNSNew(SparseBlockEstimateTilingData &tiling, uint3
     std::vector<uint32_t> coreNidStart(tilingElementArrayLen, 0U);
 
     int64_t totalBlockWight = 0;
-    int totalOuterBlockNum = 0;
-    uint32_t preAccumSOuterNum = 0U;
-    uint32_t multiSmaxsInnerLoopTimes = 0U;
     uint32_t sInnerPrefixLoopTimes = (actualSharedPrefixLen + sInnerSize - 1) / sInnerSize;
-    bool isSOuterNoTail = true;
-    bool isSInnerNoTail = true;
     bool causal = tiling.get_causal();
     for (uint32_t i = 0; i < arrayLen; i++) {
         int seqLen = actualSeqLengths[i];
         int subSeqInnerLen = actualSeqLengthsKV[i];
         sOuterBlockNums[i] = (seqLen + sOuterSize - 1) / sOuterSize;
         sInnerLoopTimes[i] = (subSeqInnerLen + sInnerSize - 1) / sInnerSize + sInnerPrefixLoopTimes;
-        accumSOuterTilingNums[i] = (sOuterBlockNums[i] * tiling.get_headNumQ()) + preAccumSOuterNum;
-        preAccumSOuterNum = accumSOuterTilingNums[i];
 
-        multiSmaxsInnerLoopTimes = std::max(multiSmaxsInnerLoopTimes, sInnerLoopTimes[i]);
-
-        if (seqLen % sOuterSize != 0) {
-            isSOuterNoTail = false;
-        }
-        if (subSeqInnerLen % sInnerSize != 0) {
-            isSInnerNoTail = false;
-        }
-        totalOuterBlockNum += sOuterBlockNums[i];
         if (causal) {
             totalBlockWight += (static_cast<int64_t>(sOuterBlockNums[i]) + 1) *
-                               static_cast<int64_t>(sOuterBlockNums[i]) / NUM_2;  // div 2
+                static_cast<int64_t>(sOuterBlockNums[i]) / NUM_2; // div 2
         } else {
             totalBlockWight += static_cast<int64_t>(sOuterBlockNums[i]) * static_cast<int64_t>(sInnerLoopTimes[i]);
         }
-    }
-    if ((!useBalanceTiling)) {
-        accumSOuterTilingNums[0] = 0;
     }
 
     float coreWightTarget = (float(totalBlockWight * tiling.get_headNumQ()) / float(curCoreNum));
@@ -186,8 +163,7 @@ void PromptFlashAttentionSplitNSNew(SparseBlockEstimateTilingData &tiling, uint3
 }
 
 static ge::graphStatus SetDataShape(
-    SparseBlockEstimateTilingData &tiling, gert::TilingContext *context, const string &layoutStr)
-{
+    SparseBlockEstimateTilingData &tiling, gert::TilingContext *context, const string &layoutStr) {
     uint32_t batchSize;
     uint32_t dim;
     uint32_t qs;
@@ -205,8 +181,8 @@ static ge::graphStatus SetDataShape(
     const gert::Tensor *tempData = context->GetOptionalInputTensor(ACTUAL_SEQ_Q_INDEX);
     const gert::Tensor *tempDataKV = context->GetOptionalInputTensor(ACTUAL_SEQ_KV_INDEX);
     uint32_t actualLenDims = (tempData != nullptr && tempData->GetData<int64_t>() != nullptr)
-                                 ? tempData->GetShapeSize()
-                                 : 0;  // ! len of act_seq_list
+        ? tempData->GetShapeSize()
+        : 0; // ! len of act_seq_list
     uint32_t actualLenDimsKV =
         (tempDataKV != nullptr && tempDataKV->GetData<int64_t>() != nullptr) ? tempDataKV->GetShapeSize() : 0;
 
@@ -247,8 +223,13 @@ static ge::graphStatus SetDataShape(
     return ge::GRAPH_SUCCESS;
 }
 
-static void setTilingKey(gert::TilingContext *context, bool causal, ge::DataType qDataType, const string &layoutStr)
-{
+static void setTilingKey(
+    gert::TilingContext *context, bool causal, ge::DataType qDataType, const string &layoutStr, bool isArch35) {
+    if (isArch35) {
+        constexpr uint64_t ARCH35_TILING_KEY = 2000000000000000000ULL;
+        context->SetTilingKey(ARCH35_TILING_KEY + (qDataType == ge::DT_BF16 ? 100U : 0U));
+        return;
+    }
     uint64_t tilingKey = BASE_TILING_KEY;
     tilingKey += causal ? 1U : 0U;
 
@@ -262,19 +243,19 @@ static void setTilingKey(gert::TilingContext *context, bool causal, ge::DataType
         tilingKey += 100U;
     }
 
-    auto ret = context->SetTilingKey(tilingKey);
+    context->SetTilingKey(tilingKey);
 }
 
-ge::graphStatus SparseBlockEstimateTilingFunc(gert::TilingContext *context)
-{
+ge::graphStatus SparseBlockEstimateTilingFunc(gert::TilingContext *context) {
     auto db = 2;
     auto ascendcPlatform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
+    bool isArch35 = ascendcPlatform.GetCurNpuArch() == NpuArch::DAV_3510;
     auto attrs = context->GetAttrs();
     uint32_t coresAic = ascendcPlatform.GetCoreNumAic();
     uint32_t coresAiv = ascendcPlatform.GetCoreNumAiv();
-    bool inputIsNullPtr =
-        (context->GetInputDesc(QUERY_INDEX) == nullptr) || (context->GetInputDesc(KEY_INDEX) == nullptr) ||
-        (context->GetInputShape(QUERY_INDEX) == nullptr) || (context->GetInputShape(KEY_INDEX) == nullptr);
+    bool inputIsNullPtr = (context->GetInputDesc(QUERY_INDEX) == nullptr) ||
+        (context->GetInputDesc(KEY_INDEX) == nullptr) || (context->GetInputShape(QUERY_INDEX) == nullptr) ||
+        (context->GetInputShape(KEY_INDEX) == nullptr);
     if (inputIsNullPtr) {
         return ge::GRAPH_FAILED;
     }
@@ -287,7 +268,13 @@ ge::graphStatus SparseBlockEstimateTilingFunc(gert::TilingContext *context)
 
     SparseBlockEstimateTilingData tiling;
 
-    uint32_t sparseSize = *attrs->GetAttrPointer<int32_t>(SPARSE_SIZE);
+    int32_t sparseSizeAttr = *attrs->GetAttrPointer<int32_t>(SPARSE_SIZE);
+    int32_t headNumAttr = *attrs->GetAttrPointer<int32_t>(NUM_HEADS_ATTR);
+    int32_t kvHeadNumAttr = *attrs->GetAttrPointer<int32_t>(NUM_KV_HEADS_ATTR);
+    if (sparseSizeAttr <= 0 || headNumAttr <= 0 || kvHeadNumAttr <= 0) {
+        return ge::GRAPH_FAILED;
+    }
+    uint32_t sparseSize = static_cast<uint32_t>(sparseSizeAttr);
     const char *layout = attrs->GetAttrPointer<char>(INPUT_LAYOUT);
 
     std::string layoutStr = std::string(layout);
@@ -299,14 +286,79 @@ ge::graphStatus SparseBlockEstimateTilingFunc(gert::TilingContext *context)
     tiling.set_scaleFactor(*attrs->GetAttrPointer<float>(SCALE_VALUE));
     tiling.set_threshold(*attrs->GetAttrPointer<float>(THRESHOLD));
     bool causal = *attrs->GetAttrPointer<bool>(CAUSAL);
+    int32_t stride = *attrs->GetAttrPointer<int32_t>(STRIDE);
+    if (stride <= 0 || sparseSize % stride != 0 || ((sparseSize / stride) & (sparseSize / stride - 1)) != 0) {
+        return ge::GRAPH_FAILED;
+    }
     tiling.set_causal(causal);
     tiling.set_setFirstCol(*attrs->GetAttrPointer<bool>(KEEP_SINK));
     tiling.set_setDiag(*attrs->GetAttrPointer<bool>(KEEP_RECENT));
     float rowSparse = *attrs->GetAttrPointer<float>(ATTR_ROW_SPARSE);
     tiling.set_rowSparse(rowSparse);
 
-    int32_t stride = *attrs->GetAttrPointer<int32_t>(STRIDE);
     tiling.set_stride(stride);
+
+    if (isArch35) {
+        const auto &queryShape = context->GetInputShape(QUERY_INDEX)->GetStorageShape();
+        const auto &keyShape = context->GetInputShape(KEY_INDEX)->GetStorageShape();
+        // A5 packs BNSD inputs with fixed Q256/K512 raw-token tiles.
+        if (layoutStr != "BNSD" || queryShape.GetDimNum() != 4U || keyShape.GetDimNum() != 4U ||
+            queryShape.GetDim(0) != keyShape.GetDim(0) ||
+            queryShape.GetDim(1) != static_cast<int64_t>(tiling.get_headNumQ()) ||
+            keyShape.GetDim(1) != static_cast<int64_t>(tiling.get_headNumKV()) ||
+            queryShape.GetDim(3) != keyShape.GetDim(3) || causal || qDataType != kDataType ||
+            tiling.get_dim() != 128U || stride != 8 || sparseSize != 128U || tiling.get_seqLenQ() == 0U ||
+            tiling.get_seqLenK() == 0U || tiling.get_headNumKV() == 0U || tiling.get_headNumQ() == 0U ||
+            (tiling.get_headNumQ() % tiling.get_headNumKV()) != 0U ||
+            tiling.get_seqLenK() > SparseEstimateArch35::MAX_K_SEQUENCE ||
+            !(tiling.get_threshold() > 0.0f && tiling.get_threshold() <= 1.0f) ||
+            tiling.get_actualSeqLengthsSize() != 0U || tiling.get_actualSeqLengthsKVSize() != 0U) {
+            return ge::GRAPH_FAILED;
+        }
+
+        tiling.set_sOuterFactor(SparseEstimateArch35::AIV_Q_ROWS);
+        tiling.set_sInnerFactor(SparseEstimateArch35::K_PACKED_TILE);
+        uint32_t qTiles =
+            (tiling.get_seqLenQ() + SparseEstimateArch35::Q_RAW_TILE - 1U) / SparseEstimateArch35::Q_RAW_TILE;
+        uint32_t gqa = tiling.get_headNumQ() / tiling.get_headNumKV();
+        // BNSD stores the GQA query heads sharing one KV head contiguously.
+        // Flatten that range before grouping so M128 remains full across a
+        // query-head boundary instead of padding each head independently.
+        uint32_t qTilesPerKvHead = qTiles * gqa;
+        uint32_t qGroupsPerKvHead =
+            (qTilesPerKvHead + SparseEstimateArch35::Q_TILES_PER_GROUP - 1U) / SparseEstimateArch35::Q_TILES_PER_GROUP;
+        uint64_t totalTasks = static_cast<uint64_t>(tiling.get_batchSize()) * tiling.get_headNumKV() * qGroupsPerKvHead;
+        uint32_t activeAic = std::min<uint64_t>(coresAic, totalTasks);
+        if (activeAic == 0U) {
+            return ge::GRAPH_FAILED;
+        }
+        tiling.set_coreNumAic(activeAic);
+        tiling.set_actualCoreNums(activeAic);
+        context->SetBlockDim(activeAic);
+
+        uint32_t kvBlocks = (tiling.get_seqLenK() + sparseSize - 1U) / sparseSize;
+        uint32_t kvBlocksAligned = (kvBlocks + 31U) / 32U * 32U;
+        size_t userWorkspaceSize = 0U;
+        if (kvBlocksAligned > SparseEstimateArch35::MAX_KV_BLOCKS_ALIGNED) {
+            uint32_t kTiles =
+                (kvBlocks + SparseEstimateArch35::KV_BLOCKS_PER_TILE - 1U) / SparseEstimateArch35::KV_BLOCKS_PER_TILE;
+            uint64_t perAivElements = static_cast<uint64_t>(kTiles) * SparseEstimateArch35::AIV_Q_ROWS *
+                    SparseEstimateArch35::KV_BLOCKS_PER_TILE +
+                static_cast<uint64_t>(kTiles) * SparseEstimateArch35::AIV_Q_ROWS +
+                2U * SparseEstimateArch35::AIV_Q_ROWS;
+            // K-segment-major traversal suspends every Q task between segments.
+            // Preserve its histories and online max/sum independently of cores.
+            userWorkspaceSize = static_cast<size_t>(totalTasks * 2U * perAivElements * sizeof(float));
+        }
+        size_t systemWorkspaceSize = static_cast<size_t>(ascendcPlatform.GetLibApiWorkSpaceSize());
+        size_t *currentWorkspace = context->GetWorkspaceSizes(1);
+        currentWorkspace[0] = systemWorkspaceSize + userWorkspaceSize;
+
+        tiling.SaveToBuffer(context->GetRawTilingData()->GetData(), context->GetRawTilingData()->GetCapacity());
+        context->GetRawTilingData()->SetDataSize(tiling.GetDataSize());
+        setTilingKey(context, causal, qDataType, layoutStr, true);
+        return ge::GRAPH_SUCCESS;
+    }
 
     while (tiling.get_seqLenK() < stride * db * SINGLE_CORE_NBASE) {
         SINGLE_CORE_NBASE /= 2; // 2：数据减半
@@ -318,7 +370,7 @@ ge::graphStatus SparseBlockEstimateTilingFunc(gert::TilingContext *context)
         return ge::GRAPH_FAILED;
     }
     tasks = (tasks + coresAiv - 1) / coresAiv; // 151
-    tasks = (tasks + sparseSize -1) / sparseSize; // 2
+    tasks = (tasks + sparseSize - 1) / sparseSize; // 2
     SINGLE_CORE_MBASE = std::min(SINGLE_CORE_MBASE, int(tasks * sparseSize / stride));
     tiling.set_sOuterFactor(SINGLE_CORE_MBASE);
     tiling.set_sInnerFactor(SINGLE_CORE_NBASE);
@@ -328,9 +380,8 @@ ge::graphStatus SparseBlockEstimateTilingFunc(gert::TilingContext *context)
         qDataType == ge::DT_BF16 ? matmul_tiling::DataType::DT_BF16 : matmul_tiling::DataType::DT_FLOAT16;
     cubeTiling.SetAType(TPosition::GM, CubeFormat::ND, mmInputType, false);
     cubeTiling.SetBType(TPosition::GM, CubeFormat::ND, mmInputType, true);
-    cubeTiling.SetCType(TPosition::GM,
-        CubeFormat::ND_ALIGN,
-        matmul_tiling::DataType::DT_FLOAT);  // 不管input是fp16还是bf16 保持fp 32不动
+    cubeTiling.SetCType(TPosition::GM, CubeFormat::ND_ALIGN,
+        matmul_tiling::DataType::DT_FLOAT); // 不管input是fp16还是bf16 保持fp 32不动
     uint32_t seqLenQDivStride = (tiling.get_seqLenQ() + stride - 1) / stride;
     uint32_t seqLenKDivStride = (tiling.get_seqLenK() + stride - 1) / stride;
     auto dim = tiling.get_dim();
@@ -340,7 +391,7 @@ ge::graphStatus SparseBlockEstimateTilingFunc(gert::TilingContext *context)
     cubeTiling.SetBufferSpace(-1, -1, -1);
     cubeTiling.SetFixSplit(std::min(SINGLE_CORE_MBASE, 128), std::min(SINGLE_CORE_NBASE, 128), 128); // 128: 上限阈值
 
-    if (cubeTiling.GetTiling(tiling.cubeTilingData) == -1) {  // Get matmul tiling.
+    if (cubeTiling.GetTiling(tiling.cubeTilingData) == -1) { // Get matmul tiling.
         return ge::GRAPH_FAILED;
     }
     tiling.cubeTilingData.set_dbL0C(2); // 2: db
@@ -349,11 +400,6 @@ ge::graphStatus SparseBlockEstimateTilingFunc(gert::TilingContext *context)
     tiling.set_coreNumAic(coresAic);
 
     // 分核
-    bool useBalanceTiling = true;
-    uint32_t gqa = tiling.get_headNumQ() / tiling.get_headNumKV();
-    if (gqa != 1) {
-        useBalanceTiling = false;
-    }
     const gert::Tensor *tempData = context->GetOptionalInputTensor(ACTUAL_SEQ_Q_INDEX);
     const gert::Tensor *tempDataKV = context->GetOptionalInputTensor(ACTUAL_SEQ_KV_INDEX);
     size_t actualLenDims = (tempData != nullptr) ? tempData->GetShapeSize() : 0;
@@ -372,12 +418,12 @@ ge::graphStatus SparseBlockEstimateTilingFunc(gert::TilingContext *context)
                                                           : static_cast<uint32_t>(tempData->GetData<int64_t>()[0]);
             }
             if ((actualLenDimsKV == 0) ||
-                (tempDataKV->GetData<int64_t>() == nullptr)) {  // The user did not input act_seq_kv
+                (tempDataKV->GetData<int64_t>() == nullptr)) { // The user did not input act_seq_kv
                 actualSeqLengthsKV[i] = tiling.get_seqLenK();
             } else {
                 actualSeqLengthsKV[i] = (actualLenDimsKV > 1)
-                                            ? static_cast<uint32_t>(tempDataKV->GetData<int64_t>()[i])
-                                            : static_cast<uint32_t>(tempDataKV->GetData<int64_t>()[0]);
+                    ? static_cast<uint32_t>(tempDataKV->GetData<int64_t>()[i])
+                    : static_cast<uint32_t>(tempDataKV->GetData<int64_t>()[0]);
             }
         } else {
             // TND
@@ -386,16 +432,15 @@ ge::graphStatus SparseBlockEstimateTilingFunc(gert::TilingContext *context)
         }
     }
     int64_t actualSharedPrefixLen = 0;
-    PromptFlashAttentionSplitNSNew(
-        tiling, coresAiv, actualSeqLengths, actualSeqLengthsKV, actualSharedPrefixLen, useBalanceTiling);
+    PromptFlashAttentionSplitNSNew(tiling, coresAiv, actualSeqLengths, actualSeqLengthsKV, actualSharedPrefixLen);
 
     tiling.SaveToBuffer(context->GetRawTilingData()->GetData(), context->GetRawTilingData()->GetCapacity());
     context->GetRawTilingData()->SetDataSize(tiling.GetDataSize());
-    setTilingKey(context, causal, qDataType, layoutStr);
+    setTilingKey(context, causal, qDataType, layoutStr, false);
 
-    size_t userWorkspaceSize =
-        coresAiv * (SINGLE_CORE_MBASE * sizeof(float) * (SINGLE_CORE_NBASE + 32) * (db * 2 /* first reduce + qk */) +
-                       SINGLE_CORE_MBASE * sizeof(half) * db * stride * tiling.get_dim());  // reorderq
+    size_t userWorkspaceSize = coresAiv *
+        (SINGLE_CORE_MBASE * sizeof(float) * (SINGLE_CORE_NBASE + 32) * (db * 2 /* first reduce + qk */) +
+            SINGLE_CORE_MBASE * sizeof(half) * db * stride * tiling.get_dim()); // reorderq
     size_t systemWorkspaceSize = static_cast<size_t>(ascendcPlatform.GetLibApiWorkSpaceSize());
     size_t *currentWorkspace = context->GetWorkspaceSizes(1);
     currentWorkspace[0] = userWorkspaceSize + systemWorkspaceSize;
@@ -403,11 +448,7 @@ ge::graphStatus SparseBlockEstimateTilingFunc(gert::TilingContext *context)
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus TilingPrepareForSparseBlockEstimate(gert::TilingParseContext* context)
-{
-    return ge::GRAPH_SUCCESS;
-}
-
+ge::graphStatus TilingPrepareForSparseBlockEstimate(gert::TilingParseContext *context) { return ge::GRAPH_SUCCESS; }
 
 IMPL_OP_OPTILING(SparseBlockEstimate)
     .Tiling(SparseBlockEstimateTilingFunc)

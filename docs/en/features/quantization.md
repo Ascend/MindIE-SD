@@ -21,7 +21,7 @@ Based on whether retraining is needed, quantization is divided into Post-Trainin
 
 The following diagram shows an INT8 quantization example, mapping FP32 to INT8. `[-max(xf), max(xf)]` is the pre-quantization float range, and `[-128, 127]` is the post-quantization range.
 
-![](../../figures/int8_image.png)
+![INT8 quantization diagram](../../figures/int8_image.png)
 
 ### Technical Features
 
@@ -51,6 +51,7 @@ This repository handles Linear quantization uniformly through the `quantize` API
 | W4A4_MXFP4_SVD | Per-layer | MXFP4 format quantization |
 | W4A4_MXFP4_DUALSCALE | Per-layer | MXFP4 dual-scale quantization |
 | W4A4_MXFP4_DYNAMIC | Per-token + per-channel | MXFP4 dynamic quantization |
+| W4A4_MXFP4_FOUROVERSIX_DYNAMIC | Per-token + per-channel | MXFP4 quantization with activations via `quant_four_over_six_a5` (4/6 adaptive) |
 
 ### API and Usage
 
@@ -90,6 +91,15 @@ for i, t in enumerate(timesteps):
     ...
 ```
 
+#### 4/6 Adaptive Activation Quantization (fouroversix)
+
+`W4A4_MXFP4_FOUROVERSIX_DYNAMIC` reuses the weight path of `W4A4_MXFP4_DYNAMIC` and replaces activation quantization with the custom operator `quant_four_over_six_a5`: each 32-element block adaptively selects between D4/D6 E8M0 scales based on quantization error. The `W4A8` timestep fallback behaves the same as `W4A4_MXFP4_DYNAMIC`.
+
+- Quantized weights are identical to those of `W4A4_MXFP4_DYNAMIC` and can be reused directly; when the descriptor `model_quant_type` is `W4A4_MXFP4_FOUROVERSIX`, the weight file follows the naming rule as `quant_model_weight_w4a4_mxfp4_fouroversix_{rank}.safetensors`.
+- The operator requires bf16 input and a 32-aligned activation tail axis (`in_features`), and is supported on Atlas A5 only; misaligned layers fail fast at construction time.
+- `mxfp4_scale_alg` / `mxfp4_dst_type_max` only affect weight quantization; activations always use the fixed 4/6 adaptive combination.
+- The online path is also supported: `OnlineQuantConfig(quant_type=W4A4_MXFP4_FOUROVERSIX_DYNAMIC)`.
+
 #### Quantized Weight File Naming
 
 Quantized weights and descriptor files are exported by the msmodelslim tool with the following naming convention:
@@ -99,30 +109,59 @@ Quantized weights and descriptor files are exported by the msmodelslim tool with
 
 For single-card quantization, `rank` is 0. For multi-card parallelism, each rank corresponds to its respective number.
 
+#### Quantization Descriptor Validation
+
+`quantize` validates the complete descriptor before constructing quantization configs or opening the weight file. The supported MindIE SD format is a flat JSON object:
+
+```json
+{
+  "model_quant_type": "W8A8",
+  "blocks.0.proj.weight": "W8A8",
+  "blocks.0.proj.bias": "FLOAT"
+}
+```
+
+- The file must be a UTF-8 standard JSON object without duplicate fields, unescaped control characters, or nonstandard constants such as `NaN` and `Infinity`.
+- `model_quant_type` is required. Its value must be a string that exactly matches a `QuantAlgorithm` enum value, such as `W8A8` or `W4A4_MXFP4`. It is file-level metadata, not a layer config.
+- Known AscendV1 exporter metadata is optional: `version`, `kv_cache_type`, `kv_quant_type`, `fa_quant_type`, and `reduce_quant_type` must be strings; `group_size` must be a non-negative integer, excluding booleans; `metadata` and `optional` must be JSON objects. The string values of fields that MindIE SD does not consume are intentionally not restricted to today's exporter enum values, so newer exporters remain forward compatible. These fields are validated and excluded from layer configs; they do not enable grouped, KV-cache, communication, or rotation features. Objects inside `metadata` and `optional` are exporter extensions and are not interpreted or used to open additional files.
+- All remaining fields are dynamic layer or tensor names. Names must not be entirely whitespace or contain ASCII control characters. Values must be strings containing a `QuantAlgorithm` enum value (case-insensitive) or exactly `FLOAT`.
+- Fields that violate this format are rejected instead of silently ignored. Dynamic names are not a fixed whitelist: an unfamiliar name with a valid algorithm value is a layer entry. All JSON numbers, including those in metadata objects, must be finite.
+- Validation failures raise `ParametersInvalid` with the field name or JSON line and column. The weight file is not opened after a validation failure.
+
+This checks the descriptor structure, types, and values. It does not verify that dynamic names correspond to actual model layers, or validate weight tensor shapes, values, or quantization accuracy. Existing path, symbolic link, file size, and permission checks still apply.
+
 ## FA Quantization
 
-### General Principles
+### FA General Principles
 
 FA (Flash Attention) quantization applies low-bit processing to Q/K/V activations in attention computation. Quantizing Q/K/V to FP8 before feeding into attention computation kernels significantly reduces memory bandwidth requirements and improves inference throughput. Unlike weight quantization, FA quantization processes dynamically generated activations during inference and requires block-level dynamic quantization strategies to balance accuracy and acceleration.
 
-### Technical Features
+### FA Technical Features
 
-This repository provides FA quantization via the `FP8_DYNAMIC` algorithm, with a three-step processing flow:
+This repository provides FA quantization via the `FP8_DYNAMIC` and `MXFP4_DYNAMIC` algorithms, with a three-step processing flow:
 
-**Rotate**
+#### Rotate
 
-Apply pre-trained rotation matrices (`q_rot`, `k_rot`) to Q and K, dispersing outliers across dimensions to mitigate FP8 quantization sensitivity to outliers.
+If the quantized weights contain pre-trained rotation matrices (`q_rot`, `k_rot`), apply them to Q and K so outliers are spread across dimensions and FP8 quantization is less sensitive to those outliers. If the two tensors are absent, rotation is skipped and module initialization still succeeds.
 
-**Block Quantization**
+#### Block Quantization
 
-Dynamically quantize rotated Q/K/V into FP8 (`float8_e4m3fn`) block by block. Q uses a block size of 128, K/V use a block size of 256, performed via the `npu_dynamic_block_quant` operator.
+Dynamically quantize Q/K/V into FP8 (`float8_e4m3fn`) block by block via `npu_dynamic_block_quant`. Q uses a 128-token block and K uses a 256-token block; the V token block is selected by `FP8FAMode` below.
 
-**FP8 Attention**
+#### FP8 Attention
 
-Invoke MindIE-SD's own `torch.ops.mindiesd.fused_infer_attention_score_v2`
-operator, which routes to the migrated `FusedInferAttentionScore` implementation
+Invoke MindIE SD's own `torch.ops.mindiesd.fused_infer_attention_score_v2` operator, which routes to the migrated `FusedInferAttentionScore` implementation
 in this repository, to perform attention computation in the FP8 domain with
-outputs dequantized back to original precision.
+outputs dequantized back to original precision. `FP8RotateQuantFA` selects the quantization blocks, `value_quant_mode`, and `inner_precise` together through the `FP8FAMode` enum, so those switches stay aligned.
+
+| Mode | Q/K/V quant mode | `inner_precise` | V quant block |
+| ------ | ------ | ------ | ------ |
+| `HIGH_PRECISION` (default) | `7/7/7` | omitted (original high-precision path) | 256×128 |
+| `C8V16_TILING512` | `7/7/12` | `4` (C8V16) | 512×64 |
+
+Later features should be added as new enum members instead of unbound quant switches.
+
+In addition to `FP8_DYNAMIC` and `MXFP4_DYNAMIC`, `MXFP4_FOUROVERSIX_DYNAMIC` replaces the Q/K activation quantization of MXFP4 FA with `quant_four_over_six_a5` (4/6 adaptive). The operator only supports the tail axis, while `quant_flash_attn` requires V to be block-quantized along the sequence axis, so V still goes through `npu_dynamic_mx_quant`.
 
 ### API Reference
 
@@ -147,12 +186,23 @@ model = quantize(model, "path/to/exported/quantization/config")
 model.to("npu")
 ```
 
-`quantize` internally traverses model layers, automatically calling `add_fa_quant` on matching Attention layers, injecting `FP8RotateQuantFA` modules, and replacing the forward computation with the rotate -> block quantize -> FP8 Attention flow.
+`quantize` internally traverses model layers, automatically calling `add_fa_quant` on matching Attention layers, injecting `FP8RotateQuantFA` modules, and replacing the forward computation with the rotate -> block quantize -> FP8 Attention flow. The default mode is `FP8FAMode.HIGH_PRECISION`. To use C8V16 with a 512-token V tile:
 
-FA quantization layers are implemented through the `FP8RotateQuantFA` module. See the rotate -> block quantize -> FP8 Attention flow description in this section.
+```python
+from mindiesd import FP8FAMode, QuantConfig, quantize
+
+model = quantize(
+    model,
+    "path/to/exported/quantization/config",
+    quant_config=QuantConfig(fp8_fa_mode=FP8FAMode.C8V16_TILING512),
+)
+```
+
+FA quantization layers are implemented through the `FP8RotateQuantFA` module. See the rotate -> block quantize -> FP8 Attention flow description in this section. `C8V16_TILING512` requires the FIA C8V16 + V512 path (`inner_precise=4`, `value_quant_mode=12`).
 
 #### Notes
 
-- Hardware requirement: Only Atlas 800I A2 inference servers support this feature.
+- Hardware requirement: Only Atlas 800I A2 inference server support this feature.
 - Q/K/V input layout supports both `BNSD` and `BSND`.
-- FA quantization weights (`q_rot`, `k_rot`) must be pre-exported using the msmodelslim model compression tool. See the msmodelslim tool documentation for details.
+- K/V may have fewer heads than Q (GQA, Grouped Query Attention). `FP8RotateQuantFA` passes `num_key_value_heads` from the K head count.
+- Rotation matrices (`q_rot`, `k_rot`) are optional. When used, they must be pre-exported with the msmodelslim model compression tool; see the msmodelslim documentation. If the two tensors are absent, `FP8RotateQuantFA` skips rotation.

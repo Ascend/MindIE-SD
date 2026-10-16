@@ -7,14 +7,14 @@
     mindie组件名称取值为（省略mindie前缀）：[motor, server, llm, llmmodels, sd]。
     MindIE SD组件名称即为 *sd*
 
-**表 1**  日志设置  <a id="table1"></a>
+**表 1** 日志设置  <a id="table1"></a>
 
 |环境变量|默认配置|取值范围及解释|
 |--|--|--|
 |MINDIE_LOG_LEVEL|INFO|统一设置MindIE各组件日志级别。<br>日志级别取值 [CRITICAL, ERROR, WARN, INFO, DEBUG]；取值为 null 时关闭日志。|
 |MINDIE_LOG_TO_FILE|true|统一设置MindIE各组件日志是否写入文件。<br>取值范围为：[false, true]，且支持[0, 1]。|
 |MINDIE_LOG_TO_STDOUT|true|统一设置MindIE各组件是否打印日志。<br>取值范围为：[false, true]，且支持[0, 1]。|
-|MINDIE_LOG_VERBOSE|true|统一设置MindIE各组件日志中是否加入可选日志内容，当前日志分为固定日志内容和可选日志内容。完整调试日志格式：**[date time]** [pid] [tid] [组件名称]**[大写日志级别]** [file:line] : **[error code] [*] log message**；非加粗内容为可选内容，当环境变量设置为true时会加入可选内容。<br>取值范围为：[false, true]，且支持[0, 1]。<br>**日志格式中的[*]表示子组件或更小单位模块的名称，可以选择将其呈现在日志中，方便更好的定位问题。**|
+|MINDIE_LOG_VERBOSE|true|统一设置MindIE各组件日志中是否加入可选日志内容，当前日志分为固定日志内容和可选日志内容。完整调试日志格式：**[date time]** [pid] [tid] [组件名称]**[大写日志级别]** [file:line] : **[error code] [*] log message**；非加粗内容为可选内容，当环境变量设置为true时会加入可选内容。<br>取值范围为：[false, true]，且支持[0, 1]。<br>**日志格式中的[*]表示子组件或更小单位模块的名称，可以选择将其呈现在日志中，方便更好地定位问题。**|
 |MINDIE_LOG_PATH|~/mindie/log|统一设置MindIE各组件日志写入文件的保存目录。|
 |MINDIE_LOG_ROTATE|<ul><li>s：默认值为 daily / 30</li><li>fs：默认值为20 (MB)</li><li>r：默认值为10</li></ul>|统一设置MindIE各组件日志轮转。<br>设置某个组件的日志轮转格式为：*组件名称* : -s *cycle* -fs *filesize* -r *rotate*<ul><li>如果":"前无组件名称，则默认为对所有组件统一进行设置；</li><li>*cycle*表示时间轮转周期，可取 daily/weekly/monthly/yearly，或1～180的天数，默认 daily、周期为30。</li><li>*filesize*表示每个日志文件大小（单位MB），取值范围 [1, 500]。</li><li>*rotate*表示每个进程可保留的最多日志文件个数，取值范围 [1, 64]。</li></ul>|
 
@@ -39,14 +39,14 @@
 > [!NOTE]说明
 > \*：表示如果组件内有子组件或者更小的功能模块，会在日志信息前进行呈现。错误码与"\*"子组件标识均作为日志消息（log message）的一部分输出。
 
-**表 2**  日志字段说明
+**表 2** 日志字段说明
 
 |字段|说明|
 |--|--|
 |**date time**|日期时间。|
 |pid|进程号。|
 |tid|线程号。|
-|组件名称|MindIE的组件名称，MindIE-SD在日志中固定呈现为[MindIE-SD]。|
+|组件名称|MindIE的组件名称，MindIE SD在日志中固定呈现为[MindIE-SD]。|
 |**大写日志级别**|日志级别的大写形式，日志级别请参见[表4 日志级别](#table4)。|
 |file:line|文件名:代码行号。|
 |error code|Error级别日志的错误码，错误码请参见《[MindIE SD错误码参考](error_code.md)》。|
@@ -58,7 +58,7 @@
 
 MindIE默认收集INFO级别及以上的日志，日志文件的默认落盘路径如[表3](#table3)所示。落盘路径的设置可参见[配置日志落盘路径](#配置日志落盘路径)。
 
-**表 3**  日志路径 <a id="table3"></a>
+**表 3** 日志路径 <a id="table3"></a>
 
 |路径|说明|
 |--|--|
@@ -87,11 +87,11 @@ cat mindie-sd_123_20241008020600.log
 
 运行调试日志被分为如[表4](#table4)所示的5个等级。
 
-**表 4**  日志级别 <a id="table4"></a>
+**表 4** 日志级别 <a id="table4"></a>
 
 |日志级别|简写|日志内容|
 |--|--|--|
-|CRITICAL|critical|紧急。系统业务严重受损或者完全不可用的紧急情况，规模性的用户受影响，需要运维人员紧急处理。例如系统无法启动或进程挂死等。|
+|CRITICAL|critical|紧急。系统业务严重受损或者完全不可用的紧急情况，规模性用户受影响，需要运维人员紧急处理。例如系统无法启动或进程挂死等。|
 |ERROR|error|错误。系统运行环境/功能受影响，或非预期的数据/事件造成功能执行出错。例如数据入库失败、任务创建失败等。|
 |WARNING|warn|警告。系统出现的潜在风险或隐患，但不影响系统功能的正常执行。例如数据校验存在错误，但系统可通过纠错功能恢复，不影响功能的执行。|
 |INFO|info|信息。用于系统运行正常的信息记录，输出一些状态或状态变化的信息，例如当前系统的状态、数据库的连接状态等信息。|

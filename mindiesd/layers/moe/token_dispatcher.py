@@ -64,8 +64,8 @@ class TokenDispatcher(ABC):
         cls,
         routed_out,
         original_shape,
-        tokens_full=True,
-        reduce_results=True,
+        inputs_sharded=False,
+        reduce_routed_out=True,
     ):
         raise NotImplementedError
 
@@ -76,12 +76,13 @@ class StaticDispatcher(TokenDispatcher):
         moe_group = get_moe_group()
         hidden_states = prepare_input.hidden_states
         router_logits = prepare_input.router_logits
-        tokens_full = prepare_input.tokens_full
+        inputs_sharded = prepare_input.inputs_sharded
         flat_hidden = hidden_states.reshape(-1, hidden_states.shape[-1])
         flat_router = router_logits.reshape(-1, router_logits.shape[-1])
 
-        if not tokens_full and moe_group is not None:
-            # Static MoE computes a replicated full-token result before returning rank-local shards.
+        if inputs_sharded and moe_group is not None:
+            # Static dispatch gathers inputs sharded along the token dimension
+            # across the current MoE group into the unsharded token view it expects.
             dynamic_scale = None
             if is_moe_quant():
                 flat_hidden, dynamic_scale = dynamic_quant(flat_hidden)
@@ -130,17 +131,18 @@ class StaticDispatcher(TokenDispatcher):
             scale=dynamic_scale,
             active_num=num_tokens * token_dispatch_input.top_k,
             expert_num=token_dispatch_input.num_experts,
-            expert_tokens_num_type=1,
+            expert_tokens_num_type=0,
             expert_tokens_num_flag=True,
             active_expert_range=active_expert_range,
             quant_mode=get_init_routing_quant_mode(dynamic_scale),
+            row_idx_type=1 if token_dispatch_input.use_gmm_finalize_routing else 0,
         )
         sorted_hidden_states, expanded_row_idx, expert_tokens, dynamic_scale = output[:4]
         return MoETokenDispatchOutput(
             hidden_states=sorted_hidden_states,
             dynamic_scale=dynamic_scale if is_moe_quant() else None,
             group_list=expert_tokens.to(torch.int64),
-            group_list_type=1,
+            group_list_type=0,
             combine_metadata=MoEStaticCombineMetadata(
                 topk_weights=local_topk_weights,
                 restore_shape=restore_shape,
@@ -163,18 +165,19 @@ class StaticDispatcher(TokenDispatcher):
         cls,
         routed_out,
         original_shape,
-        tokens_full=True,
-        reduce_results=True,
+        inputs_sharded=False,
+        reduce_routed_out=True,
     ):
         moe_group = get_moe_group()
         if moe_group is None:
             return routed_out.reshape(original_shape)
 
-        if not tokens_full:
-            # Return only this rank's shard after static MoE computed the replicated full result.
+        if inputs_sharded:
+            # Static dispatch produced unsharded routed_out; return this rank's
+            # token shard in the current MoE group.
             return reduce_scatter(routed_out, moe_group).reshape(original_shape)
 
-        if reduce_results:
+        if reduce_routed_out:
             all_reduce(routed_out, moe_group)
         return routed_out.reshape(original_shape)
 
@@ -204,11 +207,12 @@ class DynamicDispatcher(TokenDispatcher):
         moe_group = get_moe_group()
         hidden_states = prepare_input.hidden_states
         router_logits = prepare_input.router_logits
-        tokens_full = prepare_input.tokens_full
+        inputs_sharded = prepare_input.inputs_sharded
         flat_hidden = hidden_states.reshape(-1, hidden_states.shape[-1])
         flat_router = router_logits.reshape(-1, router_logits.shape[-1])
-        if not tokens_full:
-            # Rank-local inputs are already in the layout required by dynamic MoE.
+        if inputs_sharded:
+            # Inputs sharded along the token dimension across the current MoE
+            # group already match dynamic dispatch's rank-local layout.
             return MoEPrepareOutput(
                 hidden_states=flat_hidden,
                 router_logits=flat_router,
@@ -433,11 +437,11 @@ class DynamicDispatcher(TokenDispatcher):
         cls,
         routed_out,
         original_shape,
-        tokens_full=True,
-        reduce_results=True,
+        inputs_sharded=False,
+        reduce_routed_out=True,
     ):
         moe_group = get_moe_group()
-        if not tokens_full:
+        if inputs_sharded:
             return routed_out.reshape(original_shape)
 
         original_shape, original_num_tokens = original_shape

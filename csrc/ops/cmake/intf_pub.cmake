@@ -16,6 +16,12 @@ target_include_directories(intf_pub
             ${ASCEND_CANN_PACKAGE_PATH}/include/experiment/platform
             ${ASCEND_CANN_PACKAGE_PATH}/include/experiment/runtime
             ${ASCEND_CANN_PACKAGE_PATH}/include/experiment/msprof
+            # CANN >= 9.1 (e.g. 9.1.T560) moved prof_api.h into msprof/profiling/ while
+            # prof_common.h stays in msprof/toolchain/; add both subdirs so the quoted
+            # cross-include resolves. Non-existent dirs only trigger a harmless
+            # -Wmissing-include-dirs warning (same as platform/slog on some packages).
+            ${ASCEND_CANN_PACKAGE_PATH}/include/experiment/msprof/toolchain
+            ${ASCEND_CANN_PACKAGE_PATH}/include/experiment/msprof/profiling
             ${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/pkg_inc
             ${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/pkg_inc/profiling
             ${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/include/experiment/msprof

@@ -13,11 +13,9 @@
 #include "register/op_def_registry.h"
 #include "graph/utils/type_utils.h"
 
-
 namespace ops {
 
-static ge::graphStatus LaserAttentionInferShape(gert::InferShapeContext *context)
-{
+static ge::graphStatus LaserAttentionInferShape(gert::InferShapeContext *context) {
     if (context == nullptr) {
         return ge::GRAPH_FAILED;
     }
@@ -36,7 +34,7 @@ static ge::graphStatus LaserAttentionInferShape(gert::InferShapeContext *context
     softmaxOut->SetDimNum(queryDimNum - 1);
     softmaxOut->SetDim(0, queryShape->GetDim(0));
     softmaxOut->SetDim(1, queryShape->GetDim(1));
-    softmaxOut->SetDim(2, queryShape->GetDim(2));    // index is 2
+    softmaxOut->SetDim(2, queryShape->GetDim(2)); // index is 2
 
     gert::Shape *attnOut = context->GetOutputShape(1);
     if (attnOut == nullptr) {
@@ -45,25 +43,22 @@ static ge::graphStatus LaserAttentionInferShape(gert::InferShapeContext *context
     attnOut->SetDimNum(queryDimNum);
     attnOut->SetDim(0, queryShape->GetDim(0));
     attnOut->SetDim(1, queryShape->GetDim(1));
-    attnOut->SetDim(2, queryShape->GetDim(2));    // index is 2
-    attnOut->SetDim(3, queryShape->GetDim(3));    // index is 3
+    attnOut->SetDim(2, queryShape->GetDim(2)); // index is 2
+    attnOut->SetDim(3, queryShape->GetDim(3)); // index is 3
 
     return ge::GRAPH_SUCCESS;
 }
 
-static ge::graphStatus LaserAttentionInferDtype(gert::InferDataTypeContext *context)
-{
+static ge::graphStatus LaserAttentionInferDtype(gert::InferDataTypeContext *context) {
     if (context == nullptr) {
         return ge::GRAPH_FAILED;
     }
     const ge::DataType queryDtype = context->GetInputDataType(0);
     context->SetOutputDataType(0, ge::DT_FLOAT);
-    context->SetOutputDataType(1, ge::DT_FLOAT);
+    context->SetOutputDataType(1, queryDtype == ge::DT_BF16 ? ge::DT_BF16 : ge::DT_FLOAT);
     return ge::GRAPH_SUCCESS;
 }
 
-IMPL_OP_INFERSHAPE(LaserAttention)
-    .InferShape(LaserAttentionInferShape)
-    .InferDataType(LaserAttentionInferDtype);
+IMPL_OP_INFERSHAPE(LaserAttention).InferShape(LaserAttentionInferShape).InferDataType(LaserAttentionInferDtype);
 
 } // namespace ops

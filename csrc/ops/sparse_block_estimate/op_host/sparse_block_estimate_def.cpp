@@ -12,12 +12,10 @@
 
 #include "register/op_def_registry.h"
 
-
 namespace ops {
 class SparseBlockEstimate : public OpDef {
-public:
-    explicit SparseBlockEstimate(const char *name) : OpDef(name)
-    {
+  public:
+    explicit SparseBlockEstimate(const char *name) : OpDef(name) {
         this->Input("query").ParamType(REQUIRED).DataType({ge::DT_FLOAT16, ge::DT_BF16}).FormatList({ge::FORMAT_ND});
         this->Input("key").ParamType(REQUIRED).DataType({ge::DT_FLOAT16, ge::DT_BF16}).FormatList({ge::FORMAT_ND});
         this->Input("actual_seq_lengths")
@@ -30,33 +28,28 @@ public:
             .ValueDepend(OPTIONAL)
             .DataTypeList({ge::DT_INT64})
             .FormatList({ge::FORMAT_ND});
-        this->Output("sparse_mask")
-            .ParamType(REQUIRED)
-            .DataTypeList({ge::DT_INT8})
-            .FormatList({ge::FORMAT_ND});
-        this->Output("sparse_count_table")
-            .ParamType(REQUIRED)
-            .DataTypeList({ge::DT_INT32})
-            .FormatList({ge::FORMAT_ND});
+        this->Output("sparse_mask").ParamType(REQUIRED).DataTypeList({ge::DT_INT8}).FormatList({ge::FORMAT_ND});
+        this->Output("sparse_count_table").ParamType(REQUIRED).DataTypeList({ge::DT_INT32}).FormatList({ge::FORMAT_ND});
 
         this->Attr("input_layout").AttrType(OPTIONAL).String("BNSD");
-        this->Attr("stride").AttrType(OPTIONAL).Int(8);         // stride 大小，默认为8
-        this->Attr("sparse_size").AttrType(OPTIONAL).Int(128);  // sparse 块大小，默认为128
+        this->Attr("stride").AttrType(OPTIONAL).Int(8); // stride 大小，默认为8
+        this->Attr("sparse_size").AttrType(OPTIONAL).Int(128); // sparse 块大小，默认为128
         this->Attr("num_heads").AttrType(OPTIONAL).Int(1);
         this->Attr("num_key_value_heads").AttrType(OPTIONAL).Int(1);
-        this->Attr("scale_value").AttrType(OPTIONAL).Float(1.0);  // 缩放因子
+        this->Attr("scale_value").AttrType(OPTIONAL).Float(1.0); // 缩放因子
         this->Attr("threshold").AttrType(OPTIONAL).Float(1.0);
         this->Attr("causal").AttrType(OPTIONAL).Bool(false);
         this->Attr("keep_sink").AttrType(OPTIONAL).Bool(true);
         this->Attr("keep_recent").AttrType(OPTIONAL).Bool(true);
-        this->Attr("row_sparse").AttrType(OPTIONAL).Float(1.0);  // ROW_SPARSE 强制稀疏率，当设置大于等于 1
-                                                                 // 时不生效，0~1之间生效。 0.4 时表示强制保留 top-40%
-                                                                 // (即稀疏率60%)
+        this->Attr("row_sparse").AttrType(OPTIONAL).Float(1.0); // ROW_SPARSE 强制稀疏率，当设置大于等于 1
+            // 时不生效，0~1之间生效。 0.4 时表示强制保留 top-40%
+            // (即稀疏率60%)
 
         this->AICore().AddConfig("ascend910b");
         this->AICore().AddConfig("ascend910_93");
+        this->AICore().AddConfig("ascend950");
     }
 };
 
 OP_ADD(SparseBlockEstimate);
-}  // namespace ops
+} // namespace ops

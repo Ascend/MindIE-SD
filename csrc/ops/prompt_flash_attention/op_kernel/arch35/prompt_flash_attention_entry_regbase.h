@@ -46,26 +46,8 @@
 #include "../../eagle_fused_infer_attention_score/eagle_common/op_kernel/arch35/fia_kernel_fullquant_mx.h"
 #include "../../eagle_fused_infer_attention_score/eagle_common/op_kernel/arch35/fia_kernel_fullquant_gqa.h"
 #include "../../eagle_fused_infer_attention_score/eagle_common/op_kernel/arch35/fia_template_dispatcher.h"
-#elif __has_include("../../../common/op_kernel/arch35/flash_attention_score_kernel_infer.h")
-#include "../../../common/op_kernel/arch35/flash_attention_score_kernel_infer.h"
-#include "../../../common/op_kernel/arch35/flash_attention_noquant_kernel_infer.h"
-#include "../../../common/op_kernel/arch35/flash_attention_score_kernel_infer_mla_fullquant.h"
-#include "../../../common/op_kernel/arch35/flash_attention_score_kernel_infer_gqa_fullquant.h"
-#include "../../../common/op_kernel/arch35/flash_attention_score_kernel_infer_mx_fullquant.h"
-#include "../../../common/op_kernel/arch35/flash_attention_kernel_noquant_mla.h"
-#include "../../../common/op_kernel/arch35/fia_kernel_noquant_gqa.h"
-#include "../../../common/op_kernel/arch35/fia_kernel_fullquant_mx.h"
-#include "../../../common/op_kernel/arch35/fia_kernel_fullquant_gqa.h"
-#include "../../../common/op_kernel/arch35/fia_template_dispatcher.h"
 #else
-#include "../../common/arch35/flash_attention_score_kernel_infer.h"
-#include "../../common/arch35/flash_attention_score_kernel_infer_mla_fullquant.h"
-#include "../../common/arch35/flash_attention_score_kernel_infer_gqa_fullquant.h"
-#include "../../common/arch35/flash_attention_score_kernel_infer_mx_fullquant.h"
-#include "../../common/arch35/flash_attention_kernel_noquant_mla.h"
-#include "../../common/arch35/fia_kernel_noquant_gqa.h"
-#include "../../common/arch35/fia_kernel_fullquant_mx.h"
-#include "../../common/arch35/fia_kernel_fullquant_gqa.h"
+#error "FIA arch35 kernels must live under fused_infer_attention_score/op_kernel/eagle_common/op_kernel/arch35"
 #endif
 
 using namespace regbaseutil;
@@ -332,6 +314,28 @@ using namespace regbaseutil;
     } while (0)
 #endif
 
+// V512/D64 reuses the proven mode-17 tiling key. The value quant mode is
+// carried in tiling data so the vector core can instantiate the exact D64
+// implementation without adding another operator template key. The D64 flag
+// is unused on the cube core, which keeps the original cube path unchanged.
+#ifdef __DAV_C310_CUBE__
+#define INVOKE_GQA_FULLQUANT_V_QUANT_DISPATCH(templateClass, vec1ResultSize, qkvSize, ...) \
+    INVOKE_GQA_FULLQUANT_GENERAL_OP_IMPL_ASCEND950_FA_BASEAPI( \
+        templateClass, vec1ResultSize, qkvSize, __VA_ARGS__, false)
+#else
+#define INVOKE_GQA_FULLQUANT_V_QUANT_DISPATCH(templateClass, vec1ResultSize, qkvSize, ...) \
+    do { \
+        PFA_REGBASE_COPY_TILING_DATA(tiling); \
+        if (tilingData->inputParamsRegbase.rsv1 == 12) { \
+            INVOKE_GQA_FULLQUANT_GENERAL_OP_IMPL_ASCEND950_FA_BASEAPI( \
+                templateClass, vec1ResultSize, qkvSize, __VA_ARGS__, true); \
+        } else { \
+            INVOKE_GQA_FULLQUANT_GENERAL_OP_IMPL_ASCEND950_FA_BASEAPI( \
+                templateClass, vec1ResultSize, qkvSize, __VA_ARGS__, false); \
+        } \
+    } while (0)
+#endif
+
 // kv is empty tensor, return zero output
 #define INVOKE_PFA_ZERO_OP_IMPL_V2(T) \
     TPipe tPipe; \
@@ -352,7 +356,7 @@ constexpr uint32_t L1BUFSIZE = 65536; // D最大支持256, 65536: 128 * 256 * 2
 
 template <uint8_t inOutLayoutType, uint16_t config, uint8_t pseMode, uint8_t quantMode, bool hasAttenMask, bool hasRope,
     uint8_t KvLayoutType, bool isFd, bool emptyTensor, bool enableKVPrefix, bool enableS1OutSplit,
-    bool isReconstructTemp>
+    bool isReconstructTemp, bool c8v16>
 inline __aicore__ void prompt_flash_attention_FIAS_regbase(__gm__ uint8_t *query, __gm__ uint8_t *key,
     __gm__ uint8_t *value, __gm__ uint8_t *pseShift, __gm__ uint8_t *attenMask, __gm__ uint8_t *actualSeqLengths,
     __gm__ uint8_t *actualSeqLengthsKV, __gm__ uint8_t *deq_scale1, __gm__ uint8_t *quant_scale1,
@@ -741,11 +745,10 @@ inline __aicore__ void prompt_flash_attention_FIAS_regbase(__gm__ uint8_t *query
                         static_cast<uint64_t>(dTemplateType),
                     static_cast<uint64_t>(s2TemplateType) * static_cast<uint64_t>(dTemplateType)) *
                 2;
-            INVOKE_GQA_FULLQUANT_GENERAL_OP_IMPL_ASCEND950_FA_BASEAPI(
-                BaseApi::FlashAttentionScoreKernelInferGqaFullquant, vec1ResultSize, qkvSizeRsv2, fp8_e4m3fn_t, float,
-                half, ImplModeEnum::AA_HIGH_PRECISION, inputLayoutType, s1TemplateType, s2TemplateType, dTemplateType,
-                dVTemplateType, static_cast<PseTypeEnum>(pseMode), hasAttenMask, false, hasRope, true, isPa, isFd,
-                enableKVPrefix, enableS1OutSplit);
+            INVOKE_GQA_FULLQUANT_V_QUANT_DISPATCH(BaseApi::FlashAttentionScoreKernelInferGqaFullquant, vec1ResultSize,
+                qkvSizeRsv2, fp8_e4m3fn_t, float, half, ImplModeEnum::AA_HIGH_PRECISION, inputLayoutType,
+                s1TemplateType, s2TemplateType, dTemplateType, dVTemplateType, static_cast<PseTypeEnum>(pseMode),
+                hasAttenMask, false, hasRope, true, isPa, isFd, enableKVPrefix, enableS1OutSplit, false, c8v16);
         }
     }
 #endif
@@ -840,11 +843,10 @@ inline __aicore__ void prompt_flash_attention_FIAS_regbase(__gm__ uint8_t *query
                         static_cast<uint64_t>(dTemplateType),
                     static_cast<uint64_t>(s2TemplateType) * static_cast<uint64_t>(dTemplateType)) *
                 2;
-            INVOKE_GQA_FULLQUANT_GENERAL_OP_IMPL_ASCEND950_FA_BASEAPI(
-                BaseApi::FlashAttentionScoreKernelInferGqaFullquant, vec1ResultSize, qkvSizeRsv2, fp8_e4m3fn_t, float,
-                bfloat16_t, ImplModeEnum::AA_HIGH_PRECISION, inputLayoutType, s1TemplateType, s2TemplateType,
-                dTemplateType, dVTemplateType, static_cast<PseTypeEnum>(pseMode), hasAttenMask, false, hasRope, true,
-                isPa, isFd, enableKVPrefix);
+            INVOKE_GQA_FULLQUANT_V_QUANT_DISPATCH(BaseApi::FlashAttentionScoreKernelInferGqaFullquant, vec1ResultSize,
+                qkvSizeRsv2, fp8_e4m3fn_t, float, bfloat16_t, ImplModeEnum::AA_HIGH_PRECISION, inputLayoutType,
+                s1TemplateType, s2TemplateType, dTemplateType, dVTemplateType, static_cast<PseTypeEnum>(pseMode),
+                hasAttenMask, false, hasRope, true, isPa, isFd, enableKVPrefix, false, false, c8v16);
         }
     }
 #endif

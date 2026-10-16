@@ -15,7 +15,7 @@ import torch_npu
 
 from ...quantization.mode import QuantAlgorithm
 from .moe_context import get_moe_quant_algo
-from .moe_dataclass import MoEMlpComputeInput
+from .moe_dataclass import MoEMlpComputeInput, MoEStaticCombineMetadata
 
 torch_npu.npu.config.allow_internal_format = True
 
@@ -105,7 +105,10 @@ def w8a8_dynamic_apply_mlp(mlp_input: MoEMlpComputeInput) -> torch.Tensor:
     )[0]
 
 
-def w8a8_mxfp8_apply_mlp(mlp_input: MoEMlpComputeInput) -> torch.Tensor:
+def w8a8_mxfp8_apply_mlp(
+    mlp_input: MoEMlpComputeInput,
+    combine_metadata: MoEStaticCombineMetadata | None = None,
+) -> torch.Tensor:
     """W8A8 MXFP8 grouped expert MLP."""
     hidden_states = mlp_input.hidden_states
     weights = mlp_input.weights
@@ -129,7 +132,8 @@ def w8a8_mxfp8_apply_mlp(mlp_input: MoEMlpComputeInput) -> torch.Tensor:
         weight=[w13_weight],
         weight_scale=[w13_weight_scale],
         x_scale=per_token_scale,
-        group_list=group_list if group_list_type == 0 else group_list.cumsum(dim=0),
+        group_list=group_list,
+        group_list_type=group_list_type,
         dequant_mode=2,
         quant_mode=2,
         dequant_dtype=torch.float32,
@@ -140,7 +144,30 @@ def w8a8_mxfp8_apply_mlp(mlp_input: MoEMlpComputeInput) -> torch.Tensor:
         x_scale_dtype=torch_npu.float8_e8m0fnu,
     )
 
-    return torch_npu.npu_grouped_matmul(
+    if combine_metadata is not None:
+        expanded_row_idx = combine_metadata.expanded_row_idx
+        topk_weights = combine_metadata.topk_weights
+        top_k = topk_weights.shape[-1]
+        row_index = (expanded_row_idx // top_k).to(torch.int64)
+        logit = topk_weights.reshape(-1).index_select(0, expanded_row_idx).to(torch.float32)
+        output_bs = topk_weights.shape[0]
+
+        output = torch_npu.npu_grouped_matmul_finalize_routing(
+            swiglu_out,
+            w2_weight,
+            group_list,
+            scale=w2_weight_scale,
+            pertoken_scale=swiglu_out_scale,
+            logit=logit,
+            row_index=row_index,
+            output_bs=output_bs,
+            group_list_type=group_list_type,
+            scale_dtype=torch_npu.float8_e8m0fnu,
+            pertoken_scale_dtype=torch_npu.float8_e8m0fnu,
+        )
+        return output.to(mlp_output_dtype).view(combine_metadata.restore_shape)
+
+    output = torch_npu.npu_grouped_matmul(
         x=[swiglu_out],
         weight=[w2_weight],
         scale=[w2_weight_scale],
@@ -155,14 +182,18 @@ def w8a8_mxfp8_apply_mlp(mlp_input: MoEMlpComputeInput) -> torch.Tensor:
         x_dtype=None,
         weight_dtype=None,
     )[0]
+    return output
 
 
-def unified_apply_mlp(mlp_input: MoEMlpComputeInput) -> torch.Tensor:
+def unified_apply_mlp(
+    mlp_input: MoEMlpComputeInput,
+    combine_metadata: MoEStaticCombineMetadata | None = None,
+) -> torch.Tensor:
     quant_algo = get_moe_quant_algo()
     if quant_algo == QuantAlgorithm.NO_QUANT:
         return unquant_apply_mlp(mlp_input)
     if quant_algo == QuantAlgorithm.W8A8_DYNAMIC:
         return w8a8_dynamic_apply_mlp(mlp_input)
     if quant_algo == QuantAlgorithm.W8A8_MXFP8:
-        return w8a8_mxfp8_apply_mlp(mlp_input)
+        return w8a8_mxfp8_apply_mlp(mlp_input, combine_metadata)
     raise ValueError(f"Unsupported MoE quantization algorithm: {quant_algo}")

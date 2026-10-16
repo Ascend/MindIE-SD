@@ -37,7 +37,7 @@ def get_npu_device() -> NPUDevice:
                 PLATFORM = NPUDevice.Duo
             elif 220 <= soc_version <= 225:
                 PLATFORM = NPUDevice.A2
-            elif 250 <= soc_version <= 255:
+            elif 250 <= soc_version <= 256:
                 PLATFORM = NPUDevice.A3
             elif soc_version == 260:
                 PLATFORM = NPUDevice.A5

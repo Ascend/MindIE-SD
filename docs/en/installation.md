@@ -9,7 +9,7 @@ MindIE SD is a Python package built on PyTorch that can be easily integrated int
 * OS: Linux
 * Python: >=3.10
 * PyTorch: 2.6, 2.7, 2.8, 2.9, 2.10
-* torch-npu: 2.6, 2.7, 2.8, 2.9, 2.10
+* TorchNPU: 2.6, 2.7, 2.8, 2.9, 2.10
 * CANN: 9.0.0
 * triton: 3.5.0
 * triton-ascend: 3.2.1
@@ -28,7 +28,7 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 
 #### Notes
 
-1. MindIE SD primarily depends on the torch-npu version and will try to meet the CANN and Python version requirements mandated by torch-npu.
+1. MindIE SD primarily depends on the TorchNPU version and will try to meet the CANN and Python version requirements mandated by TorchNPU.
 2. After CANN installation, the installation path provides a process-level environment variable setup script `set_env.sh` to automatically configure environment variables. This script includes LD_LIBRARY_PATH and ASCEND_CUSTOM_OPP_PATH as shown in [Table 1 Environment Variables](#table_environment0001). These settings automatically expire when the user process ends.
 
 **Table 1** Environment Variables<a id="table_environment0001"></a>
@@ -77,13 +77,51 @@ Follow these steps to install MindIE SD from source:
 >
 > Dependencies are split by purpose in the repository; install the ones you need:
 >
-> - `requirements.txt`: core runtime dependencies (minimal install; only torch/torch_npu pinned, others loose).
-> - `examples/dummy_run/requirements.txt`: dependencies for the `dummy_run` model inference example (diffusers/transformers/etc.).
-> - `examples/service/requirements.txt`: serving-example dependencies (ray, fastapi, uvicorn, pydantic, Pillow).
-> - Testing, linting, and docs-build dependencies are in `requirements-test.txt`, `requirements-lint.txt`, and `docs/requirements-docs.txt` respectively (see the developer guide).
+> * `requirements.txt`: core runtime dependencies (minimal install; only torch/TorchNPU pinned, others loose).
+> * `examples/dummy_run/requirements.txt`: dependencies for the `dummy_run` model inference example (diffusers/transformers/etc.).
+> * `examples/service/requirements.txt`: serving-example dependencies (ray, fastapi, uvicorn, pydantic, Pillow).
+> * Testing, linting, and docs-build dependencies are in `requirements-test.txt`, `requirements-lint.txt`, and `docs/requirements-docs.txt` respectively (see the developer guide).
 
 ### Nightly Build Installation
 
 Nightly builds are available for testing the latest features:
 
 Coming soon...
+
+## Image Installation (vLLM-Omni)
+
+The Docker image combines **vLLM-Omni + MindIE SD**. MindIE-SD 3.1.0 provides three product variants:
+
+| Supported Product | Image Tag | Base Image |
+| --- | --- | --- |
+| Atlas 800I A2 inference server | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0` |
+| Atlas 800I A3 SuperPoD Server | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0-a3` |
+| 950PR&950DT products | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0-a5` |
+
+Pull a published `mindiesd` image from the [MindIE image repository](https://www.hiascend.com/developer/ascendhub/detail/7c3b1b7c5151469a98ac08b868dab45f), or build locally from the `dev` branch. The current base images provide `linux/amd64` only.
+
+<!-- npu="910b" id1 -->
+```bash
+git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
+git checkout dev && cd docker/omni
+docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12 -f Dockerfile.a2.ubuntu .
+```
+<!-- end id1 -->
+
+<!-- npu="A3" id2 -->
+```bash
+git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
+git checkout dev && cd docker/omni
+docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12 -f Dockerfile.a3.ubuntu .
+```
+<!-- end id2 -->
+
+<!-- npu="950" id3 -->
+```bash
+git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
+git checkout dev && cd docker/omni
+docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12 -f Dockerfile.a5.ubuntu .
+```
+<!-- end id3 -->
+
+See the [vLLM-Omni image overview](../../docker/omni/OVERVIEW.md) for runtime options and hardware requirements. The full image Tag list is in [Supported Tags](../../docker/supported_tags.md).

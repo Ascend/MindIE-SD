@@ -12,6 +12,7 @@
 
 import warnings
 from .attention_forward import attention_forward
+from .quant_flash_attn import quant_attention
 from .attention_forward_varlen import attention_forward_varlen
 from .sparse_flash_attn import sparse_attention
 from ..triton_utils import _HAS_TRITON, _extension_module
@@ -31,6 +32,7 @@ else:
 
 __all__ = [
     "attention_forward",
+    "quant_attention",
     "attention_forward_varlen",
     "sparse_attention",
     "SparseLinearAttention",

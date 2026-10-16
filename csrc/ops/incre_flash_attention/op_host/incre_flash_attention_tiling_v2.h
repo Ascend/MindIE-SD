@@ -24,7 +24,7 @@
 #include "op_host/data_copy_transpose_tiling.h"
 #include "exe_graph/runtime/tiling_context.h"
 #include "register/op_def_registry.h"
-#include "../../common/op_kernel/arch35/flash_attention_score_tiling_regbase.h"
+#include "../../fused_infer_attention_score/op_kernel/eagle_common/op_kernel/arch35/flash_attention_score_tiling_regbase.h"
 #include "../op_kernel/arch35/incre_flash_attention_tiling_regbase.h"
 #include "../../prompt_flash_attention/op_kernel/arch35/prompt_flash_attention_template_tiling_key_enum.h"
 #include "../../common/op_host/fia_tiling_base.h"

@@ -45,11 +45,33 @@ class QuantAlgorithm(StrEnum):
     FP8_DYNAMIC = "FP8_DYNAMIC"
     MXFP8_DYNAMIC = "MXFP8_DYNAMIC"
     MXFP4_DYNAMIC = "MXFP4_DYNAMIC"
+    MXFP4_FOUROVERSIX_DYNAMIC = "MXFP4_FOUROVERSIX_DYNAMIC"
     NO_QUANT = "NO_QUANT"
     W4A4_MXFP4_SVD = "W4A4_MXFP4_SVD"
     W4A4_MXFP4_DUALSCALE = "W4A4_MXFP4_DUALSCALE"
+    W4A4_MXFP4_FOUROVERSIX_DYNAMIC = "W4A4_MXFP4_FOUROVERSIX"
     W4A8 = "W4A8"
     W16A16 = "W16A16"
+
+
+class FP8FAMode(StrEnum):
+    HIGH_PRECISION = "HIGH_PRECISION"
+    C8V16_TILING512 = "C8V16_TILING512"
+
+
+def normalize_fp8_fa_mode(mode):
+    if mode is None:
+        return None
+    if isinstance(mode, FP8FAMode):
+        return mode
+    if isinstance(mode, str):
+        try:
+            return FP8FAMode(mode.upper())
+        except ValueError as exc:
+            raise ParametersInvalid(
+                f"fp8_fa_mode must be one of {[item.value for item in FP8FAMode]}, but got {mode}."
+            ) from exc
+    raise ParametersInvalid(f"fp8_fa_mode must be FP8FAMode or str, but currently got {type(mode)}.")
 
 
 W8A8_LIST = [
@@ -69,6 +91,7 @@ W4A4_LIST = [
     QuantAlgorithm.W4A4_MXFP4_DUALSCALE,
     QuantAlgorithm.W4A4_DYNAMIC,
     QuantAlgorithm.W4A4_MXFP4_DYNAMIC,
+    QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC,
 ]
 
 
@@ -188,10 +211,12 @@ class QuantMode:
             QuantAlgorithm.FP8_DYNAMIC: QuantMode.from_descriptor(QuantModeDescriptor(use_fa_quant=True)),
             QuantAlgorithm.MXFP8_DYNAMIC: QuantMode.from_descriptor(QuantModeDescriptor(use_fa_quant=True)),
             QuantAlgorithm.MXFP4_DYNAMIC: QuantMode.from_descriptor(QuantModeDescriptor(use_fa_quant=True)),
+            QuantAlgorithm.MXFP4_FOUROVERSIX_DYNAMIC: QuantMode.from_descriptor(QuantModeDescriptor(use_fa_quant=True)),
             QuantAlgorithm.W8A8_MXFP8: QuantMode.use_smooth_quant(per_token=False, per_channel=False),
             QuantAlgorithm.W4A4_MXFP4_SVD: QuantMode.use_smooth_quant(per_token=False, per_channel=False),
             QuantAlgorithm.W4A4_MXFP4_DUALSCALE: QuantMode.use_smooth_quant(per_token=False, per_channel=False),
             QuantAlgorithm.W4A4_MXFP4_DYNAMIC: QuantMode.use_smooth_quant(per_token=True, per_channel=True),
+            QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC: QuantMode.use_smooth_quant(per_token=True, per_channel=True),
         }
         return quant_modes.get(quant_algo, QuantMode(0))
 

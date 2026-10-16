@@ -1,0 +1,60 @@
+{
+  "skill_name": "fusion-scope-analyze",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Attention 段里 norm 和 rope 那几个算子，能不能融成一个 kernel？边界怎么画？",
+      "expected_output": "先按规则 1 取函数边界作候选组（norm/rope 常在同一函数内定义），再按规则 3 以 norm/rope/FA 为分界确认区域为全 Vec ⇒ 优先试融；同时按规则 2 把 FA（含 BSA 等变种）作为硬锚点，单元不得吸收也不得跨越它。给出区域坐标与建议单元构成，再走收益侧判型给结论。",
+      "files": [],
+      "expectations": [
+        "说明候选来源是模型代码中的函数边界（规则 1）",
+        "把 FA 及其变种当硬锚点：不吸收、不跨越（规则 2）",
+        "确认区域内全为 Vec 算子后优先试融（规则 3），并转入收益侧判型"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "MLP 的 MatMul 后面跟着 swiglu 和反量化，这些能一起融进一个 kernel 吗？融到哪停？",
+      "expected_output": "按 MLP/MoE 分区规则以 MatMul 为界，Cube 算子作单元首算子向后包裹 Vec；终止条件二选一：Σvec 耗时 ≥ Cube 耗时，或遇到下一个 Cube 算子。事前用执行序各算子 Duration 求和判定，事后用 *_mac_ratio vs *_vec_ratio 复核。给出封口位置与结论。",
+      "files": [],
+      "expectations": [
+        "以 MatMul（Cube）作为单元首算子并向包裹 Vec",
+        "给出两条终止条件（Σvec ≥ Cube / 遇下一个 Cube）并说明用哪个算子结束单元",
+        "说明事前用执行序 Duration 求和、事后用 mac/vec ratio 复核的口径"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "profile 里某个 FA 类算子占了 DiT 三成耗时，是不是把它融合一下就能大幅加速？",
+      "expected_output": "先按规则 2 判 FA 禁融（含变种），再对它做判型：若 *_vec_ratio 高而 *_mte2_ratio ≈ 0（memory_bound < 1）则判向量饱和 ⇒ 融合类改动（喂更少数据/融更多）不会移动它，直接否决并给出否决理由；改写向量侧工作才是唯一方向。",
+      "files": [],
+      "expectations": [
+        "判 FA 属禁融锚点，不能作为被吸收或跨越对象",
+        "用 memory_bound / vec 与 mte2 ratio 判型，得出向量饱和 ⇒ 不值得融",
+        "给出明确的否决理由，而不是含糊的“收益有限”"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "MoE 部分的融合范围怎么切？MatMul 后面跟着 swiglu 和反量化，这些能融到哪停？",
+      "expected_output": "以矩阵乘族（MatMul / BatchMatMul / GroupedMatmul）为界分区，Cube 作单元首算子向后包裹 Vec（规则 4）；终止条件二选一：Σvec 耗时 ≥ Cube 耗时，或遇到下一个 Cube 算子。若该段计算已由单个融合算子承载，按规则 6 先确认载体是否已生效、避免重复建单元。",
+      "files": [],
+      "expectations": [
+        "以 MatMul / BatchMatMul / GroupedMatmul 为界分区且 Cube 作首算子向后包裹 Vec",
+        "给出两条终止条件（Σvec ≥ Cube / 遇下一个 Cube）并说明单元在哪封口",
+        "该段已由单个融合算子承载时，按规则 6 先确认载体是否生效，不重复建单元"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "这次采集回来的产物里 memory_bound 和 vec/mte 的 ratio 列全是 N/A，你还能判这些链值不值得融吗？",
+      "expected_output": "不能判：判型依赖计算单元利用率，缺列或全 N/A 时按 fail-closed 处理——先用 profiling-collect 的完成检查门禁（scripts/check_output.py）判该次采集不合格并给出重采命令（--task-time=l1 --aic-mode=task-based --aic-metrics=PipeUtilization）；不得把 N/A 当 0，也不得凭执行序臆测判型。补采通过后再走判型与收益前置评估。",
+      "files": [],
+      "expectations": [
+        "在判型列缺失或全 N/A 时明确拒绝给出收益结论",
+        "指出用 profiling-collect 的完成检查门禁（check_output.py）判采集不合格并给重采命令",
+        "说明「把 N/A 当 0 / 凭执行序臆测」属静默失败"
+      ]
+    }
+  ]
+}

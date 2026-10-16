@@ -10,14 +10,23 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+import re
+
 import torch
+
 from ..passes.register_pattern_to_pass import PatternBase
 
 if hasattr(torch.npu, "is_available"):
     npu_available = torch.npu.is_available()
 if npu_available:
     import torch_npu
+
     import mindiesd
+
+_torch_version_tuple = tuple(int(x) for x in re.match(r"(\d+)\.(\d+)", torch.__version__).groups())
+# torch_npu >= 2.9 移除 Tensor.to 的 NPU 过适配(MR 30358)后,
+# rms_norm 分解中的 dtype cast 由 npu._npu_dtype_cast 变为 aten._to_copy。
+IS_TORCH_GE_29 = _torch_version_tuple >= (2, 9)
 
 
 def create(dtype, epsilon=1e-6):
@@ -25,7 +34,10 @@ def create(dtype, epsilon=1e-6):
         _dtype_cast_func = torch.ops.npu.npu_dtype_cast.default
         _eps_in_bf16 = torch.tensor(epsilon, dtype=torch.bfloat16, device="cpu").item()
     else:
-        _dtype_cast_func = torch.ops.npu._npu_dtype_cast.default
+        if IS_TORCH_GE_29:
+            _dtype_cast_func = lambda x, dtype: torch.ops.aten._to_copy.default(x, dtype=dtype)
+        else:
+            _dtype_cast_func = torch.ops.npu._npu_dtype_cast.default
         _eps_in_fp32 = torch.tensor(epsilon, dtype=torch.float32, device="cpu").item()
 
 

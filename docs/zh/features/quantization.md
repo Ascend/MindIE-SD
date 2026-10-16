@@ -21,7 +21,7 @@ MindIE SD 提供两类量化能力，分别作用于模型的不同部分：
 
 下图展示了 INT8 量化示例，将 FP32 映射到 INT8。其中 `[-max(xf), max(xf)]` 是量化前浮点范围，`[-128, 127]` 是量化后范围。
 
-![](../../figures/int8_image.png)
+![INT8 量化示意图](../../figures/int8_image.png)
 
 ### 技术特点
 
@@ -51,6 +51,7 @@ MindIE SD 提供两类量化能力，分别作用于模型的不同部分：
 | W4A4_MXFP4_SVD | 逐层 | MXFP4 格式量化 |
 | W4A4_MXFP4_DUALSCALE | 逐层 | MXFP4 双尺度量化 |
 | W4A4_MXFP4_DYNAMIC | 逐 token + 逐通道 | MXFP4 动态量化 |
+| W4A4_MXFP4_FOUROVERSIX_DYNAMIC | 逐 token + 逐通道 | MXFP4 量化，激活走 `quant_four_over_six_a5`（4/6 自适应） |
 
 ### 接口和使用
 
@@ -129,6 +130,15 @@ for i, timestep in enumerate(timesteps):
 
 模型侧需要在每个 denoise step 前设置 `TimestepManager.set_timestep_idx(i)`。这和 Wan2.2 `wan/text2video.py` 中按 step 遍历 `timesteps` 的使用方式一致，但本仓的策略语义不同：这里的 Linear 是 `W4A4` 与 `W4A8` 切换，不是原有动静态量化切换。Linear/MM 回退只切换激活值量化精度，权重仍保持 MXFP4。
 
+#### 4/6 自适应激活量化（fouroversix）
+
+`W4A4_MXFP4_FOUROVERSIX_DYNAMIC` 复用 `W4A4_MXFP4_DYNAMIC` 的权重通路，将激活量化替换为自定义算子 `quant_four_over_six_a5`：每个 32 元素块在 D4/D6 两组 E8M0 缩放之间按量化误差自适应选择。时间步 `W4A8` 回退与 `W4A4_MXFP4_DYNAMIC` 一致。
+
+- 权重量化产物与 `W4A4_MXFP4_DYNAMIC` 完全一致，可直接复用其离线权重；描述符 `model_quant_type` 写 `W4A4_MXFP4_FOUROVERSIX` 时，按命名规则权重文件为 `quant_model_weight_w4a4_mxfp4_fouroversix_{rank}.safetensors`。
+- 算子要求 bf16 输入且激活尾轴（`in_features`）32 对齐，仅 Atlas A5 支持；不满足对齐要求时层构造期即报错。
+- `mxfp4_scale_alg` / `mxfp4_dst_type_max` 仅作用于权重量化；激活固定为 4/6 自适应组合。
+- 在线量化路径同样支持：`OnlineQuantConfig(quant_type=W4A4_MXFP4_FOUROVERSIX_DYNAMIC)`。
+
 #### 量化权重文件命名
 
 量化权重和描述符文件由 msmodelslim 工具导出，命名规则如下：
@@ -138,29 +148,57 @@ for i, timestep in enumerate(timesteps):
 
 单卡量化时 `rank` 为 0，多卡并行时各 rank 分别对应其编号。
 
+#### 量化描述文件校验
+
+`quantize` 在构造量化配置和打开权重文件前，对描述文件进行整体校验。当前支持 MindIE SD 的扁平 JSON 格式：
+
+```json
+{
+  "model_quant_type": "W8A8",
+  "blocks.0.proj.weight": "W8A8",
+  "blocks.0.proj.bias": "FLOAT"
+}
+```
+
+- 文件必须为 UTF-8 编码的标准 JSON 对象，不能包含重复字段、未转义的控制字符或 `NaN`、`Infinity` 等非标准常量。
+- `model_quant_type` 必填，值必须为字符串，且精确匹配 `QuantAlgorithm` 的枚举值，例如 `W8A8` 或 `W4A4_MXFP4`。该字段是文件级元数据，不作为层配置。
+- 支持可选的 AscendV1 导出元数据：`version`、`kv_cache_type`、`kv_quant_type`、`fa_quant_type`、`reduce_quant_type` 必须为字符串；`group_size` 必须为非负整数，不能为布尔值；`metadata`、`optional` 必须为 JSON 对象。MindIE-SD 不消费的字符串字段不限制为当前导出器枚举值，以保持对新版本导出器的前向兼容。这些字段经校验后排除在层配置之外，不会启用分组、KV-cache、通信或旋转特性。`metadata`、`optional` 内部对象属于导出器扩展信息，不被解释，也不会用于打开额外文件。
+- 其余字段为动态层名或张量名，名称不能全为空白或包含 ASCII 控制字符；值必须为字符串，取值为 `QuantAlgorithm` 的枚举值（忽略大小写）或精确的 `FLOAT`。
+- 不符合上述格式的字段会被拒绝，不再被静默忽略。动态名称不是固定白名单：陌生名称只要对应合法算法值，仍作为层条目处理。包括元数据对象在内的所有 JSON 数值必须为有限值。
+- 校验失败抛出 `ParametersInvalid`，消息指明问题字段或 JSON 的行列位置；不会继续打开权重文件。
+
+此校验检查描述文件的结构、类型与取值，不验证动态名称是否对应真实模型层，也不验证权重张量的形状、数值或量化精度。原有路径、软链接、文件大小和权限检查仍然生效。
+
 ## FA量化
 
-### 通用原理
+### FA 通用原理
 
 FA（Flash Attention）量化针对注意力计算中的 Q/K/V 激活值进行低比特处理。将 Q/K/V 量化为 FP8 后再送入注意力计算内核，可显著降低显存带宽需求，提升推理吞吐。与权重量化不同，FA 量化处理的是推理过程中动态产生的激活值，需要块级别的动态量化策略来平衡精度和加速效果。
 
-### 技术特点
+### FA 技术特点
 
-本仓库通过 `FP8_DYNAMIC` 和 `MXFP4_DYNAMIC` 算法提供 FA 量化能力。`FP8_DYNAMIC` 使用 FP8 块量化；`MXFP4_DYNAMIC` 复用自定义 `quant_flash_attn` AICore 算子，并支持按时间步在 `MXFP4`、`FP8`、`FLOAT` 间切换。
+本仓库通过 `FP8_DYNAMIC` 和 `MXFP4_DYNAMIC` 算法提供 FA 量化能力。`FP8_DYNAMIC` 使用 FP8 块量化；`MXFP4_DYNAMIC` 复用自定义 `quant_flash_attn` AI Core 算子，并支持按时间步在 `MXFP4`、`FP8`、`FLOAT` 间切换。`MXFP4_FOUROVERSIX_DYNAMIC` 在 MXFP4 FA 的基础上，将 Q/K 的激活量化替换为 `quant_four_over_six_a5`（4/6 自适应）；该算子仅支持尾轴，而 `quant_flash_attn` 要求 V 沿序列轴分块量化，因此 V 仍走 `npu_dynamic_mx_quant`。
 
-**旋转（Rotate）**
+#### 旋转（Rotate）
 
-对 Q 和 K 施加预训练的旋转矩阵（`q_rot`、`k_rot`），将异常值分散到各维度，缓解 FP8 量化对异常值的敏感性。
+若量化权重中存在预训练旋转矩阵（`q_rot`、`k_rot`），则对 Q 和 K 施加旋转，将异常值分散到各维度，缓解 FP8 量化对异常值的敏感性。权重中没有这两项时跳过旋转，模块初始化不会失败。
 
-**块量化（Block Quant）**
+#### 块量化（Block Quant）
 
-将旋转后的 Q/K/V 按块动态量化为 FP8（`float8_e4m3fn`）。Q 的量化块大小为 128，K/V 的量化块大小为 256，通过 `npu_dynamic_block_quant` 算子完成。
+将 Q/K/V 按块动态量化为 FP8（`float8_e4m3fn`），通过 `npu_dynamic_block_quant` 完成。Q 的 token 块为 128，K 的 token 块为 256；V 的 token 块由下面的 `FP8FAMode` 决定。
 
-**FP8 Attention**
+#### FP8 Attention
 
-通过 MindIE-SD 自带的 `torch.ops.mindiesd.fused_infer_attention_score_v2`
+通过 MindIE SD 自带的 `torch.ops.mindiesd.fused_infer_attention_score_v2`
 算子进入本仓迁移的 `FusedInferAttentionScore` 实现，在 FP8 域内完成注意力计算，
-输出结果反量化为原始精度。
+输出结果反量化为原始精度。`FP8RotateQuantFA` 用枚举 `FP8FAMode` 一次选定量化块、`value_quant_mode` 和 `inner_precise`，避免这三项各自开关、彼此对不齐。
+
+| 模式 | Q/K/V quant mode | `inner_precise` | V 量化块 |
+| ------ | ------ | ------ | ------ |
+| `HIGH_PRECISION`（默认） | `7/7/7` | 不显式传入（原高精度路径） | 256×128 |
+| `C8V16_TILING512` | `7/7/12` | `4`（C8V16） | 512×64 |
+
+后续新特性以新的枚举成员扩展，不要再拆成互不绑定的量化开关。
 
 ### 接口说明
 
@@ -170,7 +208,7 @@ FA 量化通过 `quantize` 接口统一触发，无需单独调用 FA 量化接�
 from mindiesd import quantize
 ```
 
-#### 使用示例
+#### FA 使用示例
 
 ```python
 from mindiesd import quantize
@@ -185,9 +223,19 @@ model = quantize(model, "导出的量化配置文件路径")
 model.to("npu")
 ```
 
-`quantize` 内部遍历模型各层，对匹配的 Attention 层自动调用 `add_fa_quant`，注入 `FP8RotateQuantFA` 模块，替换前向计算为旋转→块量化→FP8 Attention 的流程。
+`quantize` 内部遍历模型各层，对匹配的 Attention 层自动调用 `add_fa_quant`，注入 `FP8RotateQuantFA` 模块，替换前向计算为旋转→块量化→FP8 Attention 的流程。默认使用 `FP8FAMode.HIGH_PRECISION`。切换到 C8V16 且 V 按 512 token 分块时：
 
-FA 量化层通过 `FP8RotateQuantFA` 模块实现，见本节的旋转→块量化→FP8 Attention 流程说明。
+```python
+from mindiesd import FP8FAMode, QuantConfig, quantize
+
+model = quantize(
+    model,
+    "导出的量化配置文件路径",
+    quant_config=QuantConfig(fp8_fa_mode=FP8FAMode.C8V16_TILING512),
+)
+```
+
+FA 量化层通过 `FP8RotateQuantFA` 模块实现，见本节的旋转→块量化→FP8 Attention 流程说明。`C8V16_TILING512` 依赖 FIA 的 C8V16 + V512 路径（`inner_precise=4`、`value_quant_mode=12`）。
 
 MXFP4 FA 使用示例：
 
@@ -217,6 +265,7 @@ FA 没有离线权重约束，因此可以在不同时间步选择任意算法�
 
 #### 注意事项
 
-- 硬件要求：仅 Atlas 800I A2 推理服务器支持此特性。
+- 硬件要求：仅 Atlas 800I A2推理服务器支持此特性。
 - Q/K/V 输入布局支持 `BNSD` 和 `BSND`。
-- FA 量化权重（`q_rot`、`k_rot`）需通过大模型压缩工具 msmodelslim 预先导出，详情请参见 msmodelslim 工具说明。
+- K/V 头数可以少于 Q（GQA, Grouped Query Attention, 分组查询注意力）。`FP8RotateQuantFA` 按 K 的头数向 FIA 传入 `num_key_value_heads`。
+- 旋转矩阵（`q_rot`、`k_rot`）可选。若使用，需通过大模型压缩工具 msmodelslim 预先导出，详情请参见 msmodelslim 工具说明；权重中没有这两项时，`FP8RotateQuantFA` 跳过旋转。

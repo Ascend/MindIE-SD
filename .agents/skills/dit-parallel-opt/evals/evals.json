@@ -1,0 +1,186 @@
+{
+  "skill_name": "dit-parallel-opt",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "多卡推理时 profiling 显示通信暴露 30%，怎么优化？",
+      "expected_output": "路由到 dit-parallel-opt：通信掩盖（comm-stream masking，mindiesd.parallel 专用流 + monkey-patch funcol.all_to_all_single/all_gather_tensor），参考实测收益（Communication -95%）",
+      "files": [],
+      "expectations": [
+        "提到 comm-stream masking 方案（独立 HCCL 流与计算重叠）",
+        "提到 monkey-patch 入口（funcol.all_to_all_single / all_gather_tensor）",
+        "给出实测收益参考（按 §7 数字纪律只作量级参照：未掩盖通信降至约二十分之一量级；绝对读数见归档，不进结论句）"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "配了 Ulysses 并行但 profiling 里只有 allGather 没有 allToAll，FA 切头没生效？",
+      "expected_output": "按 USP 触发条件：必须给每个 attn.processor._parallel_config 设 ParallelConfig(context_parallel_config=cp_cfg)（ParallelConfig 包装而非 ContextParallelConfig），否则走非 CP 路径",
+      "files": [],
+      "expectations": [
+        "定位为 _parallel_config 未正确设置",
+        "提到 ParallelConfig 包装（不是 ContextParallelConfig）",
+        "提到设置后才会触发 all_to_all FA 切头路径"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "多卡跑的时候 HcclAlltoAllV 直接 SIGSEGV 崩了，怎么办？",
+      "expected_output": "按 AlltoAllV 缺陷绕过：等分 HcclAlltoAll 正常、split 路径 SIGSEGV → 用 pad + 等分方案（pad 到 S_PAD 128 倍数，等分交换后 slice），并说明该缺陷与版本相关、用前须按复核方法确认是否仍存在",
+      "files": [],
+      "expectations": [
+        "说明 HcclAlltoAllV split 路径缺陷（与版本相关，须复核是否仍存在）",
+        "给出 pad + 等分绕过方案",
+        "提到 kernel 名从 hcom_alltoallv 变为 hcom_alltoall"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "换到跨域卡组（npu-smi topo 显示跨 PCIe/NUMA）后，USP4 bulk 比同域组时慢了一档，要不要切 head-parallel？",
+      "expected_output": "先读 ascend-topology-bandwidth-diag.md：拓扑相关选型——同域单组 bulk 最优、跨域组 head-parallel 更优（本组合观测，读数见归档）；用墙钟/clean-window 判据而非 kernel-sum；同窗口同域卡组补跑 2 次再定",
+      "files": [],
+      "expectations": [
+        "提到选型依赖拓扑（同域组 bulk vs 跨域组 head-parallel 翻转）",
+        "用 clean-window 墙钟判据且同窗口同卡组复现",
+        "不直接照搬历史回退结论"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "容器里跑 4 卡 torchrun 微基准测 alltoall 带宽，一直报 port already been bound，但真实推理能跑；另外想验证同域组与跨域组的带宽差",
+      "expected_output": "按 ascend-topology-bandwidth-diag.md §3：先给 init 前补 torch_npu.npu.set_device(local_rank)（缺它各 rank 绑同端口）；再用 all_to_all_single/all_reduce/all_gather_into_tensor 多尺寸测；2 卡直连可量化 UB（同域）vs SYS（跨域）的带宽差（**具体数值须本地实测**，读数口径与快照见归档）；若官方 hccl_test 宿主报 HcclGetRootInfo 失败则用此等价工具并说明",
+      "files": [],
+      "expectations": [
+        "定位为缺 set_device（不是端口泄漏）并给出修复姿势",
+        "给出多尺寸带宽测试与同域/跨域对比方法",
+        "提及 hccl_test 宿主不兼容时用等价工具",
+        "涉及卡组可用性时指出：npu-smi Health=OK 不足够，需真实多卡 run 核对每步时长（SIGKILL 损伤残留态表现为每步时长整组均匀抬高约一个量级）"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "我想用 4 步的少步档跑两三种并行配置来选型，这样便宜；4 步下选出来的最快形态，能直接当成 50 步的结论用吗？",
+      "expected_output": "加载 few-step-multirank-protocol.md：先立 DiT-only 口径（并行对比只取 DiT 去噪阶段，VAE 解码/文本编码/装载/warmup 排除，因为少步档固定开销占比畸高且波动大于并行差异）；再做矩阵（必须含同卡数不同切分的一对 + 少步档与较高步锚点两档）；判据用 r = DiT单步(锚点)÷DiT单步(少步)：|r−1|≤5% 且各格离散度≤3% 且两档排序一致才可外推；排序翻转一律以锚点档为准；离散度>3% 的格不可用于判据",
+      "files": [],
+      "expectations": [
+        "确立 DiT-only 口径并说明为何排除 VAE 解码等固定开销",
+        "矩阵含同卡数、不同切分的一对，且每配置跑少步档 + 较高步锚点两档",
+        "给出外推判据（单步耗时比值 r 与阈值）与「排序翻转必须以锚点档为准」",
+        "要求 ≥3 次重复取中位并对每格报离散度，离散度 >3% 的格标为不可用于判据"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "同容器里还有别人在跑同一框架的另几个实验，我测并行对比；怎么取数才不会被噪声带偏？还有 DiT 单步和通信占比具体从日志哪里取？",
+      "expected_output": "按 few-step-multirank-protocol.md §1/§3/§6/§7：DiT 阶段墙钟取 profiler 阶段行（每 rank 一行取 min）；逐步只用进度条累计 MM:SS 差分（s/it 是 EMA 不可用于还原耗时）；请求分段按 API server 的采样参数行而不是 HTTP 访问日志行（响应可能不回客户端但 serve 侧数据完整）；绝不按进程名 pkill，只按自己 PID 树；同卡组同窗口 + ≥3 rep 取中位 + 冷热双窗；通信占比用 step_trace_time.csv 并精确匹配列名（Communication 是 Communication(Not Overlapped) 的子串）",
+      "files": [],
+      "expectations": [
+        "给出 DiT 阶段墙钟与逐步耗时的正确取数字段与陷阱（s/it 是 EMA）",
+        "请求分段用 serve 侧采样参数行，容忍响应失败",
+        "强调只按自己的 PID 树 kill、不按进程名 pkill",
+        "通信占比取 step_trace_time.csv 且精确匹配列名，并说明 profiler 捕获会膨胀该步墙钟"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "我把 a2a 按头切成 7 组做掩盖了，理论上应该隐藏 6/7 的通信，实测掩盖率只有 54%，是哪里写错了？",
+      "expected_output": "按 references/comm-masking-method.md：先算每层 C（只取被掩盖的 a2a 族）与 F（FA 核总耗时）→ c=C/n、f=F/n；1-1/n=85.7% 只在 f>=c 时可达；本组合 c/f≈1.3>1 ⇒ 上限退化为 1-(c+(n-1)(c-f)+drain)/C（约 3/4），实测已占其 ~7 成；结论是根因在 C>F，出路是压通信分子（通信前量化/减跨岛/合并 qkv 集合），加块数无效；同时核对达成率自检（>100% 说明 C 取错族或侧流 AI-core 核被计成通信）与侧流 AI-core 核数/产物 md5",
+      "files": [],
+      "expectations": [
+        "先算 c/f 而不是先怀疑实现，并说明 1-1/n 的成立前提是 f>=c",
+        "给出 f<c 时的真实上限公式（填充 + 稳态 (n-1)(c-f) + 排空）并说明其与 n 无关",
+        "指出出路是压通信分子（量化载荷/减跨岛/合并集合），不是加块数",
+        "给出生效自检：该族算子次数应上升约 n 倍、侧流 AI-core 核数应为 0、产物 md5 应逐字节一致"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "8 卡纯 Ulysses 和 4 卡 AG-KV×Ulysses 每步差五百多毫秒，这个差是通信造成的还是这个形态本身就更贵？怎么拆？",
+      "expected_output": "按 references/parallel-plan-attribution-method.md：同窗口同卡组逐列相减 step_trace_time.csv（Computing / Communication(Not Overlapped) / Overlapped / Free / Stage）并校验闭合；先看未重叠通信与 Free，再看 Computing（形态 plumbing 的固有成本，不会被掩盖）；再用 scripts/collective_attribution.py 按 (族, gid) 归属集合并用「次数≈层数×每层调用数×步数」对账，区分序列并行 a2a 与逐层 offload 的权重 all-gather；用 union/sum 判该族是传输时间还是等待伪影",
+      "files": [],
+      "expectations": [
+        "做阶段 Δ 分解并校验 ΔStage ≈ ΣΔ（含 Computing/未重叠通信/Free）",
+        "指出 Computing 增量是形态自带的 plumbing 成本、不可被掩盖，需单独计",
+        "用 communicator id 分组 + 次数对账把通信归到具体并行组（含 offload 的每层 all-gather）",
+        "用 union/sum 判通信是传输时间还是依赖等待，并说明 kernel 级总和是占用不是暴露"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "模型里 all-gather 的隐含带宽算出来只有隔离微基准的一半，是被别的通信争抢了吗？能修好吗？",
+      "expected_output": "按 references/parallel-plan-attribution-method.md §4/§5：先用 union/sum 判该族是否串行（≈1 说明是传输时间、不是等待伪影），再看跨族重叠矩阵；隔离微基准只有一个通信子、给的是上界，不能直接与模型内比，必须先在微基准里复现同样的并发通信子数量再归因；若仍差一倍则该机制属未解释项，必须显式标注、不得写成结论，也不得据此给出选型方向；同时用 per-stream 表排除侧流 AI-core 核被计成通信的假象",
+      "files": [],
+      "expectations": [
+        "用 union/sum 与跨族重叠判断是否为传输时间，而不是猜依赖等待",
+        "指出隔离微基准是单通信子的上界，归因前必须先对齐并发度",
+        "把尚未定位的差异写成未解释项，不用它推选型结论",
+        "检查 per-stream 表排除侧流 AI-core 核被计成通信"
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "复合形态把 Ulysses 的 a2a 全放进同一个 UB 岛，a2a 耗时只有纯 8 卡形态的 1/4，按理应该更快，为什么端到端反而慢 10%？到底该选哪个？",
+      "expected_output": "按 references/parallel-form-selection-method.md：先纠正直觉——a2a 变快不代表整体更快，它把 K/V 汇聚搬到跨岛链路，那一步的绝对耗时同量级甚至更大；要比「每 rank 每层总字节 × 各自链路带宽」而不是「哪个通信更快」。走七关：形态可用性（未跑通的不进矩阵）→ 显存/驻留（先无损 offload 解锁，顺序不能反）→ 通信量下限（跨岛/同岛两列 + GQA；无 GQA 时两形态跨岛字节几乎相同）→ 形态自带的计算 plumbing（本组合占步间差约 1/3，不会被掩盖）→ 掩盖上限 c/f（本组合复合形态兑现率 ~100%、纯形态 ~60%，但「谁更能被掩盖」≠「谁更快」）→ 同窗口 A/B + 4→8 卡线性度 → 投影与反超阈值。给出条件化结论：无 GQA + 汇聚带宽约为隔离值一半 ⇒ 纯形态胜；若带宽修好或模型带 GQA 则复合形态预计反超；两边同时做通信前量化会再次反转（计算项占比升高），所以投影必须把计算项一起算。",
+      "files": [],
+      "expectations": [
+        "指出 a2a 变快不等于整体更快，必须按每层字节 × 链路带宽（跨岛/同岛分列）比较",
+        "给出 GQA 是决定性变量：无 GQA 时两形态跨岛字节几乎相同、复合形态没有通信量优势",
+        "指出复合形态自带的计算 plumbing 是固有成本、不会被掩盖，并在投影时必须计入",
+        "用条件化结论表述（当 <gating 变量> 满足 <条件> 时谁胜）而不是给单一排名",
+        "把未定位的带宽损耗列为「抑制结论的未知量」，并给出判定方法与反超阈值"
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "我把 CP（--usp 4 --allgather-degree 2）和稀疏注意力一起开了，输出和不开稀疏时逐字节一样，说明稀疏在 CP 下是无损的？另外切多视频分段时报 Q window starts at 109568, outside the key sequence length 109088，怎么修？",
+      "expected_output": "按 references/cp-sparse-combination-method.md：与 lossless 逐字节相同不是「无损」，而是稀疏**未生效**的签名（staying dense 或该并行路径绕过注意力后端）⇒ 不得计入组合收益。修报错：稀疏窗口的全局偏移必须按「完整 KV 长度 − 本 rank 逻辑 Q 长度」算（无 joint/拼接张量时为 0），不是 k_len − q_len；要先判 joint 张量是否存在再定偏移。叠加顺序必须是「先汇聚 K/V、后稀疏」（否则是局部稀疏，数值与收益都不可比）；分片长度须是稀疏/量化块的整数倍（S % (并行度 × 块) == 0）；掩码是 per-head 的、不能跨 head 分片复用。若再叠加掩盖：复合形态需自己一套分块实现，且必须先发完所有 a2a 再发所有 AllGather（交错下发会 HCCL 失步）。",
+      "files": [],
+      "expectations": [
+        "把「与 lossless 逐字节相同」判为稀疏未生效（而非无损），不得登记组合收益",
+        "给出正确偏移式：完整 KV 长度 − 本 rank 逻辑 Q 长度（无 joint 时为 0），并解释为何不是 k_len − q_len",
+        "指明叠加顺序必须先汇聚 K/V 后稀疏，否则只是局部稀疏",
+        "给出块对齐判据 S % (并行度 × 块) == 0 与 per-head 掩码不可跨片复用",
+        "叠加掩盖时要求「先全部 a2a、再全部 AllGather」，并说明交错会 HCCL 失步"
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "掩盖开了以后注意力核前面还是一串空泡，是不是 host 下发跟不上？要不要开 torch_npu 的多线程下发或者上 ACL graph？另外我发现输出的 O 那一次 a2a 好像完全没被盖住。",
+      "expected_output": "先做归属再谈手段（scripts/bubble_attribution.py：把计算流空隙分别与各族通信、与'什么都不跑'求交）：① 暴露归哪一族——某族耗时大部分落在空隙里才是关键路径，本组合观测反向输出 a2a 92.6% 的时间落在空隙里、与注意力核重叠 0.0%，而前向 q/k/v 只有 27.6% 暴露（重叠 59.0%）⇒ O 确实没被盖住，且它只占该族字节 1/4 却贡献约 57% 的暴露通信；根因是同一 communicator 的集合通信按下发顺序串行（union/sum=1.00），而实现把'所有前向'与'所有反向'分成两段，反向整段落在本层计算之后；修法是软件流水式下发（第 g+1 片前向排在 g 片反向之前），不是逐片交替。② 空泡归谁——空隙里有集合通信在跑的比例是 88.2%（等网/依赖等待），什么都没跑的只有 11.8%（≈整步 2.6%，与 Free 列同量级）⇒ 不是 host 下发受限，多线程下发/ACL graph 的上限就是这几个百分点，不能解决 642 ms 级通信等待；要用这两个比例一起报，别只报'有空泡'就投下发优化。",
+      "files": [],
+      "expectations": [
+        "先量化归属：把计算流空隙与各族通信/空跑求交，指出暴露的是哪一族（本组合观测：反向 O 几乎全部落在空隙里 vs 前向约三成；精确读数见归档）",
+        "指出同一 communicator 的集合通信按下发顺序串行，两段式（先全部前向再全部反向）会把反向整段暴露",
+        "给出正确的修法是软件流水式下发而非逐片交替，并提醒不要把两个 communicator 交错",
+        "用「等网 vs 真空气泡」比例回答下发问题（本组合观测：空隙里大部分有集合通信在跑 / 真空气泡约一成；精确读数见归档），说明多线程下发与图捕获的上限"
+      ]
+    },
+    {
+      "id": 14,
+      "prompt": "a2a 载荷改成量化之后，某些 rank 上收到的 chunk 看起来不对：有的像被截断、有的像上一轮的旧内容（加打印还能看到零星的全零）。我怀疑是 HCCL 丢腿或者静默改写缓冲区，是不是通信库的 bug？",
+      "expected_output": "先别指控传输，按 references/a2a-integrity-audit.md 的四条**免额外集合通信**检查逐层排除：① 发送侧前后双指纹（同一缓冲区发送前/发送后各取一次，spre≠spost 就是**发送缓冲在飞行中被改写**，属于上游/别名问题而不是通信库）；② 逐源指纹（got_r[s] 是否等于 sent_s[r]）把问题定位到**具体哪个源 rank**；③ 跨 rank 逐腿对账（scripts/a2a_reconcile.py）给出责任判定；④ 自腿绝对校验（send 与 receive 指向同一块时的内容与位置）。两条硬纪律：**接收侧证据必须取自被消费的那一份**（对 re-gather / 拷贝出来的缓冲做指纹，证明不了消费者读到了什么）；**诊断本身要先被证明正确**——本项目一次误判的根因就是探针在计算流上建参考、却在侧流上发参考 a2a 而漏了 comm.wait_stream(cur)，于是产出了数千条**假**的“载荷损坏”记录（加回同步后为 0），另一处两卡微基准把等待写反方向，同时给出了『HCCL 静默丢腿』的假象与随窗口剧烈变化的读数。所以先把仪器用负对照证明测得到，再回答『是不是通信库』；在 spre/spost 与逐源指纹闭合之前，不得把结论写成『通信丢数据』。",
+      "expectations": [
+        "拒绝直接归因 HCCL，先做发送侧前后双指纹以区分『传输丢失』与『发送缓冲在飞行中被改写』",
+        "做逐源指纹把问题定位到具体源 rank，并用逐腿对账脚本给出责任判定（四选一）",
+        "强调接收侧证据必须来自被实际消费的那一份缓冲，而不是 re-gather/拷贝出来的副本",
+        "指出诊断探针本身要先被证明正确：本项目假损坏记录来自侧流上漏了与计算流同步（负对照后为 0），等待写反方向也会同时造出『丢腿』与随窗口漂移的假象",
+        "在指纹闭合前不下『通信库丢数据』的结论，保留『未定位』标注"
+      ],
+      "files": []
+    },
+    {
+      "id": 15,
+      "prompt": "我在 a2a 前加了一个边界 amax 的 all_reduce，载荷只有 2 KB 量级，按理可以忽略；可每层却多出毫秒级开销，还把计算流卡住了不短的时间。另外我图省事把整张量重排写进了推导式，一层里被做了 7 次。这两笔成本该怎么记？另外我做了个隔离微基准，量出这个集合只花零点零几毫秒，是不是说明流水线里那部分开销可以忽略？",
+      "expected_output": "按 references/parallel-plan-attribution-method.md §2.1（新增成本的两类形态）：① **小集合通信按等待判、不按字节判** —— 那个 all_reduce 的载荷只有 2 KB 量级，但它的代价是 rendezvous（跨 rank 到达偏斜的同步点），与载荷几乎无关：它实际成为生产者**新增成本的第二大项**。量级（比值）：隔离环境里它自身背靠背记 1 单位时，**关键流被阻塞约 2.4 单位** —— 也就是**阻塞不小于它自身的时长**（**不要写成「与自身等长、相差 <0.1%」**，那个定量形式已被设备侧复跑推翻）；且同一集合在**真实流水线**里的代价比隔离值大**约 50 倍**，差额来自 **rank 数与到达偏斜/调度**。**所以那个隔离微基准不能用来否定流水线里的开销：隔离值只是下界**，真实代价必须在该拓扑的流水线内实测。结论是『字节可以忽略』从来不是『代价可以忽略』，而且**基线没有的集合通信必须显式立项、单独在账上占一行**。② **推导式里做整张量算子属「按字节可预测」型**：`[op(x)[gi] for gi in range(n)]` 每次迭代都让 `op(x)` 实体化整张量 ⇒ 同一逻辑搬运的流量按 n 倍计；本例整张量重排被做 7 次（保留 7 个切片）⇒ 单层 GB 级 HBM 流量，实测耗时是基线三次同类重排的 2.37 倍、按流量预测 2.33 倍（吻合）⇒ 判法是用**流量比预测 + 实测比对照**；把 `full = op(x)` 提到推导式外后**逐字节等价**且该成本消失。③ 记账要求：两类都要进阶段 Δ 账（§2 / §2.1），少算一类差额会被记到错误分项；并回到 perf-gate §10.3 的绑定性判据确认哪条流才是绑定约束。",
+      "expectations": [
+        "判定小集合通信按等待（rendezvous）判、不按字节判，并指出『字节可忽略』不能推出『代价可忽略』",
+        "把关键路径阻塞表述为『不小于自身时长』（约 2.4 倍量级），不得写成与自身等长/相差 <0.1%",
+        "指出隔离微基准只是下界：同一集合在流水线里的代价可比隔离值大一个量级以上（约 50 倍），差额来自 rank 数与到达偏斜，必须在该拓扑的流水线内实测",
+        "要求把基线没有的集合通信显式立项、单独计预算（对账时占一行）",
+        "把推导式里的整张量算子归为按字节可预测型：流量 n 倍，用流量比预测与实测比对照（本例 2.37 实测 vs 2.33 预测）",
+        "给出修法：把整张量算子提到推导式外（full = op(x)）后逐字节等价且成本消失；两类成本都要进阶段 Δ 账，并回到绑定性判据确认真正的绑定约束"
+      ],
+      "files": []
+    }
+  ]
+}

@@ -30,6 +30,16 @@ class TestFusionConfigIntegration(unittest.TestCase):
         self.assertFalse(CompilationConfig.fusion_patterns.enable_mul_add)
         CompilationConfig.fusion_patterns.enable_mul_add = saved
 
+    def test_qwen_residual_gate_config_can_be_disabled(self):
+        config = CompilationConfig.fusion_patterns
+        saved = config.enable_qwen_residual_gate
+        try:
+            self.assertTrue(saved)
+            config.enable_qwen_residual_gate = False
+            self.assertFalse(config.enable_qwen_residual_gate)
+        finally:
+            config.enable_qwen_residual_gate = saved
+
 
 if __name__ == "__main__":
     unittest.main()

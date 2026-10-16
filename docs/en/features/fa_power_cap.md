@@ -28,7 +28,7 @@ Conceptually, the three modes form a progressive relationship, but runtime use s
 
 ## Pipeline diagram
 
-![FA_Power_Cap technology pipeline](../../figures/fa_power_cap_pipeline.png)
+![FA_Power_Cap technology pipeline](../../figures/fa_power_cap_pipeline_en.png)
 
 The diagram compares baseline, InsertComm, and BlockAttn paths. Its legend marks the input processing, communication, matrix multiplication, quantization, attention computation, concatenation, and output projection stages.
 

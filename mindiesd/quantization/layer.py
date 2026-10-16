@@ -11,6 +11,7 @@
 # See the Mulan PSL v2 for more details.
 # pylint: disable=too-many-lines,duplicate-code
 
+from ..layers.flash_attn.quant_flash_attn import quant_attention
 from abc import ABC, abstractmethod
 import math
 import torch
@@ -18,21 +19,45 @@ import torch.nn.functional as F
 import torch_npu
 from torch import nn
 
-from ..layers.flash_attn.common import AttentionParam, lru_cache_by_attn_param
-from ..layers.flash_attn.fused_infer_attention_score import fused_infer_attention_score_v2
+from ..layers.flash_attn.quant_attention_mxfp4 import (  # pylint: disable=useless-import-alias
+    _reshape_mxfp4_v_scale_for_fa as _reshape_mxfp4_v_scale_for_fa,  # RFv3 compatibility import.
+)
+from ..layers._custom_ops import quant_four_over_six_a5
 from .config import QuantConfig, TimestepPolicyConfig
+from .mode import FP8FAMode, normalize_fp8_fa_mode
 from .utils import get_mxfp4_quant_kwargs, get_quant_weight, TimestepManager
+from ..utils import ParametersInvalid
 
 
-MXFP4_Q_QUANT_MODE = 3
-MXFP4_K_QUANT_MODE = 3
-MXFP4_V_QUANT_MODE = 3
-MXFP4_FA_SEQ_PAD_BASE = 512
-MXFP4_FA_SEQ_CACHE_MAX_SIZE = 512
 MXFP4_GROUP_SIZES_W4A4 = [1, 1, 32]
 MXFP4_GROUP_SIZES_W4A8 = [0, 0, 32]
 MXFP4_SCALE_ALG_C7 = 2
 MXFP4_DST_TYPE_MAX_C7 = 7.25
+FA_PER_BLOCK_QUANT_MODE = 7
+FA_V512_D64_QUANT_MODE = 12
+FA_C8V16_INNER_PRECISE = 4
+_FP8_FA_MODE_SPEC = {
+    FP8FAMode.HIGH_PRECISION: {
+        "q_block": 128,
+        "k_block": 256,
+        "v_block": 256,
+        "v_col_block": 128,
+        "query_quant_mode": FA_PER_BLOCK_QUANT_MODE,
+        "key_quant_mode": FA_PER_BLOCK_QUANT_MODE,
+        "value_quant_mode": FA_PER_BLOCK_QUANT_MODE,
+        "inner_precise": None,
+    },
+    FP8FAMode.C8V16_TILING512: {
+        "q_block": 128,
+        "k_block": 256,
+        "v_block": 512,
+        "v_col_block": 64,
+        "query_quant_mode": FA_PER_BLOCK_QUANT_MODE,
+        "key_quant_mode": FA_PER_BLOCK_QUANT_MODE,
+        "value_quant_mode": FA_V512_D64_QUANT_MODE,
+        "inner_precise": FA_C8V16_INNER_PRECISE,
+    },
+}
 
 
 def _prepare_mxfp4_weight(weight, use_nz=False):
@@ -51,6 +76,15 @@ def _get_quant_config(kwargs):
     if quant_config is None:
         quant_config = QuantConfig.from_kwargs(kwargs)
     return quant_config
+
+
+def _resolve_fp8_fa_mode(mode, kwargs):
+    if mode is None:
+        mode = kwargs.get('fp8_fa_mode')
+    if mode is None:
+        mode = getattr(_get_quant_config(kwargs), 'fp8_fa_mode', None)
+    resolved = normalize_fp8_fa_mode(mode)
+    return FP8FAMode.HIGH_PRECISION if resolved is None else resolved
 
 
 def _has_quant_weight(weights, key):
@@ -79,13 +113,17 @@ def _dynamic_mx_quant(input_tensor, dst_type, quant_config=None, **kwargs):
     return result[0], result[1]
 
 
-def _dynamic_mx_quant_fa(input_tensor, axis, quant_config=None):
-    return _dynamic_mx_quant(
-        input_tensor,
-        dst_type=torch_npu.float4_e2m1fn_x2,
-        quant_config=quant_config,
-        axis=axis,
-    )
+def _four_over_six_quant(input_tensor):
+    # 46 自适应激活量化（quant_four_over_six_a5 算子，仅尾轴/bf16/32 对齐组合）。
+    # 输出与 npu_dynamic_mx_quant(dst_type=float4_e2m1fn_x2) 同构：
+    # y 为 uint8 打包 fp4（尾维减半），mxscale 为 uint8 E8M0（尾维 [dim/64, 2]）。
+    if input_tensor.dtype != torch.bfloat16:
+        input_tensor = input_tensor.to(torch.bfloat16)
+    if input_tensor.shape[-1] % 32 != 0:
+        raise ParametersInvalid(
+            f"four over six quant requires the tail axis to be 32-aligned, but got {input_tensor.shape[-1]}."
+        )
+    return quant_four_over_six_a5(input_tensor, axis=-1)
 
 
 def _get_fa_shape(query, layout):
@@ -96,75 +134,6 @@ def _get_fa_shape(query, layout):
     else:
         raise ValueError(f"Unsupported layout: {layout}, expected 'BNSD' or 'BSND'.")
     return n, s, d
-
-
-def _pad_fa_seq_before_quant(input_tensor, base, layout):
-    if layout == "BNSD":
-        _, _, s, _ = input_tensor.shape
-        padding_length = (base - s % base) % base
-        pad = (0, 0, 0, padding_length)
-    elif layout == "BSND":
-        _, s, _, _ = input_tensor.shape
-        padding_length = (base - s % base) % base
-        pad = (0, 0, 0, 0, 0, padding_length)
-    else:
-        raise ValueError(f"Unsupported layout: {layout}, expected 'BNSD' or 'BSND'.")
-
-    if padding_length != 0:
-        input_tensor = F.pad(input_tensor, pad)
-    return input_tensor, s, s + padding_length
-
-
-def _get_fa_seq_axis(layout):
-    if layout == "BNSD":
-        return 2
-    if layout == "BSND":
-        return 1
-    raise ValueError(f"Unsupported layout: {layout}, expected 'BNSD' or 'BSND'.")
-
-
-def _reshape_mxfp4_v_scale_for_fa(v_scale, layout):
-    if layout == "BNSD":
-        scale_blocks = v_scale.shape[2]
-        if v_scale.dim() == 5:
-            return v_scale
-        if scale_blocks % 2 != 0:
-            raise ValueError(f"V scale S blocks must be even for layout BNSD, got {scale_blocks}.")
-        return (
-            v_scale.reshape(v_scale.shape[0], v_scale.shape[1], scale_blocks // 2, 2, v_scale.shape[3])
-            .transpose(-1, -2)
-            .contiguous()
-        )
-    if layout == "BSND":
-        scale_blocks = v_scale.shape[1]
-        if v_scale.dim() == 5:
-            return v_scale
-        if scale_blocks % 2 != 0:
-            raise ValueError(f"V scale S blocks must be even for layout BSND, got {scale_blocks}.")
-        return (
-            v_scale.reshape(v_scale.shape[0], scale_blocks // 2, 2, v_scale.shape[2], v_scale.shape[3])
-            .permute(0, 1, 3, 4, 2)
-            .contiguous()
-        )
-    raise ValueError(f"Unsupported layout: {layout}, expected 'BNSD' or 'BSND'.")
-
-
-@lru_cache_by_attn_param(maxsize=MXFP4_FA_SEQ_CACHE_MAX_SIZE)
-def _get_qfa_seqused(param):
-    device = torch.device(param.head_first)
-    seqused_q = torch.full((param.batch_size,), param.q_seqlen, dtype=torch.int32, device=device)
-    seqused_kv = torch.full((param.batch_size,), param.kv_seqlen, dtype=torch.int32, device=device)
-    return seqused_q, seqused_kv
-
-
-def _crop_fa_output(output, seq_len, layout):
-    if layout == "BNSD":
-        if output.shape[2] != seq_len:
-            output = output[:, :, :seq_len, :]
-    elif layout == "BSND":
-        if output.shape[1] != seq_len:
-            output = output[:, :seq_len, :, :]
-    return output
 
 
 class WeightQuantLinear(nn.Module):
@@ -183,11 +152,11 @@ class WeightQuantLinear(nn.Module):
         if kwargs.get('use_nz', False):
             weight = torch_npu.npu_format_cast(weight, 29).T
             if kwargs.get('is_w4', False):
-                weight = torch_npu.npu_convert_weight_to_int4pack(weight.npu().to(torch.int32))
+                weight = torch_npu.npu_convert_weight_to_int4pack(weight.npu().to(torch.int32).contiguous())
         else:
             weight = weight.T
             if kwargs.get('is_w4', False):
-                weight = torch_npu.npu_convert_weight_to_int4pack(weight.npu().to(torch.int32))
+                weight = torch_npu.npu_convert_weight_to_int4pack(weight.npu().to(torch.int32).contiguous())
         self.register_buffer("weight", weight, persistent=False)
 
         if bias:
@@ -442,50 +411,31 @@ class W8A8TimeStepQuantLinear(W8A8QuantBaseLinear):
 
 
 class FP8RotateQuantFA(nn.Module):
-    def __init__(self, prefix=None, weights=None):
+    def __init__(self, prefix=None, weights=None, mode=None, **kwargs):
         super().__init__()
 
-        q_rot = get_quant_weight(weights, f'{prefix}.q_rot')
-        self.register_buffer("q_rot", q_rot, persistent=False)
-        k_rot = get_quant_weight(weights, f'{prefix}.k_rot')
-        self.register_buffer("k_rot", k_rot, persistent=False)
+        if _has_quant_weight(weights, f'{prefix}.q_rot'):
+            self.register_buffer("q_rot", get_quant_weight(weights, f'{prefix}.q_rot'), persistent=False)
+        else:
+            self.q_rot = None
+        if _has_quant_weight(weights, f'{prefix}.k_rot'):
+            self.register_buffer("k_rot", get_quant_weight(weights, f'{prefix}.k_rot'), persistent=False)
+        else:
+            self.k_rot = None
+
+        self.mode = _resolve_fp8_fa_mode(mode, kwargs)
 
     def forward(self, query, key, value, **kwargs):
-        query = torch.matmul(query, self.q_rot)
-        key = torch.matmul(key, self.k_rot)
-
-        layout = kwargs.get("layout", "BNSD")
-        n, s, d = _get_fa_shape(query, layout)
-
-        from ..layers.quant.block_quant import fa_block_quant_preprocess
-
-        q, q_scale = fa_block_quant_preprocess(query, block_size=128, dst_type=torch_npu.float8_e4m3fn, layout=layout)
-        k, k_scale = fa_block_quant_preprocess(key, block_size=256, dst_type=torch_npu.float8_e4m3fn, layout=layout)
-        v, v_scale = fa_block_quant_preprocess(value, block_size=256, dst_type=torch_npu.float8_e4m3fn, layout=layout)
-
-        x = fused_infer_attention_score_v2(
-            q,
-            k,
-            v,
-            input_layout="BNSD",
-            num_query_heads=n,
-            softmax_scale=1.0 / math.sqrt(d),
-            pre_tokens=2147483647,
-            next_tokens=2147483647,
-            query_quant_mode=7,
-            key_quant_mode=7,
-            value_quant_mode=7,
-            dequant_scale_query=q_scale,
-            dequant_scale_key=k_scale,
-            dequant_scale_value=v_scale,
-            out_dtype=query.dtype,
-        )[0]
-
-        x = _crop_fa_output(x, s, "BNSD")
-        if layout == "BSND":
-            x = x.transpose(1, 2)
-
-        return x
+        return quant_attention(
+            query,
+            key,
+            value,
+            precision="fp8",
+            q_rot=self.q_rot,
+            k_rot=self.k_rot,
+            fp8_fa_mode=self.mode,
+            layout=kwargs.get("layout", "BNSD"),
+        )
 
 
 class MXFP8RotateQuantFA(nn.Module):
@@ -498,64 +448,15 @@ class MXFP8RotateQuantFA(nn.Module):
         self.register_buffer("k_rot", k_rot, persistent=False)
 
     def forward(self, query, key, value, **kwargs):
-        query = torch.matmul(query, self.q_rot)
-        key = torch.matmul(key, self.k_rot)
-
-        layout = kwargs.get("layout", "BNSD")
-        if layout == "BNSD":
-            b, n, s, d = query.shape
-            query = query.permute(0, 2, 1, 3).reshape(b * s, n, d)
-            key = key.permute(0, 2, 1, 3).reshape(b * s, n, d)
-            value = value.permute(0, 2, 1, 3).reshape(b * s, n, d)
-        elif layout == "BSND":
-            b, s, n, d = query.shape
-            query = query.reshape(b * s, n, d)
-            key = key.reshape(b * s, n, d)
-            value = value.reshape(b * s, n, d)
-        else:
-            raise ValueError(f"Unsupported layout: {layout}, expected 'BNSD' or 'BSND'.")
-
-        actual_seq_qlen = torch.arange(s, s * (b + 1), s, dtype=torch.int64, device=query.device)
-        actual_seq_kvlen = torch.arange(s, s * (b + 1), s, dtype=torch.int64, device=key.device)
-
-        q, q_scale = torch_npu.npu_dynamic_mx_quant(query, dst_type=torch.float8_e4m3fn, axis=-1)
-        k, k_scale = torch_npu.npu_dynamic_mx_quant(key, dst_type=torch.float8_e4m3fn, axis=-1)
-        v, v_scale = torch_npu.npu_dynamic_mx_quant(value, dst_type=torch.float8_e4m3fn, axis=0)
-
-        x = torch_npu.npu_fused_infer_attention_score_v2(
-            q,
-            k,
-            v,
-            input_layout="TND",
-            num_query_heads=n,
-            num_key_value_heads=n,
-            softmax_scale=1.0 / math.sqrt(d),
-            dequant_scale_query=q_scale,
-            dequant_scale_key=k_scale,
-            dequant_scale_value=v_scale,
-            actual_seq_qlen=actual_seq_qlen,
-            actual_seq_kvlen=actual_seq_kvlen,
-            sparse_mode=0,  # could be 0/3, atten_mask is needed if set 3
-            query_quant_mode=6,
-            key_quant_mode=6,
-            value_quant_mode=8,
-            query_dtype=torch.float8_e4m3fn,
-            key_dtype=torch.float8_e4m3fn,
-            value_dtype=torch.float8_e4m3fn,
-            dequant_scale_query_dtype=torch_npu.float8_e8m0fnu,
-            dequant_scale_key_dtype=torch_npu.float8_e8m0fnu,
-            dequant_scale_value_dtype=torch_npu.float8_e8m0fnu,
-            out_dtype=query.dtype,
-        )[0]
-
-        if layout == "BNSD":
-            # [B*S, N, D] -> [B, S, N, D] -> [B, N, S, D]
-            x = x.reshape(b, s, n, d).permute(0, 2, 1, 3)
-        elif layout == "BSND":
-            # [B*S, N, D] -> [B, S, N, D]
-            x = x.reshape(b, s, n, d)
-
-        return x
+        return quant_attention(
+            query,
+            key,
+            value,
+            precision="mxfp8",
+            q_rot=self.q_rot,
+            k_rot=self.k_rot,
+            layout=kwargs.get("layout", "BNSD"),
+        )
 
 
 class MXFP4QuantFA(nn.Module):
@@ -574,12 +475,14 @@ class MXFP4QuantFA(nn.Module):
         else:
             self.k_rot = None
 
-    def _apply_rotate(self, query, key):
-        if self.q_rot is not None:
-            query = torch.matmul(query, self.q_rot)
-        if self.k_rot is not None:
-            key = torch.matmul(key, self.k_rot)
-        return query, key
+    def _quant_qk_tail(self, tensor):
+        # Q/K 沿尾轴（D）的 fp4 量化钩子，fouroversix 子类覆写为 quant_four_over_six_a5。
+        # c7（scale_alg/dst_type_max）仅在 quant_config 显式配置 mxfp4_scale_alg 时生效。
+        return _dynamic_mx_quant(tensor, dst_type=torch_npu.float4_e2m1fn_x2, axis=-1, quant_config=self.quant_config)
+
+    def _quant_v(self, tensor, axis):
+        # V 沿 seq 轴量化（quant_flash_attn 的 PV 收缩轴为 S，scale 形状随 seq 分块）。
+        return _dynamic_mx_quant(tensor, dst_type=torch_npu.float4_e2m1fn_x2, axis=axis, quant_config=self.quant_config)
 
     def _forward_float(self, query, key, value, **kwargs):
         layout = kwargs.get("layout", "BNSD")
@@ -597,122 +500,50 @@ class MXFP4QuantFA(nn.Module):
         return output
 
     def _forward_fp8(self, query, key, value, **kwargs):
-        query, key = self._apply_rotate(query, key)
-        layout = kwargs.get("layout", "BNSD")
-        n, s, d = _get_fa_shape(query, layout)
-
-        from ..layers.quant.block_quant import fa_block_quant_preprocess
-
-        q, q_scale = fa_block_quant_preprocess(query, block_size=128, dst_type=torch_npu.float8_e4m3fn, layout=layout)
-        k, k_scale = fa_block_quant_preprocess(key, block_size=256, dst_type=torch_npu.float8_e4m3fn, layout=layout)
-        v, v_scale = fa_block_quant_preprocess(value, block_size=256, dst_type=torch_npu.float8_e4m3fn, layout=layout)
-
-        output = fused_infer_attention_score_v2(
-            q,
-            k,
-            v,
-            input_layout="BNSD",
-            num_query_heads=n,
-            softmax_scale=kwargs.get("softmax_scale", 1.0 / math.sqrt(d)),
+        return quant_attention(
+            query,
+            key,
+            value,
+            precision="fp8",
+            q_rot=self.q_rot,
+            k_rot=self.k_rot,
+            layout=kwargs.get("layout", "BNSD"),
+            scale=kwargs.get("softmax_scale"),
             pre_tokens=kwargs.get("pre_tokens", 2147483647),
             next_tokens=kwargs.get("next_tokens", 2147483647),
-            query_quant_mode=7,
-            key_quant_mode=7,
-            value_quant_mode=7,
-            dequant_scale_query=q_scale,
-            dequant_scale_key=k_scale,
-            dequant_scale_value=v_scale,
-            out_dtype=query.dtype,
-        )[0]
-        output = _crop_fa_output(output, s, "BNSD")
-        if layout == "BSND":
-            output = output.transpose(1, 2)
-        return output
+        )
 
     def _forward_mxfp4(self, query, key, value, **kwargs):
-        query, key = self._apply_rotate(query, key)
-        layout = kwargs.get("layout", "BNSD")
-        layout_kv = kwargs.get("layout_kv", layout)
-        layout_out = kwargs.get("layout_out", layout)
-        n, s, d = _get_fa_shape(query, layout)
-        n_kv, kv_s, _ = _get_fa_shape(key, layout_kv)
-
-        query, s, padded_s = _pad_fa_seq_before_quant(query, MXFP4_FA_SEQ_PAD_BASE, layout)
-        key, kv_s, padded_kv_s = _pad_fa_seq_before_quant(key, MXFP4_FA_SEQ_PAD_BASE, layout_kv)
-        value, _, _ = _pad_fa_seq_before_quant(value, MXFP4_FA_SEQ_PAD_BASE, layout_kv)
-        batch_size = query.shape[0]
-        seq_param = AttentionParam(batch_size, n, d, padded_s, padded_kv_s, torch.int32, str(query.device))
-        seqused_q, seqused_kv = _get_qfa_seqused(seq_param)
-
-        v_seq_axis = _get_fa_seq_axis(layout_kv)
-        q, q_scale = _dynamic_mx_quant_fa(query, axis=-1, quant_config=self.quant_config)
-        k, k_scale = _dynamic_mx_quant_fa(key, axis=-1, quant_config=self.quant_config)
-        v, v_scale = _dynamic_mx_quant_fa(value, axis=v_seq_axis, quant_config=self.quant_config)
-        v_scale = _reshape_mxfp4_v_scale_for_fa(v_scale, layout_kv)
-
-        qfa_metadata = kwargs.get("metadata", None)
-        if qfa_metadata is None:
-            qfa_metadata = torch.ops.mindiesd.quant_flash_attn_metadata(
-                num_heads_q=n,
-                num_heads_kv=kwargs.get("num_key_value_heads", n_kv),
-                head_dim=d,
-                q_quant_mode=MXFP4_Q_QUANT_MODE,
-                k_quant_mode=MXFP4_K_QUANT_MODE,
-                v_quant_mode=MXFP4_V_QUANT_MODE,
-                cu_seqlens_q=None,
-                cu_seqlens_kv=None,
-                seqused_q=seqused_q,
-                seqused_kv=seqused_kv,
-                batch_size=query.shape[0],
-                max_seqlen_q=kwargs.get("max_seqlen_q", -1),
-                max_seqlen_kv=kwargs.get("max_seqlen_kv", -1),
-                q_dtype=torch_npu.float4_e2m1fn_x2,
-                k_dtype=torch_npu.float4_e2m1fn_x2,
-                v_dtype=torch_npu.float4_e2m1fn_x2,
-                mask_mode=kwargs.get("mask_mode", 0),
-                win_left=kwargs.get("win_left", kwargs.get("pre_tokens", 2147483647)),
-                win_right=kwargs.get("win_right", kwargs.get("next_tokens", 2147483647)),
-                layout_q=layout,
-                layout_kv=layout_kv,
-                layout_out=layout_out,
-            )
-
-        output, _ = torch.ops.mindiesd.quant_flash_attn(
-            q,
-            k,
-            v,
-            q_scale,
-            k_scale,
-            v_scale,
-            q_quant_mode=MXFP4_Q_QUANT_MODE,
-            k_quant_mode=MXFP4_K_QUANT_MODE,
-            v_quant_mode=MXFP4_V_QUANT_MODE,
-            block_table=kwargs.get("block_table", None),
-            cu_seqlens_q=None,
-            cu_seqlens_kv=None,
-            seqused_q=seqused_q,
-            seqused_kv=seqused_kv,
-            sinks=kwargs.get("sinks", None),
-            attn_mask=kwargs.get("attn_mask", None),
-            metadata=qfa_metadata,
-            q_dtype=torch_npu.float4_e2m1fn_x2,
-            k_dtype=torch_npu.float4_e2m1fn_x2,
-            v_dtype=torch_npu.float4_e2m1fn_x2,
-            q_descale_dtype=torch_npu.float8_e8m0fnu,
-            k_descale_dtype=torch_npu.float8_e8m0fnu,
-            v_descale_dtype=torch_npu.float8_e8m0fnu,
-            softmax_scale=kwargs.get("softmax_scale", 1.0 / math.sqrt(d)),
-            mask_mode=kwargs.get("mask_mode", 0),
-            win_left=kwargs.get("win_left", kwargs.get("pre_tokens", 2147483647)),
-            win_right=kwargs.get("win_right", kwargs.get("next_tokens", 2147483647)),
+        quant_options = get_mxfp4_quant_kwargs(self.quant_config)
+        return quant_attention(
+            query,
+            key,
+            value,
+            precision="mxfp4",
+            q_rot=self.q_rot,
+            k_rot=self.k_rot,
+            layout=kwargs.get("layout", "BNSD"),
+            layout_kv=kwargs.get("layout_kv"),
+            layout_out=kwargs.get("layout_out"),
+            scale=kwargs.get("softmax_scale"),
+            pre_tokens=kwargs.get("pre_tokens", 2147483647),
+            next_tokens=kwargs.get("next_tokens", 2147483647),
+            mxfp4_scale_alg=quant_options.get("scale_alg"),
+            mxfp4_dst_type_max=quant_options.get("dst_type_max"),
+            qk_quant_fn=self._quant_qk_tail,
+            v_quant_fn=self._quant_v,
+            metadata=kwargs.get("metadata"),
+            num_key_value_heads=kwargs.get("num_key_value_heads"),
             max_seqlen_q=kwargs.get("max_seqlen_q", -1),
             max_seqlen_kv=kwargs.get("max_seqlen_kv", -1),
-            layout_q=layout,
-            layout_kv=layout_kv,
-            layout_out=layout_out,
+            mask_mode=kwargs.get("mask_mode", 0),
+            win_left=kwargs.get("win_left"),
+            win_right=kwargs.get("win_right"),
+            block_table=kwargs.get("block_table"),
+            sinks=kwargs.get("sinks"),
+            attn_mask=kwargs.get("attn_mask"),
             return_softmax_lse=kwargs.get("return_softmax_lse", 0),
         )
-        return _crop_fa_output(output, s, layout_out)
 
     def forward(self, query, key, value, **kwargs):
         t_idx = TimestepManager.get_timestep_idx()
@@ -722,6 +553,18 @@ class MXFP4QuantFA(nn.Module):
         if strategy == "FP8":
             return self._forward_fp8(query, key, value, **kwargs)
         return self._forward_mxfp4(query, key, value, **kwargs)
+
+
+class MXFP4FourOverSixQuantFA(MXFP4QuantFA):
+    r"""MXFP4 FA 量化，Q/K 激活改走 quant_four_over_six_a5（46 自适应）。
+
+    quant_flash_attn 要求 V 沿 seq 轴分块量化，而 quant_four_over_six_a5 仅支持尾轴，
+    故 V 保留 npu_dynamic_mx_quant 路径；Q/K 沿尾轴（D）量化，替换为 46 自适应算子。
+    时间步 FLOAT/FP8 回退路径继承基类不变。
+    """
+
+    def _quant_qk_tail(self, tensor):
+        return _four_over_six_quant(tensor)
 
 
 class W8A8MXFP8QuantLinear(W8A8QuantBaseLinear):
@@ -740,8 +583,7 @@ class W8A8MXFP8QuantLinear(W8A8QuantBaseLinear):
         else:
             x1, input_scale = torch_npu.npu_dynamic_mx_quant(x, dst_type=torch_npu.float8_e4m3fn)
 
-        if self.bias.dtype != torch.float32:
-            self.bias = self.bias.to(torch.float32)
+        bias = self.bias.to(torch.float32) if self.bias.dtype != torch.float32 else self.bias
 
         x2 = self.weight
         if x2.dtype != torch.float8_e4m3fn:
@@ -755,7 +597,7 @@ class W8A8MXFP8QuantLinear(W8A8QuantBaseLinear):
             scale_dtype=torch_npu.float8_e8m0fnu,
             pertoken_scale=input_scale,
             pertoken_scale_dtype=torch_npu.float8_e8m0fnu,
-            bias=self.bias,
+            bias=bias,
             output_dtype=self.dtype,
             group_sizes=[1, 1, 32],
         )
@@ -786,8 +628,7 @@ class W4A4MXFP4DualQuantLinear(W8A8QuantBaseLinear):
             x = x.to(self.dtype)
 
         x1, l0_scale, l1_scale = torch_npu.npu_dynamic_dual_level_mx_quant(x, smooth_scale=self.mul_scale)
-        if self.bias.dtype != torch.float32:
-            self.bias = self.bias.to(torch.float32)
+        bias = self.bias.to(torch.float32) if self.bias.dtype != torch.float32 else self.bias
 
         output = torch_npu.npu_dual_level_quant_matmul(
             x1,
@@ -796,7 +637,7 @@ class W4A4MXFP4DualQuantLinear(W8A8QuantBaseLinear):
             self.weight_dual_scale,
             l1_scale,
             self.weight_scale,
-            bias=self.bias,
+            bias=bias,
             output_dtype=self.dtype,
         )
         return output
@@ -856,13 +697,13 @@ class W4A4MXFP4QuantLinear(W8A8QuantBaseLinear):
             bias = bias.unsqueeze(0)
         return bias
 
+    def _quant_act_fp4(self, x):
+        return _dynamic_mx_quant(x, dst_type=torch_npu.float4_e2m1fn_x2, quant_config=self.quant_config)
+
     def _quant_matmul_w4a4(self, x):
         if self.mul_scale is not None:
-            x1, input_scale = _dynamic_mx_quant(
-                x * self.mul_scale, dst_type=torch_npu.float4_e2m1fn_x2, quant_config=self.quant_config
-            )
-        else:
-            x1, input_scale = _dynamic_mx_quant(x, dst_type=torch_npu.float4_e2m1fn_x2, quant_config=self.quant_config)
+            x = x * self.mul_scale
+        x1, input_scale = self._quant_act_fp4(x)
 
         x2, weight_scale = self._get_weight_for_matmul()
         bias = self._get_bias_for_matmul(torch.float32, squeeze=True)
@@ -913,6 +754,25 @@ class W4A4MXFP4QuantLinear(W8A8QuantBaseLinear):
         weight = get_quant_weight(weights, f'{prefix}.weight')
         weight = _prepare_mxfp4_weight(weight, kwargs.get('use_nz', False))
         self.register_buffer("weight", weight, persistent=False)
+
+
+class W4A4MXFP4FourOverSixQuantLinear(W4A4MXFP4QuantLinear):
+    r"""W4A4 MXFP4 线性层，激活改走 quant_four_over_six_a5（46 自适应）量化。
+
+    权重通路与 W4A4_MXFP4_DYNAMIC 完全一致（可直接复用其量化权重产物）；
+    激活量化固定 bf16 输入 + 尾轴 32 对齐 + dst_type_max=4.0 的 46 自适应组合，
+    mxfp4_scale_alg / mxfp4_dst_type_max 仅作用于权重。
+    """
+
+    def __init__(self, in_features, out_features, bias=True, weights=None, prefix=None, **kwargs):
+        if in_features % 32 != 0:
+            raise ParametersInvalid(
+                f"W4A4MXFP4FourOverSixQuantLinear requires in_features to be 32-aligned, but got {in_features}."
+            )
+        super().__init__(in_features, out_features, bias, weights, prefix, **kwargs)
+
+    def _quant_act_fp4(self, x):
+        return _four_over_six_quant(x)
 
 
 class _OnlineQuantLinearBase(nn.Module):
@@ -982,8 +842,9 @@ class W8A8MXFP8OnlineQuantLinear(_OnlineQuantLinearBase):
         if x.dtype != self.dtype:
             x = x.to(self.dtype)
         x1, input_scale = torch_npu.npu_dynamic_mx_quant(x, dst_type=torch_npu.float8_e4m3fn)
-        if self.bias is not None and self.bias.dtype != torch.float32:
-            self.bias = self.bias.to(torch.float32)
+        bias = (
+            self.bias.to(torch.float32) if (self.bias is not None and self.bias.dtype != torch.float32) else self.bias
+        )
         x2 = self.weight
         if x2.dtype != torch.float8_e4m3fn:
             x2 = torch_npu.npu_dtype_cast(x2, torch_npu.float8_e4m3fn)
@@ -995,7 +856,7 @@ class W8A8MXFP8OnlineQuantLinear(_OnlineQuantLinearBase):
             scale_dtype=torch_npu.float8_e8m0fnu,
             pertoken_scale=input_scale,
             pertoken_scale_dtype=torch_npu.float8_e8m0fnu,
-            bias=self.bias,
+            bias=bias,
             output_dtype=self.dtype,
             group_sizes=[1, 1, 32],
         )
@@ -1015,10 +876,14 @@ class W4A4MXFP4OnlineQuantLinear(_OnlineQuantLinearBase):
         self.register_buffer("weight", weight_fp4, persistent=False)
         self.register_buffer("weight_scale", weight_scale, persistent=False)
 
+    def _quant_act_fp4(self, x):
+        return _dynamic_mx_quant(x, dst_type=torch_npu.float4_e2m1fn_x2, quant_config=self.quant_config)
+
     def _w4a4_matmul(self, x):
-        x1, input_scale = _dynamic_mx_quant(x, dst_type=torch_npu.float4_e2m1fn_x2, quant_config=self.quant_config)
-        if self.bias is not None and self.bias.dtype != torch.float32:
-            self.bias = self.bias.to(torch.float32)
+        x1, input_scale = self._quant_act_fp4(x)
+        bias = (
+            self.bias.to(torch.float32) if (self.bias is not None and self.bias.dtype != torch.float32) else self.bias
+        )
         x2 = self.weight.transpose(0, 1)
         output = torch_npu.npu_quant_matmul(
             x1,
@@ -1029,7 +894,7 @@ class W4A4MXFP4OnlineQuantLinear(_OnlineQuantLinearBase):
             x2_dtype=torch_npu.float4_e2m1fn_x2,
             pertoken_scale=input_scale,
             pertoken_scale_dtype=torch_npu.float8_e8m0fnu,
-            bias=self.bias,
+            bias=bias,
             output_dtype=self.dtype,
             group_sizes=MXFP4_GROUP_SIZES_W4A4,
         )
@@ -1067,6 +932,25 @@ class W4A4MXFP4OnlineQuantLinear(_OnlineQuantLinearBase):
         return self._w4a4_matmul(x)
 
 
+class W4A4MXFP4FourOverSixOnlineQuantLinear(W4A4MXFP4OnlineQuantLinear):
+    r"""在线量化版 W4A4 MXFP4 + 46 自适应激活（quant_four_over_six_a5）。
+
+    权重仍走 npu_dynamic_mx_quant 在线量化；仅 W4A4 路径的激活量化替换为 46 自适应算子，
+    W4A8 时间步回退路径不变。
+    """
+
+    def __init__(self, original_linear, dtype=torch.bfloat16, quant_config=None):
+        if original_linear.in_features % 32 != 0:
+            raise ParametersInvalid(
+                "W4A4MXFP4FourOverSixOnlineQuantLinear requires in_features to be 32-aligned, "
+                f"but got {original_linear.in_features}."
+            )
+        super().__init__(original_linear, dtype=dtype, quant_config=quant_config)
+
+    def _quant_act_fp4(self, x):
+        return _four_over_six_quant(x)
+
+
 class W4A4MXFP4DualOnlineQuantLinear(_OnlineQuantLinearBase):
     def __init__(self, original_linear, dtype=torch.bfloat16, quant_config=None):
         super().__init__(original_linear, dtype)
@@ -1085,8 +969,9 @@ class W4A4MXFP4DualOnlineQuantLinear(_OnlineQuantLinearBase):
 
     def _w4a4_matmul(self, x):
         x1, l0_scale, l1_scale = torch_npu.npu_dynamic_dual_level_mx_quant(x, smooth_scale=self.mul_scale)
-        if self.bias is not None and self.bias.dtype != torch.float32:
-            self.bias = self.bias.to(torch.float32)
+        bias = (
+            self.bias.to(torch.float32) if (self.bias is not None and self.bias.dtype != torch.float32) else self.bias
+        )
         output = torch_npu.npu_dual_level_quant_matmul(
             x1,
             self.weight,
@@ -1094,7 +979,7 @@ class W4A4MXFP4DualOnlineQuantLinear(_OnlineQuantLinearBase):
             self.weight_dual_scale,
             l1_scale,
             self.weight_scale,
-            bias=self.bias,
+            bias=bias,
             output_dtype=self.dtype,
         )
         return output

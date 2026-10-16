@@ -38,6 +38,8 @@ from mindiesd.utils.safe_pickle import safe_dumps
 mock_zmq_ctx = MagicMock(spec=zmq.Context)
 msm.ZMQ_CONTEXT = mock_zmq_ctx
 
+torch.npu.current_device = MagicMock(return_value=0)
+
 _PREVIOUS_LOGGING_DISABLE_LEVEL = logging.root.manager.disable
 logging.disable(logging.CRITICAL)
 os.environ["ZMQ_DISABLE_IPV6"] = "1"
@@ -220,6 +222,72 @@ class TestAllInOnePipeline(unittest.TestCase):
 
         self.assertIsInstance(model, nn.Linear)
         self.assertTrue(next(model.parameters()).is_npu)
+
+
+class TestZMQSocketCleanup(unittest.TestCase):
+    """Test ZMQ socket cleanup to prevent resource leaks (Issue #380)."""
+
+    def setUp(self):
+        global global_manager
+        self.original_manager = global_manager
+        global_manager = None
+        msm.manager = None
+
+        self.mock_socket = MagicMock()
+        self.mock_socket.setsockopt.return_value = None
+        self.mock_socket.recv.return_value = safe_dumps(123456)
+        mock_zmq_ctx.socket.return_value = self.mock_socket
+        mock_zmq_ctx.reset_mock()
+        mock_zmq_ctx.socket.return_value = self.mock_socket
+
+    def tearDown(self):
+        global global_manager
+        global_manager = self.original_manager
+
+    def test_close_method_closes_all_sockets(self):
+        """Verify close() closes all ZMQ sockets owned by the manager."""
+        manager = ShareMemoryManager(instance_world_size=2, instance_id=0)
+        # Manager should have created sockets
+        self.assertIsNotNone(manager.rep_socket)
+        self.assertIsNotNone(manager.pub_socket)
+
+        # Call close
+        manager.close()
+
+        # Verify sockets were closed with linger=0
+        self.mock_socket.close.assert_called()
+        # Verify socket attributes are set to None
+        self.assertIsNone(manager.rep_socket)
+        self.assertIsNone(manager.pub_socket)
+
+    def test_init_share_memory_closes_old_manager(self):
+        """Verify init_share_memory() closes old manager before creating new one."""
+        # Create first manager
+        manager1 = init_share_memory(instance_world_size=2, instance_id=0)
+        old_rep_socket = manager1.rep_socket
+
+        # Create second manager - should close first one
+        manager2 = init_share_memory(instance_world_size=2, instance_id=0)
+
+        # Verify old socket was closed
+        old_rep_socket.close.assert_called()
+        # Verify new manager is active
+        self.assertIs(msm.manager, manager2)
+
+    def test_cleanup_closes_sockets_before_terminating_context(self):
+        """Verify cleanup() closes manager sockets before terminating ZMQ context."""
+        manager = init_share_memory(instance_world_size=2, instance_id=0)
+        rep_socket = manager.rep_socket
+
+        # Call cleanup
+        ShareMemoryManager.cleanup()
+
+        # Verify socket was closed
+        rep_socket.close.assert_called()
+        # Verify manager is None
+        self.assertIsNone(msm.manager)
+        # restore the mock context for subsequent tests
+        msm.ZMQ_CONTEXT = mock_zmq_ctx
 
 
 if __name__ == '__main__':

@@ -17,11 +17,7 @@
 #ifndef INFER_FLASH_ATTENTION_SPARSE_H
 #define INFER_FLASH_ATTENTION_SPARSE_H
 
-#if __has_include("../../../common/op_kernel/arch35/infer_flash_attention_comm.h")
-#include "../../../common/op_kernel/arch35/infer_flash_attention_comm.h"
-#else
 #include "infer_flash_attention_comm.h"
-#endif
 
 TEMPLATE_INTF
 __aicore__ inline void InitSparseTokensDefault(

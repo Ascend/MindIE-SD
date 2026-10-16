@@ -33,10 +33,8 @@
     __has_include( \
         "../../eagle_fused_infer_attention_score/eagle_common/op_kernel/arch35/flash_attention_score_tiling_regbase.h")
 #include "../../eagle_fused_infer_attention_score/eagle_common/op_kernel/arch35/flash_attention_score_tiling_regbase.h"
-#elif __has_include("../../../common/op_kernel/arch35/flash_attention_score_tiling_regbase.h")
-#include "../../../common/op_kernel/arch35/flash_attention_score_tiling_regbase.h"
 #else
-#include "../../common/arch35/flash_attention_score_tiling_regbase.h"
+#error "FIA arch35 tiling_regbase must live under fused_infer_attention_score/op_kernel/eagle_common/op_kernel/arch35"
 #endif
 
 template <typename T> class PromptFlashAttentionZeroOutPut {

@@ -14,7 +14,7 @@ The core principle is: through an asynchronous pipeline design, computation and 
 
 The following diagram compares synchronous and asynchronous offload flows:
 
-![](../../figures/offload_process_image.png) ![](../../figures/async_offload_image.png)
+![](../../figures/offload_process_image_en.png) ![](../../figures/async_offload_image_en.png)
 
 Implemented through the following mechanisms:
 

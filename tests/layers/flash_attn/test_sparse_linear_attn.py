@@ -16,7 +16,7 @@ import sys
 import unittest
 from contextlib import nullcontext
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import torch
 
@@ -28,6 +28,7 @@ from mindiesd.utils.exception import ParametersInvalid
 try:
     from mindiesd.layers.flash_attn.sparse_linear_attn import (
         SparseLinearAttention,
+        _ASCENDC_A5_BLKK_ALIGN,
         _ASCENDC_BLKK_ALIGN,
         _ASCENDC_SUPPORTED_HEAD_DIMS,
         _ascendc_shape_supported,
@@ -38,12 +39,14 @@ try:
         _resolve_sparse_attn_backend,
         _validate_inner_precise,
         get_block_map,
+        is_a5_device,
     )
 
     _IMPORT_OK = True
     _IMPORT_ERR = None
 except ImportError as exc:
     SparseLinearAttention = None
+    _ASCENDC_A5_BLKK_ALIGN = 16
     _ASCENDC_BLKK_ALIGN = 128
     _ASCENDC_SUPPORTED_HEAD_DIMS = ()
     _ascendc_shape_supported = None
@@ -54,6 +57,7 @@ except ImportError as exc:
     _resolve_sparse_attn_backend = None
     _validate_inner_precise = None
     get_block_map = None
+    is_a5_device = None
     _IMPORT_OK = False
     _IMPORT_ERR = exc
 
@@ -76,8 +80,10 @@ BLK = 128
 BLK_TRITON = 64
 # Neither ascendc nor triton can serve these head_dim values.
 _UNSUPPORTED_HEAD_DIMS = (96, 48, 192, 256, 512)
-# BLKQ/BLKK combos that neither backend supports (head_dim=64, BLKK not 128-aligned).
-_UNSUPPORTED_BLK_COMBOS = ((16, 64), (32, 64), (100, 64), (64, 96), (128, 96))
+# These combos are valid on A5 but unsupported on A2/A3.
+_NON_A5_UNSUPPORTED_BLK_COMBOS = ((16, 64), (32, 64), (100, 64), (64, 96), (128, 96))
+# These combos are unsupported on every device because BLKK is not 16-aligned or Triton-supported.
+_ALL_DEVICE_UNSUPPORTED_BLK_COMBOS = ((64, 72), (100, 72), (128, 100))
 # All valid triton BLKQ/BLKK combinations (product of supported block sizes).
 _TRITON_BLK_COMBOS = (
     (64, 64),
@@ -93,6 +99,7 @@ _ASCENDC_BLK_COMBOS = (
     (128, 256),
 )
 _RESOLVE_PATCH = 'mindiesd.layers.flash_attn.sparse_linear_attn._resolve_sparse_attn_backend'
+_A5_PATCH = 'mindiesd.layers.flash_attn.sparse_linear_attn.is_a5_device'
 _ATTN_PATCH = 'mindiesd.layers.flash_attn.sparse_linear_attn._attention.apply'
 _BSA_PATCH = 'mindiesd.layers.flash_attn.sparse_linear_attn.block_sparse_attention'
 # Production-like precision scenario on 910B (see bench_sparse_linear_attn_forward.py).
@@ -106,7 +113,12 @@ PRECISION_SEED = 42
 
 
 def _backend_for(mod):
-    return _resolve_sparse_attn_backend(mod.proj_l.in_features, mod.BLKQ, mod.BLKK)
+    return _resolve_sparse_attn_backend(
+        mod.proj_l.in_features,
+        mod.BLKQ,
+        mod.BLKK,
+        is_950=getattr(mod, '_is_950', None),
+    )
 
 
 def _iter_ascendc_shape_matrix():
@@ -159,7 +171,14 @@ def _mock_block_map_return(seq_len=SEQ, batch=BATCH, head=HEAD, blk=BLK):
 # ---------------------------------------------------------------------------
 @_SKIP_NO_TRITON
 class TestSparseLinearAttentionInit(unittest.TestCase):
-    def test_default_backend_falls_back_to_triton_when_blkk_64(self):
+    @patch(_A5_PATCH, return_value=True)
+    def test_default_block64_prefers_ascendc_on_a5(self, _mock_is_a5_device):
+        mod = SparseLinearAttention(head_dim=HEADDIM, topk=TOPK)
+        self.assertTrue(mod._is_950)
+        self.assertEqual(_backend_for(mod), 'ascendc')
+
+    @patch(_A5_PATCH, return_value=False)
+    def test_default_backend_falls_back_to_triton_when_blkk_64(self, _mock_is_a5_device):
         mod = SparseLinearAttention(head_dim=HEADDIM, topk=TOPK)
         self.assertEqual(mod.BLKQ, BLK_TRITON)
         self.assertEqual(mod.BLKK, BLK_TRITON)
@@ -176,6 +195,7 @@ class TestSparseLinearAttentionInit(unittest.TestCase):
         self.assertEqual(_ASCENDC_SUPPORTED_HEAD_DIMS, (64, 128))
 
     def test_block_size_constants(self):
+        self.assertEqual(_ASCENDC_A5_BLKK_ALIGN, 16)
         self.assertEqual(_ASCENDC_BLKK_ALIGN, 128)
         self.assertEqual(_TRITON_SUPPORTED_BLOCK_SIZES, (64, 128))
 
@@ -183,13 +203,28 @@ class TestSparseLinearAttentionInit(unittest.TestCase):
         self.assertEqual(_resolve_sparse_attn_backend(64, 64, 128), 'ascendc')
         self.assertEqual(_resolve_sparse_attn_backend(128, 128, 128), 'ascendc')
 
+    def test_resolve_prefers_ascendc_for_block64_only_on_a5(self):
+        self.assertEqual(_resolve_sparse_attn_backend(64, 64, 64, is_950=True), 'ascendc')
+        self.assertEqual(_resolve_sparse_attn_backend(64, 64, 64, is_950=False), 'triton')
+
+    def test_resolve_detects_a5_when_device_flag_is_omitted(self):
+        with patch(_A5_PATCH, return_value=True):
+            self.assertEqual(_resolve_sparse_attn_backend(64, 64, 64), 'ascendc')
+
+    def test_shape_support_detects_a5_when_device_flag_is_omitted(self):
+        with patch(_A5_PATCH, return_value=True):
+            self.assertTrue(_ascendc_shape_supported(64, 64, 64))
+        with patch(_A5_PATCH, return_value=False):
+            self.assertFalse(_ascendc_shape_supported(64, 64, 64))
+
     def test_resolve_falls_back_to_triton_when_ascendc_unsupported(self):
-        for head_dim, blkq, blkk in ((64, 64, 64), (32, 64, 128), (16, 64, 64)):
-            with self.subTest(head_dim=head_dim, blkq=blkq, blkk=blkk):
-                self.assertEqual(
-                    _resolve_sparse_attn_backend(head_dim, blkq, blkk),
-                    'triton',
-                )
+        with patch(_A5_PATCH, return_value=False):
+            for head_dim, blkq, blkk in ((64, 64, 64), (32, 64, 128), (16, 64, 64)):
+                with self.subTest(head_dim=head_dim, blkq=blkq, blkk=blkk):
+                    self.assertEqual(
+                        _resolve_sparse_attn_backend(head_dim, blkq, blkk),
+                        'triton',
+                    )
         mod = SparseLinearAttention(head_dim=HEADDIM, topk=TOPK, BLKQ=100, BLKK=BLK)
         self.assertEqual(_backend_for(mod), 'ascendc')
 
@@ -229,15 +264,6 @@ class TestSparseLinearAttentionInit(unittest.TestCase):
                 )
                 self.assertEqual(_backend_for(mod), 'triton')
 
-    def test_triton_fallback_when_blkk_not_aligned(self):
-        mod = SparseLinearAttention(
-            head_dim=HEADDIM,
-            topk=TOPK,
-            BLKQ=BLK_TRITON,
-            BLKK=BLK_TRITON,
-        )
-        self.assertEqual(_backend_for(mod), 'triton')
-
     def test_rejects_unsupported_head_dim_at_init(self):
         for head_dim in _UNSUPPORTED_HEAD_DIMS:
             with self.subTest(head_dim=head_dim):
@@ -249,16 +275,42 @@ class TestSparseLinearAttentionInit(unittest.TestCase):
                         BLKK=BLK_TRITON,
                     )
 
-    def test_rejects_unsupported_block_combo_at_init(self):
-        for blkq, blkk in _UNSUPPORTED_BLK_COMBOS:
-            with self.subTest(blkq=blkq, blkk=blkk):
-                with self.assertRaises(ParametersInvalid):
-                    SparseLinearAttention(
+    def test_rejects_non_a5_block_combos_at_init(self):
+        with patch(_A5_PATCH, return_value=False):
+            for blkq, blkk in _NON_A5_UNSUPPORTED_BLK_COMBOS:
+                with self.subTest(blkq=blkq, blkk=blkk):
+                    with self.assertRaises(ParametersInvalid):
+                        SparseLinearAttention(
+                            head_dim=HEADDIM,
+                            topk=TOPK,
+                            BLKQ=blkq,
+                            BLKK=blkk,
+                        )
+
+    def test_accepts_same_block_combos_on_a5(self):
+        with patch(_A5_PATCH, return_value=True):
+            for blkq, blkk in _NON_A5_UNSUPPORTED_BLK_COMBOS:
+                with self.subTest(blkq=blkq, blkk=blkk):
+                    mod = SparseLinearAttention(
                         head_dim=HEADDIM,
                         topk=TOPK,
                         BLKQ=blkq,
                         BLKK=blkk,
                     )
+                    self.assertEqual(_backend_for(mod), 'ascendc')
+
+    def test_rejects_unaligned_block_combos_on_all_devices(self):
+        for is_a5 in (False, True):
+            with patch(_A5_PATCH, return_value=is_a5):
+                for blkq, blkk in _ALL_DEVICE_UNSUPPORTED_BLK_COMBOS:
+                    with self.subTest(is_a5=is_a5, blkq=blkq, blkk=blkk):
+                        with self.assertRaises(ParametersInvalid):
+                            SparseLinearAttention(
+                                head_dim=HEADDIM,
+                                topk=TOPK,
+                                BLKQ=blkq,
+                                BLKK=blkk,
+                            )
 
     def test_triton_supported_head_dims_constant(self):
         self.assertEqual(_TRITON_SUPPORTED_HEAD_DIMS, (16, 32, 64, 128))
@@ -355,6 +407,40 @@ class TestGetBlockMap(unittest.TestCase):
 # ---------------------------------------------------------------------------
 @_SKIP_NO_TRITON
 class TestSparseAttentionForward(unittest.TestCase):
+    def test_forward_refreshes_a5_detection_before_backend_resolution(self):
+        class ExpectedBsaBackend(Exception):
+            pass
+
+        class UnexpectedTritonBackend(Exception):
+            pass
+
+        with patch(_A5_PATCH, return_value=False):
+            mod = SparseLinearAttention(head_dim=HEADDIM, topk=TOPK)
+
+        def make_fake_npu_tensor():
+            tensor = MagicMock()
+            tensor.dtype = torch.float16
+            tensor.shape = (BATCH, HEAD, SEQ, HEADDIM)
+            tensor.device.type = 'npu'
+            tensor.contiguous.return_value = tensor
+            tensor.to.return_value = tensor
+            return tensor
+
+        q = make_fake_npu_tensor()
+        k = make_fake_npu_tensor()
+        v = make_fake_npu_tensor()
+        with (
+            patch(_A5_PATCH, return_value=True),
+            patch(
+                'mindiesd.layers.flash_attn.sparse_linear_attn.get_block_map',
+                return_value=(None, None, 1),
+            ),
+            patch(_BSA_PATCH, side_effect=ExpectedBsaBackend),
+            patch(_ATTN_PATCH, side_effect=UnexpectedTritonBackend),
+        ):
+            with self.assertRaises(ExpectedBsaBackend):
+                mod(q, k, v)
+
     @patch('mindiesd.layers.flash_attn.sparse_linear_attn.get_block_map')
     def test_rejects_non_npu_device(self, mock_get_block_map):
         mock_get_block_map.return_value = _mock_block_map_return()
@@ -398,8 +484,7 @@ class TestSparseLinearAttentionNPU(unittest.TestCase):
     def setUp(self):
         self.device = torch.device('npu:0')
         torch.npu.set_device(self.device)
-        dev_name = torch.npu.get_device_properties(self.device).name
-        self.is_950 = '950' in dev_name
+        self.is_950 = is_a5_device()
         self.inner_precise = 4 if self.is_950 else 0
         self.seq_len = 1024
 
@@ -437,7 +522,12 @@ class TestSparseLinearAttentionNPU(unittest.TestCase):
             inner_precise=inner_precise,
         ).to(self.device)
 
-        expected_backend = force_backend or _resolve_sparse_attn_backend(head_dim, blkq, blkk)
+        expected_backend = force_backend or _resolve_sparse_attn_backend(
+            head_dim,
+            blkq,
+            blkk,
+            is_950=self.is_950,
+        )
         resolve_ctx = patch(_RESOLVE_PATCH, return_value=force_backend) if force_backend is not None else nullcontext()
 
         with resolve_ctx:
@@ -458,8 +548,11 @@ class TestSparseLinearAttentionNPU(unittest.TestCase):
         """实机：ascendc 自然路径覆盖其支持的全部 shape。"""
         for head_dim, blkq, blkk in _iter_ascendc_npu_shapes():
             with self.subTest(head_dim=head_dim, blkq=blkq, blkk=blkk):
-                self.assertTrue(_ascendc_shape_supported(head_dim, blkq, blkk))
-                self.assertEqual(_resolve_sparse_attn_backend(head_dim, blkq, blkk), 'ascendc')
+                self.assertTrue(_ascendc_shape_supported(head_dim, blkq, blkk, is_950=self.is_950))
+                self.assertEqual(
+                    _resolve_sparse_attn_backend(head_dim, blkq, blkk, is_950=self.is_950),
+                    'ascendc',
+                )
                 self._run_npu_forward(
                     head_dim,
                     blkq,
@@ -479,20 +572,39 @@ class TestSparseLinearAttentionNPU(unittest.TestCase):
                     inner_precise=None,
                 )
 
+    def test_a5_ascendc_block64_fp16_and_bf16(self):
+        """A5实机：Block64 自然选择 AscendC BSA，覆盖 fp16/bf16。"""
+        if not self.is_950:
+            self.skipTest('A5-only Block64 BSA test.')
+        self.assertTrue(_ascendc_shape_supported(HEADDIM, 64, 64, is_950=True))
+        self.assertEqual(_resolve_sparse_attn_backend(HEADDIM, 64, 64, is_950=True), 'ascendc')
+        for use_bf16 in (False, True):
+            with self.subTest(use_bf16=use_bf16):
+                self._run_npu_forward(
+                    HEADDIM,
+                    64,
+                    64,
+                    use_bf16=use_bf16,
+                    inner_precise=None,
+                )
+
     def test_triton_npu_natural_fallback_shapes_fp16(self):
         """实机：triton 自然 fallback 覆盖 ascendc 不支持的 shape。"""
         for head_dim, blkq, blkk in _iter_triton_npu_shapes():
-            if _ascendc_shape_supported(head_dim, blkq, blkk):
+            if _ascendc_shape_supported(head_dim, blkq, blkk, is_950=self.is_950):
                 continue
             with self.subTest(head_dim=head_dim, blkq=blkq, blkk=blkk):
                 self.assertTrue(_triton_shape_supported(head_dim, blkq, blkk))
-                self.assertEqual(_resolve_sparse_attn_backend(head_dim, blkq, blkk), 'triton')
+                self.assertEqual(
+                    _resolve_sparse_attn_backend(head_dim, blkq, blkk, is_950=self.is_950),
+                    'triton',
+                )
                 self._run_npu_forward(head_dim, blkq, blkk)
 
     def test_triton_npu_natural_fallback_shapes_bf16(self):
         """实机：triton bf16 自然 fallback 覆盖 ascendc 不支持的 shape。"""
         for head_dim, blkq, blkk in _iter_triton_npu_shapes():
-            if _ascendc_shape_supported(head_dim, blkq, blkk):
+            if _ascendc_shape_supported(head_dim, blkq, blkk, is_950=self.is_950):
                 continue
             with self.subTest(head_dim=head_dim, blkq=blkq, blkk=blkk):
                 self._run_npu_forward(head_dim, blkq, blkk, use_bf16=True)
@@ -500,7 +612,7 @@ class TestSparseLinearAttentionNPU(unittest.TestCase):
     def test_triton_npu_mock_all_supported_overlap_shapes_fp16(self):
         """实机：mock resolve 强制走 triton，覆盖 ascendc 也支持但默认不会选中的 shape。"""
         for head_dim, blkq, blkk in _iter_triton_npu_shapes():
-            if not _ascendc_shape_supported(head_dim, blkq, blkk):
+            if not _ascendc_shape_supported(head_dim, blkq, blkk, is_950=self.is_950):
                 continue
             with self.subTest(head_dim=head_dim, blkq=blkq, blkk=blkk):
                 self.assertTrue(_triton_shape_supported(head_dim, blkq, blkk))
@@ -514,7 +626,7 @@ class TestSparseLinearAttentionNPU(unittest.TestCase):
     def test_triton_npu_mock_all_supported_overlap_shapes_bf16(self):
         """实机：mock resolve 强制走 triton（bf16），覆盖 ascendc 也支持的 shape。"""
         for head_dim, blkq, blkk in _iter_triton_npu_shapes():
-            if not _ascendc_shape_supported(head_dim, blkq, blkk):
+            if not _ascendc_shape_supported(head_dim, blkq, blkk, is_950=self.is_950):
                 continue
             with self.subTest(head_dim=head_dim, blkq=blkq, blkk=blkk):
                 self._run_npu_forward(
@@ -563,6 +675,8 @@ class TestSparseLinearAttentionNPU(unittest.TestCase):
 
     def test_triton_hd128_blk64_128_attention_ub_overflow(self):
         """triton 声明支持 (128,64,128)，但 _attention 在 910B UB 溢出；mock 强制走 triton。"""
+        if self.is_950:
+            self.skipTest('This test captures a 910B-specific Triton UB overflow.')
         q = torch.randn(
             BATCH,
             HEAD,
@@ -650,8 +764,7 @@ class TestSparseLinearAttentionPrecision(unittest.TestCase):
     def setUp(self):
         self.device = torch.device('npu:0')
         torch.npu.set_device(self.device)
-        dev_name = torch.npu.get_device_properties(self.device).name
-        if '950' in dev_name:
+        if is_a5_device():
             self.skipTest('inner_precise=0 with bf16 is unsupported on 950 series devices.')
 
     def test_ascendc_vs_triton_bf16_large_seq(self):

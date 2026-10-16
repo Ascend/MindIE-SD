@@ -305,8 +305,8 @@ static graphStatus FusedInferHostExecuteFunc(OpExecuteContext *host_api_ctx) {
 
     if (scalarParams.innerPrecise < 0 ||
         scalarParams.innerPrecise >
-            3) { // innerPrecise=2,3 corresponds to rows with invalid high precision and high performance
-        std::string reason = "The value of inner_precise must be in 0, 1, 2, 3";
+            4) { // innerPrecise=2,3 handles invalid rows; 4 selects C8V16 for supported full-quant paths.
+        std::string reason = "The value of inner_precise must be in 0, 1, 2, 3, 4";
         OP_LOGE_FOR_INVALID_VALUE_WITH_REASON(host_api_ctx->GetNodeName(), "inner_precise",
             std::to_string(scalarParams.innerPrecise).c_str(), reason.c_str());
         return GRAPH_FAILED;

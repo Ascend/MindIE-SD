@@ -9,7 +9,6 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-import json
 import os
 from collections import OrderedDict
 from functools import wraps
@@ -18,6 +17,7 @@ import torch
 from torch import nn
 import safetensors
 from .mode import QuantAlgorithm
+from .description import DESCRIPTION_METADATA_FIELDS, parse_quant_description
 from .config import OnlineQuantConfig, QuantConfig, TimestepPolicyConfig
 from .mode import W4A4_LIST, W8A8_LIST
 from .utils import (
@@ -32,16 +32,19 @@ from .utils import (
 from .layer import (
     W4A4QuantLinear,
     W4A4MXFP4DualQuantLinear,
+    W4A4MXFP4FourOverSixQuantLinear,
     W8A8QuantLinear,
     W8A8TimeStepQuantLinear,
     WeightQuantLinear,
     FP8RotateQuantFA,
     MXFP8RotateQuantFA,
+    MXFP4FourOverSixQuantFA,
     MXFP4QuantFA,
     W8A8MXFP8QuantLinear,
     W4A4MXFP4QuantLinear,
     W8A8OnlineQuantLinear,
     W8A8MXFP8OnlineQuantLinear,
+    W4A4MXFP4FourOverSixOnlineQuantLinear,
     W4A4MXFP4OnlineQuantLinear,
     W4A4MXFP4DualOnlineQuantLinear,
 )
@@ -113,6 +116,8 @@ def smooth_quantize_w8a8(name, layer, cfg, quant_weights, **kwargs):
         quant_candidates = OrderedDict([(nn.Linear, W4A4MXFP4DualQuantLinear)])
     elif cfg.quant_algo == QuantAlgorithm.W4A4_MXFP4_DYNAMIC:
         quant_candidates = OrderedDict([(nn.Linear, W4A4MXFP4QuantLinear)])
+    elif cfg.quant_algo == QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC:
+        quant_candidates = OrderedDict([(nn.Linear, W4A4MXFP4FourOverSixQuantLinear)])
     elif cfg.quant_algo == QuantAlgorithm.W4A4_MXFP4_SVD:
         raise ParametersInvalid("SVD Quant algorithm not supported!")
     else:
@@ -138,6 +143,7 @@ def smooth_quantize_w8a8(name, layer, cfg, quant_weights, **kwargs):
         QuantAlgorithm.W4A4_DYNAMIC,
         QuantAlgorithm.W4A4_MXFP4_DUALSCALE,
         QuantAlgorithm.W4A4_MXFP4_DYNAMIC,
+        QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC,
     ]:
         init_params['is_dynamic'] = True
 
@@ -166,8 +172,10 @@ def smooth_quantize(name, layer, cfg, quant_weights, **kwargs):
 def add_fa_quant(layer, cfg, prefix, quant_weights, **kwargs):
     if cfg.quant_algo in [QuantAlgorithm.MXFP4_DYNAMIC]:
         layer.fa_quant = MXFP4QuantFA(prefix, quant_weights, **kwargs)
+    elif cfg.quant_algo in [QuantAlgorithm.MXFP4_FOUROVERSIX_DYNAMIC]:
+        layer.fa_quant = MXFP4FourOverSixQuantFA(prefix, quant_weights, **kwargs)
     elif cfg.quant_algo in [QuantAlgorithm.FP8_DYNAMIC]:
-        layer.fa_quant = FP8RotateQuantFA(prefix, quant_weights)
+        layer.fa_quant = FP8RotateQuantFA(prefix, quant_weights, **kwargs)
     elif cfg.quant_algo in [QuantAlgorithm.MXFP8_DYNAMIC]:
         layer.fa_quant = MXFP8RotateQuantFA(prefix, quant_weights)
 
@@ -247,25 +255,23 @@ def modify_graph(model, modified_layers):
 def get_cfg_and_weights(quant_des_path):
     quant_des_path, filename, rank = replace_rank_suffix(quant_des_path)
     quant_algo_str = "quant_algo"
-    with file_utils.safe_open(
-        quant_des_path, "r", encoding="utf-8", permission_mode=file_utils.CONFIG_FILE_PERMISSION
-    ) as reader:
-        data = reader.read()
-    quant_des_dict = json.loads(data, strict=False)
+    try:
+        with file_utils.safe_open(
+            quant_des_path, "r", encoding="utf-8", permission_mode=file_utils.CONFIG_FILE_PERMISSION
+        ) as reader:
+            data = reader.read()
+    except UnicodeDecodeError as exc:
+        raise ParametersInvalid("Quantization description must be valid UTF-8.") from exc
+    quant_des_dict = parse_quant_description(data)
     logger.debug("[MindIE-SD/quantization] Quant description loaded. filename=%s.", filename)
 
-    if not quant_des_dict:
-        raise ParametersInvalid("quant_des_dict is none!")
-    exclude_layers = [k for k, v in quant_des_dict.items() if v == "FLOAT"]
-    valid_values = {item.value for item in QuantAlgorithm}  # 预计算有效值集合
+    exclude_layers = [k for k, v in quant_des_dict.items() if k not in DESCRIPTION_METADATA_FIELDS and v == "FLOAT"]
     quantized_layers = {
         k: {quant_algo_str: QuantAlgorithm(v.upper())}
         for k, v in quant_des_dict.items()
-        if isinstance(v, str) and v.upper() in valid_values
+        if k not in DESCRIPTION_METADATA_FIELDS and v != "FLOAT"
     }
-    quant_algo = quant_des_dict.get("model_quant_type", None)
-    if quant_algo is None:
-        raise ParametersInvalid("quant_algo must be the type of QuantAlgorithm.")
+    quant_algo = quant_des_dict["model_quant_type"]
 
     quant_config = {
         "quant_des_path": quant_des_path,
@@ -348,7 +354,7 @@ def quantize(model, quant_des_path=None, online_config=None, **kwargs):
 
     Args:
         model: Floating point models that need to be quantized.
-        quant_des_path: The absolute path of the quantized weight descripter exported by modelslim.
+        quant_des_path: The absolute path of the quantized weight descriptor exported by modelslim.
         **kwargs:
             quant_config: QuantConfig carries JSON path, JSON overrides, timestep, dtype and MXFP4 runtime settings.
             timestep_config: Compatibility input. Prefer quant_config.timestep_config.
@@ -429,12 +435,14 @@ _ONLINE_QUANT_LAYER_MAP = {
     QuantAlgorithm.W8A8_MXFP8: W8A8MXFP8OnlineQuantLinear,
     QuantAlgorithm.W4A4_MXFP4_DYNAMIC: W4A4MXFP4OnlineQuantLinear,
     QuantAlgorithm.W4A4_MXFP4_DUALSCALE: W4A4MXFP4DualOnlineQuantLinear,
+    QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC: W4A4MXFP4FourOverSixOnlineQuantLinear,
     QuantAlgorithm.W8A8: W8A8OnlineQuantLinear,
 }
 
 _W4A4_QUANT_TYPES = (
     QuantAlgorithm.W4A4_MXFP4_DYNAMIC,
     QuantAlgorithm.W4A4_MXFP4_DUALSCALE,
+    QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC,
 )
 
 
@@ -445,6 +453,7 @@ def _make_online_quant_config(online_config, quant_algo, dtype):
         timestep_config=online_config.timestep_config,
         mxfp4_scale_alg=online_config.mxfp4_scale_alg,
         mxfp4_dst_type_max=online_config.mxfp4_dst_type_max,
+        fp8_fa_mode=online_config.fp8_fa_mode,
     )
 
 

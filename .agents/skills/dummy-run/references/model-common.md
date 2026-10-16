@@ -1,0 +1,95 @@
+# dummy run `model/common` 通用能力
+
+> **定位**：`examples/dummy_run/model/common/` 承载 dummy run **跨模型共享**的能力，
+> 按职责分类（精度 / 编译性能补丁 / 量化），与模型特有的 builder
+> （`model/flux_model.py`、`model/qwen_image_model.py` 等）分离。
+
+## 目录结构
+
+```text
+examples/dummy_run/model/
+├── __init__.py            # 基础设施: check_npu / resolve_config_path / _PhaseTimer
+├── flux_model.py ...      # 各模型 builder（模型特有）
+└── common/
+    ├── __init__.py        # 统一导出面
+    ├── precision.py       # 精度类: bf16/fp32 模型级机制（--quant bf16/fp32）
+    ├── compile_patches.py # 性能补丁类: compile 图层性能问题的模型层替换
+    └── quantization.py    # 量化类: W8A8 在线量化，设备感知（--quant w8a8）
+```
+
+## 模块职责与 API
+
+### `precision.py` — 模型级 bf16/fp32 精度机制
+
+| 函数 | 职责 |
+|---|---|
+| `compute_dtype_from_precision("bf16"/"fp32")` | 精度字符串 → torch dtype |
+| `apply_compute_precision(pipe, precision)` | 组件权重 cast + 触发精度岛改写（bf16）；fp32 原行为 |
+| `_rewrite_apply_rotary_emb(dtype)` | 源码级改写 diffusers `apply_rotary_emb` 的 fp32 岛（FLUX/Qwen 共用） |
+| `_rewrite_apply_rotary_emb_qwen(dtype)` | Qwen complex 旋转改实数域等价（qwen_rope pattern 前置） |
+| `verify_compute_precision_graph()` | 遍历编译图标记 fp32/int32 计算节点（验证图真 bf16） |
+
+**要点**：bf16 必须"图真正 bf16"（源码级改写精度岛），否则编译侧隐式转换会打断 pattern 匹配。
+
+### `compile_patches.py` — compile 图层性能补丁（纯性能，与精度/量化正交）
+
+| 函数 | 解决的问题 |
+|---|---|
+| `replace_zero_dropout(module)` | `dropout(p=0)` → `nn.Identity`（compile 图残留 `aten.dropout` → DropoutV3 kernel 空跑，每步为 ms 量级无用开销；本组合观测） |
+| `replace_pos_embed_with_buffers(...)` | qwen pos_embed 输出预计算为 buffer（AiCpu freqs 生成链每步为 ms 量级开销、与上项同量级；qwen rope pattern 的 freqs 绑定 buffer 不受影响） |
+
+**共性**：eager 无开销、compile 图保留无意义节点/热点 → 用模型层模块替换解决（曾尝试 pattern matcher 方案触发死循环，故走模型层）。
+
+### `quantization.py` — W8A8 在线量化（设备感知）
+
+| 函数 | 职责 |
+|---|---|
+| `apply_w8a8_quant(pipe, attrs, dtype, fallback_layers, algorithm=None)` | 主入口：只量化 `nn.Linear`（Matmul），其余向量运算保持 bf16；`algorithm=None` 按设备自动选择 |
+| `_resolve_w8a8_algorithm()` | 按 `get_npu_device()` 返回的代际**查框架侧映射**选算法（新代际 → MXFP8 路径、旧代际 → dynamic INT8 路径）；代际名与映射**勿硬编码**，以框架代码 / 日志现场取证 |
+| `apply_mxfp8_quant(...)` | 兼容别名（强制 MXFP8，历史脚本使用） |
+| `report_quant_layers(pipe, attrs)` | 汇总量化命中（quant linear / remaining nn.Linear） |
+| `_align_bias_dtype(module, dtype)` | 兜底：量化层 bias 对齐 bf16（防 Dynamo guard 失败重编译） |
+
+**设备映射（选档语义）**：**代际 → 实际算法没有单一真源文档**（`docs/zh/features/quantization.md`
+只给档位语义，不含档位 → 代际映射表）；档位语义查该文件的档位表，实际算法须用 `npu-smi info` 确认目标代际后
+**现场取证**（框架侧代码/日志），**勿硬编码代际名**。
+**档位名 ≠ 实际算法**的完整语义（同一档名在不同设备代际的映射、以及"该不该开、开哪一档"）
+见 `../../dit-perf-opt/references/quant-tier-device-mapping.md`——本处不展开。
+
+**量化范围与契约**（只有 `nn.Linear` 被替换 / GroupMatmul 仅走 MoE 路径 / FA 不量化 /
+图中无 fp32 节点 / INT8 路径尚需真机验证）见
+`../../quantization-dev/references/online-quant-contract.md`——**该契约的单点在那里**；本技能只提供载体。
+
+## 脚本接入方式
+
+各 `*_infer.py` 统一 `from model.common import ...`（7 个符号：`apply_compute_precision`、
+`apply_w8a8_quant`、`compute_dtype_from_precision`、`replace_pos_embed_with_buffers`、
+`replace_zero_dropout`、`report_quant_layers`、`verify_compute_precision_graph`）。
+
+`--quant` 分发（main 内；MiniMax-H3 FFN 融合（mm_swiglu_mxquant）**不做 eager patch**——
+由 compile 侧 pattern `enable_minimax_h3_ffn_fusion`（默认 True）在图编译期命中承载，
+dummy run 保持最小代码改动）：
+
+```python
+if args.quant == "w8a8":
+    apply_compute_precision(pipe, "bf16")          # bf16 基座
+    apply_w8a8_quant(pipe, attrs=("transformer",)) # 设备感知: 代际 → 算法由框架侧映射决定（现场取证，勿硬编码代际名）
+    report_quant_layers(pipe, attrs=("transformer",))
+    # FFN 融合: 无 eager patch; compile(--compile)时 pattern 命中
+else:
+    apply_compute_precision(pipe, args.quant)      # fp32 / bf16
+```
+
+> Wan 需传 `fallback_layers={"*time_embedder*": QuantAlgorithm.W16A16}`（time_embedder
+> 用 `next(iter(parameters()))` 探测 dtype，量化后参数为空会 StopIteration）。
+
+## 与 mindiesd 框架的关系
+
+- 复用 `mindiesd.quantize()` 在线路径，**mindiesd quantization 模块零改动**（唯一例外：修复
+  guard 稳定性 bug 时改了 `mindiesd/quantization/layer.py` 的 bias 就地变异，见
+  pattern-dev/references/pattern-dev-notes.md §4）
+- 设备识别用 `mindiesd.utils.get_platform.get_npu_device()`（soc 版本映射）
+
+## 维护与更新
+
+当新增共享能力、量化算法映射或模型接入方式变化时，按 dev-workflow 的复盘流程更新本文件。

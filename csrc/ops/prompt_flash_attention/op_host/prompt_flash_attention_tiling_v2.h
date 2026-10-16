@@ -26,7 +26,7 @@
 #include "prompt_flash_attention_tiling_context.h"
 #include "prompt_flash_attention_tiling_struct.h"
 #include "prompt_flash_attention_tiling_const.h"
-#include "../../common/op_kernel/arch35/flash_attention_score_tiling_regbase.h"
+#include "../../fused_infer_attention_score/op_kernel/eagle_common/op_kernel/arch35/flash_attention_score_tiling_regbase.h"
 #include "../op_kernel/arch35/prompt_flash_attention_tiling_regbase.h"
 #include "../../common/op_host/fia_tiling_base.h"
 

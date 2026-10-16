@@ -62,4 +62,10 @@ def register_pattern_to_pass(
         raise TypeError(f"input type is not supported! current type is：{type(pattern_or_patterns)}")
 
     for pattern in pattern_group:
-        patterns.register_pattern(pattern.name(), pattern.pattern, pattern.replacement, pattern.inputs())
+        patterns.register_pattern(
+            pattern.name(),
+            pattern.pattern,
+            pattern.replacement,
+            pattern.inputs(),
+            extra_check=getattr(pattern, "extra_check", None),
+        )

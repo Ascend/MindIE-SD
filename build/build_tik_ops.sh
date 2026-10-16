@@ -117,6 +117,14 @@ function build_tik_ops(){
         return 0
     fi
 
+    # msopgen (default -lan py) copies this TBE skeleton; ascendc/ and tools/ascend_project are not substitutes.
+    tik_proj_tmpl="${local_toolkit}/tools/op_project_templates/op_project_tmpl"
+    if [ ! -d "${tik_proj_tmpl}" ]; then
+        echo "WARNING: TIK/TBE project template not found: ${tik_proj_tmpl}"
+        echo "         Skipping build_tik_ops. msopgen gen requires this directory."
+        return 0
+    fi
+
     ori_path=${PWD}
     create_empty_custom_project
     release_framework_onnx

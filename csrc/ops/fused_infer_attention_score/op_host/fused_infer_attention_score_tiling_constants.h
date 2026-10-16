@@ -76,6 +76,8 @@ constexpr uint32_t PER_TOKEN_HEAD_PA_MODE = 5;
 constexpr uint32_t PER_TOKEN_GROUP_MODE = 6;
 constexpr uint32_t PER_BLOCK_MODE = 7;
 constexpr uint32_t PER_CHANNEL_GROUP_MODE = 8;
+constexpr uint32_t PER_BLOCK_V512_D128_MODE = 11;
+constexpr uint32_t PER_BLOCK_V512_D64_MODE = 12;
 
 // ROPE MLA
 constexpr uint32_t MLA_QKD_SIZE = 192;
@@ -87,6 +89,7 @@ constexpr uint32_t MLA_ROPE_D_DIM_64 = 64;
 constexpr uint32_t INNER_PRECISE_LIMIT = 4;
 constexpr uint32_t HIGH_PRECISION = 0;
 constexpr uint32_t HIGH_PERFORMANCE = 1;
+constexpr uint32_t LOW_HIGH_MIXED = 4;
 
 constexpr uint32_t BYTE_BLOCK = 32;
 constexpr int64_t SHAPE_PARAMS_CONST = 1;

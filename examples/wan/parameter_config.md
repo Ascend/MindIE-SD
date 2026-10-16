@@ -6,7 +6,7 @@
 
 模型权重详细信息如表格所示，用户需自行设置权重路径（例：/home/_\{用户名\}_/Wan2.1-T2V-14B）。
 
-**表 1**  模型权重列表
+**表 1** 模型权重列表
 
 <a name="table822517510017"></a>
 <table><thead align="left"><tr id="row42261751705"><th class="cellrowborder" valign="top" width="16.11%" id="mcps1.2.4.1.1"><p id="p13172172254"><a name="p13172172254"></a><a name="p13172172254"></a>模型</p>
@@ -45,7 +45,7 @@
 
 用户可自行设置推理脚本中的模型参数，参数解释详情请参见表格。
 
-**表 2**  模型推理参数说明
+**表 2** 模型推理参数说明
 
 <a name="table8470029931"></a>
 <table><thead align="left"><tr id="row347116291633"><th class="cellrowborder" valign="top" width="21.060000000000002%" id="mcps1.2.4.1.1"><p id="p184601755194118"><a name="p184601755194118"></a><a name="p184601755194118"></a>参数名</p>

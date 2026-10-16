@@ -1,8 +1,9 @@
 ---
 name: markdown-lint
+compatibility: markdownlint-cli v0.44.0, pre-commit
 description: MindIE-SD 仓库 Markdown 格式 lint 规则。当编写、修改或审查 Markdown 文件（README、文档、
               变更日志等）、或 CI 门禁报出 markdownlint 违规时使用此 skill。
-              即使用户只提到"格式问题"或"MD040报错"而未说 markdownlint，也应触发。
+              即使用户只提到"格式问题"或"MD040报错"而未说 markdownlint，也应触发；Python 格式问题见 code-standards。
               通常由 dev-workflow 和 code-standards 在编码/审查阶段指引加载。
 ---
 
@@ -13,7 +14,7 @@ description: MindIE-SD 仓库 Markdown 格式 lint 规则。当编写、修改�
 事实来源：
 
 - `.pre-commit-config.yaml`（`markdownlint` 钩子配置）
-- `markdownlint-cli` v0.46.0 规则集
+- `markdownlint-cli` v0.44.0 规则集
 
 ---
 
@@ -71,23 +72,39 @@ examples/dummy_run/
 | MD009 | 禁止行尾空格（由 `trailing-whitespace` 钩子覆盖） |
 | MD012 | 禁止连续多个空白行 |
 | MD031 | 围栏代码块前后需有空行 |
+| MD032 | 列表前后需有空行（`**标题**：` 段末**直接接列表**、块引用内列表项前缺空引用行都会触发） |
 | MD047 | 文件末尾需有换行符（由 `end-of-file-fixer` 钩子覆盖） |
 
 ---
 
 ## 2. 验证命令
 
+> ⚠️ **先读清钩子结构（2026-09 核实）**：`.pre-commit-config.yaml` 里有**两个同 `id: markdownlint`
+> 的钩子**，别当成一个：
+>
+> - `markdownlint-manual`（alias）：`exclude: ^\.agents/` + `stages: [manual]` —— **仓库 `.agents/`
+>   之外的 `.md` 才需要显式触发**；
+> - `markdownlint-agents`（alias）：`files: ^\.agents/.*\.md$`，**未覆盖 `stages` ⇒ 走 `default_stages:
+>   [pre-commit]`，即提交/CI 默认就会跑** —— 所以「本地 `pre-commit run --all-files` 通过 ≠ Markdown
+>   合规」这句话**对 `.agents/**` 不成立**。
+>
+> 另两条事实：配置为 `.markdownlint.json`（`default: true`，**关闭** `MD013`/`MD033`/`MD041`/`MD046`）；
+> 版本**必须用仓库 pin 的 v0.44.0** —— 更高版本（如 0.49.x）会对同一批文件报上千条 `MD060`
+> 版本性假违规（实测 0.44.0 = 0 违规 vs 0.49.1 = 1943 条）。
+
 ### 2.1 全量检查
 
 ```shell
-# 检查单个文件
-pre-commit run markdownlint --files path/to/file.md
+# 检查单个文件（manual 档的钩子必须带 --hook-stage manual，否则被跳过 = 实际没检查）
+pre-commit run markdownlint-manual --hook-stage manual --files path/to/file.md
 
 # 检查所有文件（CI 模式）
-pre-commit run markdownlint --all-files
+pre-commit run markdownlint-manual --hook-stage manual --all-files
 ```
 
-> `markdownlint` 钩子在 `.pre-commit-config.yaml` 中配置为 `stages: [manual]`，需显式触发。
+> `markdownlint-manual`（全仓档）配置为 `stages: [manual]`，**必须显式带 `--hook-stage manual`**
+> 才会执行——不带该标志的命令会被 pre-commit 跳过而**静默什么都不检查**。
+> `.agents/**/*.md` 由 `markdownlint-agents` 在默认档强制执行，无需手动触发。
 
 ### 2.2 提交范围专项检查
 
@@ -184,7 +201,7 @@ PowerShell 5.1 下用 `Get-Content` / `Set-Content` 读写含中文的 UTF-8 文
 
 ### 5.3 修复后验证
 
-1. 重跑 `markdownlint -c .markdownlint.json <files>` 确认 0 违规
+1. 重跑 `markdownlint -c .markdownlint.json {files}` 确认 0 违规
 2. `git diff` 检查只有预期替换行变化，无编码污染（BOM、乱码）
 3. 确认中文等非 ASCII 字符未损坏
 
@@ -192,3 +209,6 @@ PowerShell 5.1 下用 `Get-Content` / `Set-Content` 读写含中文的 UTF-8 文
 
 当 `markdownlint-cli` 版本升级、`.pre-commit-config.yaml` 中 markdownlint 配置变更、
 或新 MD 规则启用时，按 `dev-workflow` 的复盘流程更新本 skill。
+
+> 绑定提示：本 skill 内容与仓库 `.markdownlint.json` / pre-commit 配置强绑定，
+> 配置变更（含 MD 规则开关）后须同步本文规则描述与修复模板。

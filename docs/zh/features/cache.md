@@ -61,11 +61,11 @@ apply(function: callable, *args, **kwargs) -> Any
 
 ---
 
-## DitCache
+## DiTCache
 
 - **背景**
 
-  DiT模型在推理过程中会循环迭代T个步骤，每个步骤t都会完整的计算所有的block，而每个block都包含大量的计算操作（如下图所示）。但相邻步骤之间的latent很相似，导致推理过程中反复计算几乎相同的中间结果，造成计算冗余，推理速度慢。
+  DiT模型在推理过程中会循环迭代T个步骤，每个步骤t都会完整地计算所有的block，而每个block都包含大量的计算操作（如下图所示）。但相邻步骤之间的latent很相似，导致推理过程中反复计算几乎相同的中间结果，造成计算冗余，推理速度慢。
 
   ![](../../figures/dit_cache_image_1.png)
 
@@ -162,7 +162,7 @@ apply(function: callable, *args, **kwargs) -> Any
 
 - **原理**
 
-  基于相邻时间步的特性相似性，与DitCache不同，AttentionCache通过复用block里的Attention计算结果，从而跳过部分Attention层，减少冗余计算，实现模型推理加速。
+  基于相邻时间步的特性相似性，与DiTCache不同，AttentionCache通过复用block里的Attention计算结果，从而跳过部分Attention层，减少冗余计算，实现模型推理加速。
 
 <br>
 

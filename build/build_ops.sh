@@ -37,16 +37,62 @@ if [ ! -f ${msopgen} ]; then
     exit 1
 fi
 
-ascendc_ops=${ASCEND_OP_NAME:-'laser_attention;la_preprocess;ada_block_sparse_attention;sparse_block_estimate;quant_flash_attn;quant_flash_attn_metadata;fused_infer_attention_score'}
+ascendc_ops=${ASCEND_OP_NAME:-'laser_attention;la_preprocess;ada_block_sparse_attention;sparse_block_estimate;norm_rope_concat;quant_flash_attn;quant_flash_attn_metadata;fused_infer_attention_score;eagle_quant_block_sparse_attention;eagle_block_sparse_attention;mul_add;eagle_ffn;quant_four_over_six_a5'}
+
+function remove_ops_from_semicolon_list() {
+    local op_list="$1"
+    local ops_to_remove="$2"
+    local filtered_ops=''
+    local item
+    local drop
+    local keep
+
+    IFS=';' read -ra op_array <<< "${op_list}"
+    IFS=';' read -ra drop_array <<< "${ops_to_remove}"
+    for item in "${op_array[@]}"; do
+        keep='true'
+        for drop in "${drop_array[@]}"; do
+            if [ "${item}" = "${drop}" ]; then
+                keep='false'
+                break
+            fi
+        done
+        if [ "${keep}" = 'true' ]; then
+            if [ -z "${filtered_ops}" ]; then
+                filtered_ops="${item}"
+            else
+                filtered_ops="${filtered_ops};${item}"
+            fi
+        fi
+    done
+
+    echo "${filtered_ops}"
+}
 
 # ascend950 backend requires CANN 9.0+; remove ascend950 when CANN < 9.0
 default_compute_unit='ascend910;ascend910b;ascend910_93;ascend950'
+# Ops whose OpDef registers ascend950 as its only AICore().AddConfig() soc.
+# Exclude their sources entirely on CANN < 9.0, which does not support this backend.
+ascend950_only_ops='quant_flash_attn;quant_flash_attn_metadata;fused_infer_attention_score;eagle_ffn;eagle_quant_block_sparse_attention;quant_four_over_six_a5'
+# Ops whose sources use CANN 9+ only APIs even when built for ascend910b/ascend910_93:
+# eagle_block_sparse_attention pulls in the MXFP4 type fp4x2_e2m1_t (arch35 only, not
+# declared by any 8.5.0 header). AddConfig cannot express this, so such ops must leave
+# the op list entirely on older toolkits.
+cann_9_required_ops='eagle_block_sparse_attention'
 cann_version_file="${local_toolkit}/compiler/version.info"
 if [ -f "${cann_version_file}" ] && grep -Eq '^Version=([0-8])(\.|$)' "${cann_version_file}"; then
     echo "Detected CANN < 9.0 from ${cann_version_file}, disable ascend950 backend."
     default_compute_unit='ascend910;ascend910b;ascend910_93'
+    ascendc_ops=$(remove_ops_from_semicolon_list "${ascendc_ops}" "${ascend950_only_ops};${cann_9_required_ops}")
+    echo "Skip ascend950-only ops: ${ascend950_only_ops}"
+    echo "Skip CANN 9.0+ required ops: ${cann_9_required_ops}"
+    echo "Build AscendC ops after filtering: ${ascendc_ops}"
 fi
 ascend_compute_unit=${ASCEND_COMPUTE_UNIT:-${default_compute_unit}}
+# OpDef files consult this variable while op_build loads the op host .so (see
+# IsSocEnabled in norm_rope_concat_def.cpp), so it has to reach op_build's environment
+# and not only the CMake cache.
+export ASCEND_COMPUTE_UNIT="${ascend_compute_unit}"
 
 function sync_aicpu_ops_to_transformer_vendor(){
     src_cpu_dir="${current_script_dir}/vendors/aie_ascendc/op_impl/cpu"
@@ -63,6 +109,7 @@ function build_ops(){
     ori_path=${PWD}
     cd ${current_script_dir}
     rm -rf vendors
+    echo "SKIP_ALL_OPS_PLUGIN_BUILD=${SKIP_ALL_OPS_PLUGIN_BUILD:-0}"
     echo "Build AscendC ops: ${ascendc_ops}"
     echo "Build Ascend compute units: ${ascend_compute_unit}"
     source ${current_script_dir}/build_ascendc_ops.sh -n "${ascendc_ops}" -c "${ascend_compute_unit}"

@@ -12,9 +12,15 @@
 
 import torch
 import torch_npu
+from ...compilation.compiliation_config import CompilationConfig
 from .attention_operate import AttentionOperateBase, register_op_800, register_op_a5
 from .common import AttentionParam
 MAX_TOKEN = 2147483647
+
+
+def _aclgraph_fa_sync_enabled() -> bool:
+    """Synchronize FA mask dependencies only while ACLGraph is enabled."""
+    return CompilationConfig.aclgraph_only or CompilationConfig.aclgraph_with_compile
 
 
 @register_op_800("fused_attn_score")
@@ -54,7 +60,8 @@ class FlashAttentionScore(AttentionOperateBase):
             scale=scale,
             pre_tockens=MAX_TOKEN,
             next_tockens=MAX_TOKEN,
-            head_num=attn_param.head_num)[0]
+            head_num=attn_param.head_num,
+            sync=_aclgraph_fa_sync_enabled())[0]
         if not head_first:
             out = out.transpose(1, 2)
         return out
@@ -87,7 +94,8 @@ class FlashAttentionScore(AttentionOperateBase):
             scale=scale,
             pre_tockens=MAX_TOKEN,
             next_tockens=MAX_TOKEN,
-            head_num=attn_param.head_num)[0]
+            head_num=attn_param.head_num,
+            sync=_aclgraph_fa_sync_enabled())[0]
         if head_first:
             out = out.transpose(1, 2)
         return out
@@ -122,7 +130,8 @@ class FlashAttentionScore(AttentionOperateBase):
             scale=scale,
             pre_tockens=MAX_TOKEN,
             next_tockens=MAX_TOKEN,
-            head_num=attn_param.head_num)[0]
+            head_num=attn_param.head_num,
+            sync=_aclgraph_fa_sync_enabled())[0]
         if not head_first:
             out = out.reshape(attn_param.batch_size, attn_param.q_seqlen, attn_param.head_num, attn_param.head_dim)
         else:

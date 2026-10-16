@@ -27,10 +27,8 @@
 #elif defined(FIA_ENABLE_MLA) && \
     __has_include("../../../eagle_fused_infer_attention_score/eagle_common/op_kernel/arch35/vf/vf_flash_decode.h")
 #include "../../../eagle_fused_infer_attention_score/eagle_common/op_kernel/arch35/vf/vf_flash_decode.h"
-#elif __has_include("../../../../common/op_kernel/arch35/vf/vf_flash_decode.h")
-#include "../../../../common/op_kernel/arch35/vf/vf_flash_decode.h"
 #else
-#include "../../../common/arch35/vf/vf_flash_decode.h"
+#error "FIA arch35 vf_flash_decode must live under fused_infer_attention_score/op_kernel/eagle_common/op_kernel/arch35"
 #endif
 
 struct Vec1TaskParam {

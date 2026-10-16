@@ -13,10 +13,67 @@
 from typing import Tuple, List, Optional
 import math
 import torch
+import torch_npu
 from . import register_ops
 from ..utils import ParametersInvalid
 
 FREQUENCY_REGULATOR_MAX_FREQ = 0xFFFFFFFF
+APPLY_ROTARY_POS_EMB_LAYOUTS = ("BSND", "SBND", "BNSD", "TND")
+APPLY_ROTARY_POS_EMB_ROTARY_MODES = ("half", "interleave", "quarter")
+
+
+def apply_rotary_pos_emb(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    cos: torch.Tensor,
+    sin: torch.Tensor,
+    layout: str = "BSND",
+    rotary_mode: str = "half",
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Apply rotary position embedding to query and key in place on NPU.
+
+    Delegates to Pytorch Adapter (PTA) `torch_npu.npu_apply_rotary_pos_emb` without a CPU
+    fallback or a `fused=False` path. The wrapper explicitly forwards `layout`, preserving
+    its `BSND` default instead of PTA's `BSH` default. Supported layouts, modes, dtypes and
+    head dimensions also depend on the NPU model and the installed torch_npu/CANN versions;
+    accepting a layout or mode here does not guarantee support on every device.
+
+    Warning:
+        Both query and key are overwritten. Clone them before this call if their unrotated
+        values are needed later. Unlike `rotary_position_embedding`, which processes one
+        tensor and returns a new result, this API processes both query and key in place.
+
+    Args:
+        query (torch.Tensor): NPU query tensor. Updated in place.
+        key (torch.Tensor): NPU key tensor. Updated in place.
+        cos (torch.Tensor): NPU cosine cache with a backend-supported broadcast shape.
+        sin (torch.Tensor): NPU sine cache with the same shape and dtype as cos.
+        layout (str): Input layout, one of `BSND`, `SBND`, `BNSD` or `TND`. Defaults to `BSND`.
+        rotary_mode (str): One of `half`, `interleave` or `quarter`. Defaults to `half`.
+
+    Returns:
+        Tuple[torch.Tensor, torch.Tensor]: The rotated query and key, sharing storage with
+        the corresponding input tensors, not independent copies.
+
+    Raises:
+        ParametersInvalid: If `layout` or `rotary_mode` is unsupported.
+        RuntimeError: If the installed torch_npu does not provide `npu_apply_rotary_pos_emb`.
+    """
+    if layout not in APPLY_ROTARY_POS_EMB_LAYOUTS:
+        raise ParametersInvalid(
+            f"apply_rotary_pos_emb: layout must be one of {APPLY_ROTARY_POS_EMB_LAYOUTS}, but got {layout}."
+        )
+    if rotary_mode not in APPLY_ROTARY_POS_EMB_ROTARY_MODES:
+        raise ParametersInvalid(
+            f"apply_rotary_pos_emb: rotary_mode must be one of {APPLY_ROTARY_POS_EMB_ROTARY_MODES}, "
+            f"but got {rotary_mode}."
+        )
+    if not hasattr(torch_npu, "npu_apply_rotary_pos_emb"):
+        raise RuntimeError(
+            "apply_rotary_pos_emb requires torch_npu.npu_apply_rotary_pos_emb, which is missing in the "
+            "installed torch_npu version. Please upgrade torch_npu to a version that provides this API."
+        )
+    return torch_npu.npu_apply_rotary_pos_emb(query, key, cos, sin, layout=layout, rotary_mode=rotary_mode)
 
 
 def frequency_regulator(freq: int) -> torch.Tensor:
@@ -81,9 +138,10 @@ def attention_fake(
     is_high_precision: bool = True,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     softmax_log_max_sum = torch.empty(
-        [query.shape[0], query.shape[1], query.shape[2]], device=query.device, dtype=query.dtype
+        [query.shape[0], query.shape[1], query.shape[2]], device=query.device, dtype=torch.float32
     )
-    output = torch.empty_like(query)
+    output_dtype = torch.bfloat16 if query.dtype == torch.bfloat16 else torch.float32
+    output = torch.empty_like(query, dtype=output_dtype)
     return softmax_log_max_sum, output
 
 
@@ -345,6 +403,14 @@ def block_sparse_attention(
     q_dequant_scale: Optional[torch.Tensor] = None,
     k_dequant_scale: Optional[torch.Tensor] = None,
     v_dequant_scale: Optional[torch.Tensor] = None,
+    quant_mode: int = -1,
+    dst_type_max: float = 0.0,
+    q_dtype: Optional[int] = None,
+    k_dtype: Optional[int] = None,
+    v_dtype: Optional[int] = None,
+    q_scale_dtype: Optional[int] = None,
+    k_scale_dtype: Optional[int] = None,
+    v_scale_dtype: Optional[int] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     if block_shape is None:
         block_shape = [128, 128]
@@ -369,6 +435,20 @@ def block_sparse_attention(
         kwargs["q_dequant_scale"] = q_dequant_scale
         kwargs["k_dequant_scale"] = k_dequant_scale
         kwargs["v_dequant_scale"] = v_dequant_scale
+    if quant_mode != -1:
+        kwargs["quant_mode"] = quant_mode
+    if dst_type_max != 0.0:
+        kwargs["dst_type_max"] = dst_type_max
+    for name, dtype in (
+        ("q_dtype", q_dtype),
+        ("k_dtype", k_dtype),
+        ("v_dtype", v_dtype),
+        ("q_scale_dtype", q_scale_dtype),
+        ("k_scale_dtype", k_scale_dtype),
+        ("v_scale_dtype", v_scale_dtype),
+    ):
+        if dtype is not None:
+            kwargs[name] = dtype
     return getattr(torch.ops.mindiesd, "block_sparse_attention")(**kwargs)
 
 
@@ -390,9 +470,178 @@ def block_sparse_attention_fake(
     q_dequant_scale: Optional[torch.Tensor] = None,
     k_dequant_scale: Optional[torch.Tensor] = None,
     v_dequant_scale: Optional[torch.Tensor] = None,
+    quant_mode: int = -1,
+    dst_type_max: float = 0.0,
+    q_dtype: Optional[int] = None,
+    k_dtype: Optional[int] = None,
+    v_dtype: Optional[int] = None,
+    q_scale_dtype: Optional[int] = None,
+    k_scale_dtype: Optional[int] = None,
+    v_scale_dtype: Optional[int] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    # FP8 path: output is BF16; BF16/FP16 path: output matches input dtype.
+    # FP8/MXFP4 path: output is BF16; BF16/FP16 path: output matches input dtype.
+    # MXFP4 query packs 2 elements/byte, so the output head-dim doubles back.
     out_dtype = torch.bfloat16 if q_dequant_scale is not None else query.dtype
+    out_shape = list(query.shape)
+    if quant_mode >= 2:
+        out_shape[-1] *= 2
+    attention_out = torch.empty(out_shape, device=query.device, dtype=out_dtype)
+    # softmax_lse shape: TND -> [T, N, 1], BNSD -> [B, N, S, 1]
+    if q_input_layout == "TND":
+        lse_shape = [query.shape[0], query.shape[1], 1]
+    else:
+        lse_shape = [query.shape[0], query.shape[1], query.shape[2], 1]
+    softmax_lse = torch.empty(lse_shape, device=query.device, dtype=torch.float32)
+    return attention_out, softmax_lse
+
+
+def eagle_block_sparse_attention(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    block_sparse_mask: Optional[torch.Tensor] = None,
+    block_shape: List[int] = None,
+    q_input_layout: str = "BNSD",
+    kv_input_layout: str = "BNSD",
+    num_key_value_heads: int = 1,
+    scale_value: float = 1.0,
+    inner_precise: int = 0,
+    actual_seq_lengths: Optional[List[int]] = None,
+    actual_seq_lengths_kv: Optional[List[int]] = None,
+    softmax_lse_flag: int = 0,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    if block_shape is None:
+        block_shape = [128, 128]
+    kwargs = dict(
+        query=query,
+        key=key,
+        value=value,
+        block_sparse_mask=block_sparse_mask,
+        block_shape=block_shape,
+        q_input_layout=q_input_layout,
+        kv_input_layout=kv_input_layout,
+        num_key_value_heads=num_key_value_heads,
+        scale_value=scale_value,
+        inner_precise=inner_precise,
+        softmax_lse_flag=softmax_lse_flag,
+    )
+    if actual_seq_lengths is not None:
+        kwargs["actual_seq_lengths"] = actual_seq_lengths
+    if actual_seq_lengths_kv is not None:
+        kwargs["actual_seq_lengths_kv"] = actual_seq_lengths_kv
+    return getattr(torch.ops.mindiesd, "eagle_block_sparse_attention")(**kwargs)
+
+
+@register_ops.register_mindie_fake_op("eagle_block_sparse_attention")
+def eagle_block_sparse_attention_fake(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    block_sparse_mask: Optional[torch.Tensor] = None,
+    block_shape: List[int] = None,
+    q_input_layout: str = "BNSD",
+    kv_input_layout: str = "BNSD",
+    num_key_value_heads: int = 1,
+    scale_value: float = 1.0,
+    inner_precise: int = 0,
+    actual_seq_lengths: Optional[List[int]] = None,
+    actual_seq_lengths_kv: Optional[List[int]] = None,
+    softmax_lse_flag: int = 0,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    attention_out = torch.empty(query.shape, device=query.device, dtype=query.dtype)
+    if q_input_layout == "TND":
+        lse_shape = [query.shape[0], query.shape[1], 1]
+    else:
+        lse_shape = [query.shape[0], query.shape[1], query.shape[2], 1]
+    softmax_lse = torch.empty(lse_shape, device=query.device, dtype=torch.float32)
+    return attention_out, softmax_lse
+
+
+def eagle_quant_block_sparse_attention(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    block_sparse_mask: Optional[torch.Tensor] = None,
+    block_shape: List[int] = None,
+    q_input_layout: str = "BNSD",
+    kv_input_layout: str = "BNSD",
+    num_key_value_heads: int = 1,
+    scale_value: float = 1.0,
+    inner_precise: int = 4,
+    actual_seq_lengths: Optional[List[int]] = None,
+    actual_seq_lengths_kv: Optional[List[int]] = None,
+    softmax_lse_flag: int = 0,
+    query_scale: Optional[torch.Tensor] = None,
+    key_scale: Optional[torch.Tensor] = None,
+    value_scale: Optional[torch.Tensor] = None,
+    query_dtype: Optional[torch.dtype] = None,
+    key_dtype: Optional[torch.dtype] = None,
+    value_dtype: Optional[torch.dtype] = None,
+    output_dtype: Optional[torch.dtype] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    if block_shape is None:
+        block_shape = [128, 128]
+    kwargs = dict(
+        query=query,
+        key=key,
+        value=value,
+        block_sparse_mask=block_sparse_mask,
+        block_shape=block_shape,
+        q_input_layout=q_input_layout,
+        kv_input_layout=kv_input_layout,
+        num_key_value_heads=num_key_value_heads,
+        scale_value=scale_value,
+        inner_precise=inner_precise,
+        softmax_lse_flag=softmax_lse_flag,
+    )
+    if actual_seq_lengths is not None:
+        kwargs["actual_seq_lengths"] = actual_seq_lengths
+    if actual_seq_lengths_kv is not None:
+        kwargs["actual_seq_lengths_kv"] = actual_seq_lengths_kv
+    if query_scale is not None:
+        kwargs["query_scale"] = query_scale
+        kwargs["key_scale"] = key_scale
+        kwargs["value_scale"] = value_scale
+    if query_dtype is not None:
+        kwargs["query_dtype"] = query_dtype
+    if key_dtype is not None:
+        kwargs["key_dtype"] = key_dtype
+    if value_dtype is not None:
+        kwargs["value_dtype"] = value_dtype
+    if output_dtype is not None:
+        kwargs["output_dtype"] = output_dtype
+    return getattr(torch.ops.mindiesd, "eagle_quant_block_sparse_attention")(**kwargs)
+
+
+@register_ops.register_mindie_fake_op("eagle_quant_block_sparse_attention")
+def eagle_quant_block_sparse_attention_fake(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    block_sparse_mask: Optional[torch.Tensor] = None,
+    block_shape: List[int] = None,
+    q_input_layout: str = "BNSD",
+    kv_input_layout: str = "BNSD",
+    num_key_value_heads: int = 1,
+    scale_value: float = 1.0,
+    inner_precise: int = 4,
+    actual_seq_lengths: Optional[List[int]] = None,
+    actual_seq_lengths_kv: Optional[List[int]] = None,
+    softmax_lse_flag: int = 0,
+    query_scale: Optional[torch.Tensor] = None,
+    key_scale: Optional[torch.Tensor] = None,
+    value_scale: Optional[torch.Tensor] = None,
+    query_dtype: Optional[torch.dtype] = None,
+    key_dtype: Optional[torch.dtype] = None,
+    value_dtype: Optional[torch.dtype] = None,
+    output_dtype: Optional[torch.dtype] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    if output_dtype is not None:
+        out_dtype = output_dtype
+    elif query_scale is not None:
+        out_dtype = torch.bfloat16
+    else:
+        out_dtype = query.dtype
     attention_out = torch.empty(query.shape, device=query.device, dtype=out_dtype)
     # softmax_lse shape: TND -> [T, N, 1], BNSD -> [B, N, S, 1]
     if q_input_layout == "TND":
@@ -505,3 +754,129 @@ def adaln_v2_fake(
     mean_out = torch.empty((b, s, 1), dtype=x.dtype, device=x.device)
     rstd_out = torch.empty((b, s, 1), dtype=x.dtype, device=x.device)
     return torch.empty_like(x), mean_out, rstd_out
+
+
+def eagle_ffn_linear(
+    x: torch.Tensor,
+    weight1: torch.Tensor,
+    weight2: torch.Tensor,
+    bias1: torch.Tensor | None = None,
+    bias2: torch.Tensor | None = None,
+    activation: str = "gelu",
+    inner_precise: int = 0,
+) -> torch.Tensor:
+    """FFN 融合算子：y = act(x @ W1^T + b1) @ W2^T + b2（ascend950）。
+
+    weight1/weight2 支持 linear [N,K]/[N,H] 与 canonical [K,N]/[H,N] 双布局（自动检测，
+    方阵歧义默认 linear）；swiglu 使用单 matmul 形式 weight1=[2H,K]。
+    """
+    return getattr(torch.ops.mindiesd, "eagle_ffn_linear")(x, weight1, weight2, bias1, bias2, activation, inner_precise)
+
+
+@register_ops.register_mindie_fake_op("eagle_ffn_linear")
+def eagle_ffn_linear_fake(
+    x: torch.Tensor,
+    weight1: torch.Tensor,
+    weight2: torch.Tensor,
+    bias1: torch.Tensor | None = None,
+    bias2: torch.Tensor | None = None,
+    activation: str = "gelu",
+    inner_precise: int = 0,
+) -> torch.Tensor:
+    # 形状推导与 plugin 侧布局检测一致：方阵歧义默认 linear
+    x_k = x.shape[-1]
+    w1d0, w1d1 = weight1.shape[-2], weight1.shape[-1]
+    w2d0, w2d1 = weight2.shape[-2], weight2.shape[-1]
+    swiglu = activation.lower() == "swiglu"
+    hidden_w = w1d0 // 2 if swiglu else w1d0
+    hidden_w2 = w1d1 // 2 if swiglu else w1d1
+    if w1d1 == x_k and w1d0 != x_k:
+        is_linear = True
+    elif w1d0 == x_k and w1d1 != x_k:
+        is_linear = False
+    elif w1d0 == x_k and w1d1 == x_k:
+        is_linear = not (w2d0 == hidden_w2 and w2d1 != hidden_w)
+    else:
+        raise RuntimeError(f"eagle_ffn_linear: weight1 shape [{w1d0}, {w1d1}] does not match x K={x_k}")
+    out_last = w2d0 if is_linear else w2d1
+    return torch.empty(x.shape[:-1] + (out_last,), dtype=x.dtype, device=x.device)
+
+
+# ============================================================================
+# quant_four_over_six_a5（dynamic MX quant，46 自适应：bf16 -> FLOAT4_E2M1）
+# 注册名: quant_four_over_six_a5（仅 aclnn v2 直调路径，无 torch_npu 内置对应）
+# T9b: 仅保留 46 自适应路径（dst_type_max=4.0, scale_alg=2, blocksize=32, 尾轴, bf16）。
+# 非 46 组合（dst_type 41/36/35、scale_alg 0/1、dst_type_max 0/6/7、fp16 输入）已随
+# 清理删除——host tiling / plugin / fake 三层校验保持一致。
+# 注：float4 输出在 torch 层以 uint8 呈现（npu_dtype_cast 后 tensor.dtype == torch.uint8）。
+# ============================================================================
+_QUANT_DST_TYPE_TO_DTYPE = {
+    40: torch.uint8,  # FLOAT4_E2M1（4bit 打包，torch 层 uint8 呈现）
+}
+
+
+def _quant_dst_type_to_dtype(dst_type: int) -> torch.dtype:
+    dtype = _QUANT_DST_TYPE_TO_DTYPE.get(dst_type)
+    if dtype is None:
+        raise ParametersInvalid(
+            f"dst_type must be 40 (FLOAT4_E2M1, 4/6 adaptive is the only remaining path), but got {dst_type}"
+        )
+    return dtype
+
+
+def _quant_scale_dtype() -> torch.dtype:
+    # mxscale 为 E8M0（torch 层同样以 uint8 呈现，与 C++ 输出一致）
+    return torch.uint8
+
+
+def quant_four_over_six_a5(
+    x: torch.Tensor,
+    axis: int = -1,
+    round_mode: str = "rint",
+    dst_type: int = 40,
+    blocksize: int = 32,
+    scale_alg: int = 2,
+    dst_type_max: float = 4.0,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """dynamic MX 量化（46 自适应）：y = fp4 打包数据（float4 每字节 2 元素），mxscale 为 E8M0 缩放。
+
+    仅支持 46 自适应组合：bf16 输入、dst_type=40、scale_alg=2、dst_type_max=4.0、
+    blocksize=32、量化轴为尾轴（其余组合已随清理删除，非法入参由 NPU 侧报错）。
+    返回 (y, mxscale)，y 形状 = x 形状最后一维减半（uint8 打包呈现），mxscale 形状
+    为 x 在 axis 维按 ceil(ceil(dim/blocksize)/2) 压缩并 append 2（与 infershape 公式一致）。
+    """
+    return getattr(torch.ops.mindiesd, "quant_four_over_six_a5")(
+        x=x,
+        axis=axis,
+        round_mode=round_mode,
+        dst_type=dst_type,
+        blocksize=blocksize,
+        scale_alg=scale_alg,
+        dst_type_max=dst_type_max,
+    )
+
+
+@register_ops.register_mindie_fake_op("quant_four_over_six_a5")
+def quant_four_over_six_a5_fake(
+    x: torch.Tensor,
+    axis: int = -1,
+    round_mode: str = "rint",
+    dst_type: int = 40,
+    blocksize: int = 32,
+    scale_alg: int = 2,
+    dst_type_max: float = 4.0,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """占位 fake：只推导形状与 dtype，不做计算。
+
+    y 为 float4 打包输出，torch 层以 uint8 呈现（每字节 2 个 4bit 元素），
+    形状 = x 形状最后一维减半（与 C++ 实现/CollectB4ShapeInfo 语义一致）。
+    """
+    dim = axis if axis >= 0 else axis + x.dim()
+    # float4 打包：torch 层 uint8，形状最后一维减半
+    y_shape = list(x.shape[:-1]) + [x.shape[-1] // 2]
+    y = torch.empty(y_shape, dtype=_quant_dst_type_to_dtype(dst_type), device=x.device)
+    scale_shape = list(x.shape)
+    scale_shape[dim] = ((x.shape[dim] + blocksize - 1) // blocksize + 1) // 2
+    scale_shape.append(2)
+    mxscale = torch.empty(scale_shape, dtype=_quant_scale_dtype(), device=x.device)
+    return y, mxscale

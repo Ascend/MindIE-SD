@@ -2,7 +2,7 @@
 
 本指南旨在解决“在我的机器上快速搭建构建环境，并正常运行”问题，帮助你实现一个隔离且可复现的开发环境。下面，我们将按步骤完成该开发容器的搭建。
 
-## 步骤1：安装必须的软件与相关插件
+## 步骤1：安装必需的软件与相关插件
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop)
 - [Visual Studio Code](https://code.visualstudio.com/)
@@ -13,13 +13,13 @@
 1. 克隆代码仓
 
     ```bash
-    git clone MindIE-SD代码仓地址
+    git clone https://gitcode.com/Ascend/MindIE-SD.git
     cd MindIE-SD
     ```
 
 2. 用VS Code打开项目
 
-    ```Shell
+    ```shell
     code .
     ```
 

@@ -291,4 +291,4 @@ CFG fusion is another optimization approach: instead of parallelizing across dev
 
 Compared with CFG parallel, CFG fusion does not consume additional device resources and is suitable for scenarios with limited devices where reducing single-inference latency is desired. Both can be selected based on hardware conditions.
 
-![](../../figures/cfg_fusion.png)
+![](../../figures/cfg_fusion_en.png)

@@ -61,7 +61,7 @@ apply(function: callable, *args, **kwargs) -> Any
 
 ---
 
-## DitCache
+## DiTCache
 
 - **Background**
 

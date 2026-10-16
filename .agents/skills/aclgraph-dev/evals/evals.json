@@ -1,0 +1,38 @@
+{
+  "skill_name": "aclgraph-dev",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "静态 shape 大 batch 推理时 host launch 开销太大，怎么用 NPU 图批量下发加速？",
+      "expected_output": "路由到 aclgraph-dev：说明 NPUGraph 静态 capture + replay 原理，给出 CompilationConfig.aclgraph_only / aclgraph_with_compile 开关用法，说明适用条件（静态 shape）",
+      "files": [],
+      "expectations": [
+        "提到 torch.npu.NPUGraph 静态 capture + replay 机制",
+        "给出 aclgraph_only / aclgraph_with_compile 配置",
+        "说明静态 shape 大 batch 才适用，动态 shape 会触发重新 capture 或校验失败"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "aclgraph replay 时报 ACLGraph input mismatch at position 0，是什么问题？",
+      "expected_output": "定位为 replay 输入 shape/dtype 与 capture 不一致（D1 校验）：模型用了动态 shape 或换了不同 shape 输入，需保证 shape 稳定或触发新 capture",
+      "files": [],
+      "expectations": [
+        "解释 input mismatch 是 capture 与 replay 输入 shape/dtype 不一致",
+        "给出解决方向（shape 稳定 / 重新 capture / 关掉 aclgraph）",
+        "提到 safe_output_mode 与专用 copy stream 的行为"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "一个模型既要 pattern 融合又要批量下发，怎么组合？",
+      "expected_output": "用 aclgraph_with_compile=True：先走 MindieSDBackend.compile()（pattern 融合）再 NPUGraph capture，两者收益叠加",
+      "files": [],
+      "expectations": [
+        "给出 aclgraph_with_compile 组合用法",
+        "区分 aclgraph_only（跳过 compile）与 aclgraph_with_compile",
+        "提到 npu_graph_available 不可用时自动回退 default"
+      ]
+    }
+  ]
+}

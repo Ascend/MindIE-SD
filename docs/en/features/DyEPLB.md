@@ -4,7 +4,7 @@
 
 As visual generation models evolve toward the DiT architecture, introducing MoE mechanisms to break through Scaling Law has become an industry consensus. However, the massive parameter scale of DiT-MoE forces us to adopt Expert Parallelism (EP) strategies. Unlike LLMs, the strong spatial locality of visual data easily induces overload on specific experts, leading to severe computational load imbalance. Furthermore, the expert activation distribution during the diffusion model's denoising process exhibits significant temporal dynamics, meaning traditional static load balancing strategies completely fail in the face of this spatiotemporal dual heterogeneity.
 
-![](../../figures/dyeplb_image_1.png)
+![Dynamic expert load balancing workflow](../../figures/dyeplb_image_1.png)
 
 ## Technical Features
 
@@ -38,7 +38,9 @@ This solution dynamically adjusts expert weights on Ranks based on load informat
    | `max_move` | — | Maximum number of experts to move in EX mode |
    | `redundant` | — | Number of redundant experts |
    | `mode` | Required | A2A / AG / EX |
-   | `auth_key` | `secret_key` | Reads the `EPLB_AUTH_KEY` environment variable by default |
+   | `auth_key` | Auto-generated random key | Uses `--auth_key`, then `EPLB_AUTH_KEY`, and generates a random key if neither is provided |
+
+   Set the same non-empty secret on the scheduler and every worker host. For example, generate a key with `python -c "import secrets; print(secrets.token_hex(16))"` and set `EPLB_AUTH_KEY` to that value on all hosts. Empty or whitespace-only keys are rejected. An automatically generated scheduler key is not logged or shared with workers; configure a shared key to allow workers to connect.
 
    ```shell
    python -m mindiesd.eplb.eplb_scheduler \
@@ -51,6 +53,8 @@ This solution dynamically adjusts expert weights on Ranks based on load informat
 2. Import the load collector and dispatcher, initialize them, and start the worker thread.
 
    ```python
+   import os
+
    from mindiesd.eplb.dispatcher import DynamicDispatcher
    from mindiesd.eplb.collector import ExpertLoadCollector
    from mindiesd.eplb.task_manager import construct_expert_info_transfer_pool
@@ -61,6 +65,7 @@ This solution dynamically adjusts expert weights on Ranks based on load informat
    model.moe_module.block.dispatcher = DynamicDispatcher(expert_num, weight1, weight2, rank_in_group, ep_size)
 
    if eplb_enabled:
+       auth_key = os.environ["EPLB_AUTH_KEY"]
        construct_expert_info_transfer_pool(
            module=model, rank_in_group=rank_in_group, device=device,
            ip=host, port=port, auth_key=auth_key
@@ -79,22 +84,22 @@ This solution dynamically adjusts expert weights on Ranks based on load informat
 
 4. Insert load collection and weight replacement after `npu_moe_init_routing` and before `npu_grouped_matmul_finalize_routing` in the MoE forward pass.
 
-   ```python
-   expanded_tokens, expanded_row_idx, expanded_indices = torch_npu.npu_moe_init_routing(
-       tokens, row_idx, indices, tokens.shape[0])
+    ```python
+    expanded_tokens, expanded_row_idx, expanded_indices = torch_npu.npu_moe_init_routing(
+        tokens, row_idx, indices, tokens.shape[0])
 
-   self.expert_load_collector.collect_expert_load(expanded_indices)
-   self.dispatcher.check_consistency()
+    self.expert_load_collector.collect_expert_load(expanded_indices)
+    self.dispatcher.check_consistency()
 
-   if self.dispatcher.update_flag:
-       weight1, weight2, local_expert_num, device_indices_map, \
-           local_expert_indices_map, local_expert_list = \
-           self.dispatcher.update_module_weight_and_map()
-       self.weight1 = weight1
-       self.weight2 = weight2
-       self.local_expert_num = local_expert_num
+    if self.dispatcher.update_flag:
+        weight1, weight2, local_expert_num, device_indices_map, \
+            local_expert_indices_map, local_expert_list = \
+            self.dispatcher.update_module_weight_and_map()
+        self.weight1 = weight1
+        self.weight2 = weight2
+        self.local_expert_num = local_expert_num
 
-   tokens = torch_npu.npu_grouped_matmul_finalize_routing()
+    tokens = torch_npu.npu_grouped_matmul_finalize_routing()
     ```
 
 ### Class Descriptions
@@ -137,4 +142,4 @@ from mindiesd.eplb.task_manager import construct_expert_info_transfer_pool
 | `device` | `int` | Yes | - | Device number corresponding to the rank |
 | `ip` | `str` | Yes | - | Same as the server IP |
 | `port` | `int` | Yes | - | Same as the server port |
-| `auth_key` | `str` | No | `secret_key` | Reads the `EPLB_AUTH_KEY` environment variable by default |
+| `auth_key` | `str` | Yes | - | Pass the same non-empty key as the scheduler; the worker API does not read environment variables automatically |

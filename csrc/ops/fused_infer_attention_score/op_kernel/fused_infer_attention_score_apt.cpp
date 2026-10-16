@@ -36,7 +36,7 @@
 #define FullQuantTiling 15
 template <uint8_t inOutLayoutType, uint16_t config, uint8_t pseMode, uint8_t quantMode, bool hasAttenMask, bool hasRope,
     uint8_t KvLayoutType, bool isFd, bool emptyTensor, bool enableKVPrefix, bool enableS1OutSplit,
-    bool isReconstructTemp>
+    bool isReconstructTemp, bool c8v16>
 __global__ __aicore__ void eagle_fused_infer_attention_score(__gm__ uint8_t *query, __gm__ uint8_t *key,
     __gm__ uint8_t *value, __gm__ uint8_t *pse_shift, __gm__ uint8_t *attenMask, __gm__ uint8_t *actualSeqLengths,
     __gm__ uint8_t *actualSeqLengthsKV, __gm__ uint8_t *deq_scale1, __gm__ uint8_t *quant_scale1,
@@ -55,8 +55,8 @@ __global__ __aicore__ void eagle_fused_infer_attention_score(__gm__ uint8_t *que
     if (quantMode >= FullQuantTiling) {
         //pfa 模板
         prompt_flash_attention_FIAS_regbase<inOutLayoutType, config, pseMode, quantMode, hasAttenMask, hasRope,
-            KvLayoutType, isFd, emptyTensor, enableKVPrefix, enableS1OutSplit, isReconstructTemp>(query, key, value,
-            pse_shift, attenMask, actualSeqLengths, actualSeqLengthsKV, deq_scale1, quant_scale1, deq_scale2,
+            KvLayoutType, isFd, emptyTensor, enableKVPrefix, enableS1OutSplit, isReconstructTemp, c8v16>(query, key,
+            value, pse_shift, attenMask, actualSeqLengths, actualSeqLengthsKV, deq_scale1, quant_scale1, deq_scale2,
             quant_scale2, quant_offset2, antiquantScale, antiquantOffset, blocktable, queryPaddingSize, kvPaddingSize,
             keyAntiquantScale, keyAntiquantOffset, valueAntiquantScale, valueAntiquantOffset, keySharedPrefix,
             valueSharedPrefix, actualSharedPrefixLen, queryRope, keyRope, dequantScaleQuery, learnableSink,

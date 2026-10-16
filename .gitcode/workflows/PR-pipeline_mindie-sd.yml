@@ -1,0 +1,204 @@
+name: PR-pipeline_mindie-sd
+
+on:
+  pull_request_comment:
+    types: [ created ]
+    branches: [ "dev", "master", "v*.*.*" ]
+    comments: [ '^compile$' ]
+
+env:
+  pr_id: ${{ atomgit.event.pull_request.number }}
+  owner_name: Ascend
+
+permissions:
+  project: read
+  repository: read
+  id-token: write
+  pr: write
+  note: write
+
+stages:
+  stage1:
+    name: CodeCheck
+    select: selected_by_default
+    jobs:
+
+      CodeCheck_pre_commit:
+        name: CodeCheck_pre_commit
+        runs-on: [ self-hosted, default, x86, cpu=4 ]
+        container:
+          image: swr.cn-north-4.myhuaweicloud.com/atlas-ci/common:latest
+        steps:
+          - name: checkout
+            uses: checkout
+            with:
+              ref: refs/merge-requests/${{ env.pr_id }}/merge
+          - name: install gitleaks
+            run: |
+              cd ${ATOMGIT_WORKSPACE}
+              # TODO 将gitleaks依赖集成到镜像
+              wget --no-host-directories -c --no-check-certificate https://pytorch-package.obs.cn-north-4.myhuaweicloud.com/pta-codecheck/gitleaks
+              chmod +x gitleaks
+              cd -
+          - name: pre-commit
+            uses: openlibing-pre-commit-action
+
+      Detect_file_changes:
+        name: Detect_file_changes
+        runs-on: [ self-hosted, default, x86, cpu=4 ]
+        container:
+          image: swr.cn-north-4.myhuaweicloud.com/atlas-ci/common:latest
+        outputs:
+          need_build: ${{ steps.set-skip.outputs.need_build }}
+        steps:
+          - name: checkout
+            uses: checkout
+            with:
+              ref: refs/merge-requests/${{ env.pr_id }}/merge
+              fetch-depth: 0
+          - name: Only_doc_commit
+            id: filter
+            uses: paths-changes-filter
+            with:
+              event-name: 'pull_request'
+              base: ${{ atomgit.event.pull_request.base.ref }}
+              repo: ${{ atomgit.repository }}
+              number: ${{ env.pr_id }}
+              token: ${{ secrets.GIT_TOKEN }}
+              list-files: json
+              predicate-quantifier: every
+              filters: |
+                changed:
+                  - '**'
+                non-doc:
+                  - '!**/*.md'
+                  - '!**/*.rst'
+                  - '!**/*.log'
+                  - '!**/*.png'
+                  - '!**/*.jpg'
+                  - '!**/*.doc'
+                  - '!**/*.eddx'
+                  - '!**/*.svg'
+          - name: set build skip flag
+            id: set-skip
+            run: |
+              echo "changed: ${{ steps.filter.outputs.changed_files }}"
+              echo "non-doc: ${{ steps.filter.outputs.non-doc }}"
+              if [ "${{ steps.filter.outputs.non-doc }}" = "true" ]; then
+                echo "need_build=yes" >> "$ATOMGIT_OUTPUT"
+              else
+                echo "need_build=no" >> "$ATOMGIT_OUTPUT"
+              fi
+
+      sca-pr:
+        name: sca-pr
+        runs-on: [ self-hosted, default, x86, cpu=4 ]
+        container:
+          image: swr.cn-north-4.myhuaweicloud.com/atlas-ci/common:latest
+          options: --user root
+        steps:
+          - name: checkout
+            uses: checkout
+          - name: Run SCA PR scan
+            uses: openlibing/sca-action/sca-pr-action@v1.0.0
+            with:
+              project-name: MindIE
+      malicious-scan:
+        name: antipoison
+        runs-on: [ self-hosted, default, x86, cpu=4 ]
+        container:
+          image: swr.cn-north-4.myhuaweicloud.com/atlas-ci/common:latest
+          options: --user root
+        steps:
+          - name: checkout
+            uses: checkout
+          - name: Run malicious code scan
+            uses: openlibing/malicious-code-scan-action/malicious-code-pr-scan-action@v1.0.0
+            with:
+              project-name: MindIE
+              # rule、debug、platform-domain 等为可选项
+      associate_pr_comment:
+        name: associate_pr_comment
+        select: selected_by_default
+        runs-on: [ self-hosted, default, x86, cpu=16 ]
+        container:
+          image: swr.cn-north-4.myhuaweicloud.com/atlas-ci/common:latest
+        steps:
+          - name: associate-pr-comment
+            uses: associate-pr-comment
+          - name: pre_pipeline
+            id: pre_pipeline
+            uses: cann/.gitcode/actions/pre-pipeline@689551d6b29a77d8c2a005b8f1b3883db24820ef
+            with:
+              owner: ${{ env.owner_name }}
+              repo: ${{ atomgit.event.repository.name }}
+              pr_number: ${{ atomgit.event.pull_request.number }}
+              token: ${{ secrets.GIT_TOKEN }}
+              apply_label: 'true'
+              run_url: https://gitcode.com/${{ env.owner_name }}/${{ atomgit.event.repository.name }}/actions/runs/${{ atomgit.workflow_run_id }}
+
+  stage2:
+    name: Build
+    select: selected_by_default
+    jobs:
+      Build_linux_x86_abi1:
+        name: Build_linux_x86_abi1
+        if: ${{ jobs.Detect_file_changes.outputs.need_build == 'yes' }}
+        uses: .gitcode/workflows/build_job.yml
+        with:
+          abi_type: "1"
+          arch: "x86_64"
+          CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_x86:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311"
+          runs_on_arch: "x86"
+          pr_id: "${{ atomgit.event.pull_request.number }}"
+
+      Build_linux_arm_abi1:
+        name: Build_linux_arm_abi1
+        if: ${{ jobs.Detect_file_changes.outputs.need_build == 'yes' }}
+        uses: .gitcode/workflows/build_job.yml
+        with:
+          abi_type: "1"
+          arch: "aarch64"
+          CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_aarch64:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311"
+          runs_on_arch: "arm"
+          pr_id: "${{ atomgit.event.pull_request.number }}"
+
+      Build_linux_arm_abi0:
+        name: Build_linux_arm_abi0
+        if: ${{ jobs.Detect_file_changes.outputs.need_build == 'yes' }}
+        uses: .gitcode/workflows/build_job.yml
+        with:
+          abi_type: "0"
+          arch: "aarch64"
+          CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_aarch64:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311"
+          runs_on_arch: "arm"
+          pr_id: "${{ atomgit.event.pull_request.number }}"
+
+      UT_linux_arm:
+        name: UT_linux_arm
+        if: ${{ jobs.Detect_file_changes.outputs.need_build == 'yes' }}
+        uses: .gitcode/workflows/ut_job.yml
+        with:
+          CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_aarch64:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311"
+          runs_on_arch: "arm"
+          pr_id: "${{ atomgit.event.pull_request.number }}"
+
+post:
+  jobs:
+    query_pipeline:
+      name: associate_pr_comment
+      select: selected_by_default
+      runs-on: [ self-hosted, default, x86, cpu=4 ]
+      container:
+        image: swr.cn-north-4.myhuaweicloud.com/atlas-ci/common:latest
+      steps:
+        - name: query_pipeline
+          id: query_pipeline
+          uses: cann/.gitcode/actions/query-pipeline@689551d6b29a77d8c2a005b8f1b3883db24820ef
+          with:
+            owner: ${{ env.owner_name }}
+            repo: ${{ atomgit.event.repository.name }}
+            run_id: ${{ atomgit.workflow_run_id }}
+            token: ${{ secrets.GIT_TOKEN }}
+            pr_number: ${{ atomgit.event.pull_request.number }}
+            apply_label: 'true'

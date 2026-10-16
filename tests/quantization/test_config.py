@@ -13,8 +13,16 @@ import os
 import unittest
 from typing import Dict, List
 
-from mindiesd.quantization.config import QuantConfig, LayerQuantConfig, OnlineQuantConfig, TimestepPolicyConfig
-from mindiesd.quantization.mode import QuantAlgorithm, QuantMode
+from mindiesd.quantization.config import (
+    QuantConfig,
+    LayerQuantConfig,
+    OnlineQuantConfig,
+    TimestepPolicyConfig,
+    SUPPORTED_ONLINE_FA_TYPES,
+    SUPPORTED_ONLINE_QUANT_TYPES,
+)
+from mindiesd.quantization.mode import FP8FAMode, QuantAlgorithm, QuantMode
+from mindiesd.utils import ModelInitError
 
 
 @unittest.skipIf(
@@ -41,6 +49,21 @@ class TestQuantConfig(unittest.TestCase):
         config = QuantConfig(quant_algo=QuantAlgorithm.W8A8)
         config_dict = config.serialize_to_dict()
         self.assertEqual(config_dict['quant_algo'], QuantAlgorithm.W8A8)
+
+    def test_fp8_fa_mode_accepts_enum_and_string(self):
+        config = QuantConfig(fp8_fa_mode=FP8FAMode.C8V16_TILING512)
+        self.assertEqual(config.fp8_fa_mode, FP8FAMode.C8V16_TILING512)
+
+        config = QuantConfig(fp8_fa_mode="c8v16_tiling512")
+        self.assertEqual(config.fp8_fa_mode, FP8FAMode.C8V16_TILING512)
+
+        config = QuantConfig.from_kwargs({"fp8_fa_mode": "HIGH_PRECISION"})
+        self.assertEqual(config.fp8_fa_mode, FP8FAMode.HIGH_PRECISION)
+        self.assertEqual(config.to_kwargs()["fp8_fa_mode"], FP8FAMode.HIGH_PRECISION)
+
+    def test_fp8_fa_mode_rejects_unknown_value(self):
+        with self.assertRaises(ModelInitError):
+            QuantConfig(fp8_fa_mode="low_precision")
 
 
 @unittest.skipIf(
@@ -114,6 +137,19 @@ class TestOnlineQuantConfig(unittest.TestCase):
         self.assertEqual(config.mxfp4_scale_alg, 2)
         self.assertEqual(config.mxfp4_dst_type_max, 7.25)
 
+    def test_init_with_fouroversix_quant_and_fa_types(self):
+        config = OnlineQuantConfig(
+            quant_type=QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC,
+            fa_layers=("*.attn",),
+            fa_quant_type=QuantAlgorithm.MXFP4_FOUROVERSIX_DYNAMIC,
+        )
+
+        self.assertEqual(config.quant_type, QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC)
+        self.assertEqual(config.fa_quant_type, QuantAlgorithm.MXFP4_FOUROVERSIX_DYNAMIC)
+
+        self.assertIn(QuantAlgorithm.W4A4_MXFP4_FOUROVERSIX_DYNAMIC, SUPPORTED_ONLINE_QUANT_TYPES)
+        self.assertIn(QuantAlgorithm.MXFP4_FOUROVERSIX_DYNAMIC, SUPPORTED_ONLINE_FA_TYPES)
+
     def test_parse_from_dict_and_serialize(self):
         config = OnlineQuantConfig.parse_from_dict(
             {
@@ -162,6 +198,7 @@ class TestOnlineQuantConfig(unittest.TestCase):
             {"timestep_config": "invalid"},
             {"mxfp4_scale_alg": "2"},
             {"mxfp4_dst_type_max": True},
+            {"fp8_fa_mode": "low_precision"},
         ]
 
         for config in invalid_configs:

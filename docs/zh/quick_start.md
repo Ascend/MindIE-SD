@@ -38,7 +38,7 @@ Wan2.1-T2V-14B/
 └── ...
 ```
 
-> **说明**
+> [!NOTE]说明
 >
 > - 除 HuggingFace 外，也可从 [modelscope](https://modelscope.cn/models) 获取模型权重。
 > - 如需下载其他模型的权重（FLUX.1-dev、HunyuanVideo 等），请参见[模型/框架支持情况](features/supported_matrix.md)中的链接。
@@ -56,7 +56,7 @@ bash infer_t2v.sh
 
 ## 加速效果展示
 
-下面以 Wan2.1 模型为例，展示在 Atlas 800I A2 推理服务器（1*64G）上单卡和多卡实现不同加速特性的加速效果。
+下面以 Wan2.1 模型为例，展示在 Atlas 800I A2推理服务器（1*64G）上单卡和多卡实现不同加速特性的加速效果。
 
 其中：
 

@@ -21,12 +21,22 @@ features/core_layers
 features/fused_moe
 features/compilation
 features/parallelism
+features/usp
 features/fa_power_cap
 features/cache
 features/cpu_offload
 features/share_memory
 features/DyEPLB
 ```
+
+## 技术报告
+
+<ul>
+  <li><a href="../tech_report/MXAttention.pdf" target="_blank">MXAttention 论文</a></li>
+  <li><a href="../tech_report/RotateAttention.pdf" target="_blank">RotateAttention 论文</a></li>
+  <li><a href="../tech_report/RotateAttention Poster.pdf" target="_blank">RotateAttention ECCV 2026 海报</a></li>
+  <li><a href="../tech_report/RainFusion2.0.pdf" target="_blank">RainFusion2.0 技术报告</a></li>
+</ul>
 
 ```{toctree}
 :maxdepth: 2
@@ -36,7 +46,6 @@ developer_guide/build_guide
 developer_guide/test
 developer_guide/dev_setup
 developer_guide/repo_structure
-developer_guide/contribution_guide
 developer_guide/pattern_dev_guide
 developer_guide/benchmark_and_profiling
 ```
@@ -48,11 +57,4 @@ developer_guide/benchmark_and_profiling
 features/supported_matrix
 appendix/log
 appendix/error_code
-```
-
-```{toctree}
-:maxdepth: 1
-:caption: 社区
-
-community/governance
 ```
