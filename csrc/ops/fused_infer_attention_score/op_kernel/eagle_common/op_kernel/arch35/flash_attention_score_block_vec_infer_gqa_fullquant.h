@@ -89,9 +89,8 @@ class FABlockVecInferGqaFullquant
         RunInfo<isInfer> &runInfo, ConstInfo<isInfer, hasRope> &constInfo, LocalTensor<uint8_t> &dropMaskUb) {}
     __aicore__ inline void SoftmaxDataCopyOut(RunInfo<isInfer> &runInfo, ConstInfo<isInfer, hasRope> &constInfo,
         LocalTensor<float> &sumUb, LocalTensor<float> &maxUb);
-    template <typename SUM_T, typename MAX_T>
     __aicore__ inline void SoftmaxDataCopyOutFp8(RunInfo<isInfer> &runInfo, ConstInfo<isInfer, hasRope> &constInfo,
-        LocalTensor<SUM_T> &sumUb, LocalTensor<MAX_T> &maxUb) {}
+        LocalTensor<half> &sumUb, LocalTensor<half> &maxUb) {}
     template <typename VEC2_RES_T>
     __aicore__ inline void CopyOutAttentionOut(RunInfo<isInfer> &runInfo, ConstInfo<isInfer, hasRope> &constInfo,
         LocalTensor<VEC2_RES_T> &vec2ResUb, int64_t vec2S1Idx, int64_t vec2CalcSize);
@@ -171,7 +170,6 @@ __aicore__ inline void FABlockVecInferGqaFullquant<TEMPLATE_ARGS>::InitCubeVecSh
     sharedParams.s2Size = inputParamsRegbase.s2Size;
     sharedParams.dSize = inputParamsRegbase.dSize;
     sharedParams.dSizeV = inputParamsRegbase.dSizeV;
-    sharedParams.scaleValue = static_cast<float>(inputParamsRegbase.scaleValue);
     if constexpr (hasRope) {
         sharedParams.dSizeRope = inputParamsRegbase.dSizeRope;
     } else {

@@ -484,7 +484,6 @@ template <> struct CVSharedParams<true, false> {
     int64_t kvPrefixSize;
 
     int64_t totalSize;
-    float scaleValue;
 };
 
 template <> struct CVSharedParams<true, true> {
