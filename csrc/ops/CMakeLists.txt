@@ -86,6 +86,13 @@ if (BUILD_OPEN_PROJECT)
             $<BUILD_INTERFACE:${ASCEND_CANN_PACKAGE_PATH}/include/aclnn_kernels>
             # For CANN 8.5 and later
             $<BUILD_INTERFACE:${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/pkg_inc>
+            # prof_common.h 位于 pkg_inc/profiling/，而 pkg_inc/toolchain/prof_api.h
+            # 以裸名 #include "prof_common.h"，只加 pkg_inc 会报找不到该头文件。
+            # 与 intf_pub（cmake/intf_pub.cmake）及 fused_infer_attention_score 的 UT 目标
+            # 保持一致，同时列出 pkg_inc 与 pkg_inc/profiling；
+            # 这里是追加而非替换：dump/adump_api.h 用的是相对 pkg_inc 根的
+            # #include "profiling/prof_common.h"，去掉 pkg_inc 会破坏该路径。
+            $<BUILD_INTERFACE:${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/pkg_inc/profiling>
     )
     target_compile_options(opapi PRIVATE
             -Werror=format
