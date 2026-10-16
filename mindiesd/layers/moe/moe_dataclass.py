@@ -22,7 +22,7 @@ class MoEPrepareInput:
 
     hidden_states: torch.Tensor
     router_logits: torch.Tensor
-    inputs_sharded: bool
+    tokens_full: bool
 
 
 @dataclass(frozen=True)

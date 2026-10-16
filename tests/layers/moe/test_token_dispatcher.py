@@ -75,7 +75,7 @@ class TestTokenDispatcher(unittest.TestCase):
                 prepare_input = MoEPrepareInput(
                     hidden_states=hidden_states,
                     router_logits=router_logits,
-                    inputs_sharded=False,
+                    tokens_full=True,
                 )
                 prepare_output = DynamicDispatcher.prepare(prepare_input)
         set_moe_comm_context()
@@ -539,7 +539,7 @@ class TestTokenDispatcher(unittest.TestCase):
         prepare_input = MoEPrepareInput(
             hidden_states=hidden_states,
             router_logits=router_logits,
-            inputs_sharded=True,
+            tokens_full=False,
         )
 
         with patch("torch.distributed.all_gather_into_tensor") as all_gather:
@@ -568,7 +568,7 @@ class TestTokenDispatcher(unittest.TestCase):
         prepare_input = MoEPrepareInput(
             hidden_states=hidden_states,
             router_logits=router_logits,
-            inputs_sharded=True,
+            tokens_full=False,
         )
 
         def fake_all_gather(tensor, group):
@@ -607,8 +607,8 @@ class TestTokenDispatcher(unittest.TestCase):
                 output = StaticDispatcher.finalize(
                     routed_out=hidden_states,
                     original_shape=original_shape,
-                    inputs_sharded=True,
-                    reduce_routed_out=False,
+                    tokens_full=False,
+                    reduce_results=False,
                 )
             set_moe_comm_context()
 
@@ -620,20 +620,20 @@ class TestTokenDispatcher(unittest.TestCase):
         os.environ.get("MINDIE_TEST_MODE", "ALL") == "NPU",
         "Skip CPU-compatible tests when MINDIE_TEST_MODE is NPU.",
     )
-    def test_static_finalize_reduce_routed_out_controls_all_reduce(self):
+    def test_static_finalize_reduce_results_controls_all_reduce(self):
         hidden_states = torch.randn(4, 4)
         tp_group = MagicMock(spec=dist.ProcessGroup)
 
-        for reduce_routed_out, expected_calls in ((True, 1), (False, 0)):
-            with self.subTest(reduce_routed_out=reduce_routed_out):
+        for reduce_results, expected_calls in ((True, 1), (False, 0)):
+            with self.subTest(reduce_results=reduce_results):
                 with patch("torch.distributed.all_reduce") as all_reduce:
                     with patch("torch.distributed.get_world_size", return_value=2):
                         set_moe_comm_context(tp_group=tp_group)
                         output = StaticDispatcher.finalize(
                             routed_out=hidden_states.clone(),
                             original_shape=hidden_states.shape,
-                            inputs_sharded=False,
-                            reduce_routed_out=reduce_routed_out,
+                            tokens_full=True,
+                            reduce_results=reduce_results,
                         )
                     set_moe_comm_context()
 

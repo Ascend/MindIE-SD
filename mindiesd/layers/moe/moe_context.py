@@ -50,7 +50,7 @@ def validate_moe_inputs(
     tp_group: dist.ProcessGroup | None = None,
     ep_group: dist.ProcessGroup | None = None,
     dispatcher_type: str | None = None,
-    inputs_sharded: bool = False,
+    tokens_full: bool = True,
     k_group: int = 1,
     group_count: int = 1,
     group_select_mode: int = 0,
@@ -58,8 +58,7 @@ def validate_moe_inputs(
     renormalize: bool = False,
     routed_scaling_factor: float = 1.0,
     custom_routing_function: Callable | None = None,
-    reduce_routed_out: bool = True,
-    return_dispatcher_type: bool = False,
+    reduce_results: bool = True,
 ) -> QuantAlgorithm:
     """Validate public MoE inputs and return the normalized quantization algorithm."""
     if not isinstance(hidden_states, torch.Tensor):
@@ -102,14 +101,12 @@ def validate_moe_inputs(
     if not isinstance(routed_scaling_factor, float):
         raise ParametersInvalid(f"routed_scaling_factor must be a float, but got {type(routed_scaling_factor)}.")
 
-    if not isinstance(inputs_sharded, bool):
-        raise ParametersInvalid(f"inputs_sharded must be a bool, but got {type(inputs_sharded)}.")
+    if not isinstance(tokens_full, bool):
+        raise ParametersInvalid(f"tokens_full must be a bool, but got {type(tokens_full)}.")
     if not isinstance(renormalize, bool):
         raise ParametersInvalid(f"renormalize must be a bool, but got {type(renormalize)}.")
-    if not isinstance(reduce_routed_out, bool):
-        raise ParametersInvalid(f"reduce_routed_out must be a bool, but got {type(reduce_routed_out)}.")
-    if not isinstance(return_dispatcher_type, bool):
-        raise ParametersInvalid(f"return_dispatcher_type must be a bool, but got {type(return_dispatcher_type)}.")
+    if not isinstance(reduce_results, bool):
+        raise ParametersInvalid(f"reduce_results must be a bool, but got {type(reduce_results)}.")
     if dispatcher_type not in (None, "static", "dynamic"):
         raise ParametersInvalid(f"dispatcher_type must be None, 'static', or 'dynamic', but got {dispatcher_type}.")
     if group_select_mode not in (0, 1):
@@ -312,13 +309,13 @@ def get_moe_group():
 def build_prepare_input(
     hidden_states: torch.Tensor,
     router_logits: torch.Tensor,
-    inputs_sharded: bool = False,
+    tokens_full: bool = True,
 ) -> MoEPrepareInput:
     """Build the prepare-stage input wrapper."""
     return MoEPrepareInput(
         hidden_states=hidden_states,
         router_logits=router_logits,
-        inputs_sharded=inputs_sharded,
+        tokens_full=tokens_full,
     )
 
 

@@ -32,7 +32,7 @@ fused_moe(
     tp_group=None,
     ep_group=None,
     dispatcher_type=None,
-    inputs_sharded=False,
+    tokens_full=True,
     k_group=1,
     group_count=1,
     group_select_mode=0,
@@ -40,10 +40,9 @@ fused_moe(
     renormalize=False,
     routed_scaling_factor=1.0,
     custom_routing_function=None,
-    reduce_routed_out=True,
-    return_dispatcher_type=False,
+    reduce_results=True,
     use_fused_op=False,
-) -> torch.Tensor | tuple[torch.Tensor, str]
+) -> torch.Tensor
 ```
 
 ### 参数说明
@@ -64,7 +63,7 @@ fused_moe(
 | `tp_group` | `dist.ProcessGroup` / `None` | 否 | `None` | TP 通信组。未启用 EP 且 TP group size 大于 1 时生效。 |
 | `ep_group` | `dist.ProcessGroup` / `None` | 否 | `None` | EP 通信组。EP group size 大于 1 时优先生效。 |
 | `dispatcher_type` | `str` / `None` | 否 | `None` | Token 分发策略。可选 `"static"`、`"dynamic"`；`None` 表示根据平台和通信配置自动选择。`"dynamic"` 仅支持 EP 通信场景。 |
-| `inputs_sharded` | `bool` | 否 | `False` | 表示输入是否已经在当前 MoE 通信组内沿 Token 维度 shard。 |
+| `tokens_full` | `bool` | 否 | `True` | 输入 Token layout 标记。仅支持两种输入 layout：`True` 表示每个 rank 输入全量 Token；`False` 表示每个 rank 输入按通信组均匀切分后的本地 Token shard。 |
 | `k_group` | `int` | 否 | `1` | 分组路由时每个 Token 选择的 expert group 数量，取值范围为 `[1, group_count]`。 |
 | `group_count` | `int` | 否 | `1` | expert group 总数，`num_experts` 需要能被 `group_count` 整除。 |
 | `group_select_mode` | `int` | 否 | `0` | expert group 打分方式。`0` 表示取组内最大分数，`1` 表示取组内 top-2 分数之和。使用 `1` 时每组至少需要 2 个 experts。 |
@@ -72,14 +71,12 @@ fused_moe(
 | `renormalize` | `bool` | 否 | `False` | 是否对 softmax 路由选中的 top-k routing weights 重新归一化。sigmoid 路由按 NPU gating top-k 算子语义输出归一化后的权重。 |
 | `routed_scaling_factor` | `float` | 否 | `1.0` | 路由权重缩放系数，在专家选择阶段生效。 |
 | `custom_routing_function` | `callable` / `None` | 否 | `None` | 自定义路由函数，调用形式为 `custom_routing_function(hidden_states, gating_output, topk, renormalize)`，需返回 `(topk_weights, topk_ids)`。 |
-| `reduce_routed_out` | `bool` | 否 | `True` | static dispatcher 在 `inputs_sharded=False` 时是否对 routed output 做 all_reduce。 |
-| `return_dispatcher_type` | `bool` | 否 | `False` | 是否在输出中返回实际解析到的 dispatcher 类型，返回值为 `"static"` 或 `"dynamic"`。 |
+| `reduce_results` | `bool` | 否 | `True` | static MoE 下是否对完整 Token 输出做通信规约；dynamic MoE 路径不使用该参数。 |
 | `use_fused_op` | `bool` | 否 | `False` | 是否优先启用融合算子路径。当前版本暂不支持该路径，设置为 `True` 时会回退到非融合算子路径；默认 `False` 直接使用非融合算子路径。 |
 
 ### 返回值
 
 `torch.Tensor`：MoE 前向计算结果，形状与 `hidden_states` 一致。
-若 `return_dispatcher_type=True`，返回 `(output, dispatcher_type)`。
 
 ## 融合算子路径（预留）
 
@@ -119,7 +116,7 @@ fused_moe(
 - 当未启用 EP 且传入有效 `tp_group` 时，使用 TP 通信策略。
 - 当二者均未启用时，按单卡路径执行。
 
-调用方需要保证输入激活和 router logits 的 layout 与 `inputs_sharded` 配置一致。设置 `inputs_sharded=True` 时，输入应已在当前 MoE 通信组内沿 Token 维度完成 shard，否则可能产生重复 Token 计算。
+调用方需要保证输入激活和 router logits 的 layout 与 `tokens_full` 配置一致。
 
 ### 量化配置
 
@@ -270,7 +267,8 @@ out = fused_moe(
     w13_weight_scale=w13_weight_scale,
     w2_weight_scale=w2_weight_scale,
     dispatcher_type="static",
-    inputs_sharded=False,
+    tokens_full=True,
+    reduce_results=False,
 )
 ```
 
@@ -335,13 +333,14 @@ out = fused_moe(
     w13_weight_scale=w13_weight_scale,
     w2_weight_scale=w2_weight_scale,
     dispatcher_type="static",
-    inputs_sharded=False,
+    tokens_full=True,
+    reduce_results=False,
 )
 ```
 
 #### TP static MoE
 
-TP 场景传入 `tp_group`。当 `inputs_sharded=False` 时，表示每个 rank 输入在当前 MoE 通信组内未沿 Token 维度切分。
+TP 场景传入 `tp_group`。当 `tokens_full=True` 时，表示每个 rank 输入全量 Token。
 
 ```python
 import torch
@@ -369,8 +368,8 @@ out = fused_moe(
     w2_weight=w2_weight,
     tp_group=tp_group,
     dispatcher_type="static",
-    inputs_sharded=False,
-    reduce_routed_out=True,
+    tokens_full=True,
+    reduce_results=True,
 )
 ```
 
@@ -406,18 +405,19 @@ out = fused_moe(
     w2_weight=w2_weight,
     ep_group=ep_group,
     dispatcher_type="static",
-    inputs_sharded=False,
-    reduce_routed_out=True,
+    tokens_full=True,
+    reduce_results=True,
     renormalize=True,
 )
 ```
 
 #### EP dynamic MoE
 
-EP dynamic 路径需要传入 `ep_group`。当每个 rank 输入在当前 MoE 通信组内 shard 后的本地 Token 时，
-设置 `inputs_sharded=True`；此时 `local_hidden_states` 和 `local_router_logits`
-表示当前 rank 的本地 Token 输入，`w13_weight` 和 `w2_weight` 仍表示当前 rank 的
-本地 expert 权重。输入应已在该组内沿 Token 维度完成 shard，否则可能产生重复 Token 计算。
+EP dynamic 路径需要传入 `ep_group`。当每个 rank 输入按通信组均匀切分后的本地
+Token shard 时，设置 `tokens_full=False`；此时 `local_hidden_states` 和
+`local_router_logits` 表示当前 rank 的本地 Token 输入，`w13_weight` 和
+`w2_weight` 仍表示当前 rank 的本地 expert 权重。使用该 layout 时，Token 数量
+需要能被通信组大小整除。
 
 ```python
 import torch
@@ -447,7 +447,7 @@ out = fused_moe(
     w2_weight=w2_weight,
     ep_group=ep_group,
     dispatcher_type="dynamic",
-    inputs_sharded=True,
+    tokens_full=False,
     renormalize=True,
 )
 ```
