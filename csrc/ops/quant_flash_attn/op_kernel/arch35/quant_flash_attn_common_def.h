@@ -9,6 +9,7 @@
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PSL v2 for more details.
  */
+
 /*!
  * \file quant_flash_attn_common_def.h
  * \brief
@@ -17,6 +18,7 @@
 #ifndef QUANT_FLASH_ATTN_COMMON_DEF_H_
 #define QUANT_FLASH_ATTN_COMMON_DEF_H_
 
+#include "asc_simd.h"
 #include "quant_flash_attn_template_tiling_key.h"
 #include "../../../common/op_kernel/memcopy/parser.h"
 
@@ -62,6 +64,8 @@ struct CommonConstInfo {
     uint32_t kvCuSeqLensSize = 0; /* 用户输入的cu_seqlens_kv的长度 */
     uint32_t qSeqUsedSize = 0; /* 用户输入的seqused_q的长度 */
     uint32_t kvSeqUsedSize = 0; /* 用户输入的seqused_kv的长度 */
+    uint64_t maxSeqlenQ = 0; /* seqUsed/cuSeq 为空时每个 batch 的实际序列长度 (区别于 s1Size 物理维) */
+    uint64_t maxSeqlenKv = 0; /* seqUsed/cuSeq 为空时每个 batch 的实际序列长度 (区别于 s2Size 物理维) */
 
     /* FA kernel meta */
     uint32_t bN2Start = 0;
@@ -113,10 +117,13 @@ struct RunInfo {
     bool isValid = false;
     bool isFirstS2Loop = false;
     bool isLastS2Loop = false;
+    bool isLastSecondS2Loop = false;
     bool isUpdatePScale = false;
     bool isC2Sync = false; // s2上16个softmax是一个tile，这是每一个tile的第一个softmax 任务
     uint32_t s2FirstStartVecCore = 0; // s2上第一个softmax分给哪个vec core
     uint32_t tileBuffIdx = 0; // 当前tile分给哪个buff
+    uint32_t tileMaxIdx = 0;
+    uint32_t updateScaleIdx = 0;
     bool isS2FirstTilePerCore = false; // 16个softmax均分在两个core, 当前任务是否是分在当前core上的第一个，
 
     uint32_t bIdx = 0;
@@ -130,11 +137,13 @@ struct RunInfo {
     uint64_t actS2Size = 1; // 当前处理head的S2轴实际大小
     uint32_t actMSize = 0; // GS1方向上的长度,当前切块M轴长度
     uint32_t actMSizeAlign32 = 0; // GS1 方向上长度对齐
+    uint32_t actMSizeAlign128 = 0; // GS1 方向上长度对齐对齐128
     uint32_t actVecMSize = 0; // VEC 视角, 基本块GS1方向长度，每个核的M长度
     uint32_t vecMbaseIdx = 0; // VEC 对应的M 轴起始位置,V0 为0， V1 为 V0的actVecMSize
 
     uint32_t actSingleLoopS2Size = 0; // 单个softmaxS2方向长度
     uint32_t actSingleLoopS2SizeAlign = 0; // 对齐到32
+    uint32_t actSingleLoopS2SizeAlign16 = 0; // 对齐到16
     uint32_t actSingleLoopS2SizeAlign64 = 0; // 对齐到64
     uint32_t curS2LoopTimes = 0;
     bool isS2SplitCore = false;
@@ -167,7 +176,7 @@ template <QFA_LAYOUT LAYOUT_Q, typename SEQLEN_T> class SeqLensTool {
     }
 
     __aicore__ inline uint64_t GetActualSeqLength(uint32_t bIdx) {
-        if constexpr (LAYOUT_Q != QFA_LAYOUT::TND) {
+        if constexpr (LAYOUT_Q == QFA_LAYOUT::TND) {
             return cuSeqLensParser.GetActualSeqLength(bIdx);
         } else {
             return seqUsedParser.GetActualSeqLength(bIdx);
@@ -177,21 +186,12 @@ template <QFA_LAYOUT LAYOUT_Q, typename SEQLEN_T> class SeqLensTool {
 
 __aicore__ inline void DataCopyL1ToUB(__ubuf__ void *ub, __cbuf__ void *l1, uint64_t vecCoreId, uint64_t blockCount,
     uint64_t blockNum, uint64_t srcGap, uint64_t destGap) {
-    // #ifdef test_sync
-    // return;
-    // #endif
-    uint64_t cfg = 0;
-
-    cfg |= (vecCoreId & 0x1); // [0] sub_blockid (bit 0)
-
-    cfg |= (blockCount & 0xFFF) << 4; // [15:4] number of bursts (bit 15:4)
-
-    cfg |= (blockNum & 0xFFFF) << 16; // [31:16] length of burst in unit of 32B (bit 31:16)
-
-    cfg |= (srcGap & 0xFFFF) << 32; // [47:32] source gap in unit of 32B (bit 47:32)
-
-    cfg |= (destGap & 0xFFFF) << 48; // [63:48] destination gap in unit of 32B (bit 63:48)
-
+    // Keep the intrinsic supported by CANN 9.0.1 used in CI.
+    uint64_t cfg = vecCoreId & 0x1;
+    cfg |= (blockCount & 0xFFF) << 4;
+    cfg |= (blockNum & 0xFFFF) << 16;
+    cfg |= (srcGap & 0xFFFF) << 32;
+    cfg |= (destGap & 0xFFFF) << 48;
     copy_cbuf_to_ubuf(ub, l1, cfg);
 }
 

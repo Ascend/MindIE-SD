@@ -9,6 +9,7 @@
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PSL v2 for more details.
  */
+
 /*!
  * \file quant_flash_atten_block_cube_dn.h
  * \brief
@@ -231,7 +232,7 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
     LocalTensor<float> pvL0CTensor;
 
     // UB
-    LocalTensor<half> mm1ResUB[2];
+    LocalTensor<half> mm1ResUB;
     LocalTensor<float> mm2ResUB;
     LocalTensor<half> peerGlobalMaxUB;
 
@@ -252,6 +253,8 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
     static constexpr uint32_t PV_L0AB_EVENT0 = EVENT_ID4;
     static constexpr uint32_t PV_L0AB_EVENT1 = EVENT_ID5;
     uint32_t qkL0abBufId = 0;
+    // Each QK L0B slot owns its Q data and MX scales until the next query tile.
+    uint32_t qL0ValidMask = 0;
     uint32_t pvL0abBufId = 0;
     // mmad <> fixpipe EventID
     static constexpr uint32_t QK_L0C_EVENT0 = EVENT_ID2;
@@ -286,11 +289,12 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
             constInfo.dSize / MXFP_GROUP_SIZE, qSeqLensTool, queryScaleGm, dequantScaleQuery);
         InitKScaleBuffer(constInfo.bSize, constInfo.s2Size, constInfo.n2Size, constInfo.blockSize,
             constInfo.dSize / MXFP_GROUP_SIZE, kvSeqLensTool, keyScaleGm, dequantScaleKey);
-        InitVScaleBuffer(constInfo.bSize, constInfo.s2Size / (2 * MXFP_GROUP_SIZE), constInfo.n2Size,
+        InitVScaleBuffer(constInfo.bSize, (constInfo.s2Size + 63) / 64 * 64 / (2 * MXFP_GROUP_SIZE), constInfo.n2Size,
             constInfo.blockSize, 2 * constInfo.dSize, kvSeqLensTool, valueScaleGm, dequantScaleValue);
     }
 
     __aicore__ inline void InitTensors() {
+        qL0ValidMask = 0;
         AllocEventID();
 
         // L1
@@ -316,7 +320,7 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
             LocalTensor<SCALE_T>(TPosition::A1, addrL1Start, L1_KV_DESCALE_SIZE * L1_KV_BUFCNT); // 2K * 4 = 8K
 
         addrL1Start += L1_KV_DESCALE_SIZE * L1_KV_BUFCNT;
-        localGlobalMaxL1 = LocalTensor<half>(TPosition::A1, addrL1Start, 256); // 512b
+        localGlobalMaxL1 = LocalTensor<half>(TPosition::A1, addrL1Start, 256 * 4); // 512b
 
         // L0A
         uint32_t addrL0AStart = 0;
@@ -345,16 +349,16 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
         InitL0BufferForReduceSum();
 
         // Vector UB
-        mm1ResUB[0] = LocalTensor<half>(TPosition::VECCALC, 0, 256 * 128 * 2);
-        mm1ResUB[1] = LocalTensor<half>(TPosition::VECCALC, 256, 256 * 128 * 2 - 128);
+        mm1ResUB = LocalTensor<half>(TPosition::VECCALC, 0, 256 * 128 * 2);
         mm2ResUB = LocalTensor<float>(TPosition::VECCALC, 128 * 1024, 128 * 64);
-        peerGlobalMaxUB = LocalTensor<half>(TPosition::VECCALC, 229888, 128);
+        peerGlobalMaxUB = LocalTensor<half>(TPosition::VECCALC, 229888, 128 * 4);
     }
 
     __aicore__ inline void ReleaseTensors() { FreeEventID(); }
 
     __aicore__ inline void ComputeMm1(const RunInfo &info) {
         if (unlikely(info.isFirstS2Loop)) {
+            qL0ValidMask = 0;
             WaitFlag<HardEvent::MTE1_MTE2>(Q_EVENT0 + qBufId);
             CopyQGmToL1(info); // 单次最大128行
             CopyQScaleGmToL1(info);
@@ -374,13 +378,19 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
             for (uint32_t loop = 0; loop < loopCnt; ++loop) {
                 if (loop + 1 == loopCnt) {
                     actS2Size = info.actSingleLoopS2Size - loop * QK_L0_S2_SPLIT_SIZE;
-                    actS2SizeAlign = info.actSingleLoopS2SizeAlign - loop * QK_L0_S2_SPLIT_SIZE;
+                    actS2SizeAlign = info.actSingleLoopS2SizeAlign16 - loop * QK_L0_S2_SPLIT_SIZE;
                 }
 
                 WaitFlag<HardEvent::FIX_M>(QK_L0C_EVENT0 + qkL0cBufId);
                 {
                     WaitFlag<HardEvent::M_MTE1>(QK_L0AB_EVENT0 + qkL0abBufId);
-                    LoadQToL0(info); // 128 * 128
+                    // Keep the original slot ownership wait before replacing Q.
+                    // K uses L0A; PV writes a separate L0B region.
+                    uint32_t qSlotMask = 1U << qkL0abBufId;
+                    if ((qL0ValidMask & qSlotMask) == 0U) {
+                        LoadQToL0(info); // Q and MX scales, once per slot per query tile
+                        qL0ValidMask |= qSlotMask;
+                    }
                     LoadKToL0(info, loop, actS2SizeAlign); // 128 * 128
                     SetFlag<HardEvent::MTE1_M>(QK_L0AB_EVENT0 + qkL0abBufId);
                     WaitFlag<HardEvent::MTE1_M>(QK_L0AB_EVENT0 + qkL0abBufId);
@@ -407,11 +417,28 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
     __aicore__ inline void ComputeMm2(const RunInfo &info) {
         WaitFlag<HardEvent::MTE1_MTE2>(KV_EVENT0 + kvBufId);
         if (info.actSingleLoopS2SizeAlign != info.actSingleLoopS2SizeAlign64) {
-            InitConstValueParams<uint16_t> PL1InitParams(1, static_cast<uint16_t>(info.actMSize / 2 / 2), 0, 0x0000);
-            uint32_t POffset = info.actSingleLoopS2SizeAlign * info.actMSize / 2 / 2;
-            Fill(pL1Tensor[POffset].template ReinterpretCast<uint16_t>(), PL1InitParams);
-            Fill(pL1Tensor[POffset * 2 + 32 * info.actMSize / 2 / 2].template ReinterpretCast<uint16_t>(),
+            InitConstValueParams<uint16_t> PL1InitParams(
+                1, static_cast<uint16_t>(info.actSingleLoopS2SizeAlign64 - info.actSingleLoopS2SizeAlign), 0, 0x0000);
+            uint32_t l1P_Base_Offset = (info.loop % 20) * L1_P_SIZE;
+            Fill(pL1Tensor[l1P_Base_Offset + info.actSingleLoopS2SizeAlign * 32].template ReinterpretCast<uint16_t>(),
                 PL1InitParams);
+            if (info.actMSizeAlign128 == mBaseSize) {
+                Fill(pL1Tensor[l1P_Base_Offset + 2 * info.actSingleLoopS2SizeAlign * 32 + 32 * 32]
+                         .template ReinterpretCast<uint16_t>(),
+                    PL1InitParams);
+            }
+        }
+        if (info.actSingleLoopS2Size != info.actSingleLoopS2SizeAlign64) {
+            InitConstValueParams<uint16_t> kvL1InitParams(
+                1, static_cast<uint16_t>((info.actSingleLoopS2SizeAlign64 - info.actSingleLoopS2Size)), 0, 0x0000);
+            uint32_t l1V_Base_Offset = kvBufId * L1_KV_SIZE;
+            Fill(kvL1Tensor[l1V_Base_Offset + constInfo.dSize / 4 * info.actSingleLoopS2Size]
+                     .template ReinterpretCast<uint16_t>(),
+                kvL1InitParams);
+            Fill(kvL1Tensor[l1V_Base_Offset + constInfo.dSize / 4 * info.actSingleLoopS2Size * 2 +
+                     (info.actSingleLoopS2SizeAlign64 - info.actSingleLoopS2Size) * constInfo.dSize / 4]
+                     .template ReinterpretCast<uint16_t>(),
+                kvL1InitParams);
         }
         CopyVGmToL1(info);
         CopyVScaleGmToL1(info);
@@ -441,15 +468,19 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
         }
         SetFlag<HardEvent::MTE1_MTE2>(KV_EVENT0 + kvBufId);
         kvBufId = (kvBufId + 1) % L1_KV_BUFCNT;
+        if (info.isLastSecondS2Loop) {
+            InitL0BufferForReduceSum();
+        }
     }
 
     __aicore__ inline void CopyGMaxL1ToUb(const RunInfo &runInfo) {
-        LocalTensor<half> localGlobalMax0 = localGlobalMaxL1;
-        LocalTensor<half> localGlobalMax1 = localGlobalMaxL1[L1_SINGLE_GLOBAL_MAX_SIZE];
+        LocalTensor<half> localGlobalMax0 = localGlobalMaxL1[runInfo.tileMaxIdx * 256];
+        LocalTensor<half> localGlobalMax1 = localGlobalMaxL1[runInfo.tileMaxIdx * 256 + L1_SINGLE_GLOBAL_MAX_SIZE];
+        LocalTensor<half> peerGlobalMax = peerGlobalMaxUB[runInfo.tileMaxIdx * 128];
 
         __cbuf__ half *localGlobalMax0Cbuf = (__cbuf__ half *)localGlobalMax0.GetPhyAddr();
         __cbuf__ half *localGlobalMax1Cbuf = (__cbuf__ half *)localGlobalMax1.GetPhyAddr();
-        __ubuf__ half *peerGlobalMaxUBUbuf = (__ubuf__ half *)peerGlobalMaxUB.GetPhyAddr();
+        __ubuf__ half *peerGlobalMaxUBUbuf = (__ubuf__ half *)peerGlobalMax.GetPhyAddr();
 
         DataCopyL1ToUB(peerGlobalMaxUBUbuf, localGlobalMax0Cbuf, VEC0, 1, 8, 0, 0);
         DataCopyL1ToUB(peerGlobalMaxUBUbuf, localGlobalMax1Cbuf, VEC1, 1, 8, 0, 0);
@@ -575,24 +606,13 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
     __aicore__ inline void InitL0BufferForReduceSum() {
         WaitFlag<HardEvent::MTE1_MTE2>(KV_EVENT0 + kvBufId);
 
-        // InitConstValueParams<uint16_t> vL1InitParams (
-        //     .repeatTimes = 1,
-        //     .blockNum = static_cast<uint16_t>(PV_L0A_SIZE / 32),
-        //     .dstGap = 0,
-        //     .initValue = 0x7777
-        // );
-        InitConstValueParams<uint16_t> vL1InitParams(1, static_cast<uint16_t>(PV_L0A_SIZE / 32), 0, 0x2222);
+        // E2M1 code 6 (4) times E8M0 code 125 (1/4) supplies ones for the row sum.
+        InitConstValueParams<uint16_t> vL1InitParams(1, static_cast<uint16_t>(PV_L0A_SIZE / 32), 0, 0x6666);
         uint64_t l1BaseOffset = kvBufId * (L1_KV_SIZE / sizeof(DATA_T));
         Fill(kvL1Tensor[l1BaseOffset].template ReinterpretCast<uint16_t>(), vL1InitParams);
 
         PipeBarrier<PIPE_MTE2>(); // initvalue会被刷到同一个寄存器，两个Fill需要顺序执行
-        // InitConstValueParams<uint16_t> vScaleL1InitParams (
-        //     .repeatTimes = 1,
-        //     .blockNum = static_cast<uint16_t>(V_SCALE_L0A_SIZE / 32),
-        //     .dstGap = 0,
-        //     .initValue = 0x7f7f
-        // );
-        InitConstValueParams<uint16_t> vScaleL1InitParams(1, static_cast<uint16_t>(V_SCALE_L0A_SIZE / 32), 0, 0x7f7f);
+        InitConstValueParams<uint16_t> vScaleL1InitParams(1, static_cast<uint16_t>(V_SCALE_L0A_SIZE / 32), 0, 0x7d7d);
         uint32_t vScaleL1Offset = kvBufId * (L1_KV_DESCALE_SIZE / sizeof(SCALE_T));
         Fill(kvDescaleL1Tensor[vScaleL1Offset].template ReinterpretCast<uint16_t>(), vScaleL1InitParams);
 
@@ -631,7 +651,7 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
 
     __aicore__ inline void CopyQGmToL1(const RunInfo &info) {
         uint64_t queryL1BaseOffset = qBufId * (L1_Q_SIZE / sizeof(DATA_T));
-        uint32_t dstStride = (info.actMSize + 31) >> 5 << 5;
+        uint32_t dstStride = (info.actMSizeAlign128 + 31) >> 5 << 5;
         // dSize是QUANT_T的元素数, 先转换为字节数, 再转成DATA_T的元素数
         FaL1Tensor<DATA_T, L1Format::NZ> l1Tensor{.tensor = qL1Tensor[queryL1BaseOffset], .rowCount = dstStride};
 
@@ -641,7 +661,18 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
             .dIdx = 0,
             .gS1DealSize = info.actMSize,
             .dDealSize = headDimInt8};
-        copyQueryGmToL1(l1Tensor, queryGm, gmCoord);
+        if constexpr (LAYOUT_Q == QFA_LAYOUT::BSND) {
+            // M rows belong to one head, while GM is still [B, S, N2, G, D].
+            // Use the physical sequence stride to match the BNGSD scale rows.
+            auto &offsetCalculator = queryGm.offsetCalculator;
+            uint32_t gIdx = info.gS1Idx / info.actS1Size;
+            uint32_t s1Idx = info.gS1Idx % info.actS1Size;
+            uint64_t offset = offsetCalculator.GetOffset(info.bIdx, info.n2Idx, gIdx, s1Idx, 0);
+            CopySingleMatrixNDToNZ(l1Tensor.tensor, queryGm.gmTensor[offset], info.actMSize, headDimInt8,
+                offsetCalculator.GetStrideS1(), dstStride);
+        } else {
+            copyQueryGmToL1(l1Tensor, queryGm, gmCoord);
+        }
     }
 
     __aicore__ inline void CopyKGmToL1(const RunInfo &info) {
@@ -667,7 +698,7 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
             .n2Idx = info.n2Idx,
             .s2Idx = info.s2Idx,
             .dIdx = 0,
-            .s2DealSize = info.actSingleLoopS2SizeAlign64,
+            .s2DealSize = info.actSingleLoopS2Size,
             .dDealSize = headDimInt8};
         copyKvGmToL1(l1Tensor, valueGm, gmCoord);
     }
@@ -675,7 +706,7 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
     // copy query scale with full s1g
     __aicore__ inline void CopyQScaleGmToL1(const RunInfo &info) {
         uint32_t offset = qBufId * (L1_Q_DESCALE_SIZE / sizeof(SCALE_T));
-        uint32_t dstStride = (info.actMSize + 31) >> 5 << 5;
+        uint32_t dstStride = (info.actMSizeAlign128 + 31) >> 5 << 5;
         uint32_t dDealSize = constInfo.dSize / MXFP_GROUP_SIZE;
         FaL1Tensor<SCALE_T, L1Format::NZ> l1Tensor{.tensor = qDescaleL1Tensor[offset], .rowCount = dstStride};
 
@@ -708,7 +739,7 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
         LoadData2DParamsV2 loadData2DParamsA;
         loadData2DParamsA.mStartPosition = 0;
         loadData2DParamsA.kStartPosition = 0;
-        loadData2DParamsA.mStep = ((info.actMSize + 31) >> 5 << 5) / 16;
+        loadData2DParamsA.mStep = ((info.actMSizeAlign128 + 31) >> 5 << 5) / 16;
         loadData2DParamsA.kStep = constInfo.dSize / GetBlockElemCnt<QUANT_T>();
         loadData2DParamsA.srcStride = loadData2DParamsA.mStep;
         loadData2DParamsA.dstStride = loadData2DParamsA.mStep;
@@ -717,7 +748,7 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
         LoadData2DMxParams loadData2DMxParamsA;
         loadData2DMxParamsA.xStartPosition = 0;
         loadData2DMxParamsA.yStartPosition = 0;
-        loadData2DMxParamsA.xStep = ((info.actMSize + 31) >> 5 << 5) / 16; // 128 为 M 轴
+        loadData2DMxParamsA.xStep = ((info.actMSizeAlign128 + 31) >> 5 << 5) / 16; // 128 为 M 轴
         loadData2DMxParamsA.yStep = loadData2DParamsA.kStep;
         loadData2DMxParamsA.srcStride = loadData2DMxParamsA.yStep;
         loadData2DMxParamsA.dstStride = loadData2DMxParamsA.yStep;
@@ -757,7 +788,7 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
     __aicore__ inline void MatmulQK(const RunInfo &info, uint32_t actS2Size) {
         MmadParams mmadParams;
         mmadParams.m = actS2Size;
-        mmadParams.n = info.actMSize;
+        mmadParams.n = info.actMSizeAlign128;
         mmadParams.k = constInfo.dSize;
         mmadParams.cmatrixInitVal = true;
         mmadParams.cmatrixSource = false;
@@ -772,7 +803,7 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
     __aicore__ inline void FixpipeMm1(const RunInfo &info, uint32_t subLoop, uint32_t actS2Size) {
         FixpipeParamsArch3510<CO2Layout::ROW_MAJOR> fixpipeParams;
         // L0C上的bmm1结果矩阵N方向的size大小, 使能NZ2ND, nSize*sizeof(T) 必须是32B的倍数
-        fixpipeParams.nSize = (info.actMSize + 7) >> 3 << 3;
+        fixpipeParams.nSize = (info.actMSizeAlign128 + 7) >> 3 << 3;
         // 有效数据不足16行，只需输出部分行即可;L0C上的bmm1结果矩阵M方向的size大小必须是偶数
         fixpipeParams.mSize = (actS2Size + 1) >> 1 << 1;
         // L0C上matmul结果相邻连续数据片断间隔（前面一个数据块的头与后面数据块的头的间隔），单位为16 *sizeof(T)
@@ -790,7 +821,7 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
         uint32_t qkL0COffset = qkL0cBufId * (QK_L0C_SIZE / sizeof(COMPUTE_T));
         uint32_t ubOffset = subLoop * QK_L0_S2_SPLIT_SIZE * fixpipeParams.dstStride;
         Fixpipe<half, COMPUTE_T, CFG_ROW_MAJOR_UB>(
-            mm1ResUB[info.loop / 2 % 2][ubOffset], qkL0CTensor[qkL0COffset], fixpipeParams);
+            mm1ResUB[info.loop / 2 % 2 * 128 + ubOffset], qkL0CTensor[qkL0COffset], fixpipeParams);
     }
 
     __aicore__ inline void CopyVScaleGmToL1(const RunInfo &info) {
@@ -813,11 +844,11 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
         loadData2DParamsB.mStartPosition = 0;
         loadData2DParamsB.kStartPosition = 0;
         loadData2DParamsB.mStep = (info.actSingleLoopS2SizeAlign64 + 15) / 16;
-        loadData2DParamsB.kStep = info.actMSize / GetBlockElemCnt<QUANT_T>();
+        loadData2DParamsB.kStep = info.actMSizeAlign128 / GetBlockElemCnt<QUANT_T>();
 
         loadData2DParamsB.srcStride = loadData2DParamsB.mStep;
         loadData2DParamsB.dstStride =
-            AttentionCommon::Align((uint32_t)constInfo.dSize, (uint32_t)GetBlockElemCnt<QUANT_T>()) / 16;
+            AttentionCommon::Align((uint32_t)info.actMSizeAlign128, (uint32_t)GetBlockElemCnt<QUANT_T>()) / 16;
         loadData2DParamsB.ifTranspose = true;
 
         LoadData2DMxParams load2DMxParamsB;
@@ -841,10 +872,10 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
         LoadData2DParamsV2 loadData2DParamsA;
         loadData2DParamsA.mStartPosition = 0;
         loadData2DParamsA.kStartPosition = 0;
-        loadData2DParamsA.mStep = ((info.actSingleLoopS2SizeAlign64 + 15) / 16 + 3) / 4 * 4;
+        loadData2DParamsA.mStep = info.actSingleLoopS2SizeAlign64 / 16;
         loadData2DParamsA.kStep = constInfo.dSize / GetBlockElemCnt<QUANT_T>();
 
-        loadData2DParamsA.srcStride = (info.actSingleLoopS2SizeAlign64 + 15) / 16;
+        loadData2DParamsA.srcStride = info.actSingleLoopS2SizeAlign64 / 16;
         loadData2DParamsA.dstStride = (constInfo.dSize + 15) / 16 + 1;
         loadData2DParamsA.ifTranspose = true;
 
@@ -867,7 +898,7 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
     __aicore__ inline void MatmulPV(const RunInfo &info) {
         MmadParams mmadParams;
         mmadParams.m = constInfo.dSize + 16;
-        mmadParams.n = info.actMSize;
+        mmadParams.n = info.actMSizeAlign128;
         mmadParams.k = info.actSingleLoopS2SizeAlign64;
         mmadParams.cmatrixInitVal = info.isC2Sync;
         mmadParams.cmatrixSource = false;
@@ -882,7 +913,7 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn {
     __aicore__ inline void FixpipeMm2(const RunInfo &info) {
         FixpipeParamsArch3510<CO2Layout::ROW_MAJOR> fixpipeParams;
         // L0C上的bmm1结果矩阵N方向的size大小, 使能NZ2ND, nSize*sizeof(T) 必须是32B的倍数
-        fixpipeParams.nSize = (info.actMSize + 7) >> 3 << 3;
+        fixpipeParams.nSize = (info.actMSizeAlign128 + 7) >> 3 << 3;
         // 有效数据不足16行，只需输出部分行即可
         fixpipeParams.mSize = constInfo.dSize + 1;
         // L0C上matmul结果相邻连续数据片断间隔（前面一个数据块的头与后面数据块的头的间隔），单位为16 *sizeof(T)

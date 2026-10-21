@@ -9,6 +9,7 @@
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PSL v2 for more details.
  */
+
 /*!
  * \file quant_flash_attn_kernel_dn.h
  * \brief
@@ -25,6 +26,7 @@
 #endif
 #include "quant_flash_attn_template_tiling_key.h"
 #include "quant_flash_attn_common_def.h"
+#include "qfa_query_tile.h"
 #include "../../../common/op_kernel/const_def.h"
 
 using namespace optiling;
@@ -44,6 +46,8 @@ template <typename QFAT, typename CubeBlock, typename VectorBlock> class QuantFl
     static constexpr bool HAS_MASK = QFAT::hasMask;
     static constexpr QFA_LAYOUT LAYOUT_Q = QFAT::qLayout;
     static constexpr QFA_LAYOUT LAYOUT_KV = QFAT::kvLayout;
+    // Both padded layouts compute one Q head at a time, matching BNGSD Q scales.
+    static constexpr bool IS_S1G = LAYOUT_Q == QFA_LAYOUT::TND;
 
     static constexpr uint32_t mBaseSize = 128;
     static constexpr uint32_t s2BaseSize = 256;
@@ -58,6 +62,7 @@ template <typename QFAT, typename CubeBlock, typename VectorBlock> class QuantFl
     static constexpr uint16_t CROSS_CORE_SYNC_GMAX_L1_TO_UB = 7;
     static constexpr uint16_t CROSS_CORE_SYNC_PSCALE_C2 = 6;
     static constexpr uint16_t CROSS_CORE_SYNC_C2_V2 = 5;
+    static constexpr uint16_t CROSS_CORE_SYNC_V2_C2 = 4;
 
     static constexpr uint32_t PRELOAD_N = 20;
     static constexpr uint32_t DELAY_P_SCALE_N = 3;
@@ -82,6 +87,8 @@ template <typename QFAT, typename CubeBlock, typename VectorBlock> class QuantFl
     uint32_t coreFirstTmpOutWsPos_ = 0;
     uint32_t s2FirstStartVecCore = 0;
     uint32_t tileLoopIdx = 1;
+    uint32_t tileMaxIdx = 3;
+    uint32_t updateScaleIdx = 3;
     // fd metadata
     FDparams fdParams_;
 
@@ -123,14 +130,17 @@ template <typename QFAT, typename CubeBlock, typename VectorBlock> class QuantFl
 
         InitConstInfo();
 
-        qSeqLensTool.Init(cuSeqlensQ, constInfo.qCuSeqLensSize, seqUsedQ, constInfo.qSeqUsedSize, constInfo.s1Size);
+        /* SeqLensTool 的 defaultVal 用 maxSeqlenQ/Kv (实际序列长度), 而非 s1Size/s2Size (物理 padded 维).
+           s1Size/s2Size 仍用于 GM buffer 大小/stride/offset (InitKVBuffer/InitAttentionOutBuffer 等). */
+        qSeqLensTool.Init(cuSeqlensQ, constInfo.qCuSeqLensSize, seqUsedQ, constInfo.qSeqUsedSize, constInfo.maxSeqlenQ);
         kvSeqLensTool.Init(
-            cuSeqlensKv, constInfo.kvCuSeqLensSize, seqUsedKv, constInfo.kvSeqUsedSize, constInfo.s2Size);
+            cuSeqlensKv, constInfo.kvCuSeqLensSize, seqUsedKv, constInfo.kvSeqUsedSize, constInfo.maxSeqlenKv);
 
         if ASCEND_IS_AIC {
             cubeBlock.InitInput(query, key, value, dequantScaleQuery, dequantScaleKey, dequantScaleValue, blockTable);
         } else {
             vectorBlock.InitInput(attentionOut);
+            vectorBlock.ClearOutput();
         }
     }
 
@@ -162,6 +172,11 @@ template <typename QFAT, typename CubeBlock, typename VectorBlock> class QuantFl
         constInfo.kvCuSeqLensSize = fiaBaseParams.kvCuSeqLensSize;
         constInfo.qSeqUsedSize = fiaBaseParams.qSeqUsedSize;
         constInfo.kvSeqUsedSize = fiaBaseParams.kvSeqUsedSize;
+        /* seqUsed/cuSeq 为空时的实际序列长度; host 侧 maxSeqlenQ/Kv >= 0 调用, 否则回退 s1Size/s2Size (物理维) */
+        constInfo.maxSeqlenQ =
+            (fiaBaseParams.maxSeqlenQ >= 0) ? static_cast<uint64_t>(fiaBaseParams.maxSeqlenQ) : constInfo.s1Size;
+        constInfo.maxSeqlenKv =
+            (fiaBaseParams.maxSeqlenKv >= 0) ? static_cast<uint64_t>(fiaBaseParams.maxSeqlenKv) : constInfo.s2Size;
         constInfo.scaleValue = static_cast<float>(fiaBaseParams.scaleValue);
         constInfo.coreNum = fiaBaseParams.coreNum;
         // constInfo.outputLayout = static_cast<FA_LAYOUT>(fiaBaseParams.outputLayout);
@@ -297,8 +312,7 @@ template <typename QFAT, typename CubeBlock, typename VectorBlock> class QuantFl
             actSeqLensKv = kvSeqLensTool.GetActualSeqLength(bIdx);
         }
         uint64_t s2LoopTimes = (actSeqLensKv + s2BaseSize - 1) / s2BaseSize;
-        uint64_t gS1Size = actSeqLensQ * constInfo.gSize;
-        uint64_t gS1LoopTimes = (gS1Size + mBaseSize - 1) / mBaseSize;
+        uint64_t gS1LoopTimes = QueryTileCount(actSeqLensQ, constInfo.gSize, mBaseSize, IS_S1G);
         if (s2LoopTimes == 0 || gS1LoopTimes == 0) {
             if (gS1Cur == 0 && s2Cur == 0) {
                 return TASK_DEAL_MODE::DEAL_ZERO;
@@ -348,8 +362,50 @@ template <typename QFAT, typename CubeBlock, typename VectorBlock> class QuantFl
         // PRINTF("loop:%d ", loop);
 
         RunInfo &runInfo0 = taskRunInfo[loop % PRELOAD_TASK_CACHE_SIZE]; // 本轮任务
-        RunInfo &runInfo3 = taskRunInfo[(loop - 3) % PRELOAD_TASK_CACHE_SIZE]; // 前面3轮任务
-        RunInfo &runInfo20 = taskRunInfo[(loop - 20) % PRELOAD_TASK_CACHE_SIZE]; // 前面20轮任务
+        RunInfo &runInfo3 = taskRunInfo[(loop - DELAY_P_SCALE_N) % PRELOAD_TASK_CACHE_SIZE]; // 前面3轮任务
+        RunInfo &runInfo20 = taskRunInfo[(loop - PRELOAD_N) % PRELOAD_TASK_CACHE_SIZE]; // 前面20轮任务
+
+        if (loop >= PRELOAD_N && runInfo20.isValid) {
+            if ASCEND_IS_AIC {
+                if (runInfo20.isC2Sync) {
+                    CrossCoreWaitFlag<SYNC_MODE_4, PIPE_MTE1>(CROSS_CORE_SYNC_PSCALE_C2);
+                    CrossCoreWaitFlag<SYNC_MODE_4, PIPE_MTE1>(CROSS_CORE_SYNC_PSCALE_C2 + 16);
+                }
+                if (runInfo20.isUpdatePScale) {
+                    CrossCoreWaitFlag<SYNC_MODE_4, PIPE_FIX>(CROSS_CORE_SYNC_V2_C2);
+                    CrossCoreWaitFlag<SYNC_MODE_4, PIPE_FIX>(CROSS_CORE_SYNC_V2_C2 + 16);
+                }
+                ComputeMm2(runInfo20);
+                if (runInfo20.isUpdatePScale) {
+                    CrossCoreSetFlag<SYNC_MODE_4, PIPE_FIX>(CROSS_CORE_SYNC_C2_V2);
+                    CrossCoreSetFlag<SYNC_MODE_4, PIPE_FIX>(CROSS_CORE_SYNC_C2_V2 + 16);
+                }
+            } else {
+                if (runInfo20.isUpdatePScale) {
+                    CrossCoreWaitFlag<SYNC_MODE_4, PIPE_V>(CROSS_CORE_SYNC_C2_V2);
+                    ComputeVec2(runInfo20);
+                    CrossCoreSetFlag<SYNC_MODE_4, PIPE_V>(CROSS_CORE_SYNC_V2_C2);
+                }
+            }
+            runInfo20.isValid = false;
+        }
+
+        if (loop >= DELAY_P_SCALE_N && runInfo3.isValid) {
+            if (runInfo3.isUpdatePScale) {
+                if ASCEND_IS_AIC {
+                    CrossCoreWaitFlag<SYNC_MODE_4, PIPE_MTE1>(CROSS_CORE_SYNC_GMAX_UB_TO_L1);
+                    CrossCoreWaitFlag<SYNC_MODE_4, PIPE_MTE1>(CROSS_CORE_SYNC_GMAX_UB_TO_L1 + 16);
+                    CopyGMaxL1ToUb(runInfo3);
+                    CrossCoreSetFlag<SYNC_MODE_4, PIPE_MTE1>(CROSS_CORE_SYNC_GMAX_L1_TO_UB);
+                    CrossCoreSetFlag<SYNC_MODE_4, PIPE_MTE1>(CROSS_CORE_SYNC_GMAX_L1_TO_UB + 16);
+
+                } else {
+                    CrossCoreWaitFlag<SYNC_MODE_4, PIPE_V>(CROSS_CORE_SYNC_GMAX_L1_TO_UB);
+                    UpdatePScale(runInfo3);
+                    CrossCoreSetFlag<SYNC_MODE_4, PIPE_MTE3>(CROSS_CORE_SYNC_PSCALE_C2);
+                }
+            }
+        }
 
         if (runInfo0.isValid) {
             uint32_t mm1ResBufId = (runInfo0.loop / 2) % 2;
@@ -360,9 +416,9 @@ template <typename QFAT, typename CubeBlock, typename VectorBlock> class QuantFl
                 CrossCoreSetFlag<SYNC_MODE_4, PIPE_FIX>(CROSS_CORE_SYNC_V1_C1[mm1ResBufId] + subBlockIdx * 16);
             } else {
                 if (subBlockIdx == constInfo.subBlockIdx) {
-                    CrossCoreWaitFlag<SYNC_MODE_4, PIPE_S>(CROSS_CORE_SYNC_V1_C1[mm1ResBufId]);
+                    CrossCoreWaitFlag<SYNC_MODE_4, PIPE_V>(CROSS_CORE_SYNC_V1_C1[mm1ResBufId]);
                     ComputeVec1(runInfo0);
-                    CrossCoreSetFlag<SYNC_MODE_4, PIPE_S>(CROSS_CORE_SYNC_V1_C1[mm1ResBufId]);
+                    CrossCoreSetFlag<SYNC_MODE_4, PIPE_V>(CROSS_CORE_SYNC_V1_C1[mm1ResBufId]);
                 }
                 if (runInfo0.isUpdatePScale) {
                     CopyGMaxUbToL1(runInfo0);
@@ -371,42 +427,6 @@ template <typename QFAT, typename CubeBlock, typename VectorBlock> class QuantFl
             }
         }
 
-        if (loop >= 3 && runInfo3.isValid) {
-            if (runInfo3.isUpdatePScale) {
-                if ASCEND_IS_AIC {
-                    CrossCoreWaitFlag<SYNC_MODE_4, PIPE_MTE1>(CROSS_CORE_SYNC_GMAX_UB_TO_L1);
-                    CrossCoreWaitFlag<SYNC_MODE_4, PIPE_MTE1>(CROSS_CORE_SYNC_GMAX_UB_TO_L1 + 16);
-                    CopyGMaxL1ToUb(runInfo3);
-                    CrossCoreSetFlag<SYNC_MODE_4, PIPE_MTE1>(CROSS_CORE_SYNC_GMAX_L1_TO_UB);
-                    CrossCoreSetFlag<SYNC_MODE_4, PIPE_MTE1>(CROSS_CORE_SYNC_GMAX_L1_TO_UB + 16);
-                } else {
-                    CrossCoreWaitFlag<SYNC_MODE_4, PIPE_S>(CROSS_CORE_SYNC_GMAX_L1_TO_UB);
-                    UpdatePScale(runInfo3);
-                    CrossCoreSetFlag<SYNC_MODE_4, PIPE_MTE3>(CROSS_CORE_SYNC_PSCALE_C2);
-                }
-            }
-        }
-
-        if (loop >= 20 && runInfo20.isValid) {
-            PipeBarrier<PIPE_V>();
-            if ASCEND_IS_AIC {
-                if (runInfo20.isC2Sync) {
-                    CrossCoreWaitFlag<SYNC_MODE_4, PIPE_MTE1>(CROSS_CORE_SYNC_PSCALE_C2);
-                    CrossCoreWaitFlag<SYNC_MODE_4, PIPE_MTE1>(CROSS_CORE_SYNC_PSCALE_C2 + 16);
-                }
-                ComputeMm2(runInfo20);
-                if (runInfo20.isUpdatePScale) {
-                    CrossCoreSetFlag<SYNC_MODE_4, PIPE_FIX>(CROSS_CORE_SYNC_C2_V2);
-                    CrossCoreSetFlag<SYNC_MODE_4, PIPE_FIX>(CROSS_CORE_SYNC_C2_V2 + 16);
-                }
-            } else {
-                if (runInfo20.isUpdatePScale) {
-                    CrossCoreWaitFlag<SYNC_MODE_4, PIPE_S>(CROSS_CORE_SYNC_C2_V2);
-                    ComputeVec2(runInfo20);
-                }
-            }
-            runInfo20.isValid = false;
-        }
         // PRINTF("\n");
     }
 
@@ -457,8 +477,9 @@ template <typename QFAT, typename CubeBlock, typename VectorBlock> class QuantFl
         info.mloop = mloop;
         info.bIdx = bN2Cur / constInfo.n2Size;
         info.n2Idx = bN2Cur % constInfo.n2Size;
-        info.gS1Idx = gS1Cur * mBaseSize;
-        if constexpr (LAYOUT_Q == QFA_LAYOUT::BSND || LAYOUT_Q == QFA_LAYOUT::TND) {
+        const QueryTile queryTile = GetQueryTile(gS1Cur, actSeqLensQ, constInfo.gSize, mBaseSize, IS_S1G);
+        info.gS1Idx = queryTile.offset;
+        if constexpr (IS_S1G) {
             // S1G layout
             info.s1Idx = info.gS1Idx / constInfo.gSize;
         } else {
@@ -470,17 +491,14 @@ template <typename QFAT, typename CubeBlock, typename VectorBlock> class QuantFl
         info.actS1Size = actSeqLensQ;
         info.actS2Size = actSeqLensKv;
 
-        info.actMSize = mBaseSize;
-        uint64_t gS1Size = info.actS1Size * constInfo.gSize;
-        if (((gS1Cur + 1) * mBaseSize) > gS1Size) {
-            info.actMSize = gS1Size - gS1Cur * mBaseSize;
-        }
+        info.actMSize = queryTile.rowCount;
         info.actSingleLoopS2Size = s2BaseSize;
         if (((s2Cur + 1) * s2BaseSize) > info.actS2Size) {
             info.actSingleLoopS2Size = info.actS2Size - s2Cur * s2BaseSize;
         }
         info.actSingleLoopS2SizeAlign =
             Align((uint32_t)info.actSingleLoopS2Size, (uint32_t)AttentionCommon::BYTE_BLOCK); // 统一对齐到32
+        info.actSingleLoopS2SizeAlign16 = Align((uint32_t)info.actSingleLoopS2Size, (uint32_t)16); // 统一对齐到16
         info.actSingleLoopS2SizeAlign64 =
             Align((uint32_t)info.actSingleLoopS2Size, (uint32_t)BUFFER_SIZE_BYTE_64B); // 统一对齐到64
         GetPreNextTokenLeftUp(actSeqLensQ, actSeqLensKv, info.preTokensLeftUp, info.nextTokensLeftUp);
@@ -493,22 +511,30 @@ template <typename QFAT, typename CubeBlock, typename VectorBlock> class QuantFl
         info.isS2SplitCore = false;
         info.faTmpOutWsPos = coreFirstTmpOutWsPos_;
         info.isLastS2Loop = (s2Cur + 1 == curS2End);
+        info.isLastSecondS2Loop = (s2Cur + 2 == curS2End);
         info.isUpdatePScale = (info.isLastS2Loop || ((info.curS2LoopIdx + 1) % TILE_N == 0));
         info.isC2Sync = (info.curS2LoopIdx % TILE_N == 0);
         if (info.isFirstS2Loop) {
             s2FirstStartVecCore = loop % 2;
         }
         info.s2FirstStartVecCore = s2FirstStartVecCore;
+        if (info.isC2Sync) {
+            updateScaleIdx = (updateScaleIdx + 1) % 4;
+        }
         if (info.isFirstS2Loop || info.isC2Sync) {
             tileLoopIdx = (tileLoopIdx + 1) % 2;
+            tileMaxIdx = (tileMaxIdx + 1) % 4;
         }
         info.tileBuffIdx = tileLoopIdx;
+        info.tileMaxIdx = tileMaxIdx;
+        info.updateScaleIdx = updateScaleIdx;
         info.isS2FirstTilePerCore = (info.curS2LoopIdx % TILE_N / 2 == 0);
         // PRINTF("s2Cur:%d curS2Start:%d curS2End:%d isLastS2Loop:%d curS2LoopIdx:%d isUpdatePScale:%d isC2Sync:%d\n",
         //     s2Cur, curS2Start, curS2End, info.isLastS2Loop, info.curS2LoopIdx, info.isUpdatePScale, info.isC2Sync);
 
         if constexpr (SOFTMAX_DN) {
             info.actMSizeAlign32 = (info.actMSize + 31) >> 5 << 5;
+            info.actMSizeAlign128 = (info.actMSize + 127) >> 7 << 7;
             info.actVecMSize = info.actMSize <= 16 ? info.actMSize : (info.actMSizeAlign32 >> 1);
         } else {
             info.actVecMSize = (info.actMSize + 1) >> 1;
@@ -543,8 +569,7 @@ template <typename QFAT, typename CubeBlock, typename VectorBlock> class QuantFl
     __aicore__ inline void UpdateAxisInfo(
         TASK_DEAL_MODE taskDealMode, uint32_t &bN2Cur, uint32_t &gS1Cur, uint32_t &s2Cur) {
         uint64_t s2LoopTimes = (actSeqLensKv + s2BaseSize - 1) / s2BaseSize;
-        uint64_t gS1Size = actSeqLensQ * constInfo.gSize;
-        uint64_t gS1LoopTimes = (gS1Size + mBaseSize - 1) / mBaseSize;
+        uint64_t gS1LoopTimes = QueryTileCount(actSeqLensQ, constInfo.gSize, mBaseSize, IS_S1G);
 
         // 当前S2未处理完
         if (s2Cur + 1 < s2LoopTimes) {
@@ -609,8 +634,10 @@ template <typename QFAT, typename CubeBlock, typename VectorBlock> class QuantFl
         for (uint32_t sectionIdx = 0; sectionIdx < sectionNum_; sectionIdx++) {
             if (constInfo.aicIdx < constInfo.coreNum) {
                 if ASCEND_IS_AIV {
-                    CrossCoreSetFlag<SYNC_MODE_4, PIPE_S>(CROSS_CORE_SYNC_V1_C1[0]);
-                    CrossCoreSetFlag<SYNC_MODE_4, PIPE_S>(CROSS_CORE_SYNC_V1_C1[1]);
+                    CrossCoreSetFlag<SYNC_MODE_4, PIPE_V>(CROSS_CORE_SYNC_V1_C1[0]);
+                    CrossCoreSetFlag<SYNC_MODE_4, PIPE_V>(CROSS_CORE_SYNC_V1_C1[1]);
+
+                    CrossCoreSetFlag<SYNC_MODE_4, PIPE_V>(CROSS_CORE_SYNC_V2_C2);
                     vectorBlock.InitTensors();
                 } else {
                     cubeBlock.InitTensors();
@@ -620,6 +647,8 @@ template <typename QFAT, typename CubeBlock, typename VectorBlock> class QuantFl
                     vectorBlock.ReleaseTensors();
                 } else {
                     cubeBlock.ReleaseTensors();
+                    CrossCoreWaitFlag<SYNC_MODE_4, PIPE_FIX>(CROSS_CORE_SYNC_V2_C2);
+                    CrossCoreWaitFlag<SYNC_MODE_4, PIPE_FIX>(CROSS_CORE_SYNC_V2_C2 + 16);
                     CrossCoreWaitFlag<SYNC_MODE_4, PIPE_FIX>(CROSS_CORE_SYNC_V1_C1[0]);
                     CrossCoreWaitFlag<SYNC_MODE_4, PIPE_FIX>(CROSS_CORE_SYNC_V1_C1[0] + 16);
                     CrossCoreWaitFlag<SYNC_MODE_4, PIPE_FIX>(CROSS_CORE_SYNC_V1_C1[1]);
@@ -638,7 +667,6 @@ template <typename QFAT, typename CubeBlock, typename VectorBlock> class QuantFl
         //         cubeBlock.FreeEventID();
         //     }
         // }
-        PipeBarrier<PIPE_ALL>();
     }
 };
 

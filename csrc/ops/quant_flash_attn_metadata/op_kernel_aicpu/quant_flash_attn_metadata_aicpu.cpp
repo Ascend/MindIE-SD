@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <cmath>
 #include "quant_flash_attn_metadata_aicpu.h"
+#include "qfa_head_split.h"
 
 #define KERNEL_STATUS_OK 0
 #define KERNEL_STATUS_PARAM_INVALID 1
@@ -219,7 +220,7 @@ bool QuantFlashAttnMetadataCpuKernel::ParamsInit() {
 }
 
 bool QuantFlashAttnMetadataCpuKernel::BalanceSchedule(SectionStreamKResult &splitRes) {
-    return load_balance::SectionStreamK::Compute(deviceInfo, baseInfo, param, splitRes) == LOAD_BALANCE_SUCCESS;
+    return qfa_metadata::BalanceSchedule(deviceInfo, baseInfo, param, splitRes) == LOAD_BALANCE_SUCCESS;
 }
 
 bool QuantFlashAttnMetadataCpuKernel::GenMetaData(SectionStreamKResult &splitRes) {

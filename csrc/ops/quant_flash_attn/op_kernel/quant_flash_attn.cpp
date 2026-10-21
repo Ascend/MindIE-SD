@@ -126,5 +126,6 @@ __global__ __aicore__ void quant_flash_attn(__gm__ uint8_t *query, __gm__ uint8_
     op.Init(query, key, value, q_descale, k_descale, v_descale, blockTable, cuSeqlensQ, cuSeqlensKv, sequsedQ,
         sequsedKv, attnMask, learnableSink, softmaxLse, attnOut, workspace, metadata, tilingData);
     op.Process();
+    PipeBarrier<PIPE_ALL>();
 #endif
 }

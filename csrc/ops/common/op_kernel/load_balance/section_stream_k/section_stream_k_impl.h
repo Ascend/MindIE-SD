@@ -446,11 +446,12 @@ inline void SectionStreamKImpl::CalcCostInfo(ComputeContext &computeContext) {
         uint32_t bn2StartIdx = (sectionIdx == 0U) ? 0U : gridInfo.sectionBn2Idx[sectionIdx - 1U];
         uint32_t bn2EndIdx = gridInfo.sectionBn2Idx[sectionIdx];
 
-        uint32_t bIdx = FloorDiv(bn2StartIdx, baseInfo.GetKvHeadNum());
         for (uint32_t bn2Idx = bn2StartIdx; bn2Idx < bn2EndIdx; ++bn2Idx) {
+            // Use the current batch before accumulating its cost; a one-head lag
+            // can underestimate a mixed-length section and leave its tail unassigned.
+            uint32_t bIdx = FloorDiv(bn2Idx, baseInfo.GetKvHeadNum());
             costInfo.sectionBlockNum[sectionIdx] += costInfo.bN2BlockOfEachBatch[bIdx];
             costInfo.sectionCost[sectionIdx] += costInfo.bN2CostOfEachBatch[bIdx];
-            bIdx = FloorDiv(bn2Idx, baseInfo.GetKvHeadNum());
         }
     }
 }

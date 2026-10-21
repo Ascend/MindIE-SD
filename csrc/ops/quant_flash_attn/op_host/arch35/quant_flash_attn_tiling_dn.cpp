@@ -157,6 +157,8 @@ void QuantFlashAttnTilingDn::FillTiling() {
     tilingData_.baseTiling.flashAttnBaseParams.kvCuSeqLensSize = tilingInfo_->kvCuSeqLensSize;
     tilingData_.baseTiling.flashAttnBaseParams.qSeqUsedSize = tilingInfo_->qSeqUsedSize;
     tilingData_.baseTiling.flashAttnBaseParams.kvSeqUsedSize = tilingInfo_->kvSeqUsedSize;
+    tilingData_.baseTiling.flashAttnBaseParams.maxSeqlenQ = tilingInfo_->maxSeqLenQ;
+    tilingData_.baseTiling.flashAttnBaseParams.maxSeqlenKv = tilingInfo_->maxSeqLenKv;
     tilingData_.baseTiling.flashAttnBaseParams.scaleValue = tilingInfo_->softmaxScale;
     tilingData_.baseTiling.flashAttnBaseParams.isSoftMaxLseEnable = (tilingInfo_->returnSoftmaxLse > 0);
     tilingData_.baseTiling.flashAttnBaseParams.coreNum = numBlocks_;

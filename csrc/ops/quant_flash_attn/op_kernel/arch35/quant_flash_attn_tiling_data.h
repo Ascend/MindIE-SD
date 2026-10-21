@@ -63,6 +63,8 @@ struct FlashAttnBaseParams {
     uint32_t kvCuSeqLensSize; /* 用户输入的cu_seqlens_kv的长度 */
     uint32_t qSeqUsedSize; /* 用户输入的seqused_q的长度 */
     uint32_t kvSeqUsedSize; /* 用户输入的seqused_kv的长度 */
+    int32_t maxSeqlenQ; /* seqUsed/cuSeq 为空时 kernel 侧每个 batch 的实际序列长度 */
+    int32_t maxSeqlenKv; /* seqUsed/cuSeq 为空时 kernel 侧每个 batch 的实际序列长度 */
     float scaleValue;
     uint8_t isSoftMaxLseEnable;
     uint32_t coreNum;

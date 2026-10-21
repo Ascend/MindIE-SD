@@ -9,6 +9,7 @@
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PSL v2 for more details.
  */
+
 /*!
  * \file quant_flash_attn_block_vector_dn.h
  * \brief
@@ -23,6 +24,7 @@
 #include "vf/vf_computeScale_dn_mxfp4.h"
 #include "vf/vf_updateScale_dn_mxfp4.h"
 #include "vf/vf_attenOut_dn_mxfp4.h"
+#include "vf/vf_onlyUpdateScale_dn_mxfp4.h"
 // #include  "vf/vf_init_dubpilcate.h"
 #include "vf/vf_mm1_res_pre_padding_align_kvs32_multi.h"
 
@@ -50,13 +52,13 @@ template <QFA_LAYOUT LAYOUT_OUT> __aicore__ inline constexpr GmFormat GetAttenti
     }
 }
 
-template <QFA_LAYOUT LAYOUT_OUT> __aicore__ inline constexpr UbFormat GetOutUbFormat() {
-    static_assert(
-        (LAYOUT_OUT == QFA_LAYOUT::BNSD) || (LAYOUT_OUT == QFA_LAYOUT::BSND) || (LAYOUT_OUT == QFA_LAYOUT::TND),
+template <QFA_LAYOUT LAYOUT_Q> __aicore__ inline constexpr UbFormat GetOutUbFormat() {
+    static_assert((LAYOUT_Q == QFA_LAYOUT::BNSD) || (LAYOUT_Q == QFA_LAYOUT::BSND) || (LAYOUT_Q == QFA_LAYOUT::TND),
         "Get OutAttention UB GmFormat fail, LAYOUT is incorrect");
-    if constexpr (LAYOUT_OUT == QFA_LAYOUT::BSND || LAYOUT_OUT == QFA_LAYOUT::TND) {
+    // UB order follows the compute traversal, independently of output GM layout.
+    if constexpr (LAYOUT_Q == QFA_LAYOUT::TND) {
         return UbFormat::S1G;
-    } else if constexpr (LAYOUT_OUT == QFA_LAYOUT::BNSD) {
+    } else {
         return UbFormat::GS1;
     }
 }
@@ -84,10 +86,7 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
     static constexpr uint16_t s2BaseSize = 256;
     static constexpr uint32_t dBaseSize = 128;
     static constexpr uint32_t dVBaseSize = 128;
-    static constexpr uint32_t S00_Offset = 0;
-    static constexpr uint32_t S10_Offset = 128;
-    static constexpr uint32_t P0_Offset = 0;
-    static constexpr uint32_t P1_Offset = 256;
+
     static constexpr half MINNEG_VALUE = -65504;
     static constexpr uint32_t UPDATE_LEN_SIZE = 64;
 
@@ -97,8 +96,8 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
     static constexpr uint32_t SINGLE_PSCALE_SPACE_SIZE = 32 * 5 * 8;
     static constexpr uint32_t SINGLE_GROUP_MAX_SPACE_SIZE = 4 * 128;
 
-    static constexpr uint32_t mm1ResOffset[2] = {S00_Offset, S10_Offset};
-    static constexpr uint32_t ve1ResOffset[2] = {P0_Offset, P1_Offset};
+    static constexpr uint32_t mm1ResOffset = 128;
+    static constexpr uint32_t ve1ResOffset = 256;
 
     // =================================UB Buffer=================================
     static constexpr uint32_t UB_S_SIZE = 128 * 256;
@@ -110,7 +109,7 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
     static constexpr uint32_t UB_ATTENTIONTRANS_SIZE = 128 * 64 * 9 / 8;
     static constexpr uint32_t UB_MAX_SIZE = 128;
     static constexpr uint32_t UB_LOCALGROUPMAX_SIZE = 128 * 4;
-    static constexpr uint32_t UB_UPDATE_SIZE = 128;
+    static constexpr uint32_t UB_UPDATE_SIZE = 64;
     static constexpr uint32_t UB_INDEX_SIZE = 256;
 
     static constexpr uint32_t UB_S_BUFCNT = 2;
@@ -120,11 +119,17 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
     static constexpr uint32_t UB_P_BUFCNT = 2;
     static constexpr uint32_t UB_ATTENTIONOUT_BUFCNT = 1;
     static constexpr uint32_t UB_MAX_BUFCNT = 1;
-    static constexpr uint32_t UB_LOCALGLOBALMAX_BUFCNT = 2;
+    static constexpr uint32_t UB_PEER_MAX_BUFCNT = 4;
+    static constexpr uint32_t UB_LOCALGLOBALMAX_BUFCNT = 4;
     static constexpr uint32_t UB_LOCALGROUPMAX_BUFCNT = 20;
-    static constexpr uint32_t UB_UPDATE_BUFCNT = 2;
+    static constexpr uint32_t UB_UPDATE_BUFCNT = 4;
     static constexpr uint32_t UB_INDEX_BUFCNT = 1;
     static constexpr uint32_t UB_FD_BUFCNT = 8;
+    static constexpr uint32_t INIT_OUTPUT_UB_BYTES = UB_S_SIZE * UB_S_BUFCNT * sizeof(half) +
+        UB_PV_SIZE * UB_PV_BUFCNT * sizeof(float) + UB_ROWSUM_SIZE * UB_ROWSUM_BUFCNT * sizeof(float) +
+        UB_ROWSUM_SIZE * UB_ROWSUM_BUFCNT * sizeof(float) + UB_P_SIZE * UB_P_BUFCNT * sizeof(uint8_t) +
+        UB_ATTENTIONOUT_SIZE * UB_ATTENTIONOUT_BUFCNT * sizeof(float) + UB_MAX_SIZE * UB_MAX_BUFCNT * sizeof(half) +
+        UB_MAX_SIZE * UB_MAX_BUFCNT * sizeof(half) + UB_LOCALGROUPMAX_SIZE * UB_LOCALGROUPMAX_BUFCNT * sizeof(half);
 
     LocalTensor<half> mm1ResUB;
     LocalTensor<float> mm2ResUB;
@@ -160,14 +165,17 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
     // V2 attentionOut 变量
     static constexpr bool OUT_IS_TND = IS_TND<LAYOUT_OUT>();
     FaGmTensor<OUT_T, OUT_FORMAT, SEQLEN_T, OUT_IS_TND> outGmTensor;
-    CopyAttenOutUbToGm<OUT_T, OUT_FORMAT, GetOutUbFormat<LAYOUT_OUT>()> AttenOutUbToGm;
+    CopyAttenOutUbToGm<OUT_T, OUT_FORMAT, GetOutUbFormat<LAYOUT_Q>()> AttenOutUbToGm;
 
     // 同步eventID
     static constexpr uint64_t SYNC_VEC1_RES_BUF0_FLAG = 0;
     static constexpr uint64_t SYNC_VEC1_RES_BUF1_FLAG = 1;
-    static constexpr uint64_t SYNC_GMAX_UB_TO_L1_BUF0_FLAG = 3;
-    static constexpr uint64_t SYNC_GMAX_UB_TO_L1_BUF1_FLAG = 4;
-    static constexpr uint64_t SYNC_ATTN_BUF_FLAG = 5;
+    static constexpr uint64_t SYNC_GMAX_UB_TO_L1_BUF0_FLAG = 2;
+    static constexpr uint64_t SYNC_GMAX_UB_TO_L1_BUF1_FLAG = 3;
+    static constexpr uint64_t SYNC_GMAX_UB_TO_L1_BUF2_FLAG = 4;
+    static constexpr uint64_t SYNC_GMAX_UB_TO_L1_BUF3_FLAG = 5;
+    static constexpr uint64_t SYNC_ATTN_BUF_FLAG = 6;
+    static constexpr uint64_t SYNC_INIT_OUTPUT = 7;
 
   public:
     // 初始化 Vec Block 层
@@ -191,7 +199,8 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
         addrL1Start += L1_P_SIZE * L1_P_BUFCNT;
         pScaleL1 = LocalTensor<uint8_t>(TPosition::A1, addrL1Start, L1_P_DESCALE_SIZE * L1_P_BUFCNT); // 1K * 20 = 20K
 
-        localGlobalMaxL1 = LocalTensor<half>(TPosition::A1, 498 * 1024, 256);
+        // Match the four tileMaxIdx slots allocated by the cube block.
+        localGlobalMaxL1 = LocalTensor<half>(TPosition::A1, 498 * 1024, 256 * UB_LOCALGLOBALMAX_BUFCNT);
 
         // =================================UB Tensor Init=================================
         uint32_t addrUBStart = 0;
@@ -228,9 +237,9 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
             LocalTensor<float>(TPosition::VECCALC, addrUBStart, UB_ATTENTIONOUT_SIZE * UB_ATTENTIONOUT_BUFCNT);
 
         addrUBStart += UB_ATTENTIONOUT_SIZE * UB_ATTENTIONOUT_BUFCNT * sizeof(float);
-        peerGlobalMaxUB = LocalTensor<half>(TPosition::VECCALC, addrUBStart, UB_MAX_SIZE * UB_MAX_BUFCNT);
+        peerGlobalMaxUB = LocalTensor<half>(TPosition::VECCALC, addrUBStart, UB_MAX_SIZE * UB_PEER_MAX_BUFCNT);
 
-        addrUBStart += UB_MAX_SIZE * UB_MAX_BUFCNT * sizeof(half);
+        addrUBStart += UB_MAX_SIZE * UB_PEER_MAX_BUFCNT * sizeof(half);
         softmaxMaxUB = LocalTensor<half>(TPosition::VECCALC, addrUBStart, UB_MAX_SIZE * UB_MAX_BUFCNT);
 
         addrUBStart += UB_MAX_SIZE * UB_MAX_BUFCNT * sizeof(half);
@@ -255,20 +264,21 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
     __aicore__ inline void ComputeVec1(const RunInfo &runInfo) {
         uint32_t buffIdx = GetBufferIdx(runInfo.loop);
         if (runInfo.isS2FirstTilePerCore) { // 每个vector core都需要一个跨tile的同步
-            WaitFlag<AscendC::HardEvent::MTE3_V>(SYNC_GMAX_UB_TO_L1_BUF0_FLAG + runInfo.tileBuffIdx);
+            WaitFlag<AscendC::HardEvent::MTE3_V>(SYNC_GMAX_UB_TO_L1_BUF0_FLAG + runInfo.tileMaxIdx);
         }
         WaitFlag<AscendC::HardEvent::MTE3_V>(SYNC_VEC1_RES_BUF0_FLAG + buffIdx);
 
-        if (runInfo.isFirstS2Loop) {
-            if (runInfo.actMSize == s1BaseSize && runInfo.actSingleLoopS2Size == s2BaseSize) { // s1=128, s2=256 softmax
+        if (unlikely(runInfo.isFirstS2Loop)) {
+            if (likely(runInfo.actMSize == s1BaseSize &&
+                    runInfo.actSingleLoopS2Size == s2BaseSize)) { // s1=128, s2=256 softmax
                 Mxfp4Api::softmaxWithGroupMaxQs128Kvs256CallVF<true, half, uint8_t, false, s2BaseSize, s1BaseSize>(
-                    vec1ResUB[ve1ResOffset[buffIdx]], mm1ResUB[mm1ResOffset[buffIdx]],
-                    GetLocalGrpMaxUbByLoopIdx(runInfo.loop), GetLocalGlobalMaxUbByCurIdx(runInfo.tileBuffIdx),
+                    vec1ResUB[buffIdx * ve1ResOffset], mm1ResUB[buffIdx * mm1ResOffset],
+                    GetLocalGrpMaxUbByLoopIdx(runInfo.loop), GetLocalGlobalMaxUbByCurIdx(runInfo.tileMaxIdx),
                     nd2nzIndexUB, static_cast<half>(constInfo.scaleValue));
             } else {
                 // s2 padding 32 multi
                 if (runInfo.actSingleLoopS2Size != runInfo.actSingleLoopS2SizeAlign) {
-                    Mxfp4Api::Mm1ResPrePaddingAlignKvs32MultiCallVF<half>(mm1ResUB[mm1ResOffset[buffIdx]],
+                    Mxfp4Api::Mm1ResPrePaddingAlignKvs32MultiCallVF<half>(mm1ResUB[buffIdx * mm1ResOffset],
                         static_cast<uint16_t>(runInfo.actSingleLoopS2Size),
                         static_cast<uint16_t>(runInfo.actSingleLoopS2SizeAlign));
                     PipeBarrier<PIPE_V>();
@@ -276,28 +286,29 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
                 // softmax
                 if (runInfo.actSingleLoopS2SizeAlign == AttentionCommon::BYTE_BLOCK) { // softmax_padding_32
                     Mxfp4Api::SoftmaxWithGroupMaxAlignQs128Kvs32CallVF<true, half, uint8_t, false>(
-                        vec1ResUB[ve1ResOffset[buffIdx]], mm1ResUB[mm1ResOffset[buffIdx]],
-                        GetLocalGrpMaxUbByLoopIdx(runInfo.loop), GetLocalGlobalMaxUbByCurIdx(runInfo.tileBuffIdx),
+                        vec1ResUB[buffIdx * ve1ResOffset], mm1ResUB[buffIdx * mm1ResOffset],
+                        GetLocalGrpMaxUbByLoopIdx(runInfo.loop), GetLocalGlobalMaxUbByCurIdx(runInfo.tileMaxIdx),
                         nd2nzIndexUB, static_cast<half>(constInfo.scaleValue));
                 } else { // softmax_padding_32_multi >= 64
                     Mxfp4Api::SoftmaxWithGroupMaxAlignQs128Kvs32MultiCallVF<true, half, uint8_t, false>(
-                        vec1ResUB[ve1ResOffset[buffIdx]], mm1ResUB[mm1ResOffset[buffIdx]],
-                        GetLocalGrpMaxUbByLoopIdx(runInfo.loop), GetLocalGlobalMaxUbByCurIdx(runInfo.tileBuffIdx),
+                        vec1ResUB[buffIdx * ve1ResOffset], mm1ResUB[buffIdx * mm1ResOffset],
+                        GetLocalGrpMaxUbByLoopIdx(runInfo.loop), GetLocalGlobalMaxUbByCurIdx(runInfo.tileMaxIdx),
                         nd2nzIndexUB, static_cast<half>(constInfo.scaleValue),
                         static_cast<uint16_t>(runInfo.actSingleLoopS2SizeAlign),
                         static_cast<uint16_t>(runInfo.actSingleLoopS2SizeAlign64));
                 }
             }
         } else {
-            if (runInfo.actMSize == s1BaseSize && runInfo.actSingleLoopS2Size == s2BaseSize) { // s1=128, s2=256 softmax
+            if (likely(runInfo.actMSize == s1BaseSize &&
+                    runInfo.actSingleLoopS2Size == s2BaseSize)) { // s1=128, s2=256 softmax
                 Mxfp4Api::softmaxWithGroupMaxQs128Kvs256CallVF<false, half, uint8_t, false, s2BaseSize, s1BaseSize>(
-                    vec1ResUB[ve1ResOffset[buffIdx]], mm1ResUB[mm1ResOffset[buffIdx]],
-                    GetLocalGrpMaxUbByLoopIdx(runInfo.loop), GetLocalGlobalMaxUbByCurIdx(runInfo.tileBuffIdx),
+                    vec1ResUB[buffIdx * ve1ResOffset], mm1ResUB[buffIdx * mm1ResOffset],
+                    GetLocalGrpMaxUbByLoopIdx(runInfo.loop), GetLocalGlobalMaxUbByCurIdx(runInfo.tileMaxIdx),
                     nd2nzIndexUB, static_cast<half>(constInfo.scaleValue));
             } else {
                 // s2 padding 32 multi
                 if (runInfo.actSingleLoopS2Size != runInfo.actSingleLoopS2SizeAlign) {
-                    Mxfp4Api::Mm1ResPrePaddingAlignKvs32MultiCallVF<half>(mm1ResUB[mm1ResOffset[buffIdx]],
+                    Mxfp4Api::Mm1ResPrePaddingAlignKvs32MultiCallVF<half>(mm1ResUB[buffIdx * mm1ResOffset],
                         static_cast<uint16_t>(runInfo.actSingleLoopS2Size),
                         static_cast<uint16_t>(runInfo.actSingleLoopS2SizeAlign));
                     PipeBarrier<PIPE_V>();
@@ -305,13 +316,13 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
                 // softmax
                 if (runInfo.actSingleLoopS2SizeAlign == AttentionCommon::BYTE_BLOCK) { // softmax_padding_32
                     Mxfp4Api::SoftmaxWithGroupMaxAlignQs128Kvs32CallVF<false, half, uint8_t, false>(
-                        vec1ResUB[ve1ResOffset[buffIdx]], mm1ResUB[mm1ResOffset[buffIdx]],
-                        GetLocalGrpMaxUbByLoopIdx(runInfo.loop), GetLocalGlobalMaxUbByCurIdx(runInfo.tileBuffIdx),
+                        vec1ResUB[buffIdx * ve1ResOffset], mm1ResUB[buffIdx * mm1ResOffset],
+                        GetLocalGrpMaxUbByLoopIdx(runInfo.loop), GetLocalGlobalMaxUbByCurIdx(runInfo.tileMaxIdx),
                         nd2nzIndexUB, static_cast<half>(constInfo.scaleValue));
                 } else { // softmax_padding_32_multi >= 64
                     Mxfp4Api::SoftmaxWithGroupMaxAlignQs128Kvs32MultiCallVF<false, half, uint8_t, false>(
-                        vec1ResUB[ve1ResOffset[buffIdx]], mm1ResUB[mm1ResOffset[buffIdx]],
-                        GetLocalGrpMaxUbByLoopIdx(runInfo.loop), GetLocalGlobalMaxUbByCurIdx(runInfo.tileBuffIdx),
+                        vec1ResUB[buffIdx * ve1ResOffset], mm1ResUB[buffIdx * mm1ResOffset],
+                        GetLocalGrpMaxUbByLoopIdx(runInfo.loop), GetLocalGlobalMaxUbByCurIdx(runInfo.tileMaxIdx),
                         nd2nzIndexUB, static_cast<half>(constInfo.scaleValue),
                         static_cast<uint16_t>(runInfo.actSingleLoopS2SizeAlign),
                         static_cast<uint16_t>(runInfo.actSingleLoopS2SizeAlign64));
@@ -322,19 +333,18 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
         SetFlag<AscendC::HardEvent::V_MTE3>(SYNC_VEC1_RES_BUF0_FLAG + buffIdx);
         WaitFlag<AscendC::HardEvent::V_MTE3>(SYNC_VEC1_RES_BUF0_FLAG + buffIdx);
 
-        if (runInfo.actMSize == s1BaseSize && runInfo.actSingleLoopS2Size == s2BaseSize) { // s1=128, s2=256 softmax
-            DataCopy(pL1Tensor[(runInfo.loop % 20) * (128 * 256 / 2)], vec1ResUB[ve1ResOffset[buffIdx]],
+        if (likely(runInfo.actMSize == s1BaseSize &&
+                runInfo.actSingleLoopS2Size == s2BaseSize)) { // s1=128, s2=256 softmax
+            DataCopy(pL1Tensor[(runInfo.loop % 20) * (128 * 256 / 2)], vec1ResUB[buffIdx * ve1ResOffset],
                 {static_cast<uint16_t>(runInfo.actSingleLoopS2SizeAlign / 4), 8, 8, 0});
         } else {
-            // 1 整块搬运
-            // DataCopy(pL1Tensor[(runInfo.loop % 20) * (128 * 256 / 2)], vec1ResUB[ve1ResOffset[buffIdx]], {static_cast<uint16_t>(runInfo.actSingleLoopS2SizeAlign / 4), 8, 8, 0});
-            // 2 消去高位 低位中间的间隙搬运
-            DataCopy(pL1Tensor[(runInfo.loop % 20) * (128 * 256 / 2)], vec1ResUB[ve1ResOffset[buffIdx]],
+            // 消去高位、低位中间的间隙搬运。
+            DataCopy(pL1Tensor[(runInfo.loop % 20) * (128 * 256 / 2)], vec1ResUB[buffIdx * ve1ResOffset],
                 {static_cast<uint16_t>(runInfo.actSingleLoopS2SizeAlign / AttentionCommon::BYTE_BLOCK * 8 / 2), 8, 8,
                     0});
             DataCopy(pL1Tensor[(runInfo.loop % 20) * (128 * 256 / 2) +
                          runInfo.actSingleLoopS2SizeAlign64 / AttentionCommon::BYTE_BLOCK * 8 / 2 * 256],
-                vec1ResUB[ve1ResOffset[buffIdx] + BUFFER_SIZE_BYTE_16K],
+                vec1ResUB[buffIdx * ve1ResOffset + BUFFER_SIZE_BYTE_16K],
                 {static_cast<uint16_t>(runInfo.actSingleLoopS2SizeAlign / AttentionCommon::BYTE_BLOCK * 8 / 2), 8, 8,
                     0});
         }
@@ -342,24 +352,39 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
     }
 
     __aicore__ inline void CopyGMaxUbToL1(const RunInfo &runInfo) {
+        LocalTensor<half> localGlobalMax = GetLocalGlobalMaxUbByCurIdx(runInfo.tileMaxIdx);
+
         if (runInfo.s2FirstStartVecCore != constInfo.subBlockIdx &&
-            runInfo.curS2LoopIdx == 0) { // // 如果当前s2只有一个softmax， 就另外一个核不用做交换操作
+            runInfo.isC2Sync) { // // 如果当前Tile的s2只有一个softmax， 就另外一个核不用做交换操作
+            DataCopy(
+                localGlobalMaxL1[runInfo.tileMaxIdx * 256 + (1 - constInfo.subBlockIdx) * L1_SINGLE_GLOBAL_MAX_SIZE],
+                localGlobalMax, {1, 8, 0, 0});
             return;
         }
-        // uint32_t buffIdx = runInfo.curS2LoopIdx / 16 % 2;
-        LocalTensor<half> localGlobalMax = GetLocalGlobalMaxUbByCurIdx(runInfo.tileBuffIdx);
 
-        SetFlag<AscendC::HardEvent::V_MTE3>(SYNC_GMAX_UB_TO_L1_BUF0_FLAG + runInfo.tileBuffIdx);
-        WaitFlag<AscendC::HardEvent::V_MTE3>(SYNC_GMAX_UB_TO_L1_BUF0_FLAG + runInfo.tileBuffIdx);
+        SetFlag<AscendC::HardEvent::V_MTE3>(SYNC_GMAX_UB_TO_L1_BUF0_FLAG + runInfo.tileMaxIdx);
+        WaitFlag<AscendC::HardEvent::V_MTE3>(SYNC_GMAX_UB_TO_L1_BUF0_FLAG + runInfo.tileMaxIdx);
 
-        DataCopy(
-            localGlobalMaxL1[(1 - constInfo.subBlockIdx) * L1_SINGLE_GLOBAL_MAX_SIZE], localGlobalMax, {1, 8, 0, 0});
-        SetFlag<AscendC::HardEvent::MTE3_V>(SYNC_GMAX_UB_TO_L1_BUF0_FLAG + runInfo.tileBuffIdx);
+        DataCopy(localGlobalMaxL1[runInfo.tileMaxIdx * 256 + (1 - constInfo.subBlockIdx) * L1_SINGLE_GLOBAL_MAX_SIZE],
+            localGlobalMax, {1, 8, 0, 0});
     }
 
     __aicore__ inline void UpdatePScale(const RunInfo &runInfo) {
+        LocalTensor<half> localGlobalMax1 = GetLocalGlobalMaxUbByCurIdx(runInfo.tileMaxIdx);
+        LocalTensor<half> localGlobalMax2 = GetPeerGlobalMaxUbByCurIdx(runInfo.tileMaxIdx);
+        LocalTensor<half> softmaxMaxOld = softmaxMaxUB;
+        LocalTensor<float> urs = GetUpdateScaleByCurIdx(runInfo.updateScaleIdx);
+
         if (runInfo.s2FirstStartVecCore != constInfo.subBlockIdx &&
-            runInfo.curS2LoopIdx == 0) { // 如果当前s2只有一个softmax， 就另外一个核不用做pscale操作
+            runInfo.isC2Sync) { // 如果当前s2只有一个softmax， 就另外一个核不用做pscale操作
+            if (runInfo.curS2LoopIdx / 16 == 0) {
+                Mxfp4Api::computeOnlyScale<true, half, s1BaseSize>(
+                    localGlobalMax1, localGlobalMax2, softmaxMaxOld, urs, constInfo.subBlockIdx);
+            } else {
+                Mxfp4Api::computeOnlyScale<false, half, s1BaseSize>(
+                    localGlobalMax1, localGlobalMax2, softmaxMaxOld, urs, constInfo.subBlockIdx);
+            }
+            PipeBarrier<PIPE_V>();
             return;
         }
 
@@ -375,21 +400,16 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
         LocalTensor<half> localGroupMax1 = this->localGroupMaxUB[firstLoopStart * SINGLE_GROUP_MAX_SPACE_SIZE];
         LocalTensor<half> localGroupMax2 = this->localGroupMaxUB[secondLoopStart * SINGLE_GROUP_MAX_SPACE_SIZE];
 
-        LocalTensor<half> localGlobalMax1 = GetLocalGlobalMaxUbByCurIdx(runInfo.tileBuffIdx);
-        LocalTensor<half> localGlobalMax2 = peerGlobalMaxUB;
-        LocalTensor<half> softmaxMaxOld = softmaxMaxUB;
-        LocalTensor<float> urs = GetUpdateScaleByCurIdx(runInfo.tileBuffIdx);
-
         WaitFlag<AscendC::HardEvent::MTE3_V>(SYNC_VEC1_RES_BUF0_FLAG);
         WaitFlag<AscendC::HardEvent::MTE3_V>(SYNC_VEC1_RES_BUF1_FLAG);
         if (runInfo.curS2LoopIdx / 16 == 0) {
             Mxfp4Api::computePscale<true, half, s1BaseSize>(pscale1, pscale2, localGroupMax1, localGroupMax2,
-                localGlobalMax1, localGlobalMax2, softmaxMaxOld, urs, firstLoop, secondLoop);
+                localGlobalMax1, localGlobalMax2, softmaxMaxOld, urs, firstLoop, secondLoop, constInfo.subBlockIdx);
         } else {
             Mxfp4Api::computePscale<false, half, s1BaseSize>(pscale1, pscale2, localGroupMax1, localGroupMax2,
-                localGlobalMax1, localGlobalMax2, softmaxMaxOld, urs, firstLoop, secondLoop);
+                localGlobalMax1, localGlobalMax2, softmaxMaxOld, urs, firstLoop, secondLoop, constInfo.subBlockIdx);
         }
-
+        SetFlag<AscendC::HardEvent::MTE3_V>(SYNC_GMAX_UB_TO_L1_BUF0_FLAG + runInfo.tileMaxIdx);
         SetFlag<AscendC::HardEvent::V_MTE3>(SYNC_VEC1_RES_BUF0_FLAG);
         SetFlag<AscendC::HardEvent::V_MTE3>(SYNC_VEC1_RES_BUF1_FLAG);
         WaitFlag<AscendC::HardEvent::V_MTE3>(SYNC_VEC1_RES_BUF0_FLAG);
@@ -406,18 +426,16 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
     }
 
     __aicore__ inline void ComputeVec2(const RunInfo &runInfo) {
-        LocalTensor<float> urs = GetUpdateScaleByCurIdx(runInfo.tileBuffIdx);
+        LocalTensor<float> urs = GetUpdateScaleByCurIdx(runInfo.updateScaleIdx);
 
         if (runInfo.curS2LoopIdx / 16 == 0) {
             WaitFlag<AscendC::HardEvent::MTE3_V>(SYNC_ATTN_BUF_FLAG);
-            Mxfp4Api::processUpdate<false>(
-                attentionOutUB, mm2ResUB, urs[constInfo.subBlockIdx * UPDATE_LEN_SIZE], globalRowsumUB, localRowsumUB);
+            Mxfp4Api::processUpdate<false>(attentionOutUB, mm2ResUB, urs, globalRowsumUB, localRowsumUB);
         } else {
-            Mxfp4Api::processUpdate<true>(
-                attentionOutUB, mm2ResUB, urs[constInfo.subBlockIdx * UPDATE_LEN_SIZE], globalRowsumUB, localRowsumUB);
+            Mxfp4Api::processUpdate<true>(attentionOutUB, mm2ResUB, urs, globalRowsumUB, localRowsumUB);
         }
 
-        if (runInfo.isLastS2Loop) { // s1泛化128
+        if (unlikely(runInfo.isLastS2Loop)) { // s1泛化128
             uint32_t vec2MBaseSize = (s1BaseSize + 1) / 2;
             uint32_t actDealMSize = runInfo.actMSize < vec2MBaseSize ? runInfo.actMSize : vec2MBaseSize;
             if (constInfo.subBlockIdx != 0) {
@@ -459,6 +477,47 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
         }
     }
 
+    __aicore__ inline void ClearOutput() {
+        SetFlag<AscendC::HardEvent::MTE3_V>(SYNC_INIT_OUTPUT);
+        InitOutputSingleCore();
+        WaitFlag<AscendC::HardEvent::MTE3_V>(SYNC_INIT_OUTPUT);
+        SyncAll();
+    }
+
+    __aicore__ inline void InitOutputSingleCore() {
+        int64_t tSize = LAYOUT_Q == QFA_LAYOUT::TND ? constInfo.t1Size : constInfo.bSize * constInfo.s1Size;
+
+        int64_t totalOutputSize = tSize * constInfo.n2Size * constInfo.gSize * constInfo.dSizeV;
+        int64_t singleCoreSize =
+            (totalOutputSize + (2 * constInfo.coreNum) - 1) / (2 * constInfo.coreNum); // 2 means c:v = 1:2
+        int64_t tailSize = totalOutputSize - constInfo.aivIdx * singleCoreSize;
+        int64_t singleInitOutputSize = tailSize < singleCoreSize ? tailSize : singleCoreSize;
+
+        if (singleInitOutputSize > 0) {
+            WaitFlag<AscendC::HardEvent::MTE3_V>(SYNC_INIT_OUTPUT);
+            constexpr int64_t initChunkSize = INIT_OUTPUT_UB_BYTES / sizeof(OUT_T);
+            // ClearOutput runs before InitTensors: mm1ResUB is not initialized yet.
+            // Bind the scratch tensor explicitly instead of reinterpreting that handle.
+            LocalTensor<OUT_T> initUb(TPosition::VECCALC, 0, initChunkSize);
+            Duplicate<OUT_T>(initUb, static_cast<OUT_T>(0), initChunkSize);
+            SetFlag<AscendC::HardEvent::V_MTE3>(SYNC_INIT_OUTPUT);
+            WaitFlag<AscendC::HardEvent::V_MTE3>(SYNC_INIT_OUTPUT);
+            int64_t yOffset = constInfo.aivIdx * singleCoreSize;
+            int64_t movRound = singleInitOutputSize / initChunkSize;
+            int64_t movTail = singleInitOutputSize - movRound * initChunkSize;
+            DataCopyExtParams ub2GmParams{1, static_cast<uint32_t>(initChunkSize * sizeof(OUT_T)), 0, 0, 0};
+            for (int64_t i = 0; i < movRound; ++i) {
+                DataCopyPad(outGmTensor.gmTensor[yOffset], initUb, ub2GmParams);
+                yOffset += initChunkSize;
+            }
+            if (movTail != 0) {
+                ub2GmParams.blockLen = static_cast<uint32_t>(movTail * sizeof(OUT_T));
+                DataCopyPad(outGmTensor.gmTensor[yOffset], initUb, ub2GmParams);
+            }
+            SetFlag<AscendC::HardEvent::MTE3_V>(SYNC_INIT_OUTPUT);
+        }
+    }
+
   private:
     // // 同步初始化及释放
     __aicore__ inline void AllocEventID() {
@@ -467,6 +526,8 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
         SetFlag<AscendC::HardEvent::MTE3_V>(SYNC_ATTN_BUF_FLAG);
         SetFlag<AscendC::HardEvent::MTE3_V>(SYNC_GMAX_UB_TO_L1_BUF0_FLAG);
         SetFlag<AscendC::HardEvent::MTE3_V>(SYNC_GMAX_UB_TO_L1_BUF1_FLAG);
+        SetFlag<AscendC::HardEvent::MTE3_V>(SYNC_GMAX_UB_TO_L1_BUF2_FLAG);
+        SetFlag<AscendC::HardEvent::MTE3_V>(SYNC_GMAX_UB_TO_L1_BUF3_FLAG);
     }
 
     __aicore__ inline void FreeEventID() {
@@ -475,6 +536,8 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
         WaitFlag<AscendC::HardEvent::MTE3_V>(SYNC_ATTN_BUF_FLAG);
         WaitFlag<AscendC::HardEvent::MTE3_V>(SYNC_GMAX_UB_TO_L1_BUF0_FLAG);
         WaitFlag<AscendC::HardEvent::MTE3_V>(SYNC_GMAX_UB_TO_L1_BUF1_FLAG);
+        WaitFlag<AscendC::HardEvent::MTE3_V>(SYNC_GMAX_UB_TO_L1_BUF2_FLAG);
+        WaitFlag<AscendC::HardEvent::MTE3_V>(SYNC_GMAX_UB_TO_L1_BUF3_FLAG);
     }
 
     // V2 attentionOut GM初始化
@@ -496,6 +559,10 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
         return loop / vecNum % doubleBuffer;
     }
 
+    __aicore__ inline LocalTensor<half> GetPeerGlobalMaxUbByCurIdx(uint32_t spaceIdx) {
+        return peerGlobalMaxUB[spaceIdx * L1_SINGLE_GLOBAL_MAX_SIZE];
+    }
+
     __aicore__ inline LocalTensor<half> GetLocalGlobalMaxUbByCurIdx(uint32_t spaceIdx) {
         return localGlobalMaxUB[spaceIdx * L1_SINGLE_GLOBAL_MAX_SIZE];
     }
@@ -506,7 +573,7 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
     }
 
     __aicore__ inline LocalTensor<float> GetUpdateScaleByCurIdx(uint32_t spaceIdx) {
-        return updateScaleUB[spaceIdx * 128];
+        return updateScaleUB[spaceIdx * UB_UPDATE_SIZE];
     }
 
     __aicore__ inline void GetPScaleParams(const RunInfo &runInfo, uint16_t &firstLoopStart, uint16_t &firstLoop,
@@ -518,8 +585,13 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
         uint32_t WHOLE_PROCESS_LOOP = 16;
 
         uint32_t curS2LoopIdx = runInfo.curS2LoopIdx;
-        uint32_t groupMaxEndIdx =
-            loop / 2 * 2 % GROUP_MAX_SPACE_LEN + 1; // 这一轮pscale的任务loop在groupMax空间下发的groupMaxEndIdx
+        // 求单核目前为止，计算对应的第几个softmax(即第几个groupmax 8*128)（跨batch）
+        // 等价groupMaxEndLoop = (loop % 2 == 0) ? ((subBlockIdx == 0) ? (loop / 2) : ((loop / 2) - 1)) : (loop / 2);
+        uint32_t groupMaxEndLoop = (loop >> 1) - (subBlockIdx != 0 && loop % 2 == 0);
+        // 这一轮pscale的任务loop在groupMax空间下发的groupMaxEndIdx，*2的原因是因为groupmax一片空间承载4*128
+        uint32_t groupMaxEndIdx = groupMaxEndLoop * 2 % GROUP_MAX_SPACE_LEN + 1;
+
+        // toProcessGroupMaxLoopLen 求当前FD切核对应的Tile(16个softmax是一个tile)在每个核上有占用几片groupmax(4*128)空间
         uint16_t toProcessGroupMaxLoopLen =
             (curS2LoopIdx + 1) - (curS2LoopIdx / WHOLE_PROCESS_LOOP) * WHOLE_PROCESS_LOOP + isLoopFirstTaskVecCore;
         toProcessGroupMaxLoopLen = toProcessGroupMaxLoopLen / 2 * 2;
@@ -536,7 +608,6 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
         } else {
             firstLoopStart = firstLoopStartNotU;
             secondLoopStart = firstLoopStart + firstLoop; // 向上对齐到2
-            // secondLoopEnd = groupMaxEndIdx;
         }
         // 两片groupmax空间对应其中的一个softmax任务
         firstLoop /= 2;

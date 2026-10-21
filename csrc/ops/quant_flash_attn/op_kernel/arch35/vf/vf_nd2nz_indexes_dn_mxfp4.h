@@ -9,6 +9,7 @@
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PSL v2 for more details.
  */
+
 /*!
  * \file vf_nd2nz_indexes_dn_mxfp4.h
  * \brief
@@ -24,8 +25,7 @@ using namespace AscendC;
 using namespace MicroAPI;
 
 template <typename T>
-__simd_vf__ void inline vf_init_indexs_and_duplicate(
-    __ubuf__ uint8_t *index_nd2xz, __ubuf__ T *dupDest1, __ubuf__ T *dupDest2) {
+__simd_vf__ void inline vf_init_indexs_and_duplicate(__ubuf__ uint8_t *index_nd2xz, __ubuf__ T *dupDest) {
     // Index
     RegTensor<uint8_t> index_reg, index_reg_1, index_reg_2;
     MaskReg mask_32 = CreateMask<int8_t, MaskPattern::VL32>();
@@ -44,8 +44,9 @@ __simd_vf__ void inline vf_init_indexs_and_duplicate(
     RegTensor<T> src;
     MaskReg preg_all_16bit = CreateMask<uint16_t, MaskPattern::ALL>();
     Duplicate(src, MIN_VALUE);
-    StoreAlign<T, MicroAPI::StoreDist::DIST_NORM_B16>(dupDest1, src, preg_all_16bit);
-    StoreAlign<T, MicroAPI::StoreDist::DIST_NORM_B16>(dupDest2, src, preg_all_16bit);
+    for (uint16_t i = 0; i < 4; ++i) {
+        StoreAlign<T, MicroAPI::StoreDist::DIST_NORM_B16>(dupDest + i * 128, src, preg_all_16bit);
+    }
 }
 
 template <typename T, uint16_t S1Base = 128>
@@ -54,8 +55,8 @@ __aicore__ inline void InitIndexesAndDuplicateCallVF(
     __ubuf__ uint8_t *index_nd2xz = (__ubuf__ uint8_t *)nd2nzIndexes.GetPhyAddr();
 
     __ubuf__ T *localGlobalMax1Buf = (__ubuf__ T *)localGlobalMaxUB.GetPhyAddr();
-    __ubuf__ T *localGlobalMax2Buf = (__ubuf__ T *)localGlobalMaxUB[S1Base].GetPhyAddr();
-    vf_init_indexs_and_duplicate<T>(index_nd2xz, localGlobalMax1Buf, localGlobalMax2Buf);
+
+    vf_init_indexs_and_duplicate<T>(index_nd2xz, localGlobalMax1Buf);
 }
 
 }
