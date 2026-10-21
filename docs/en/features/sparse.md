@@ -45,7 +45,7 @@ Dynamically estimates the sparse block set through CDF thresholding, suitable fo
 
 ## API Reference
 
-Sparse attention is exposed through the `sparse_attention` API. For complete parameter descriptions, see the [sparse_attention section in core_layers.md](core_layers.md#sparse_attention).
+Sparse attention is exposed through the `sparse_attention` API. For complete parameter descriptions, see the [sparse_attention section in Core Acceleration API](core_layers.md#sparse_attention).
 
 Basic usage:
 

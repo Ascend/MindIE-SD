@@ -14,7 +14,7 @@ The core principle is: through an asynchronous pipeline design, computation and 
 
 The following diagram compares synchronous and asynchronous offload flows:
 
-![](../../figures/offload_process_image.png) ![](../../figures/async_offload_image.png)
+![](../../figures/offload_process_image_en.png) ![](../../figures/async_offload_image_en.png)
 
 Implemented through the following mechanisms:
 
@@ -68,4 +68,4 @@ with torch.no_grad():
 
 ### Notes
 
-- When used together with [DyEPLB.md](DyEPLB.md), bandwidth contention may occur. Adjust execution timing as needed to avoid mutual blocking.
+- When used together with [Dynamic Expert Load Balancing](DyEPLB.md), bandwidth contention may occur. Adjust execution timing as needed to avoid mutual blocking.

@@ -6,7 +6,7 @@
 
 ### 安全须知
 
-使用MindIE时，为保证安全，用户应根据自身业务，审视整个系统的网络安全加固措施，按照所在组织的安全策略进行相关配置，包括但不局限于软件版本、口令复杂度要求、安全配置（协议、加密套件、秘钥长度等），权限配置、防火墙设置等。关于更多安全声明与建议可参考[昇腾社区MindIE安全管理与加固](https://www.hiascend.com/document/detail/zh/mindie/22RC1/envdeployment/instg/mindie_instg_0041.html)，以社区最新版本为准。
+使用MindIE时，为保证安全，用户应根据自身业务，审视整个系统的网络安全加固措施，按照所在组织的安全策略进行相关配置，包括但不局限于软件版本、口令复杂度要求、安全配置（协议、加密套件、密钥长度等），权限配置、防火墙设置等。关于更多安全声明与建议可参考[昇腾社区MindIE安全管理与加固](https://www.hiascend.com/document/detail/zh/mindie/22RC1/envdeployment/instg/mindie_instg_0041.html)，以社区最新版本为准。
 
 ### 运行环境建议
 

@@ -71,8 +71,6 @@ out = attention_forward(query, key, value)
 - 从 `flash_attn.flash_attn_func` 迁移时，输入布局已为 `[B,S,N,D]`，可直接替换。
 - 本接口仅提供前向推理，不支持反向梯度计算，迁移时需去掉 `dropout` 并将输入张量的 `requires_grad` 设为 `False`。
 
----
-
 ### attention_forward_varlen
 
 变长序列注意力前向计算接口，适用于同一 batch 内序列长度不一致的场景。
@@ -145,8 +143,6 @@ out = attention_forward_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k, causal=False
 #### 迁移指南
 
 - 从 `flash_attn.flash_attn_varlen_func` 迁移时，接口参数基本一致，可直接替换调用。
-
----
 
 ### sparse_attention
 
@@ -226,8 +222,6 @@ out = sparse_attention(
 )
 ```
 
----
-
 ## 融合算子
 
 融合算子系列接口提供昇腾高性能融合算子，涵盖位置编码、归一化和激活函数等基础计算。
@@ -294,8 +288,6 @@ out = rotary_position_embedding(x, cos, sin, rotated_mode="rotated_half", head_f
 
 - **rotated_half**：适用于 OpenSoraPlan、Stable Audio 等模型，将 `x` 拆分为前后两半进行旋转。
 - **rotated_interleaved**：适用于 HunyuanDiT、OpenSora、Flux、CogVideox 等模型，将 `x` 按相邻元素交错进行旋转。
-
----
 
 ### apply_rotary_pos_emb
 
@@ -407,8 +399,6 @@ assert query_out.data_ptr() == query.data_ptr()
 assert key_out.data_ptr() == key.data_ptr()
 ```
 
----
-
 ### add_layer_norm
 
 融合残差加法与 LayerNorm，并同时返回归一化结果和残差加法结果。
@@ -457,8 +447,6 @@ bias = torch.zeros(1024, device="npu", dtype=torch.float16)
 out, residual_out = add_layer_norm(x, residual, weight, bias)
 ```
 
----
-
 ### add_rms_norm
 
 融合残差加法与 RMSNorm，并同时返回归一化结果和残差加法结果。
@@ -505,8 +493,6 @@ weight = torch.ones(1024, device="npu", dtype=torch.float16)
 out, residual_out = add_rms_norm(x, residual, weight)
 ```
 
----
-
 ### RMSNorm
 
 RMS 归一化融合算子，等效于 T5LayerNorm，不涉及均值计算，专注于输入张量的根均方值。
@@ -549,8 +535,6 @@ norm = RMSNorm(1024, eps=1e-6)
 x = torch.randn(2, 4096, 1024, device="npu", dtype=torch.float16)
 out = norm(x)
 ```
-
----
 
 ### fast_layernorm
 
@@ -595,8 +579,6 @@ x = torch.randn(2, 4096, 1024, device="npu", dtype=torch.float16)
 
 out = fast_layernorm(norm, x, impl_mode=0, fused=True)
 ```
-
----
 
 ### layernorm_scale_shift
 
@@ -651,8 +633,6 @@ out = layernorm_scale_shift(norm, x, scale, shift, fused=True)
 - `x` 的最后一维必须与 `scale`、`shift` 的最后一维相等。
 - 若 `scale` 或 `shift` 为 3D 张量，则第二维必须为 1 或与 `x` 的第二维（序列长度）相等。
 
----
-
 ### get_activation_layer
 
 获取指定类型的激活函数实例，部分激活函数提供 NPU 加速版本。
@@ -697,8 +677,6 @@ from mindiesd import get_activation_layer
 act = get_activation_layer("gelu-fast")
 out = act(hidden_states)
 ```
-
----
 
 ### Linear
 

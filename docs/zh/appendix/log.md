@@ -1,6 +1,6 @@
 # 日志参考
 
-对日志操作进行了归一化，通过六个环境变量能对MindIE所有组件进行日志设置，参见[表1](#table1)。环境变量的日志配置详情请参见[MindIE日志参考](https://www.hiascend.com/document/detail/zh/mindie/23RC1/ref/logreference/mindie_log_0213.html)。
+对日志操作进行了归一化，通过六个环境变量能对MindIE所有组件进行日志设置，参见[表1](#table1)。环境变量的日志配置详情请参见[MindIE日志参考](https://www.hiascend.com/document/detail/zh/mindie/latest/ref/logreference/docs/zh/user_guide/log/introduction.md)。
 
 ## 使用说明
 
@@ -91,7 +91,7 @@ cat mindie-sd_123_20241008020600.log
 
 |日志级别|简写|日志内容|
 |--|--|--|
-|CRITICAL|critical|紧急。系统业务严重受损或者完全不可用的紧急情况，规模性的用户受影响，需要运维人员紧急处理。例如系统无法启动或进程挂死等。|
+|CRITICAL|critical|紧急。系统业务严重受损或者完全不可用的紧急情况，规模性用户受影响，需要运维人员紧急处理。例如系统无法启动或进程挂死等。|
 |ERROR|error|错误。系统运行环境/功能受影响，或非预期的数据/事件造成功能执行出错。例如数据入库失败、任务创建失败等。|
 |WARNING|warn|警告。系统出现的潜在风险或隐患，但不影响系统功能的正常执行。例如数据校验存在错误，但系统可通过纠错功能恢复，不影响功能的执行。|
 |INFO|info|信息。用于系统运行正常的信息记录，输出一些状态或状态变化的信息，例如当前系统的状态、数据库的连接状态等信息。|

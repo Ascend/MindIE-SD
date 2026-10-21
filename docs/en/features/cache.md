@@ -59,8 +59,6 @@ apply(function: callable, *args, **kwargs) -> Any
 | `*args` | - | No | Positional arguments for the function |
 | `**kwargs` | - | No | Keyword arguments for the function |
 
----
-
 ## DiTCache
 
 - **Background**
@@ -148,8 +146,6 @@ apply(function: callable, *args, **kwargs) -> Any
 
   For detailed examples, please refer to the [cache directory](../../../examples/cache/cache.py) under examples.
 
----
-
 ## AttentionCache
 
 - **Background**
@@ -232,8 +228,6 @@ apply(function: callable, *args, **kwargs) -> Any
   Q: Qwen-Image-Edit-2509 reports an error during inference after enabling AttentionCache: RuntimeError: NPU out of memory.
 
   A: Enabling AttentionCache increases memory consumption. Single-card memory is prone to insufficiency. Using eight-card inference is recommended.
-
----
 
 ## Timestep Optimization
 

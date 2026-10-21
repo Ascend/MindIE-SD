@@ -7,7 +7,7 @@ MindIE SD 提供多种并行策略来解决单卡显存不足和推理速度瓶�
 - **Ulysses 序列并行（Ulysses Sequence Parallel）**：沿序列维度切分输入，通过 AlltoAll 在注意力头维度重组，各卡并行计算不同注意力头。
 - **CFG 并行（CFG Parallel）**：将正样本和负样本推理分发到不同设备并行执行，适合使用 Classifier-Free Guidance 的扩散模型。
 
-各策略可以独立使用，也可以组合叠加，具体支持情况请参见 [supported_matrix.md](supported_matrix.md)。
+各策略可以独立使用，也可以组合叠加，具体支持情况请参见 [模型/框架支持介绍](supported_matrix.md)。
 
 **推荐方案：**
 
@@ -89,8 +89,6 @@ print(f"Rank {rank} output shape: {local_out.shape}")
 
 适合隐藏层维度（hidden_size）较大的模型，当单卡显存不足以容纳完整权重矩阵时尤为有效。TP 依赖高带宽卡间通信（如 HCCS），建议仅在单机多卡范围内使用，TP degree 不应超过单机 NPU 数量。
 
----
-
 ## Ring Sequence Parallel
 
 ### 原理
@@ -143,8 +141,6 @@ for step in range(1, world_size):
     k_chunk, v_chunk = k_recv, v_recv
     out += local_attn(q_chunk, k_chunk, v_chunk)
 ```
-
----
 
 ## Ulysses Sequence Parallel
 
@@ -232,13 +228,9 @@ for step in range(1, world_size):
     x = torch.cat(output_list, dim=1)
     ```
 
----
-
 ## FA_Power_Cap 技术
 
 `FA_Power_Cap` 技术可以通过 `--comm_type 0/1/2` 在 baseline、插入通信和块级注意力三种路径之间切换。详细手动接入步骤请参见 [FA_Power_Cap 技术](./fa_power_cap.md)。
-
----
 
 ## CFG Parallel
 

@@ -51,7 +51,7 @@ CompilationConfig.fusion_patterns.enable_fast_gelu = False     # 关闭 fastGelu
 CompilationConfig.fusion_patterns.enable_mul_add = False       # 关闭 Mul+Add 融合
 ```
 
-各融合算子的详细 API 说明请参见 [core_layers.md 中的融合算子章节](core_layers.md#融合算子)。
+各融合算子的详细 API 说明请参见[核心加速API中的融合算子章节](core_layers.md#融合算子)。
 
 ### 接口说明
 
@@ -136,8 +136,6 @@ for audio_chunk in chunks:
 - 相关的定位手段与 PyTorch 的 compile 一致，[mindie_sd_backend.py](../../../mindiesd/compilation/mindie_sd_backend.py)中定义了日志模块，开启后，可以观察到pattern使能前后的图变化情况。配合torch.compile缩小范围，可以识别pattern失效的原因。
 - 通过控制compile的范围，可以有效控制问题定位的范围。
 - 其他定位手段可以参考[PyTorch](https://docs.pytorch.org/docs/main/generated/torch.compile.html)官网。
-
----
 
 ## 参考示例
 

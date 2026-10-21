@@ -59,8 +59,6 @@ apply(function: callable, *args, **kwargs) -> Any
 | `*args` | - | 否 | 函数位置参数 |
 | `**kwargs` | - | 否 | 函数关键字参数 |
 
----
-
 ## DiTCache
 
 - **背景**
@@ -148,8 +146,6 @@ apply(function: callable, *args, **kwargs) -> Any
 
   具体示例详情请参见examples下的[cache目录](../../../examples/cache/cache.py)。
 
----
-
 ## AttentionCache
 
 - **背景**
@@ -232,8 +228,6 @@ apply(function: callable, *args, **kwargs) -> Any
   Q：Qwen-Image-Edit-2509在开启AttentionCache后推理报错：RuntimeError: NPU out of memory.
 
   A：开启AttentionCache会增加对显存的消耗，单卡显存容易不足，推荐使用八卡推理。
-
----
 
 ## 时间步优化
 
