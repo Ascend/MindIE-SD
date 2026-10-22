@@ -42,3 +42,7 @@ benchmarks/reports*/
 
 # Plaintext credentials for the remote compile box — never commit
 login-mindiesd-compile.txt
+
+# Downloaded gitleaks binary used by the gitleaks-offline-scan pre-commit
+# wrapper (installed by CI on demand; not tracked — see check-added-large-files)
+./gitleaks

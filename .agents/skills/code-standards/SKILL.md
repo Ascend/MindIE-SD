@@ -99,13 +99,13 @@ description: MindIE-SD Python 代码格式与 lint 规则。当编写、格式�
 | `markdownlint`（**两个同 id 钩子，见下**） | `-c .markdownlint.json`；`markdownlint-manual`＝`exclude: ^\.agents/` + `stages: [manual]`；`markdownlint-agents`＝`files: ^\.agents/.*\.md$` 且**未覆盖 stages ⇒ 默认档会跑** | **`.agents/**` 默认强制**（否则改不动）；**其余 `.md` 默认不跑**，需显式 `--hook-stage manual`（§4）；详见 `markdown-lint` skill |
 | `clang-format` | `--style=file --verbose -i`，`files: \.(c\|h\|cpp\|hpp\|cc\|hh\|cxx\|hxx)$` | C++ |
 | `clang-tidy` | `repo: local`，`files: ^csrc/.*\.(cpp\|cc\|cxx\|c)$`（排除 `csrc/ops/`） | 依赖宿主机已装 `clang-tidy` |
-| `gitleaks-offline-scan` | `repo: local`，`entry: ./gitleaks`（本地离线二进制） | 密钥扫描 |
+| `gitleaks-offline-scan` | `repo: local`，`entry: pre-commit/gitleaks_scan.sh`（离线二进制扫描；`./gitleaks` 缺失时跳过并提示） | 密钥扫描 |
 
 **不存在** `no-commit-to-branch`（本仓不禁止直接提交到 main/master）。
 `markdownlint` 有**两个钩子**：`markdownlint-agents`（`.agents/**/*.md`，走默认 stage，提交/CI 会跑）
 与 `markdownlint-manual`（其余 `.md`，`stages: [manual]`）。所以「本地 `pre-commit run --all-files` 通过
 **不等于** Markdown 合规」这句话**只对 `.agents/` 之外的 `.md` 成立**（`.agents/**` 已被默认档覆盖）；
-`clang-tidy`/`gitleaks-offline-scan` 是 local 钩子，缺少对应二进制时会失败。
+`clang-tidy` 缺少二进制时会失败；`gitleaks-offline-scan` 在缺少 `./gitleaks` 二进制时跳过并提示（CI 安装该二进制并照常扫描）。
 
 ---
 
@@ -268,7 +268,7 @@ pre-commit run markdownlint-manual --hook-stage manual --files docs/zh/README.md
 - `pre-commit run --all-files` 只跑**默认 stage** 的钩子：`markdownlint-agents`（`.agents/**/*.md`）
   **在其中**，`markdownlint-manual`（其余 `.md`）**不在其中**，后者需按上面的 `--hook-stage manual` 单独跑
 - `--all-files` 只覆盖 **git 跟踪的文件**：新建但未 `git add` 的文件不在扫描范围内
-- `clang-tidy` / `gitleaks-offline-scan` 是 `repo: local` 钩子，依赖宿主机存在对应二进制
+- `clang-tidy` / `gitleaks-offline-scan` 是 `repo: local` 钩子；`clang-tidy` 依赖宿主机存在 `clang-tidy`，`gitleaks-offline-scan` 经 `pre-commit/gitleaks_scan.sh` 在缺少 `./gitleaks` 二进制时跳过并提示（CI 安装该二进制并照常扫描）
 
 ---
 
