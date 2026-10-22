@@ -171,7 +171,6 @@ docker run -it --rm --name=mindiesd \
     --device /dev/davinci2 \
     --device /dev/davinci3 \
     --device /dev/davinci_manager \
-    --device /dev/devmm_svm \
     --device /dev/hisi_hdc \
     -v /usr/local/dcmi:/usr/local/dcmi \
     -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
@@ -246,6 +245,72 @@ RUN pip install --no-cache-dir your-package
 COPY ./your-app /workspace/your-app
 WORKDIR /workspace/your-app
 ```
+
+## 基础验证流程（昇腾 A5 系列）
+
+容器启动后，按以下三步完成基础验证，全部命令在容器内执行。以下流程已在 Ascend 950PR 实机验证（宿主机 Ubuntu 24.04，驱动 25.7.rc1.10）。
+
+> **验证所用镜像 tag 说明**：实测镜像为昇腾镜像仓库实际发布的 `v3.1.0-A5-ubuntu22.04-py3.11`（`swr.cn-south-1.myhuaweicloud.com/ascendhub/mindiesd`），与本仓上方表格中的正式 tag 命名暂不一致；且该 tag 中的 `py3.11` 与镜像内实际 Python 3.12.13 存在出入。差异已在 [issue #267](https://gitcode.com/Ascend/MindIE-SD/issues/267) 中反馈维护者确认，拉取镜像请以[昇腾镜像仓库](https://www.hiascend.com/developer/ascendhub/detail/7c3b1b7c5151469a98ac08b868dab45f)页面为准。
+
+### 1. NPU 环境检查
+
+```bash
+npu-smi info
+```
+
+期望输出（Ascend 950PR 实测摘录）：
+
+```text
+| NPU ID | Name        | Health | Power(W) | Temp(C) | HBM-Usage(MB)  |
+|--------|-------------|--------|----------|---------|----------------|
+| 0      | Ascend950PR | OK     | 211.7    | 55      | 5236 / 131072  |
+```
+
+### 2. CANN / TorchNPU 加速库自检
+
+```bash
+python3 -c "import torch, torch_npu; print('torch:', torch.__version__); print('torch_npu:', torch_npu.__version__); print('npu available:', torch.npu.is_available())"
+```
+
+实测输出（Ascend 950PR）：
+
+```text
+torch: 2.10.0+cpu
+torch_npu: 2.10.0.post4
+npu available: True
+```
+
+### 3. MindIE-SD 无权重基础推理
+
+使用仓库 `examples/dummy_run` 的空权重验证入口，无需下载模型权重（仅自动拉取 KB 级配置文件）。以 Wan2.2 为例（FLUX.1-dev 为 gated 仓库，需要 HuggingFace 授权后使用 `flux_infer.py`，其余入口同参数）：
+
+```bash
+git clone https://gitcode.com/Ascend/MindIE-SD.git
+cd MindIE-SD
+pip install -r examples/dummy_run/requirements.txt
+python examples/dummy_run/wan_infer.py --device_id 0 --num_layers 2
+```
+
+实测输出摘录（Ascend 950PR，含各阶段耗时与显存统计）：
+
+```text
+INFERENCE                  Time(ms)   Mem(GB)   Peak(GB)
+-- Timed --
+text_encoder                  5.36      8.63      12.08
+transformer                 1051.80      8.65      12.08
+OVERALL TOTAL               2718.37                12.08
+Wan2.2 dummy weight verification PASSED
+```
+
+## 已知限制（昇腾 A5 系列）
+
+- 基础镜像标签仅提供 `linux/amd64`（x86_64）架构。
+- 实测 Ascend 950PR 环境不存在 `/dev/devmm_svm` 设备（910B/A3 环境存在该设备）。上文 A5 运行命令已相应移除该设备映射；若自行编写启动命令，请勿挂载该设备，否则 `docker run` 会因设备缺失直接报错。
+- 运行命令中的 `/dev/davinciN` 设备映射需按实际卡数调整：实测单卡 950PR 环境仅存在 `/dev/davinci0`，直接照抄多卡示例中的 `davinci1`~`davinci3` 会因设备不存在而启动失败。
+- 基础镜像默认 `SOC_VERSION=ascend950dt_9582`（对应 950DT），在 Ascend 950PR 实机上经运行时自动适配可正常使用。
+- 宿主机需安装与 CANN 9.1.0 配套的 NPU 驱动（实测 25.7.rc1.10）及 Ascend Docker Runtime，并按上文挂载驱动库与设备文件。
+- 本仓正式 tag 命名（如 `v3.1.0-...-950-...-py3.12`）与昇腾镜像仓库实际发布 tag（`v3.1.0-A5-ubuntu22.04-py3.11`，镜像内 Python 实为 3.12.13）存在差异，镜像拉取请以[昇腾镜像仓库](https://www.hiascend.com/developer/ascendhub/detail/7c3b1b7c5151469a98ac08b868dab45f)页面为准，两者对应关系待维护者确认（见 [issue #267](https://gitcode.com/Ascend/MindIE-SD/issues/267)）。
+- 在无法运行容器 runtime 的受限环境（例如禁止创建 namespace 的开发容器）中，可通过 `skopeo copy` 拉取镜像、`umoci unpack` 解包并 `chroot` 进入 rootfs 的方式完成镜像内容与基础功能的等价验证，完整记录参见 [issue #267](https://gitcode.com/Ascend/MindIE-SD/issues/267)。
 
 ## 兼容性变更说明
 

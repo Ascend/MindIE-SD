@@ -29,7 +29,6 @@
 #       --device /dev/davinci2 \
 #       --device /dev/davinci3 \
 #       --device /dev/davinci_manager \
-#       --device /dev/devmm_svm \
 #       --device /dev/hisi_hdc \
 #       -v /usr/local/dcmi:/usr/local/dcmi \
 #       -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \

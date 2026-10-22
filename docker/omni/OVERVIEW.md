@@ -171,7 +171,6 @@ docker run -it --rm --name=mindiesd \
     --device /dev/davinci2 \
     --device /dev/davinci3 \
     --device /dev/davinci_manager \
-    --device /dev/devmm_svm \
     --device /dev/hisi_hdc \
     -v /usr/local/dcmi:/usr/local/dcmi \
     -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
@@ -246,6 +245,72 @@ RUN pip install --no-cache-dir your-package
 COPY ./your-app /workspace/your-app
 WORKDIR /workspace/your-app
 ```
+
+## Basic Verification Flow (Ascend A5 Series)
+
+After the container starts, complete basic verification in three steps, all inside the container. This flow was verified on a physical Ascend 950PR machine (host: Ubuntu 24.04, driver 25.7.rc1.10).
+
+> **Note on the verified image tag**: verification used the tag actually published on the Ascend image registry, `v3.1.0-A5-ubuntu22.04-py3.11` (`swr.cn-south-1.myhuaweicloud.com/ascendhub/mindiesd`), which currently differs from the formal tags in the tables above; the `py3.11` in that tag also does not match the Python 3.12.13 actually shipped inside the image. The discrepancy has been reported to maintainers in [issue #267](https://gitcode.com/Ascend/MindIE-SD/issues/267); always pull images per the [Ascend image registry](https://www.hiascend.com/developer/ascendhub/detail/7c3b1b7c5151469a98ac08b868dab45f) page.
+
+### 1. NPU environment check
+
+```bash
+npu-smi info
+```
+
+Expected output (excerpt from the Ascend 950PR test):
+
+```text
+| NPU ID | Name        | Health | Power(W) | Temp(C) | HBM-Usage(MB)  |
+|--------|-------------|--------|----------|---------|----------------|
+| 0      | Ascend950PR | OK     | 211.7    | 55      | 5236 / 131072  |
+```
+
+### 2. CANN / TorchNPU self-check
+
+```bash
+python3 -c "import torch, torch_npu; print('torch:', torch.__version__); print('torch_npu:', torch_npu.__version__); print('npu available:', torch.npu.is_available())"
+```
+
+Measured output (Ascend 950PR):
+
+```text
+torch: 2.10.0+cpu
+torch_npu: 2.10.0.post4
+npu available: True
+```
+
+### 3. MindIE-SD weight-free smoke inference
+
+Use the weight-free entry points in `examples/dummy_run`; no model weights are downloaded (only KB-sized config files are fetched automatically). The example below uses Wan2.2 (FLUX.1-dev is a gated repository and requires HuggingFace access approval; `flux_infer.py` and other entries share the same arguments):
+
+```bash
+git clone https://gitcode.com/Ascend/MindIE-SD.git
+cd MindIE-SD
+pip install -r examples/dummy_run/requirements.txt
+python examples/dummy_run/wan_infer.py --device_id 0 --num_layers 2
+```
+
+Measured output excerpt (Ascend 950PR, with per-phase timing and memory statistics):
+
+```text
+INFERENCE                  Time(ms)   Mem(GB)   Peak(GB)
+-- Timed --
+text_encoder                  5.36      8.63      12.08
+transformer                 1051.80      8.65      12.08
+OVERALL TOTAL               2718.37                12.08
+Wan2.2 dummy weight verification PASSED
+```
+
+## Known Limitations (Ascend A5 Series)
+
+- The base image tags are provided for `linux/amd64` (x86_64) only.
+- The `/dev/devmm_svm` device does not exist on the tested Ascend 950PR environment (it does exist on 910B/A3 environments). The A5 run command above has removed that device mapping accordingly; do not mount it in custom launch commands, otherwise `docker run` fails immediately because the device is missing.
+- The `/dev/davinciN` device mappings in the run command must be adjusted to the actual number of NPUs: on the tested single-card 950PR environment only `/dev/davinci0` exists, and copying the multi-card example with `davinci1`~`davinci3` verbatim fails because those devices are missing.
+- The base image defaults to `SOC_VERSION=ascend950dt_9582` (950DT); it also works on Ascend 950PR through runtime adaptation, as verified on a physical machine.
+- The host must install an NPU driver matching CANN 9.1.0 (25.7.rc1.10 was tested) and Ascend Docker Runtime, and mount the driver libraries and device files as shown above.
+- The formal tag naming in this repository (for example `v3.1.0-...-950-...-py3.12`) differs from the tags actually published on the Ascend image registry (`v3.1.0-A5-ubuntu22.04-py3.11`, whose image actually ships Python 3.12.13). Always pull images per the [Ascend image registry](https://www.hiascend.com/developer/ascendhub/detail/7c3b1b7c5151469a98ac08b868dab45f) page; the mapping is pending maintainer confirmation (see [issue #267](https://gitcode.com/Ascend/MindIE-SD/issues/267)).
+- In restricted environments without a container runtime (for example development containers where creating namespaces is forbidden), an equivalent verification can be done via `skopeo copy` to fetch the image, `umoci unpack` to extract the rootfs, and `chroot` into it. See [issue #267](https://gitcode.com/Ascend/MindIE-SD/issues/267) for the full record.
 
 ## Compatibility Changes
 
