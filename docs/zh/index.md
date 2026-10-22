@@ -44,6 +44,7 @@ features/DyEPLB
 
 developer_guide/build_guide
 developer_guide/test
+developer_guide/cpu_coverage_supplement
 developer_guide/dev_setup
 developer_guide/repo_structure
 developer_guide/pattern_dev_guide
