@@ -63,7 +63,7 @@ For other installation methods and environment dependencies, see [Installation G
 
 For MindIE SD architecture and key features, see [Architecture Overview](docs/zh/architecture.md).
 
-![MindIE SD Architecture Diagram](https://raw.gitcode.com/Ascend/MindIE-SD/raw/dev/docs/figures/architecture_overview.png)
+![MindIE SD Architecture Diagram](https://raw.gitcode.com/Ascend/MindIE-SD/raw/dev/docs/figures/architecture_overview_en.png)
 
 ## Quick Start
 

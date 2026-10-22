@@ -26,7 +26,7 @@ As shown below, MindIE SD provides Ascend acceleration capabilities externally b
 
 MindIE SD's relevant interfaces follow the diffusers interface definitions. Some diffusers models accelerated on Ascend using MindIE SD are published on [Modelers](https://modelers.cn/models?name=MindIE&page=1&size=16)/[ModelZoo](https://www.hiascend.com/software/modelzoo), and simple plugin-based adaptation directly on diffusers is also supported.
 
-![MindIE SD Architecture Overview](../figures/architecture_overview.png)
+![MindIE SD Architecture Overview](../figures/architecture_overview_en.png)
 
 **Basic Features:**
 
