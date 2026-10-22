@@ -11,8 +11,8 @@ Python 包安装适用于大多数使用场景，但需要手动安装 CANN。�
 * OS: Linux
 * Python: >=3.10
 * Pytorch：2.6, 2.7, 2.8, 2.9, 2.10
-* TorchNPU: 2.6, 2.7, 2.8, 2.9, 2.10
-* CANN: 9.0.1
+* TorchNPU: 7.3.0, 26.0.0, 26.1.0
+* CANN: 9.0.1, 9.1.0
 
 #### CANN 安装
 
@@ -92,7 +92,7 @@ pip install mindiesd
 
 ## 镜像安装（vLLM-Omni）
 
-除 Python 包安装外，还提供集成 **vLLM-Omni + MindIE SD** 的 Docker 镜像。MindIE-SD 3.1.0 提供以下三个产品版本：
+除 Python 包安装外，还提供集成 **vLLM-Omni + MindIE SD** 的 Docker 镜像。MindIE SD 3.1.0 提供以下三个产品版本：
 
 | 适用产品 | 镜像 Tag | 基础镜像 |
 |--|--|--|

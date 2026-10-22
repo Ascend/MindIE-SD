@@ -68,4 +68,4 @@ with torch.no_grad():
 
 ### Notes
 
-- When used together with [DyEPLB.md](DyEPLB.md), bandwidth contention may occur. Adjust execution timing as needed to avoid mutual blocking.
+- When used together with [Dynamic Expert Load Balancing](DyEPLB.md), bandwidth contention may occur. Adjust execution timing as needed to avoid mutual blocking.

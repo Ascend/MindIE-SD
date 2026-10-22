@@ -71,8 +71,6 @@ out = attention_forward(query, key, value)
 - When migrating from `flash_attn.flash_attn_func`, the input layout is already `[B,S,N,D]` and can be directly replaced.
 - This interface only provides forward inference and does not support backward gradient computation. When migrating, remove `dropout` and set the input tensor's `requires_grad` to `False`.
 
----
-
 ### attention_forward_varlen
 
 Variable-length sequence attention forward computation interface, suitable for scenarios where sequence lengths vary within the same batch.
@@ -145,8 +143,6 @@ out = attention_forward_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k, causal=False
 #### Migration Guide
 
 - When migrating from `flash_attn.flash_attn_varlen_func`, the interface parameters are largely consistent and can be directly replaced.
-
----
 
 ### sparse_attention
 
@@ -228,8 +224,6 @@ out = sparse_attention(
 )
 ```
 
----
-
 ## Fused Operators
 
 The fused operator series interfaces provide Ascend high-performance fused operators, covering basic computations such as positional encoding, normalization, and activation functions.
@@ -297,8 +291,6 @@ out = rotary_position_embedding(x, cos, sin, rotated_mode="rotated_half", head_f
 
 - **rotated_half**: Suitable for models like OpenSoraPlan, Stable Audio, etc. Splits `x` into front and back halves for rotation.
 - **rotated_interleaved**: Suitable for models like HunyuanDiT, OpenSora, Flux, CogVideox, etc. Rotates `x` by interleaving adjacent elements.
-
----
 
 ### apply_rotary_pos_emb
 
@@ -410,8 +402,6 @@ assert query_out.data_ptr() == query.data_ptr()
 assert key_out.data_ptr() == key.data_ptr()
 ```
 
----
-
 ### add_layer_norm
 
 Fuses residual addition with LayerNorm and returns both the normalized output and the residual sum.
@@ -460,8 +450,6 @@ bias = torch.zeros(1024, device="npu", dtype=torch.float16)
 out, residual_out = add_layer_norm(x, residual, weight, bias)
 ```
 
----
-
 ### add_rms_norm
 
 Fuses residual addition with RMSNorm and returns both the normalized output and the residual sum.
@@ -508,8 +496,6 @@ weight = torch.ones(1024, device="npu", dtype=torch.float16)
 out, residual_out = add_rms_norm(x, residual, weight)
 ```
 
----
-
 ### RMSNorm
 
 RMS normalization fused operator, equivalent to T5LayerNorm. Focuses on the root mean square of the input tensor without computing the mean.
@@ -553,8 +539,6 @@ x = torch.randn(2, 4096, 1024, device="npu", dtype=torch.float16)
 out = norm(x)
 ```
 
----
-
 ### group_norm_silu
 
 Combines GroupNorm and SiLU into one TorchNPU fused operator call. It is intended for channel-first tensors such as NCHW.
@@ -584,8 +568,6 @@ out = group_norm_silu(x, weight, bias, group=32, eps=1e-5)
 ```
 
 When using `torch.compile(..., backend=MindieSDBackend())`, the compiler backend automatically fuses supported `GroupNorm → SiLU` graph patterns.
-
----
 
 ### fast_layernorm
 
@@ -630,8 +612,6 @@ x = torch.randn(2, 4096, 1024, device="npu", dtype=torch.float16)
 
 out = fast_layernorm(norm, x, impl_mode=0, fused=True)
 ```
-
----
 
 ### layernorm_scale_shift
 
@@ -686,8 +666,6 @@ out = layernorm_scale_shift(norm, x, scale, shift, fused=True)
 - The last dimension of `x` must equal the last dimension of `scale` and `shift`.
 - If `scale` or `shift` is a 3D tensor, its second dimension must be 1 or equal to the second dimension (sequence length) of `x`.
 
----
-
 ### get_activation_layer
 
 Get an activation function instance of the specified type. Some activation functions provide NPU-accelerated versions.
@@ -732,8 +710,6 @@ from mindiesd import get_activation_layer
 act = get_activation_layer("gelu-fast")
 out = act(hidden_states)
 ```
-
----
 
 ### Linear
 

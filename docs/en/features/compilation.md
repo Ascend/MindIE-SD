@@ -51,7 +51,7 @@ CompilationConfig.fusion_patterns.enable_fast_gelu = False     # Disable fastGel
 CompilationConfig.fusion_patterns.enable_mul_add = False       # Disable Mul+Add fusion
 ```
 
-For detailed API documentation of each fusion operator, see [the fusion operator section in core_layers.md](core_layers.md#fused-operators).
+For detailed API documentation of each fusion operator, see [the fusion operator section in Core Acceleration API](core_layers.md#fused-operators).
 
 ### API Reference
 

@@ -43,7 +43,7 @@ RainFusion2.0 是一种在线自适应的块稀疏注意力方案，通过以下
 - `"fp8"`：Q/K 先做 Hadamard 旋转打散离群值，再对 Q/K/V 做 FP8 块量化（依赖 V2 及以上版本 kernel）。
 - `"mxfp4"`：走 `aclnnBlockSparseAttentionV3` 的 MXFP4 通路——保留 Q/K 的 Hadamard 旋转后量化为 FP4 E2M1 数据 + E8M0 缩放（Q/K 沿头维、V 沿序列维按 32 元素分组）。`mxfp4_dst_type_max` 选择量程策略：`0` 为 OCP（quantMode=2，floor），正值（常用 6~12）为 CX（quantMode=3，ceil，量程标定推荐 7.25）。仅 Ascend 950PR&950DT系列产品支持。
 
-接口参数与调用示例参见 [core_layers.md 中的 sparse_attention 章节](core_layers.md#sparse_attention)。
+接口参数与调用示例参见[核心加速API中的 sparse_attention 章节](core_layers.md#sparse_attention)。
 <!-- end id1 -->
 
 ### ada_bsa（自适应块稀疏）
@@ -61,7 +61,7 @@ RainFusion2.0 是一种在线自适应的块稀疏注意力方案，通过以下
 
 ## 接口说明
 
-稀疏注意力通过 `sparse_attention` 接口对外提供，完整参数说明请参见 [core_layers.md 中的 sparse_attention 章节](core_layers.md#sparse_attention)。
+稀疏注意力通过 `sparse_attention` 接口对外提供，完整参数说明请参见[核心加速API中的 sparse_attention 章节](core_layers.md#sparse_attention)。
 
 基本调用方式如下：
 

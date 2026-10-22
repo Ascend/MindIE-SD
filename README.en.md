@@ -31,7 +31,7 @@ English | [简体中文](./README.md)
 
 ## Introduction
 
-**MindIE SD** (Mind Inference Engine Stable Diffusion) is the visual generation inference model suite of MindIE. Its goal is to provide an end-to-end inference solution for Stable Diffusion (SD) series large models on Ascend hardware and its software stack. The software system internally integrates various functional modules and provides a unified programming interface externally.
+**MindIE SD** (Mind Inference Engine Stable Diffusion) is the visual generation inference model suite of MindIE. Its goal is to provide an end-to-end inference solution for Stable Diffusion (SD) series large models on Huawei Ascend hardware and its software stack. The software system internally integrates various functional modules and provides a unified programming interface externally.
 
 ## 📢 Latest News
 
