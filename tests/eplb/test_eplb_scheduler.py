@@ -10,11 +10,14 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 # pylint: disable=too-many-lines,too-many-function-args
+import os
+import sys
 import unittest
+from unittest.mock import MagicMock, patch
 import numpy as np
 
-
 from mindiesd.eplb.eplb_scheduler import eplb_greedy
+from mindiesd.eplb import task_manager
 
 RESPONSE = {
     0: np.array(
@@ -1391,6 +1394,122 @@ class TestEplbScheduler(unittest.TestCase):
             unique_experts = set(experts)
             self.assertEqual(len(experts), len(unique_experts))
             self.assertEqual(len(unique_experts), 84)
+
+
+class TestAuthKeySecurity(unittest.TestCase):
+    """Test that auth key is not hardcoded (security fix)."""
+
+    def test_default_auth_key_is_not_secret_key(self):
+        """Verify the default auth key is NOT the well-known 'secret_key'."""
+
+        # Clear any existing EPLB_AUTH_KEY env var
+        with patch.dict('os.environ', {}, clear=True):
+            # Mock sys.argv to simulate no --auth_key argument
+            with patch.object(sys, 'argv', ['eplb_scheduler.py']):
+                # Re-import to get fresh args
+                from mindiesd.eplb.eplb_scheduler import get_args
+
+                args = get_args()
+                # The auth key should NOT be 'secret_key'
+                self.assertNotEqual(args.auth_key, 'secret_key', "Auth key must not be the hardcoded 'secret_key'")
+                # It should be a non-empty string (randomly generated)
+                self.assertIsInstance(args.auth_key, str)
+                self.assertTrue(len(args.auth_key) > 0)
+
+    def test_env_var_auth_key_is_used(self):
+        """Verify EPLB_AUTH_KEY environment variable is respected."""
+
+        test_key = 'test_env_key_12345'
+        with patch.dict('os.environ', {'EPLB_AUTH_KEY': test_key}, clear=True):
+            with patch.object(sys, 'argv', ['eplb_scheduler.py']):
+                from mindiesd.eplb.eplb_scheduler import get_args
+
+                args = get_args()
+                self.assertEqual(args.auth_key, test_key)
+
+    def test_cli_flag_overrides_env_var(self):
+        """Verify --auth_key CLI flag takes precedence over env var."""
+
+        env_key = 'env_key_123'
+        cli_key = 'cli_key_456'
+        with patch.dict('os.environ', {'EPLB_AUTH_KEY': env_key}, clear=True):
+            with patch.object(sys, 'argv', ['eplb_scheduler.py', f'--auth_key={cli_key}']):
+                from mindiesd.eplb.eplb_scheduler import get_args
+
+                args = get_args()
+                self.assertEqual(args.auth_key, cli_key)
+
+    def test_random_key_is_generated_when_no_config(self):
+        """Verify a random key is generated when neither CLI nor env is set."""
+
+        with patch.dict('os.environ', {}, clear=True):
+            with patch.object(sys, 'argv', ['eplb_scheduler.py']):
+                from mindiesd.eplb.eplb_scheduler import get_args
+
+                args1 = get_args()
+                args2 = get_args()
+                # Two calls should generate different random keys
+                self.assertNotEqual(args1.auth_key, args2.auth_key, "Each call should generate a different random key")
+                # Key should be 32 hex chars (16 bytes)
+                self.assertEqual(len(args1.auth_key), 32)
+                self.assertTrue(all(c in '0123456789abcdef' for c in args1.auth_key))
+
+
+class TestWorkerAuthKeyResolution(unittest.TestCase):
+    """Test worker-side EPLB auth key resolution (completes the fix for #379).
+
+    The scheduler side no longer falls back to the well-known 'secret_key'
+    default, but the worker side (task_manager) read auth_key only from its
+    kwarg.  This class verifies the worker now resolves the key with the same
+    priority order as the scheduler: explicit kwarg > EPLB_AUTH_KEY env var >
+    randomly generated key, so a worker started without an explicit key
+    connects with the shared env-var key instead of a hardcoded default.
+    """
+
+    def _env_without_auth(self, extra):
+        env_patch = {k: v for k, v in os.environ.items() if k != 'EPLB_AUTH_KEY'}
+        env_patch.update(extra)
+        return env_patch
+
+    def test_worker_env_var_key_resolved_when_kwarg_missing(self):
+        with patch.dict(os.environ, self._env_without_auth({'EPLB_AUTH_KEY': 'env_key_123'}), clear=True):
+            from mindiesd.eplb.task_manager import _resolve_worker_auth_key
+
+            self.assertEqual(_resolve_worker_auth_key(None), 'env_key_123')
+
+    def test_worker_empty_env_var_resolves_to_random_key(self):
+        with patch.dict(os.environ, self._env_without_auth({}), clear=True):
+            from mindiesd.eplb.task_manager import _resolve_worker_auth_key
+
+            key1 = _resolve_worker_auth_key(None)
+            key2 = _resolve_worker_auth_key(None)
+            self.assertNotEqual(key1, key2)
+            self.assertEqual(len(key1), 32)
+            self.assertTrue(all(c in '0123456789abcdef' for c in key1))
+
+    def test_worker_explicit_kwarg_beats_env_var(self):
+        with patch.dict(os.environ, self._env_without_auth({'EPLB_AUTH_KEY': 'env_key_123'}), clear=True):
+            from mindiesd.eplb.task_manager import _resolve_worker_auth_key
+
+            self.assertEqual(_resolve_worker_auth_key('explicit_key_456'), 'explicit_key_456')
+
+    def test_worker_random_key_is_never_the_hardcoded_default(self):
+        with patch.dict(os.environ, self._env_without_auth({}), clear=True):
+            from mindiesd.eplb.task_manager import _resolve_worker_auth_key
+
+            key = _resolve_worker_auth_key(None)
+            self.assertNotEqual(key, 'secret_key')
+
+    def test_construct_pool_resolves_env_key_before_connect(self):
+        with (
+            patch.dict(os.environ, self._env_without_auth({'EPLB_AUTH_KEY': 'env_key_123'}), clear=True),
+            patch.object(task_manager, 'connect_to_schedule_manager') as mock_connect,
+        ):
+            mock_connect.return_value = (MagicMock(), MagicMock())
+            kwargs = dict(module=object(), rank_in_group=0, device='npu:0', ip='127.0.0.1', port=8910, auth_key=None)
+            task_manager.construct_expert_info_transfer_pool(**kwargs)
+            _, connect_kwargs = mock_connect.call_args
+            self.assertEqual(mock_connect.call_args.args[3], 'env_key_123')
 
 
 if __name__ == '__main__':
