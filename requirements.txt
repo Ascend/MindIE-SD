@@ -6,7 +6,7 @@ einops
 numpy>=1.26.4
 safetensors
 strenum
-zmq
+pyzmq
 decorator
 scipy
 attrs

@@ -4,6 +4,7 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+cd "${REPO_ROOT}"
 DEVICE_ID="${DEVICE_ID:-}"
 ARGS=()
 while (($#)); do
@@ -20,7 +21,7 @@ while (($#)); do
             echo "Use --layout BNSD or --layout BSND to select one layout; default --layout all."
             echo "Device: --device-id ID or automatic selection via tests/tools/select_npu_device.py."
             echo "Default outputs: repository log/quant_flash_attn/accuracy_<timestamp>."
-            python3 "${SCRIPT_DIR}/check_qfa_prod_accuracy.py" --help
+            python3 -m tests.ops.quant_flash_attn.check_qfa_prod_accuracy --help
             exit 0 ;;
         --validate-only) echo "ERROR: --validate-only is a Python-only option" >&2; exit 1 ;;
         *) ARGS+=("$1"); shift ;;
@@ -28,10 +29,10 @@ while (($#)); do
 done
 [[ -z "$DEVICE_ID" || "$DEVICE_ID" =~ ^[0-9]+$ ]] || { echo "ERROR: invalid DEVICE_ID" >&2; exit 1; }
 # Reject invalid mode, runs and scene options before selecting a card.
-python3 "${SCRIPT_DIR}/check_qfa_prod_accuracy.py" "${ARGS[@]}" --validate-only
+python3 -m tests.ops.quant_flash_attn.check_qfa_prod_accuracy "${ARGS[@]}" --validate-only
 unset ASCEND_RT_VISIBLE_DEVICES
 if [[ -z "$DEVICE_ID" ]]; then
     DEVICE_ID="$(python3 "${REPO_ROOT}/tests/tools/select_npu_device.py" --format=id)"
 fi
 [[ "$DEVICE_ID" =~ ^[0-9]+$ ]] || { echo "ERROR: invalid selected NPU ID" >&2; exit 1; }
-python3 "${SCRIPT_DIR}/check_qfa_prod_accuracy.py" --device-id "$DEVICE_ID" "${ARGS[@]}"
+python3 -m tests.ops.quant_flash_attn.check_qfa_prod_accuracy --device-id "$DEVICE_ID" "${ARGS[@]}"

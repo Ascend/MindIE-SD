@@ -18,6 +18,7 @@ verified without any NPU or xpu_perf dependency.
 """
 
 import json
+import os
 import shutil
 
 import benchmark_report as br
@@ -31,9 +32,7 @@ def _entry(op_name, arguments, targets):
 def _write_report(tmp_path, entries):
     jsonl = tmp_path / "run" / "NPU" / "op" / "op-NPU.jsonl"
     jsonl.parent.mkdir(parents=True, exist_ok=True)
-    jsonl.write_text(
-        "".join(json.dumps(e) + "\n" for e in entries), encoding="utf-8"
-    )
+    jsonl.write_text("".join(json.dumps(e) + "\n" for e in entries), encoding="utf-8")
     return tmp_path / "run"
 
 
@@ -73,7 +72,7 @@ def test_parse_slot_roundtrip():
 
 
 def test_parse_slot_empty():
-    assert br.parse_slot("") == {}
+    assert not br.parse_slot("")
 
 
 @pytest.mark.parametrize(
@@ -121,7 +120,7 @@ def test_collect_baseline_recomputes_util(tmp_path):
 
 def test_collect_baseline_skips_unknown_op(tmp_path):
     entries = [_entry("unknown_op", {}, {"latency(us)": 1.0})]
-    assert br.collect_baseline(entries) == {}
+    assert not br.collect_baseline(entries)
 
 
 def test_collect_baseline_drops_errored_cases(tmp_path):
@@ -148,8 +147,12 @@ def test_collect_baseline_latency_carried_through(tmp_path):
         _entry(
             "mm",
             {
-                "M": 1024, "K": 5120, "N": 13824, "quant_algo": "NO_QUANT",
-                "peak_flops": 560.0, "peak_bw": 1275.0,
+                "M": 1024,
+                "K": 5120,
+                "N": 13824,
+                "quant_algo": "NO_QUANT",
+                "peak_flops": 560.0,
+                "peak_bw": 1275.0,
             },
             {"latency(us)": 42.5, "calc_flops_power(tflops)": 100.0, "mem_bw(GB/s)": 200.0},
         )
@@ -178,7 +181,7 @@ def test_compare_no_violations(tmp_path):
     current = br.collect_baseline(br.load_report_entries(report_dir))
     checked, violations = br.compare(current, baseline_dir, threshold=0.03)
     assert checked >= 1
-    assert violations == []
+    assert not violations
 
 
 def test_compare_detects_drift(tmp_path):
@@ -275,8 +278,12 @@ def test_load_report_entries_merges_multiple_runs(tmp_path):
             _entry(
                 "mm",
                 {
-                    "M": 1024, "K": 5120, "N": 13824, "quant_algo": "NO_QUANT",
-                    "peak_flops": 560.0, "peak_bw": 1275.0,
+                    "M": 1024,
+                    "K": 5120,
+                    "N": 13824,
+                    "quant_algo": "NO_QUANT",
+                    "peak_flops": 560.0,
+                    "peak_bw": 1275.0,
                 },
                 {"latency(us)": 3.0},
             )
@@ -285,11 +292,28 @@ def test_load_report_entries_merges_multiple_runs(tmp_path):
         encoding="utf-8",
     )
 
+    # Do not rely on consecutive writes receiving distinct filesystem mtimes.
+    for jsonl in target1.glob("*.jsonl"):
+        os.utime(jsonl, ns=(1_700_000_000_000_000_000,) * 2)
+    os.utime(target2 / "fa-NPU.jsonl", ns=(1_700_000_001_000_000_000,) * 2)
     loaded = br.load_report_entries(merged_dir)
     grouped = br.collect_baseline(loaded)
     # fa slot from run2 (newer mtime) wins; mm from run2 present
     assert grouped["fa"]["q_len=4096|dtype=bf16"]["latency(us)"] == 99.0
     assert "M=1024|K=5120|N=13824|quant_algo=NO_QUANT" in grouped["mm"]
+
+
+@pytest.mark.parametrize("mtime_delta", (0, 100, -100))
+def test_load_report_entries_orders_timestamps_and_ties(tmp_path, monkeypatch, mtime_delta):
+    paths = [tmp_path / "run1.jsonl", tmp_path / "run2.jsonl"]
+    timestamp = 1_700_000_000_000_000_000
+    for index, path in enumerate(paths):
+        path.write_text(json.dumps(_entry("fa", {"q_len": 4096}, {"latency(us)": index + 1})), encoding="utf-8")
+        os.utime(path, ns=(timestamp + index * mtime_delta,) * 2)
+    # Directory enumeration order must not decide which result wins a tie.
+    monkeypatch.setattr(br.pathlib.Path, "rglob", lambda self, pattern: iter(reversed(paths)))
+    grouped = br.collect_baseline(br.load_report_entries(tmp_path))
+    assert grouped["fa"]["q_len=4096"]["latency(us)"] == (1 if mtime_delta < 0 else 2)
 
 
 def test_render_html_shows_command_and_env(tmp_path):
@@ -302,7 +326,9 @@ def test_render_html_shows_command_and_env(tmp_path):
         "ops": {
             "bsa": {
                 "q_len=1024|num_heads=32|head_dim=128|sparsity=0.8|dtype=bf16": {
-                    "MFU": 0.5, "MBU": 0.6, "latency(us)": 3.0,
+                    "MFU": 0.5,
+                    "MBU": 0.6,
+                    "latency(us)": 3.0,
                 }
             }
         },
@@ -344,9 +370,7 @@ def test_build_csv_section_carries_peak_columns():
     cases = {
         "q_len=1024|dtype=bf16": {"MFU": 0.1, "MBU": 0.2, "latency(us)": 3.0},
     }
-    csv_data = br.build_csv_section(
-        {"fa": cases}, peaks={"fa": {"peak_flops": 560.0, "peak_bw": 1275.0}}
-    )
+    csv_data = br.build_csv_section({"fa": cases}, peaks={"fa": {"peak_flops": 560.0, "peak_bw": 1275.0}})
     row = csv_data["fa"]["bf16"][0]
     assert row["peak_flops"] == 560.0
     assert row["peak_bw"] == 1275.0
@@ -357,16 +381,12 @@ def test_write_csv_files_roundtrips_peaks(tmp_path):
         "q_len=1024|dtype=bf16": {"MFU": 0.5, "MBU": 0.5, "latency(us)": 3.0},
     }
     out = tmp_path / "csvs"
-    br.write_csv_files(
-        {"fa": cases}, str(out), peaks={"fa": {"peak_flops": 560.0, "peak_bw": 1275.0}}
-    )
-    assert br.read_peaks_from_csv(str(out), ["fa"]) == {
-        "fa": {"peak_flops": 560.0, "peak_bw": 1275.0}
-    }
+    br.write_csv_files({"fa": cases}, str(out), peaks={"fa": {"peak_flops": 560.0, "peak_bw": 1275.0}})
+    assert br.read_peaks_from_csv(str(out), ["fa"]) == {"fa": {"peak_flops": 560.0, "peak_bw": 1275.0}}
 
 
 def test_read_peaks_from_csv_missing_file_returns_empty(tmp_path):
-    assert br.read_peaks_from_csv(str(tmp_path / "no_such_dir"), ["fa"]) == {}
+    assert not br.read_peaks_from_csv(str(tmp_path / "no_such_dir"), ["fa"])
 
 
 def test_read_peaks_from_csv_skips_non_numeric(tmp_path):
@@ -374,14 +394,10 @@ def test_read_peaks_from_csv_skips_non_numeric(tmp_path):
         "q_len=1024|dtype=bf16": {"MFU": 0.5, "MBU": 0.5, "latency(us)": 3.0},
     }
     out = tmp_path / "csvs"
-    br.write_csv_files(
-        {"fa": cases}, str(out), peaks={"fa": {"peak_flops": 560.0, "peak_bw": None}}
-    )
+    br.write_csv_files({"fa": cases}, str(out), peaks={"fa": {"peak_flops": 560.0, "peak_bw": None}})
     csv_path = out / "fa.csv"
-    csv_path.write_text(
-        csv_path.read_text(encoding="utf-8").replace("560.0", "not-a-number"), encoding="utf-8"
-    )
-    assert br.read_peaks_from_csv(str(out), ["fa"]) == {}
+    csv_path.write_text(csv_path.read_text(encoding="utf-8").replace("560.0", "not-a-number"), encoding="utf-8")
+    assert not br.read_peaks_from_csv(str(out), ["fa"])
 
 
 def test_op_peaks_skips_early_entries_without_peaks():
@@ -436,9 +452,7 @@ def test_cmd_baseline_applies_csv_peak_update(tmp_path, monkeypatch):
 
     csv_path = out / "fa.csv"
     assert csv_path.exists()
-    csv_path.write_text(
-        csv_path.read_text(encoding="utf-8").replace("560.0", "700.0"), encoding="utf-8"
-    )
+    csv_path.write_text(csv_path.read_text(encoding="utf-8").replace("560.0", "700.0"), encoding="utf-8")
     br.cmd_baseline(args)
     assert _snapshot()["ops"]["fa"][slot]["MFU"] == pytest.approx(0.4)
     assert _snapshot()["env"]["peak_flops"] == 700.0
@@ -447,13 +461,9 @@ def test_cmd_baseline_applies_csv_peak_update(tmp_path, monkeypatch):
         "q_len=1024|dtype=bf16": {"MFU": 0.5, "MBU": 0.5, "latency(us)": 3.0},
     }
     out = tmp_path / "csvs"
-    br.write_csv_files(
-        {"fa": cases}, str(out), peaks={"fa": {"peak_flops": 560.0, "peak_bw": None}}
-    )
+    br.write_csv_files({"fa": cases}, str(out), peaks={"fa": {"peak_flops": 560.0, "peak_bw": None}})
     csv_path = out / "fa.csv"
-    csv_path.write_text(
-        csv_path.read_text(encoding="utf-8").replace("560.0", "700.0"), encoding="utf-8"
-    )
+    csv_path.write_text(csv_path.read_text(encoding="utf-8").replace("560.0", "700.0"), encoding="utf-8")
     assert br.read_peaks_from_csv(str(out), ["fa"]) == {"fa": {"peak_flops": 700.0}}
 
 
@@ -513,10 +523,14 @@ def test_render_html_gmm_shows_mfu_and_mbu(tmp_path):
         "ops": {
             "gmm": {
                 "num_tokens=1024|top_k=8|quant_algo=NO_QUANT": {
-                    "MFU": 0.4, "MBU": 0.5, "latency(us)": 3.0,
+                    "MFU": 0.4,
+                    "MBU": 0.5,
+                    "latency(us)": 3.0,
                 },
                 "num_tokens=2048|top_k=8|quant_algo=NO_QUANT": {
-                    "MFU": 0.5, "MBU": 0.6, "latency(us)": 4.0,
+                    "MFU": 0.5,
+                    "MBU": 0.6,
+                    "latency(us)": 4.0,
                 },
             }
         },
@@ -541,12 +555,15 @@ def test_render_html_shows_heads_dim_and_func(tmp_path):
         "env": {"peak_flops": 560.0, "peak_bw": 1275.0},
         "ops": {
             "fa": {
-                "q_len=1024|num_heads=16|head_dim=128|dtype=bf16"
-                "|func=torch_npu.npu_fusion_attention": {
-                    "MFU": 0.4, "MBU": 0.2, "latency(us)": 3.0,
+                "q_len=1024|num_heads=16|head_dim=128|dtype=bf16|func=torch_npu.npu_fusion_attention": {
+                    "MFU": 0.4,
+                    "MBU": 0.2,
+                    "latency(us)": 3.0,
                 },
                 "q_len=2048|num_heads=32|head_dim=256|dtype=bf16": {
-                    "MFU": 0.5, "MBU": 0.3, "latency(us)": 4.0,
+                    "MFU": 0.5,
+                    "MBU": 0.3,
+                    "latency(us)": 4.0,
                 },
             }
         },

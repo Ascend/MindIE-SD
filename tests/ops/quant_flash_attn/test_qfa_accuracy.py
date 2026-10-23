@@ -14,7 +14,15 @@
 
 import pytest
 
-from qfa_accuracy_common import Case, bind, check_outputs, compare, cpu_golden, initialize, make_inputs
+from tests.ops.quant_flash_attn.qfa_accuracy_common import (
+    Case,
+    bind,
+    check_outputs,
+    compare,
+    cpu_golden,
+    initialize,
+    make_inputs,
+)
 
 
 @pytest.mark.parametrize("layout", ("BNSD", "BSND"))
@@ -34,7 +42,7 @@ from qfa_accuracy_common import Case, bind, check_outputs, compare, cpu_golden, 
 @pytest.mark.parametrize("length_mode", ("used",))
 @pytest.mark.parametrize("distribution", ("uniform", "normal"))
 def test_qfa_small_accuracy(layout, q_seq, kv_seq, q_valid, kv_valid, length_mode, distribution):
-    from qfa_tolerance import BUDGET
+    from tests.ops.quant_flash_attn.qfa_tolerance import BUDGET
 
     # Mixed per-batch lengths exercise the shared scheduler's cost accounting.
     q_used = (q_valid, 65)

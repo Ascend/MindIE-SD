@@ -9,7 +9,11 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from summarize_laser_attention_layer import format_summary, summarize, validate_report
+from tests.layers.flash_attn.laser_attention.summarize_laser_attention_layer import (
+    format_summary,
+    summarize,
+    validate_report,
+)
 
 
 class TestRunSummary(unittest.TestCase):

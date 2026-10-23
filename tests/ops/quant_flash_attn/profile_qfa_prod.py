@@ -34,7 +34,7 @@ def parser(default_layout="BNSD"):
 
 
 def case_from_args(args, layout=None):
-    from qfa_accuracy_common import Case
+    from tests.ops.quant_flash_attn.qfa_accuracy_common import Case
 
     return Case(
         batch=args.batch,
@@ -63,7 +63,7 @@ def main():
             "a single profiling call requires --layout BNSD or BSND; use run_qfa_msprof_op.sh for all"
         )
     case = case_from_args(args)
-    from qfa_accuracy_common import bind, check_outputs, initialize, make_inputs
+    from tests.ops.quant_flash_attn.qfa_accuracy_common import bind, check_outputs, initialize, make_inputs
 
     torch, torch_npu, device = initialize(args.device_id)
     with torch.inference_mode():

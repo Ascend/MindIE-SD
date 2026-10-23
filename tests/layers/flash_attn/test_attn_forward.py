@@ -12,6 +12,7 @@
 
 # pylint: disable=no-name-in-module
 import unittest
+from importlib import import_module
 from unittest.mock import patch
 import os
 
@@ -22,6 +23,9 @@ from mindiesd.layers.flash_attn.attention_forward import attention_forward, get_
 from mindiesd.utils.exception import ParametersInvalid
 from mindiesd.utils.get_platform import is_a5_device
 from utils.utils.precision_compare import data_compare
+
+
+_ATTENTION_FORWARD_MODULE = import_module("mindiesd.layers.flash_attn.attention_forward")
 
 
 _SKIP_A5_LASER = "ascend_laser_attention is unsupported on A5; routed to fused_attn_score."
@@ -270,8 +274,8 @@ class TestAttentionFunc(unittest.TestCase):
 
 
 class TestAttentionForwardFallback(unittest.TestCase):
-    @patch("mindiesd.layers.flash_attn.attention_forward.is_a5_device", return_value=False)
-    @patch("mindiesd.layers.flash_attn.attention_forward.logger.debug")
+    @patch.object(_ATTENTION_FORWARD_MODULE, "is_a5_device", return_value=False)
+    @patch.object(_ATTENTION_FORWARD_MODULE.logger, "debug")
     def test_manual_la_fallback_when_q_seqlen_lt_2048(self, mock_logger_debug, _mock_is_a5):
         attn_param = AttentionParam(2, 16, 64, 1024, 4096, torch.float16, False)
 
@@ -280,8 +284,8 @@ class TestAttentionForwardFallback(unittest.TestCase):
         self.assertEqual(op_type, "fused_attn_score")
         mock_logger_debug.assert_called_once()
 
-    @patch("mindiesd.layers.flash_attn.attention_forward.is_a5_device", return_value=False)
-    @patch("mindiesd.layers.flash_attn.attention_forward.logger.debug")
+    @patch.object(_ATTENTION_FORWARD_MODULE, "is_a5_device", return_value=False)
+    @patch.object(_ATTENTION_FORWARD_MODULE.logger, "debug")
     def test_manual_la_fallback_when_kv_seqlen_lt_2048(self, mock_logger_debug, _mock_is_a5):
         attn_param = AttentionParam(2, 16, 64, 4096, 1024, torch.float16, False)
 
@@ -290,8 +294,8 @@ class TestAttentionForwardFallback(unittest.TestCase):
         self.assertEqual(op_type, "fused_attn_score")
         mock_logger_debug.assert_called_once()
 
-    @patch("mindiesd.layers.flash_attn.attention_forward.is_a5_device", return_value=False)
-    @patch("mindiesd.layers.flash_attn.attention_forward.logger.debug")
+    @patch.object(_ATTENTION_FORWARD_MODULE, "is_a5_device", return_value=False)
+    @patch.object(_ATTENTION_FORWARD_MODULE.logger, "debug")
     def test_manual_la_fallback_when_head_first_true(self, mock_logger_debug, _mock_is_a5):
         attn_param = AttentionParam(2, 16, 64, 1024, 1024, torch.float16, True)
 
@@ -300,8 +304,8 @@ class TestAttentionForwardFallback(unittest.TestCase):
         self.assertEqual(op_type, "fused_attn_score")
         mock_logger_debug.assert_called_once()
 
-    @patch("mindiesd.layers.flash_attn.attention_forward.is_a5_device", return_value=True)
-    @patch("mindiesd.layers.flash_attn.attention_forward.logger.warning")
+    @patch.object(_ATTENTION_FORWARD_MODULE, "is_a5_device", return_value=True)
+    @patch.object(_ATTENTION_FORWARD_MODULE.logger, "warning")
     def test_manual_la_fallback_to_fas_on_a5(self, mock_logger_warning, _mock_is_a5):
         # On A5 LA is no longer the optimal operator; manual choice must be routed
         # to fused_attn_score regardless of the seqlen threshold used on A2/A3.
@@ -312,8 +316,8 @@ class TestAttentionForwardFallback(unittest.TestCase):
         self.assertEqual(op_type, "fused_attn_score")
         mock_logger_warning.assert_called_once()
 
-    @patch("mindiesd.layers.flash_attn.attention_forward.is_a5_device", return_value=True)
-    @patch("mindiesd.layers.flash_attn.attention_forward.logger.warning")
+    @patch.object(_ATTENTION_FORWARD_MODULE, "is_a5_device", return_value=True)
+    @patch.object(_ATTENTION_FORWARD_MODULE.logger, "warning")
     def test_manual_pfa_fallback_to_fas_on_a5(self, mock_logger_warning, _mock_is_a5):
         # On A5 PFA is no longer registered; manual choice must be routed to
         # fused_attn_score with a warning telling the user to migrate.
@@ -324,7 +328,7 @@ class TestAttentionForwardFallback(unittest.TestCase):
         self.assertEqual(op_type, "fused_attn_score")
         mock_logger_warning.assert_called_once()
 
-    @patch("mindiesd.layers.flash_attn.attention_forward.is_a5_device", return_value=True)
+    @patch.object(_ATTENTION_FORWARD_MODULE, "is_a5_device", return_value=True)
     def test_manual_fas_unchanged_on_a5(self, _mock_is_a5):
         attn_param = AttentionParam(2, 16, 64, 8192, 8192, torch.float16, True)
         self.assertEqual(
@@ -332,7 +336,7 @@ class TestAttentionForwardFallback(unittest.TestCase):
             "fused_attn_score",
         )
 
-    @patch("mindiesd.layers.flash_attn.attention_forward.is_a5_device", return_value=False)
+    @patch.object(_ATTENTION_FORWARD_MODULE, "is_a5_device", return_value=False)
     def test_manual_pfa_unchanged_on_non_a5(self, _mock_is_a5):
         # Non-A5 devices must keep PFA selection untouched.
         attn_param = AttentionParam(2, 16, 64, 8192, 8192, torch.float16, True)

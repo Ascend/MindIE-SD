@@ -89,14 +89,14 @@ def _slot_for(op_name, arguments):
 def load_report_entries(report_dir):
     """Load all jsonl entries into a list of dicts.
 
-    Files are read oldest-first (mtime) so a slot written by a newer run
-    overwrites an older one; with the per-run report_dir convention this picks
-    the latest run deterministically when a dir holds stale leftovers.
+    Files are read oldest-first using nanosecond mtimes so newer runs overwrite
+    older slots. Equal timestamps use lexical relative-path order as a stable
+    tie-breaker; their actual creation order cannot be inferred from the mtime.
     """
     entries = []
     jsonl_files = sorted(
         pathlib.Path(report_dir).rglob("*.jsonl"),
-        key=lambda p: p.stat().st_mtime,
+        key=lambda p: (p.stat().st_mtime_ns, p.relative_to(report_dir).as_posix()),
     )
     for jsonl in jsonl_files:
         for line in jsonl.read_text(encoding="utf-8").splitlines():

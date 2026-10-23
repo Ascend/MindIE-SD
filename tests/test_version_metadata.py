@@ -14,12 +14,30 @@ import os
 import runpy
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 VERSION_FILE = ROOT / "version.py"
 
 
 class TestVersionMetadata(unittest.TestCase):
+    def test_release_override_normalization(self):
+        cases = {
+            "3.0.0": "3.0.0",
+            "3.0.0.RC1.2": "3.0.0rc1.post2",
+            "3.0.RC1.2": "3.0rc1.post2",
+            "3.0.0.T": "3.0.0+t",
+            "3.0.0.T20260415": "3.0.0+t20260415",
+            "9.9.9T20260415": "9.9.9.post20260415",
+            "3.0.0rc1.post2": "3.0.0rc1.post2",
+            "3.0.0.RC01.02": "3.0.0rc1.post2",
+            "3.0.0.RC1": "3.0.0rc1",
+            "v3.0.0": "3.0.0",
+        }
+        for raw, expected in cases.items():
+            with self.subTest(raw=raw), patch.dict(os.environ, {"MINDIE_SD_VERSION_OVERRIDE": raw}):
+                self.assertEqual(runpy.run_path(str(VERSION_FILE))["__version__"], expected)
+
     def test_pyproject_uses_canonical_version_attr(self):
         pyproject_text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
@@ -40,7 +58,7 @@ class TestVersionMetadata(unittest.TestCase):
         os.environ["MINDIE_SD_VERSION_OVERRIDE"] = "9.9.9T20260415"
         try:
             version_ns = runpy.run_path(str(VERSION_FILE))
-            self.assertEqual(version_ns["__version__"], "9.9.9post20260415")
+            self.assertEqual(version_ns["__version__"], "9.9.9.post20260415")
         finally:
             if original is None:
                 os.environ.pop("MINDIE_SD_VERSION_OVERRIDE", None)

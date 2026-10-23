@@ -37,18 +37,8 @@ else
     exit 1
 fi
 
-if [ -n "$MINDIE_SD_VERSION_OVERRIDE" ]; then
-    MindIESDVersion=$MINDIE_SD_VERSION_OVERRIDE
-    echo "Using MINDIE_SD_VERSION_OVERRIDE: $MindIESDVersion"
-else
-    MindIESDVersion="3.1.0"
-    echo "Using default version: $MindIESDVersion"
-fi
-MindIESDVersion=$(echo $MindIESDVersion | sed -E 's/([0-9]+)\.([0-9]+)\.RC([0-9]+)\.([0-9]+)/\1.\2rc\3.post\4/')
-MindIESDWheelVersion=$(echo $MindIESDVersion | sed -s 's!.T!.alpha!')
-MindIESDVersion=$(echo $MindIESDVersion | sed -s 's!.T!+t!')
+MindIESDVersion=$(python3 "${PROJ_ROOT_DIR}/version.py")
 echo "MindIESDVersion $MindIESDVersion"
-echo "MindIESDWheelVersion $MindIESDWheelVersion"
 
 python3 setup.py bdist_wheel
 

@@ -430,6 +430,9 @@ class TestTokenDispatcher(unittest.TestCase):
     def test_static_w8a8_mxfp8_dispatch_matches_prequantized_input(self):
         device = torch.device("npu")
         hidden_states = (torch.randn(4, 32, device=device, dtype=torch.bfloat16) / 10).contiguous()
+        # This block distinguishes OCP scaling from the fused ceil scale rule.
+        hidden_states[1].fill_(0.015625)
+        hidden_states[1, 0] = 0.234375
         topk_ids = torch.tensor([[0], [1], [0], [1]], dtype=torch.int32, device=device)
         topk_weights = torch.ones(4, 1, device=device)
 
@@ -441,7 +444,10 @@ class TestTokenDispatcher(unittest.TestCase):
                 topk_ids=topk_ids,
             )
         )
-        quant_hidden, dynamic_scale = torch_npu.npu_dynamic_mx_quant(hidden_states, dst_type=torch.float8_e4m3fn)
+        # Fused MoE routing uses ceil-based scaling, rather than the OCP default.
+        quant_hidden, dynamic_scale = torch_npu.npu_dynamic_mx_quant(
+            hidden_states, dst_type=torch.float8_e4m3fn, scale_alg=1
+        )
         dynamic_scale = _normalize_mxfp_scale_layout(dynamic_scale)
         prepare_quant_output = StaticDispatcher.dispatch(
             make_token_dispatch_input(

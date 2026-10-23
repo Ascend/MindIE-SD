@@ -9,6 +9,7 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+import os
 import unittest
 from itertools import product
 
@@ -22,7 +23,10 @@ def inputs(device='cpu'):
     return (q, q.clone(), q.clone())
 
 
-@unittest.skipUnless(hasattr(torch, "npu") and torch.npu.is_available(), "NPU is required")
+@unittest.skipUnless(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") != "CPU" and hasattr(torch, "npu") and torch.npu.is_available(),
+    "NPU mode and hardware are required",
+)
 class TestNormRopeConcatAPI(unittest.TestCase):
     def test_npu_layout_combinations(self):
         for input_layout, output_layout, concat_order, with_encoder, dtype in product(
@@ -146,6 +150,7 @@ class TestNormRopeConcatAPI(unittest.TestCase):
                     torch.testing.assert_close(actual[2].cpu(), x.transpose(1, 2), rtol=0, atol=0)
 
     def test_no_rope_tables(self):
+        """Check normalization without RoPE tables at inference shapes."""
         cases = product(
             ("BSND", "BNSD"),
             ("BSND", "BNSD"),
@@ -153,7 +158,7 @@ class TestNormRopeConcatAPI(unittest.TestCase):
             (False, True),
             (torch.float32, torch.bfloat16),
             range(5),
-            (4, 128),
+            (64, 128),
         )
         for input_layout, output_layout, order, with_encoder, dtype, norm_type, dim in cases:
             with self.subTest(
@@ -165,9 +170,9 @@ class TestNormRopeConcatAPI(unittest.TestCase):
                 norm_type=norm_type,
                 head_dim=dim,
             ):
-                x = (torch.arange(2 * 5 * 3 * dim).reshape(2, 5, 3, dim).float() % 37 - 18) / 17
+                x = (torch.arange(1 * 256 * 24 * dim).reshape(1, 256, 24, dim).float() % 37 - 18) / 17
                 main = tuple(tensor.to(dtype) for tensor in (x, -x + 0.25, x + 2))
-                encoder = tuple(tensor[:, :2].clone() + 0.5 for tensor in main) if with_encoder else ()
+                encoder = tuple(tensor[:, :32].clone() + 0.5 for tensor in main) if with_encoder else ()
                 tensors = tuple(tensor.to("npu") for tensor in (*main, *encoder))
                 if input_layout == "BNSD":
                     tensors = tuple(tensor.transpose(1, 2).contiguous() for tensor in tensors)

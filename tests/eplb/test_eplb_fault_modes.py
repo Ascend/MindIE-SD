@@ -266,8 +266,9 @@ class TestEplbFaultModeReproduction(unittest.TestCase):
         )
         transfer = mock.Mock()
 
-        with mock.patch(
-            "mindiesd.eplb.eplb_scheduler.eplb_greedy",
+        with mock.patch.object(
+            eplb_scheduler,
+            "eplb_greedy",
             return_value=(False, [], [], [], None),
         ):
             with self.assertLogs("mindie-sd", level="ERROR") as captured:

@@ -45,6 +45,8 @@ except ImportError:
 
 
 def _is_npu_available():
+    if os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU":
+        return False
     try:
         return torch.npu.is_available()
     except Exception:
@@ -54,6 +56,11 @@ def _is_npu_available():
 def _has_mindiesd_op():
     try:
         import mindiesd  # noqa: F401
+        from mindiesd.utils.get_platform import is_a5_device
+
+        if not is_a5_device():
+            return False
+
         return hasattr(torch.ops, 'mindiesd') and hasattr(torch.ops.mindiesd, 'quant_four_over_six_a5')
     except Exception:
         return False
@@ -91,13 +98,18 @@ def _expected_scale_shape(shape, axis, blocksize):
     return scale_shape
 
 
-def _run_adaptive(x, axis=-1, dst_type=40, blocksize=32, scale_alg=2, dst_type_max=4.0,
-                  round_mode="rint"):
+def _run_adaptive(x, axis=-1, dst_type=40, blocksize=32, scale_alg=2, dst_type_max=4.0, round_mode="rint"):
     """Run the operator through the mindiesd python wrapper (46 adaptive path)."""
     from mindiesd.layers._custom_ops import quant_four_over_six_a5
+
     return quant_four_over_six_a5(
-        x, axis=axis, round_mode=round_mode, dst_type=dst_type,
-        blocksize=blocksize, scale_alg=scale_alg, dst_type_max=dst_type_max,
+        x,
+        axis=axis,
+        round_mode=round_mode,
+        dst_type=dst_type,
+        blocksize=blocksize,
+        scale_alg=scale_alg,
+        dst_type_max=dst_type_max,
     )
 
 
@@ -138,8 +150,7 @@ def _assert_bytes_equal(testcase, tensor, raw, label):
     tbytes = tensor.cpu().contiguous().view(torch.uint8).numpy().tobytes()
     if len(tbytes) != len(raw):
         testcase.skipTest(
-            f"golden byte layout mismatch for {label}: got {len(tbytes)}B vs golden {len(raw)}B, "
-            "skipped (best-effort)"
+            f"golden byte layout mismatch for {label}: got {len(tbytes)}B vs golden {len(raw)}B, skipped (best-effort)"
         )
     testcase.assertEqual(tbytes, raw, f"{label} bytes mismatch")
 
@@ -149,8 +160,10 @@ def _assert_bytes_equal(testcase, tensor, raw, label):
 # ============================================================================
 
 
-@unittest.skipUnless(NPU_AVAILABLE, "NPU or mindiesd operator not available")
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipUnless(NPU_AVAILABLE, "Requires an A5 NPU and the mindiesd operator")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestQuantFourOverSixA5NPU(unittest.TestCase):
     """NPU tests: run operator on real hardware."""
 
@@ -289,12 +302,45 @@ class TestQuantFourOverSixA5NPU(unittest.TestCase):
 
     def test_edge_values_zero_negative(self):
         """边界: 值域含 0 与负值（非全正 0.5+）——量化须正常产出有限值，无 NaN 路径。
-        注意：轴维须 32 对齐（B5 硬条件），故用 (2,32)。"""
-        pattern = torch.tensor([0.0, -0.5, 3.0, 1e-3, -1.0, 2.5, 0.75, -0.125,
-                                1.0, 0.0, -2.0, 0.5, 0.25, -0.75, 4.0, 0.0,
-                                6.0, -6.0, 0.5, -0.5, 1.5, -1.5, 3.5, -3.5,
-                                0.0, 0.125, -0.25, 5.0, -4.0, 2.0, -1.0, 0.0],
-                               dtype=torch.bfloat16)
+        注意：轴维须 32 对齐（B5 硬条件），故用 (2,32)。
+        """
+        pattern = torch.tensor(
+            [
+                0.0,
+                -0.5,
+                3.0,
+                1e-3,
+                -1.0,
+                2.5,
+                0.75,
+                -0.125,
+                1.0,
+                0.0,
+                -2.0,
+                0.5,
+                0.25,
+                -0.75,
+                4.0,
+                0.0,
+                6.0,
+                -6.0,
+                0.5,
+                -0.5,
+                1.5,
+                -1.5,
+                3.5,
+                -3.5,
+                0.0,
+                0.125,
+                -0.25,
+                5.0,
+                -4.0,
+                2.0,
+                -1.0,
+                0.0,
+            ],
+            dtype=torch.bfloat16,
+        )
         vals = torch.stack([pattern, pattern]).reshape(2, 32)
         y, mxscale = _run_adaptive(_to_npu(vals))
         self.assertEqual(tuple(y.shape), (2, 16))
@@ -305,7 +351,8 @@ class TestQuantFourOverSixA5NPU(unittest.TestCase):
     def test_t9c_dst_type_41_rejected(self):
         """T9c/B3: dst_type=41 (FLOAT4_E1M2, e1m2) 必须被拒绝——46 仅保留 dst_type=40 (E2M1)。
         e1m2 在 aclnn/kernel 层虽支持（源 8-dtype 时代），但非 46 保留组合；
-        torch 层拦截（TORCH_CHECK），不允许走到真机执行。"""
+        torch 层拦截（TORCH_CHECK），不允许走到真机执行。
+        """
         x = torch.randn(8, 256, dtype=torch.bfloat16).abs() + 0.5
         with self.assertRaises(RuntimeError) as ctx:
             _run_adaptive(_to_npu(x), dst_type=41)
@@ -315,6 +362,7 @@ class TestQuantFourOverSixA5NPU(unittest.TestCase):
     def test_fake_shape_dtype_64x1024(self):
         """fake op 元信息：y 打包减半，mxscale 按公式，dtype 按 dst_type 映射。"""
         from mindiesd.layers._custom_ops import quant_four_over_six_a5_fake
+
         x = torch.empty(64, 1024, dtype=torch.bfloat16)
         y, mxscale = quant_four_over_six_a5_fake(x, axis=1, dst_type=40, blocksize=32, scale_alg=2, dst_type_max=4.0)
         self.assertEqual(tuple(y.shape), (64, 512))
@@ -325,6 +373,7 @@ class TestQuantFourOverSixA5NPU(unittest.TestCase):
     def test_fake_shape_negative_axis(self):
         """fake 负 axis 处理（46 路径 dst_type=40）。"""
         from mindiesd.layers._custom_ops import quant_four_over_six_a5_fake
+
         x = torch.empty(2, 128, 64, dtype=torch.bfloat16)
         y, mxscale = quant_four_over_six_a5_fake(x, axis=-2, dst_type=40, blocksize=32)
         self.assertEqual(tuple(y.shape), (2, 128, 32))
@@ -335,6 +384,7 @@ class TestQuantFourOverSixA5NPU(unittest.TestCase):
     def test_fake_dtype_mapping_46(self):
         """T9b: dst_type 映射仅剩 40 -> uint8（fp4 打包），41/36/35 已被清理须报错。"""
         from mindiesd.layers._custom_ops import quant_four_over_six_a5_fake
+
         x = torch.empty(4, 128, dtype=torch.bfloat16)
         y, _ = quant_four_over_six_a5_fake(x, dst_type=40)
         self.assertEqual(y.dtype, _dst_type_dtype(40))
@@ -343,6 +393,7 @@ class TestQuantFourOverSixA5NPU(unittest.TestCase):
     def test_fake_dtype_mapping_removed_rejected(self):
         """T9b: 已删除的 dst_type（41/36/35）在 fake 层同样报错（与 plugin/def 一致）。"""
         from mindiesd.layers._custom_ops import quant_four_over_six_a5_fake
+
         x = torch.empty(4, 128, dtype=torch.bfloat16)
         for dst_type in (41, 36, 35):
             with self.assertRaises(Exception, msg=f"dst_type={dst_type} should be rejected"):
@@ -351,6 +402,7 @@ class TestQuantFourOverSixA5NPU(unittest.TestCase):
     def test_fake_blocksize_not_multiple(self):
         """blocksize 非法时 fake 不应崩溃（校验交给 NPU 路径），形状公式按输入计算。"""
         from mindiesd.layers._custom_ops import quant_four_over_six_a5_fake
+
         x = torch.empty(4, 1024, dtype=torch.bfloat16)
         y, mxscale = quant_four_over_six_a5_fake(x, blocksize=64)
         self.assertEqual(tuple(y.shape), (4, 512))
@@ -365,20 +417,20 @@ class TestQuantFourOverSixA5NPU(unittest.TestCase):
 # ============================================================================
 # T9d 扩展精度验证：ref_golden_46（源仓 golden 算法 oracle）逐字节比对
 # ============================================================================
-import ref_golden_46 as ref46
+from tests.ops.quant_four_over_six_a5 import ref_golden_46 as ref46
 import numpy as _np
 
 
 def _bits_to_bf16(xbits2d):
     """np uint16 bf16 位 -> torch.bfloat16（位级一致）。"""
-    return torch.frombuffer(xbits2d.astype(_np.uint16).tobytes(), dtype=torch.bfloat16
-                            ).reshape(xbits2d.shape)
+    return torch.frombuffer(xbits2d.astype(_np.uint16).tobytes(), dtype=torch.bfloat16).reshape(xbits2d.shape)
 
 
 def _anypack_match(npu_y_np, ref_lohi, ref_hilo):
-    return (_np.array_equal(npu_y_np, ref_lohi) or _np.array_equal(npu_y_np, ref_hilo))
+    return _np.array_equal(npu_y_np, ref_lohi) or _np.array_equal(npu_y_np, ref_hilo)
 
 
+@unittest.skipUnless(NPU_AVAILABLE, "Requires an A5 NPU and the mindiesd operator")
 class TestQuantFourOverSixA5Precision(unittest.TestCase):
     """46 精度扩展边界：shape/值域/round_mode 池——mxscale 与 y 双逐字节 vs 源仓 golden oracle。"""
 
@@ -387,18 +439,21 @@ class TestQuantFourOverSixA5Precision(unittest.TestCase):
         ref_lohi = ref46.ref_46_y(xf64, pack="lohi", round_mode=round_mode)
         ref_hilo = ref46.ref_46_y(xf64, pack="hilo", round_mode=round_mode)
         # mxscale: E8M0 逐字节
-        self.assertTrue(_np.array_equal(mx_npu, ref_mx),
-                        "mxscale mismatch: npu=%s ref=%s" % (mx_npu[:8], ref_mx[:8]))
+        self.assertTrue(_np.array_equal(mx_npu, ref_mx), "mxscale mismatch: npu=%s ref=%s" % (mx_npu[:8], ref_mx[:8]))
         # y: fp4 打包（lohi/hilo 任一 100% 一致即可）
-        self.assertTrue(_anypack_match(y_npu, ref_lohi, ref_hilo),
-                        "y mismatch (lohi/hilo)")
+        self.assertTrue(_anypack_match(y_npu, ref_lohi, ref_hilo), "y mismatch (lohi/hilo)")
         return True
 
     def test_precision_shape_pool(self):
         exps = [
-            ("varied", 64, 1024), ("varied", 257, 1024), ("varied", 600, 512),
-            ("varied", 512, 768), ("varied", 1024, 1024),
-            ("uniform", 128, 2048), ("rev", 96, 640), ("varied", 32, 32),
+            ("varied", 64, 1024),
+            ("varied", 257, 1024),
+            ("varied", 600, 512),
+            ("varied", 512, 768),
+            ("varied", 1024, 1024),
+            ("uniform", 128, 2048),
+            ("rev", 96, 640),
+            ("varied", 32, 32),
         ]
         for mode, rows, cols in exps:
             with self.subTest(mode=mode, rows=rows, cols=cols):
@@ -420,11 +475,43 @@ class TestQuantFourOverSixA5Precision(unittest.TestCase):
 
     def test_precision_value_domain_edges(self):
         """值域边界（0/负值/±6/1e-3/大值）——mx+y 双比对（对齐 32）。"""
-        xf = _np.array([0.0, -0.5, 3.0, 1e-3, -1.0, 2.5, 0.75, -0.125,
-                       1.0, 0.0, -2.0, 0.5, 0.25, -0.75, 4.0, 0.0,
-                       6.0, -6.0, 0.5, -0.5, 1.5, -1.5, 3.5, -3.5,
-                       0.0, 0.125, -0.25, 5.0, -4.0, 2.0, -1.0, 0.0],
-                      dtype=_np.float64)
+        xf = _np.array(
+            [
+                0.0,
+                -0.5,
+                3.0,
+                1e-3,
+                -1.0,
+                2.5,
+                0.75,
+                -0.125,
+                1.0,
+                0.0,
+                -2.0,
+                0.5,
+                0.25,
+                -0.75,
+                4.0,
+                0.0,
+                6.0,
+                -6.0,
+                0.5,
+                -0.5,
+                1.5,
+                -1.5,
+                3.5,
+                -3.5,
+                0.0,
+                0.125,
+                -0.25,
+                5.0,
+                -4.0,
+                2.0,
+                -1.0,
+                0.0,
+            ],
+            dtype=_np.float64,
+        )
         xf2 = _np.stack([xf, xf * 0.5])
         xb = _np.array([ref46.f2bf16_rne(v) for v in xf2.ravel()]).reshape(xf2.shape)
         xt = _bits_to_bf16(xb)
@@ -442,7 +529,8 @@ class TestQuantFourOverSixA5Precision(unittest.TestCase):
 
     def test_boundary_precision_512x5120(self):
         """最大边界 shape（源报告 512×5120）全量 mx+y vs oracle——T10 写回/判据修复的回归守护。
-        oracle 全量（81920 块）python 参考，本用例预计 ~1-2 分钟。"""
+        oracle 全量（81920 块）python 参考，本用例预计 ~1-2 分钟。
+        """
         rows, cols = 512, 5120
         xb, xf, _ = ref46.build_input(rows, cols, "varied")
         xt = _bits_to_bf16(xb)
@@ -452,11 +540,46 @@ class TestQuantFourOverSixA5Precision(unittest.TestCase):
     def test_boundary_precision_value_extreme_mix(self):
         """值域极端混合（1e-4 与 1e4 量级同一行）——bf16 判据无溢出位的回归守护。"""
         rows, cols = 4, 32
-        raw = _np.array([[1e-4, 1e4, -1e4, 1e-4, 1e3, -1e3, 5e-2, -5e-2,
-                          200.0, -200.0, 0.0, 0.0, -0.125, 0.5, 7.0, -7.0,
-                          1.5, -1.5, 2.0, -2.0, 3.0, -3.0, 4.0, -4.0,
-                          6.0, -6.0, 1e-2, -1e-2, 2.5, -2.5, 0.25, 8.0]] * rows,
-                         dtype=_np.float64).reshape(rows, cols)
+        raw = _np.array(
+            [
+                [
+                    1e-4,
+                    1e4,
+                    -1e4,
+                    1e-4,
+                    1e3,
+                    -1e3,
+                    5e-2,
+                    -5e-2,
+                    200.0,
+                    -200.0,
+                    0.0,
+                    0.0,
+                    -0.125,
+                    0.5,
+                    7.0,
+                    -7.0,
+                    1.5,
+                    -1.5,
+                    2.0,
+                    -2.0,
+                    3.0,
+                    -3.0,
+                    4.0,
+                    -4.0,
+                    6.0,
+                    -6.0,
+                    1e-2,
+                    -1e-2,
+                    2.5,
+                    -2.5,
+                    0.25,
+                    8.0,
+                ]
+            ]
+            * rows,
+            dtype=_np.float64,
+        ).reshape(rows, cols)
         xb = _np.array([ref46.f2bf16_rne(v) for v in raw.ravel()]).reshape(rows, cols)
         xt = _bits_to_bf16(xb)
         y, mx = _run_adaptive(_to_npu(xt))

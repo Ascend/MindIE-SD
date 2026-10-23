@@ -12,7 +12,6 @@
 import unittest
 import torch
 from unittest.mock import patch, MagicMock, ANY
-from packaging.version import Version
 
 from mindiesd.layers import register_ops
 import os
@@ -23,12 +22,14 @@ import os
 )
 class TestRegisterOps(unittest.TestCase):
     def setUp(self):
-        self.torch_version = Version(torch.__version__.split("+")[0])
+        self.torch_version = tuple(
+            int(part) for part in register_ops._get_torch_major_minor(torch.__version__).split(".")
+        )
         self.test_op_base = "test_op_mindie_sd_"
         self.register_func_path = self._get_register_func_path()
 
     def _get_register_func_path(self):
-        if self.torch_version >= Version("2.2"):
+        if self.torch_version >= (2, 2):
             return 'mindiesd.layers.register_ops._native_register_fake'
         else:
             return 'mindiesd.layers.register_ops._lib.impl'
@@ -83,7 +84,7 @@ class TestRegisterOps(unittest.TestCase):
             self.assertTrue(callable(decorated_func))
             self.assertEqual(decorated_func.__name__, "test_fake")
 
-            if self.torch_version == Version("2.1"):
+            if self.torch_version == (2, 1):
                 mock_register.assert_called_with(test_op_name, ANY, "Meta")
             else:
                 mock_register.assert_called_with(f"{test_op_name}")
@@ -108,7 +109,7 @@ class TestRegisterOps(unittest.TestCase):
             self.assertEqual(result.device.type, "meta")
             self.assertEqual(result.shape, x.shape)
 
-            if self.torch_version == Version("2.1"):
+            if self.torch_version == (2, 1):
                 mock_register.assert_called_with(test_op_name, ANY, "Meta")
             else:
                 mock_register.assert_called_with(f"{test_op_name}")

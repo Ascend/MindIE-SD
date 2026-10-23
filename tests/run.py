@@ -42,7 +42,7 @@ def load_tests_from_files(folder_path):
             if re.match(r"^test_", filename) and re.search(r"py$", filename):
                 file_path = os.path.join(folder_path, foldername, filename)
                 module_name = os.path.splitext(os.path.relpath(file_path))[0].replace(os.path.sep, '.')
-                module = import_module(f'{module_name}')
+                module = import_module(module_name)
                 tests = unittest.TestLoader().loadTestsFromModule(module)
                 test_suite.addTests(tests)
     return test_suite
@@ -85,7 +85,7 @@ def load_tests_from_names(folder_path, pattern):
                         module = import_module(module_name)
                     except Exception as e:  # pylint: disable=broad-except
                         print("Failed to import {}: {}: {}".format(filename, type(e).__name__, e), file=sys.stderr)
-                        continue
+                        raise
                     tests = unittest.TestLoader().loadTestsFromModule(module)
                     test_suite.addTests(tests)
     not_found = name_set - found

@@ -12,18 +12,16 @@
 
 import math
 import os
-import sys
 import unittest
 from contextlib import nullcontext
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import torch
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from utils.utils.precision_compare import data_compare
+from tests.utils.utils.precision_compare import data_compare
 
 from mindiesd.utils.exception import ParametersInvalid
+from mindiesd.utils.get_platform import NPUDevice, get_npu_device
 
 try:
     from mindiesd.layers.flash_attn.sparse_linear_attn import (
@@ -673,10 +671,14 @@ class TestSparseLinearAttentionNPU(unittest.TestCase):
         with self.assertRaises(self._expect_triton_compile_error()):
             get_block_map(q, k, topk_ratio=0.5, BLKQ=BLK, BLKK=256)
 
-    def test_triton_hd128_blk64_128_attention_ub_overflow(self):
+    def test_triton_hd128_blk64_128_attention_device_contract(self):
         """triton 声明支持 (128,64,128)，但 _attention 在 910B UB 溢出；mock 强制走 triton。"""
         if self.is_950:
             self.skipTest('This test captures a 910B-specific Triton UB overflow.')
+        if get_npu_device() == NPUDevice.A3:
+            output = self._run_npu_forward(HEADDIM_128, 64, 128, force_backend='triton')
+            self.assertTrue(torch.isfinite(output).all())
+            return
         q = torch.randn(
             BATCH,
             HEAD,

@@ -8,7 +8,13 @@ from unittest.mock import patch
 
 import torch
 
-from laser_attention_layer_common import LAYERS, LegacyLaserAttention, la, make_inputs
+from tests.device import DEVICE_ID
+from tests.layers.flash_attn.laser_attention.laser_attention_layer_common import (
+    LAYERS,
+    LegacyLaserAttention,
+    la,
+    make_inputs,
+)
 from mindiesd.layers.flash_attn.common import AttentionParam
 
 
@@ -80,9 +86,7 @@ class TestLaserAttentionLayerNpu(unittest.TestCase):
 
         if not torch.npu.is_available():
             self.skipTest("NPU is unavailable")
-        if os.environ.get("ASCEND_RT_VISIBLE_DEVICES"):
-            self.fail("Unset ASCEND_RT_VISIBLE_DEVICES; pass a physical DEVICE_ID")
-        torch.npu.set_device(int(os.environ.get("DEVICE_ID", "0")))
+        torch.npu.set_device(DEVICE_ID)
         if la.is_a5_device():
             self.skipTest("LA is unsupported on A5")
         param, query, key, value = make_inputs(f"npu:{torch.npu.current_device()}")

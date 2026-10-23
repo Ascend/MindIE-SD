@@ -5,6 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+cd "${REPO_ROOT}"
 DEVICE_ID="${DEVICE_ID:-}"
 OUTPUT_DIR=""
 MSPROF_WARMUP="${MSPROF_WARMUP:-20}"
@@ -80,7 +81,7 @@ while read -r layout scene; do
             mkdir -p "$run_dir"
             msprof op --kernel-name=QuantFlashAttn --warm-up="$MSPROF_WARMUP" \
                 --launch-count=1 --kill=on --output="$run_dir" \
-                python3 "${SCRIPT_DIR}/profile_qfa_prod.py" --device-id "$DEVICE_ID" \
+                python3 -m tests.ops.quant_flash_attn.profile_qfa_prod --device-id "$DEVICE_ID" \
                 --msprof-mode --distribution "$distribution" "${EXTRA_ARGS[@]}" --layout "$layout" \
                 2>&1 | tee "${run_dir}/msprof.log"
             python3 "${SCRIPT_DIR}/qfa_perf_summary.py" --check-log "${run_dir}/msprof.log"

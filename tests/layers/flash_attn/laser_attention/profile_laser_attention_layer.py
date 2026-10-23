@@ -82,7 +82,7 @@ def main():
 
     # MindIE-SD imports query the platform and can initialize the default device.
     torch.npu.set_device(args.device_id)
-    from laser_attention_layer_common import LAYERS, make_inputs
+    from tests.layers.flash_attn.laser_attention.laser_attention_layer_common import LAYERS, make_inputs
     from mindiesd.utils.get_platform import is_a5_device
 
     if is_a5_device():

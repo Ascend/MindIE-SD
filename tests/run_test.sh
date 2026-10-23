@@ -95,7 +95,8 @@ if [[ ${#test_files[@]} -gt 0 ]]; then
     rc=0
     for f in "${test_files[@]}"; do
         echo "=== Running Start: ${f} ==="
-        ${python_command} "${f}" || rc=$?
+        # Use the same module loader as full runs so package-relative imports work.
+        ${python_command} "${current_directory}/run.py" "$(readlink -f -- "${f}")" || rc=$?
     done
     exit ${rc}
 fi

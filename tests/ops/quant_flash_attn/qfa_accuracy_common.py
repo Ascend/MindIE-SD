@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
-from qfa_reference import attention_rows, bf16_round, decode_mxfp4, quantize_mxfp4
+from tests.ops.quant_flash_attn.qfa_reference import attention_rows, bf16_round, decode_mxfp4, quantize_mxfp4
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DISTRIBUTIONS = ("uniform", "normal")

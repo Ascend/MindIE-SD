@@ -16,7 +16,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from profile_qfa_prod import cases_from_args, parser
+from tests.ops.quant_flash_attn.profile_qfa_prod import cases_from_args, parser
 
 
 def main():
@@ -32,7 +32,7 @@ def main():
     cases = cases_from_args(args)
     if args.validate_only:
         return
-    from qfa_accuracy_common import (
+    from tests.ops.quant_flash_attn.qfa_accuracy_common import (
         DISTRIBUTIONS,
         REPO_ROOT,
         bind,
@@ -43,7 +43,7 @@ def main():
         npu_golden,
         stress,
     )
-    from qfa_tolerance import BUDGET
+    from tests.ops.quant_flash_attn.qfa_tolerance import BUDGET
 
     output_dir = (
         args.output_dir or REPO_ROOT / "log/quant_flash_attn" / datetime.now().strftime("accuracy_%Y%m%d_%H%M%S_%f")

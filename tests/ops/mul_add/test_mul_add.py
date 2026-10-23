@@ -38,6 +38,7 @@ def _is_npu_available():
 def _has_mindiesd_op():
     try:
         import mindiesd  # noqa: F401
+
         return hasattr(torch.ops, 'mindiesd') and hasattr(torch.ops.mindiesd, 'mul_add')
     except Exception:
         return False
@@ -66,7 +67,9 @@ def _torch_mul_add_ref(a, b, c):
 
 
 @unittest.skipUnless(NPU_AVAILABLE, "NPU or mindiesd operator not available")
-@unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU.")
+@unittest.skipIf(
+    os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU-dependent tests when MINDIE_TEST_MODE is CPU."
+)
 class TestMulAddNPU(unittest.TestCase):
     """NPU tests: run operator on real hardware and compare against reference."""
 
@@ -80,16 +83,18 @@ class TestMulAddNPU(unittest.TestCase):
         self.assertEqual(out.shape, a.shape, f"output shape mismatch: {out.shape} vs {a.shape}")
         self.assertTrue(
             torch.allclose(out.cpu().float(), ref, atol=atol, rtol=rtol),
-            f"{label} output mismatch (max diff: {(out.cpu().float() - ref).abs().max()})"
+            f"{label} output mismatch (max diff: {(out.cpu().float() - ref).abs().max()})",
         )
 
     def test_mul_add_basic(self):
-        """Small shape basic functionality test."""
-        batch, seq_len, hidden_size = 1, 4, 128
-        a = torch.randn(batch, seq_len, hidden_size, dtype=torch.bfloat16)
-        b = torch.randn(batch, seq_len, hidden_size, dtype=torch.bfloat16)
-        c = torch.randn(batch, 1, hidden_size, dtype=torch.bfloat16)
-        self._run_and_check(a, b, c, label=f"[BF16] shape=({batch},{seq_len},{hidden_size})")
+        """Check exact mul-add values at a representative inference shape."""
+        batch, seq_len, hidden_size = 1, 256, 3072
+        for dtype in (torch.bfloat16, torch.float16):
+            with self.subTest(dtype=dtype):
+                a = torch.full((batch, seq_len, hidden_size), 11, dtype=dtype)
+                b = torch.full_like(a, 2)
+                c = torch.full((batch, 1, hidden_size), 3, dtype=dtype)
+                self._run_and_check(a, b, c, atol=0, rtol=0, label=str(dtype))
 
     def test_mul_add_typical(self):
         """Typical LLM shape tests (BF16)."""
@@ -113,21 +118,19 @@ class TestMulAddNPU(unittest.TestCase):
         c = torch.randn(batch, 1, hidden_size, dtype=torch.float16)
         self._run_and_check(a, b, c, label=f"[FP16] shape=({batch},{seq_len},{hidden_size})")
 
-    def test_mul_add_small_shapes(self):
-        """Multiple small shape boundary tests."""
+    def test_mul_add_batched_shapes(self):
+        """Check batch and sequence broadcasting at inference shapes."""
         shapes = [
-            (1, 1, 64),
-            (1, 2, 128),
-            (1, 4, 256),
-            (1, 8, 512),
-            (1, 16, 768),
-            (1, 64, 1024),
+            (2, 256, 3072),
+            (2, 256, 4608),
+            (2, 1024, 3072),
         ]
         for batch, seq_len, hidden_size in shapes:
-            a = torch.randn(batch, seq_len, hidden_size, dtype=torch.bfloat16)
-            b = torch.randn(batch, seq_len, hidden_size, dtype=torch.bfloat16)
-            c = torch.randn(batch, 1, hidden_size, dtype=torch.bfloat16)
-            self._run_and_check(a, b, c, label=f"[BF16] shape=({batch},{seq_len},{hidden_size})")
+            with self.subTest(batch=batch, seq_len=seq_len, hidden_size=hidden_size):
+                a = torch.randn(batch, seq_len, hidden_size, dtype=torch.bfloat16)
+                b = torch.randn(batch, seq_len, hidden_size, dtype=torch.bfloat16)
+                c = torch.randn(batch, 1, hidden_size, dtype=torch.bfloat16)
+                self._run_and_check(a, b, c, label=f"[BF16] shape=({batch},{seq_len},{hidden_size})")
 
 
 class TestMulAddReference(unittest.TestCase):

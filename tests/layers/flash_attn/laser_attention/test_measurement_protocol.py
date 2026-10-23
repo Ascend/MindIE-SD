@@ -12,7 +12,12 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, mock_open, patch
 
-from profile_laser_attention_layer import main, measure_calls, parse_args, write_event_samples
+from tests.layers.flash_attn.laser_attention.profile_laser_attention_layer import (
+    main,
+    measure_calls,
+    parse_args,
+    write_event_samples,
+)
 
 
 class TestMeasurementProtocol(unittest.TestCase):
@@ -29,12 +34,17 @@ class TestMeasurementProtocol(unittest.TestCase):
                 return torch
             if name == "torch_npu":
                 return SimpleNamespace()
-            if name == "laser_attention_layer_common" or name.startswith("mindiesd"):
+            if name == "tests.layers.flash_attn.laser_attention.laser_attention_layer_common" or name.startswith(
+                "mindiesd"
+            ):
                 self.assertEqual(calls, [4], "Layer imports must run after selecting the requested NPU")
                 raise StopAtLayerImport
             return original_import(name, *args, **kwargs)
 
-        with patch("profile_laser_attention_layer.parse_args", return_value=SimpleNamespace(device_id=4)):
+        with patch(
+            "tests.layers.flash_attn.laser_attention.profile_laser_attention_layer.parse_args",
+            return_value=SimpleNamespace(device_id=4),
+        ):
             with patch.object(sys, "path", sys.path.copy()), patch("builtins.__import__", side_effect=import_module):
                 with self.assertRaises(StopAtLayerImport):
                     main()
