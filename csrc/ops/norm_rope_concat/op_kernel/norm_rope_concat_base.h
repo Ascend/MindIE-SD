@@ -47,14 +47,12 @@ enum class NormType : uint8_t {
     L2_NORM,
 };
 
-__aicore__ inline constexpr bool IsLayerNorm(NormType normType)
-{
+__aicore__ inline constexpr bool IsLayerNorm(NormType normType) {
     return (normType == NormType::LAYER_NORM || normType == NormType::LAYER_NORM_AFFINE ||
-            normType == NormType::LAYER_NORM_ACROSS_HEADS || normType == NormType::LAYER_NORM_AFFINE_ACROSS_HEADS);
+        normType == NormType::LAYER_NORM_ACROSS_HEADS || normType == NormType::LAYER_NORM_AFFINE_ACROSS_HEADS);
 }
 
-__aicore__ inline constexpr bool IsRMSNorm(NormType normType)
-{
+__aicore__ inline constexpr bool IsRMSNorm(NormType normType) {
     return (normType == NormType::RMS_NORM || normType == NormType::RMS_NORM_AFFINE);
 }
 
@@ -69,33 +67,26 @@ enum class ConcatOrder : uint8_t {
     AFTER_ENCODER,
 };
 
-template <typename T>
-__aicore__ inline T CeilDiv(T a, T b)
-{
+template <typename T> __aicore__ inline T CeilDiv(T a, T b) {
     if (b == 0) {
         return 0;
     }
     return (a + b - 1) / b;
 }
 
-template <typename T>
-__aicore__ inline T CeilAlign(T a, T b)
-{
+template <typename T> __aicore__ inline T CeilAlign(T a, T b) {
     if (b == 0) {
         return 0;
     }
     return (a + b - 1) / b * b;
 }
 
-template <RopeType ropeType>
-class RopeOperation {
-public:
-    __aicore__ inline RopeOperation(TPipe *pipe, GM_ADDR sin, GM_ADDR cos, uint32_t actualSeq,
-                                    uint32_t ropeDim, uint32_t ropeNum,
-                                    uint32_t alignedRopeDim)
+template <RopeType ropeType> class RopeOperation {
+  public:
+    __aicore__ inline RopeOperation(TPipe *pipe, GM_ADDR sin, GM_ADDR cos, uint32_t actualSeq, uint32_t ropeDim,
+        uint32_t ropeNum, uint32_t alignedRopeDim)
         : ropeDim_(ropeDim), ropeNum_(ropeNum), alignedRopeDim_(alignedRopeDim),
-          totalRopeDim_(ropeNum * alignedRopeDim), actualSeq_(actualSeq)
-    {
+          totalRopeDim_(ropeNum * alignedRopeDim), actualSeq_(actualSeq) {
         if constexpr (ropeType == RopeType::NONE) {
             return;
         }
@@ -115,6 +106,10 @@ public:
             tailNum == B32_DATA_NUM_PER_REPEAT ? 0x5555555555555555 : 0x5555555555555555 & ((1UL << tailNum) - 1);
         uint32_t halfDim = ropeDim_ / NUM_TWO;
         Duplicate(mask_, 0U, alignedRopeDim_);
+        // Finish vector initialization before scalar writes update the offsets.
+        auto vectorToScalar = static_cast<event_t>(pipe->FetchEventID(HardEvent::V_S));
+        SetFlag<HardEvent::V_S>(vectorToScalar);
+        WaitFlag<HardEvent::V_S>(vectorToScalar);
         if constexpr (ropeType == RopeType::INTERLEAVE) {
             for (uint32_t i = 0; i < halfDim; ++i) {
                 mask_.SetValue(NUM_TWO * i, (NUM_TWO * i + 1) * SIZE_OF_FLOAT);
@@ -126,15 +121,17 @@ public:
                 mask_.SetValue(halfDim + i, i * SIZE_OF_FLOAT);
             }
         }
+        // Publish scalar offsets before vector replication and Gather consume them.
+        auto scalarToVector = static_cast<event_t>(pipe->FetchEventID(HardEvent::S_V));
+        SetFlag<HardEvent::S_V>(scalarToVector);
+        WaitFlag<HardEvent::S_V>(scalarToVector);
         for (int32_t i = 1; i < ropeNum_; ++i) {
             Adds(mask_[i * alignedRopeDim_].ReinterpretCast<int32_t>(), mask_.ReinterpretCast<int32_t>(),
-                 static_cast<int32_t>(i * alignedRopeDim_ * NUM_FOUR), alignedRopeDim_);
+                static_cast<int32_t>(i * alignedRopeDim_ * NUM_FOUR), alignedRopeDim_);
         }
     }
 
-    template <RopeType actualRopeType>
-    __aicore__ inline void PreProcess(uint32_t curSeq)
-    {
+    template <RopeType actualRopeType> __aicore__ inline void PreProcess(uint32_t curSeq) {
         if constexpr (actualRopeType == RopeType::NONE) {
             return;
         }
@@ -162,7 +159,7 @@ public:
                 Muls(sin_, sin_, -1.f, sinRepeatMask_, sinRepeatTimes_, params);
             }
             Muls(sin_[sinRepeatTimes_ * B32_DATA_NUM_PER_REPEAT], sin_[sinRepeatTimes_ * B32_DATA_NUM_PER_REPEAT], -1.f,
-                 sinTailMask_, 1, params);
+                sinTailMask_, 1, params);
         } else {
             Muls(sin_, sin_, -1.f, ropeDim_ / 2);
         }
@@ -174,19 +171,15 @@ public:
         PipeBarrier<PIPE_V>();
     }
 
-    __aicore__ inline void Rotate(const LocalTensor<float> &x)
-    {
-        Gather(x[totalRopeDim_], x, mask_, 0, totalRopeDim_);
-    }
+    __aicore__ inline void Rotate(const LocalTensor<float> &x) { Gather(x[totalRopeDim_], x, mask_, 0, totalRopeDim_); }
 
-    __aicore__ inline void Collect(const LocalTensor<float> &x)
-    {
+    __aicore__ inline void Collect(const LocalTensor<float> &x) {
         Mul(x, x, cos_, totalRopeDim_);
         PipeBarrier<PIPE_V>();
         MulAddDst(x, x[totalRopeDim_], sin_, totalRopeDim_);
     }
 
-protected:
+  protected:
     GlobalTensor<DTYPE_ROPE_SIN> sinGm_;
     GlobalTensor<DTYPE_ROPE_SIN> cosGm_;
     GlobalTensor<DTYPE_QUERY> yGm_;
@@ -206,15 +199,13 @@ protected:
 };
 
 class NormOperation {
-public:
-    __aicore__ inline NormOperation(float eps, float scale, uint32_t normDim, uint32_t normNum, uint32_t alignedNormDim,
-                                    uint32_t alignedNormNum)
+  public:
+    __aicore__ inline NormOperation(
+        float eps, float scale, uint32_t normDim, uint32_t normNum, uint32_t alignedNormDim, uint32_t alignedNormNum)
         : eps_(eps), scale_(scale), normDim_(normDim), normNum_(normNum), alignedNormDim_(alignedNormDim),
-          alignedNormNum_(alignedNormNum)
-    {
-    }
+          alignedNormNum_(alignedNormNum) {}
 
-protected:
+  protected:
     GlobalTensor<DTYPE_QUERY> xGm_;
     GlobalTensor<DTYPE_QUERY> weightGm_;
     GlobalTensor<DTYPE_QUERY> biasGm_;
@@ -230,4 +221,3 @@ protected:
 } // namespace nrc
 
 #endif // _NORM_ROPE_CONCAT_BASE_H_
-

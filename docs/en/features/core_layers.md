@@ -402,6 +402,52 @@ assert query_out.data_ptr() == query.data_ptr()
 assert key_out.data_ptr() == key.data_ptr()
 ```
 
+### norm_rope_concat
+
+Fuse Q/K normalization, RoPE and optional encoder sequence concatenation. V is only concatenated and reordered.
+Import with `from mindiesd import norm_rope_concat`. Inputs must share an NPU device and an FP16/BF16/FP32 dtype.
+Q/K/V are 4D tensors with matching B/N/D and matching K/V sequence lengths; D must be even and at most 1024.
+
+| Parameter | Default | Description |
+| --- | --- | --- |
+| `input_layout` | `"BSND"` | Shared Q/K/V and encoder input layout: BSND or BNSD |
+| `output_layout` | `"BSND"` | Layout of the first three outputs: BSND or BNSD |
+| `norm_type` | `0` | 0: none; 1: LayerNorm; 2: affine LayerNorm; 3: RMSNorm; 4: affine RMSNorm |
+| `norm_added_type` | `0` | Encoder Q/K norm type; same values as `norm_type` |
+| `rope_type` | `0` | 0: none; 1: interleaved channel pairs; 2: half-split pairs |
+| `concat_order` | `0` | 0: main before encoder; 1: main after encoder |
+| `eps` | `1e-5` | Positive finite epsilon |
+| `is_training` | `False` | Whether to write applicable norm statistics |
+
+`encoder_query/key/value` are optional; encoder K/V must appear together.
+Use `norm_query/key_weight/bias` for the main branch and `norm_added_query/key_weight/bias` for the encoder,
+all shaped `[D]`. Affine modes require weights; affine LayerNorm also requires biases.
+`rope_sin/cos` must appear together and are required when RoPE is enabled. Their shape is `[S_rope,D]`;
+only the first S_rope positions of the concatenated sequence are rotated.
+
+```python
+import torch
+from mindiesd import norm_rope_concat
+
+q = torch.randn(1, 17, 2, 128, device="npu", dtype=torch.bfloat16)
+weight = torch.ones(128, device=q.device, dtype=q.dtype)
+outputs = norm_rope_concat(
+    q, q, q, norm_type=4,
+    norm_query_weight=weight, norm_key_weight=weight,
+    input_layout="BSND", output_layout="BNSD",
+)
+query_out, key_out, value_out = outputs[:3]
+```
+
+The 11 outputs are Q/K/V followed by mean/rstd pairs for main Q, main K, encoder Q and encoder K.
+BSND outputs are views of BNSD storage and may be noncontiguous. The eight statistics retain their original
+layouts and are only valid for the corresponding training/norm modes. Inputs are normalized to contiguous
+BSND inside the API without changing the kernel layout contract. Invalid parameters raise `ParametersInvalid`;
+operator execution errors propagate unchanged.
+
+For legacy BSND-input/BNSD-output calls, explicitly pass `output_layout="BNSD"`.
+Omitting both layout arguments selects BSND input and output.
+
 ### add_layer_norm
 
 Fuses residual addition with LayerNorm and returns both the normalized output and the residual sum.

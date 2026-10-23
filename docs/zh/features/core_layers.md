@@ -400,6 +400,50 @@ assert query_out.data_ptr() == query.data_ptr()
 assert key_out.data_ptr() == key.data_ptr()
 ```
 
+### norm_rope_concat
+
+融合 Q/K 归一化、RoPE 和可选 encoder 序列拼接；V 只参与拼接与布局转换。
+通过 `from mindiesd import norm_rope_concat` 调用，仅支持同设备、同 dtype 的 NPU FP16/BF16/FP32 张量。
+Q/K/V 为四维张量，B/N/D 一致，K/V 序列长度一致；D 为偶数且不超过 1024。
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `input_layout` | `"BSND"` | Q/K/V 与非空 encoder 输入共用的布局，支持 BSND/BNSD |
+| `output_layout` | `"BSND"` | 前三个输出的布局，支持 BSND/BNSD |
+| `norm_type` | `0` | 0：无；1：LayerNorm；2：affine LayerNorm；3：RMSNorm；4：affine RMSNorm |
+| `norm_added_type` | `0` | encoder Q/K 的归一化类型，取值同 `norm_type` |
+| `rope_type` | `0` | 0：无；1：相邻通道配对；2：前后半区配对 |
+| `concat_order` | `0` | 0：主分支在 encoder 前；1：主分支在 encoder 后 |
+| `eps` | `1e-5` | 有限正数 |
+| `is_training` | `False` | 是否写出适用的归一化统计量 |
+
+`encoder_query/key/value` 可省略，其中 encoder K/V 必须成对提供。
+主分支使用 `norm_query/key_weight/bias`，encoder 使用 `norm_added_query/key_weight/bias`，形状均为 `[D]`。
+affine 模式要求对应 weight，affine LayerNorm 还要求 bias。
+`rope_sin/cos` 必须成对提供，启用 RoPE 时必填，形状为 `[S_rope,D]`，只旋转拼接序列的前 S_rope 个位置。
+
+```python
+import torch
+from mindiesd import norm_rope_concat
+
+q = torch.randn(1, 17, 2, 128, device="npu", dtype=torch.bfloat16)
+weight = torch.ones(128, device=q.device, dtype=q.dtype)
+outputs = norm_rope_concat(
+    q, q, q, norm_type=4,
+    norm_query_weight=weight, norm_key_weight=weight,
+    input_layout="BSND", output_layout="BNSD",
+)
+query_out, key_out, value_out = outputs[:3]
+```
+
+返回 11 个张量：前三个为 Q/K/V，随后为主 Q、主 K、encoder Q、encoder K 的 mean/rstd 各一对。
+BSND 输出为 BNSD 存储上的转置视图，可能不连续；八个统计输出的布局不随 `output_layout` 改变，
+仅在对应训练和归一化模式下保证数值有效。输入在接口内部转为连续 BSND，不改变 kernel 的布局契约。
+非法参数抛出 `ParametersInvalid`，底层执行错误原样传播。
+
+迁移旧版 BSND 输入、BNSD 输出调用时，显式指定 `output_layout="BNSD"`。
+省略两个 layout 参数时，输入和输出均按 BSND 解释。
+
 ### add_layer_norm
 
 融合残差加法与 LayerNorm，并同时返回归一化结果和残差加法结果。

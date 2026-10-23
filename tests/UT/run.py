@@ -53,4 +53,5 @@ if __name__ == "__main__":
     current_dir = os.path.dirname(os.path.abspath(__file__))
     suite = load_tests_from_files(current_dir)
     runner = unittest.TextTestRunner()
-    runner.run(suite)
+    result = runner.run(suite)
+    sys.exit(0 if result.wasSuccessful() else 1)
