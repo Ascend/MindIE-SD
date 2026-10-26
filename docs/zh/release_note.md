@@ -16,7 +16,7 @@
 | CANN | 9.2.0 |
 | TorchNPU | 26.2.0 |
 | MindCluster | 26.2.0 |
-| Ascend HDK | 版本配套关系参见 [CANN版本配套说明](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/900/releasenote/9.0.1release-notes.md) |
+| Ascend HDK | 版本配套关系参见 [CANN版本配套说明](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/latest/softwareinst/releasenote/9.2.0/release-notes.md) |
 
 ## 版本兼容性说明
 

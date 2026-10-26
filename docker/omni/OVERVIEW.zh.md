@@ -246,7 +246,7 @@ COPY ./your-app /workspace/your-app
 WORKDIR /workspace/your-app
 ```
 
-## 基础验证流程（昇腾 A5 系列）
+## 基础验证流程（Ascend 950PR&950DT系列产品）
 
 容器启动后，按以下三步完成基础验证，全部命令在容器内执行。以下流程已在 Ascend 950PR 实机验证（宿主机 Ubuntu 24.04，驱动 25.7.rc1.10）。
 
@@ -302,10 +302,10 @@ OVERALL TOTAL               2718.37                12.08
 Wan2.2 dummy weight verification PASSED
 ```
 
-## 已知限制（昇腾 A5 系列）
+## 已知限制（Ascend 950PR&950DT系列产品）
 
 - 基础镜像标签仅提供 `linux/amd64`（x86_64）架构。
-- 实测 Ascend 950PR 环境不存在 `/dev/devmm_svm` 设备（910B/A3 环境存在该设备）。上文 A5 运行命令已相应移除该设备映射；若自行编写启动命令，请勿挂载该设备，否则 `docker run` 会因设备缺失直接报错。
+- 实测 Ascend 950PR 环境不存在 `/dev/devmm_svm` 设备（910B/A3 环境存在该设备）。上文运行命令已相应移除该设备映射；若自行编写启动命令，请勿挂载该设备，否则 `docker run` 会因设备缺失直接报错。
 - 运行命令中的 `/dev/davinciN` 设备映射需按实际卡数调整：实测单卡 950PR 环境仅存在 `/dev/davinci0`，直接照抄多卡示例中的 `davinci1`~`davinci3` 会因设备不存在而启动失败。
 - 基础镜像默认 `SOC_VERSION=ascend950dt_9582`（对应 950DT），在 Ascend 950PR 实机上经运行时自动适配可正常使用。
 - 宿主机需安装与 CANN 9.1.0 配套的 NPU 驱动（实测 25.7.rc1.10）及 Ascend Docker Runtime，并按上文挂载驱动库与设备文件。

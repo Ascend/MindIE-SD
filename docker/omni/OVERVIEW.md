@@ -246,7 +246,7 @@ COPY ./your-app /workspace/your-app
 WORKDIR /workspace/your-app
 ```
 
-## Basic Verification Flow (Ascend A5 Series)
+## Basic Verification Flow (950PR&950DT products)
 
 After the container starts, complete basic verification in three steps, all inside the container. This flow was verified on a physical Ascend 950PR machine (host: Ubuntu 24.04, driver 25.7.rc1.10).
 
@@ -302,10 +302,10 @@ OVERALL TOTAL               2718.37                12.08
 Wan2.2 dummy weight verification PASSED
 ```
 
-## Known Limitations (Ascend A5 Series)
+## Known Limitations (950PR&950DT products)
 
 - The base image tags are provided for `linux/amd64` (x86_64) only.
-- The `/dev/devmm_svm` device does not exist on the tested Ascend 950PR environment (it does exist on 910B/A3 environments). The A5 run command above has removed that device mapping accordingly; do not mount it in custom launch commands, otherwise `docker run` fails immediately because the device is missing.
+- The `/dev/devmm_svm` device does not exist on the tested Ascend 950PR environment (it does exist on 910B/A3 environments). The 950PR&950DT products run command above has removed that device mapping accordingly; do not mount it in custom launch commands, otherwise `docker run` fails immediately because the device is missing.
 - The `/dev/davinciN` device mappings in the run command must be adjusted to the actual number of NPUs: on the tested single-card 950PR environment only `/dev/davinci0` exists, and copying the multi-card example with `davinci1`~`davinci3` verbatim fails because those devices are missing.
 - The base image defaults to `SOC_VERSION=ascend950dt_9582` (950DT); it also works on Ascend 950PR through runtime adaptation, as verified on a physical machine.
 - The host must install an NPU driver matching CANN 9.1.0 (25.7.rc1.10 was tested) and Ascend Docker Runtime, and mount the driver libraries and device files as shown above.

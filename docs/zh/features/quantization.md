@@ -135,7 +135,7 @@ for i, timestep in enumerate(timesteps):
 `W4A4_MXFP4_FOUROVERSIX_DYNAMIC` 复用 `W4A4_MXFP4_DYNAMIC` 的权重通路，将激活量化替换为自定义算子 `quant_four_over_six_a5`：每个 32 元素块在 D4/D6 两组 E8M0 缩放之间按量化误差自适应选择。时间步 `W4A8` 回退与 `W4A4_MXFP4_DYNAMIC` 一致。
 
 - 权重量化产物与 `W4A4_MXFP4_DYNAMIC` 完全一致，可直接复用其离线权重；描述符 `model_quant_type` 写 `W4A4_MXFP4_FOUROVERSIX` 时，按命名规则权重文件为 `quant_model_weight_w4a4_mxfp4_fouroversix_{rank}.safetensors`。
-- 算子要求 bf16 输入且激活尾轴（`in_features`）32 对齐，仅 Atlas A5 支持；不满足对齐要求时层构造期即报错。
+- 算子要求 bf16 输入且激活尾轴（`in_features`）32 对齐，仅Ascend 950PR&950DT系列产品支持；不满足对齐要求时层构造期即报错。
 - `mxfp4_scale_alg` / `mxfp4_dst_type_max` 仅作用于权重量化；激活固定为 4/6 自适应组合。
 - 在线量化路径同样支持：`OnlineQuantConfig(quant_type=W4A4_MXFP4_FOUROVERSIX_DYNAMIC)`。
 
