@@ -16,8 +16,7 @@
 | CANN | 9.2.0 |
 | TorchNPU | 26.2.0 |
 | MindCluster | 26.2 |
-| CCAE | iMaster CCAE V100R026C10SPC100 |
-| Ascend HDK | See [CANN Version Compatibility Notes](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/900/releasenote/9.0.1release-notes.md) for version compatibility |
+| Ascend HDK | See [CANN Version Compatibility Notes](https://www.hiascend.com/document/detail/en/CANNCommunityEdition/latest/softwareinst/releasenote/9.2.0/release-notes.md) for version compatibility |
 
 # Version Compatibility
 
@@ -47,13 +46,6 @@ MindIE SD components must be used with matching versions. Do not mix components 
 | 3.1.0 | / | Y | Y | Y |
 | 3.0.0 | / | / | Y | Y |
 | 2.3.0 | / | / | / | Y |
-
-| MindIE SD Version | CCAE iMaster CCAE V100R026C10SPC100 | CCAE iMaster CCAE V100R026C00SPC010 | CCAE iMaster CCAE V100R025C30SPC100 |
-| ----------------- | ---------- | ---------- | ---------- |
-| 3.2.0 | To be confirmed | To be confirmed | To be confirmed |
-| 3.1.0 | Y | Y | Y |
-| 3.0.0 | / | Y | Y |
-| 2.3.0 | / | / | Y |
 
 # Version Usage Notes
 
