@@ -33,6 +33,7 @@ __all__ = [
     'quant_attention',
     'quantize',
     'rotary_position_embedding',
+    'rms_norm_indexed_scale_shift',
     'sparse_attention',
 ]
 
@@ -60,6 +61,7 @@ from .layers import (  # noqa: E402
     sparse_attention,
 )
 from .layers.norm_rope_concat import norm_rope_concat  # noqa: E402
+from .layers.index_modulation import rms_norm_indexed_scale_shift  # noqa: E402
 from .quantization import (  # noqa: E402
     FP8FAMode,
     OnlineQuantConfig,
