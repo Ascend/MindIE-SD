@@ -17,7 +17,7 @@ This document describes how to build MindIE SD from source. For installing the c
     > If dependencies such as wheel are not available in the environment, install them manually:
     >
     > ```bash
-    > pip install build wheel
+    > pip install build wheel packaging
     > ```
 
 2. For installing the generated `.whl` package, see [Installation Guide](../installation.md#source-build).

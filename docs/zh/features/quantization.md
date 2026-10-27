@@ -25,7 +25,7 @@ MindIE SD 提供两类量化能力，分别作用于模型的不同部分：
 
 ### 技术特点
 
-本仓库通过 `quantize` 接口统一处理 Linear 量化，支持以下算法。
+本仓库通过 `quantize` 接口统一处理 Linear 量化，以下为算法枚举；可用入口与选型限制见“量化方案推荐”。
 
 **权重量化**（仅量化权重，激活值保持原始精度）：
 
@@ -48,10 +48,30 @@ MindIE SD 提供两类量化能力，分别作用于模型的不同部分：
 | W8A8_PER_TENSOR | 逐张量 | 按张量粒度量化 |
 | W8A8_MXFP8 | 逐层 | MXFP8 格式量化 |
 | W4A4_DYNAMIC | 逐 token + 逐通道 | INT4 权重激活量化 |
-| W4A4_MXFP4_SVD | 逐层 | MXFP4 格式量化 |
+| W4A4_MXFP4_SVD | 逐层 | 当前入口不支持 |
 | W4A4_MXFP4_DUALSCALE | 逐层 | MXFP4 双尺度量化 |
 | W4A4_MXFP4_DYNAMIC | 逐 token + 逐通道 | MXFP4 动态量化 |
 | W4A4_MXFP4_FOUROVERSIX_DYNAMIC | 逐 token + 逐通道 | MXFP4 量化，激活走 `quant_four_over_six_a5`（4/6 自适应） |
+
+### 量化方案推荐
+
+离线量化使用 [msModelSlim](https://gitcode.com/Ascend/msmodelslim) 生成权重和描述文件，MindIE SD 负责加载产物并执行推理。算法原理和工具参数见[量化算法总览](https://gitcode.com/Ascend/msmodelslim/tree/master/docs/zh/knowledge_base/quantization_algorithms)。优先使用工具仓中目标模型已有的量化配方，再按下表选择本仓推理路径。
+
+| 需求 | MindIE SD 推理路径 | msModelSlim 算法与推荐理由 |
+| --- | --- | --- |
+| 建立 INT8 基线 | `W8A8` / `W8A8_DYNAMIC` | [MinMax](https://gitcode.com/Ascend/msmodelslim/blob/master/docs/zh/knowledge_base/quantization_algorithms/minmax/usage_minmax.md) 作为参数估计起点；激活离群明显时，在工具侧增加 [SmoothQuant](https://gitcode.com/Ascend/msmodelslim/blob/master/docs/zh/knowledge_base/quantization_algorithms/smooth_quant/usage_smooth_quant.md)，平滑激活与权重分布后再导出。动态路径在推理时计算激活 scale |
+| 没有校准数据，优先保留激活精度 | `W8A16` | [HQQ](https://gitcode.com/Ascend/msmodelslim/blob/master/docs/zh/knowledge_base/quantization_algorithms/hqq/usage_hqq.md) 使用 INT8 per-channel 权重、浮点激活，无需校准数据；适合先降低权重存储开销 |
+| MXFP8 权重重构误差较大 | `W8A8_MXFP8` | [MSE_Round](https://gitcode.com/Ascend/msmodelslim/blob/master/docs/zh/knowledge_base/quantization_algorithms/mse_round/usage_mse_round.md) 比较每个 block 的 ceil/floor shared exponent，按 MSE 选择权重缩放；推理侧仍使用 MXFP8 动态激活量化 |
+| MXFP4 压缩与计算 | `W4A4_MXFP4_DYNAMIC` | 优先尝试 [Ceil_X](https://gitcode.com/Ascend/msmodelslim/blob/master/docs/zh/knowledge_base/quantization_algorithms/ceil_x/usage_ceil_x.md)，工具默认除数为 7.25，通过 ceil shared exponent 减少大值截断；精度不满足时再评估工具侧搜索或局部回退 |
+| MXFP4 分块缩放误差明显 | `W4A4_MXFP4_FOUROVERSIX_DYNAMIC` | [FouroverSix](https://gitcode.com/Ascend/msmodelslim/blob/master/docs/zh/knowledge_base/quantization_algorithms/fouroversix/usage_fouroversix.md) 在 Scale-to-4 与 Scale-to-6 中按块选择重构误差更小的方案。工具侧优化权重；本仓该路径另外对激活使用 4/6 自适应算子，仅支持 A5，要求 bf16、尾轴 32 对齐 |
+| MXFP4 异常通道影响较大 | `W4A4_MXFP4_DUALSCALE` | [DualScale](https://gitcode.com/Ascend/msmodelslim/blob/master/docs/zh/knowledge_base/quantization_algorithms/dual_scale/usage_dual_scale.md) 引入第二级 scale；仅在目标模型和算子支持对应两级尺度布局时使用，不能直接替换普通 MXFP4 权重 |
+| 扩散时间步对低比特敏感 | `W8A8_TIMESTEP` 或 MXFP4 时间步策略 | 使用 [Linear Quant](https://gitcode.com/Ascend/msmodelslim/blob/master/docs/zh/knowledge_base/quantization_algorithms/linear_quant/usage_linear_quant.md) 生成兼容产物；本仓通过 `TimestepManager` 控制策略。MXFP4 可在敏感步切换 W4A8，权重仍保持 MXFP4，示例见下文 |
+
+工具算法名不等于本仓 `QuantAlgorithm` 名称。例如 `ceil_x`、`mse_round` 是生成权重时的参数估计算法，不应直接写成量化描述符中的层类型。导出后须核对描述符枚举值、权重名称、scale 粒度和布局；模型适配及导出要求见 [Linear Quant](https://gitcode.com/Ascend/msmodelslim/blob/master/docs/zh/knowledge_base/quantization_algorithms/linear_quant/usage_linear_quant.md)。
+
+当前权重量化入口仅实现 `W8A16` / `W4A16`，AWQ/GPTQ 枚举没有对应替换分支；`W4A4_MXFP4_SVD` 会报不支持。因此不将工具仓中的 AWQ、GPTQ 或 SVDQuant 直接推荐为本仓可运行路径。
+
+对比时固定模型、输入、随机种子和采样步数，先检查层输出误差和生成质量，再测端到端时延及峰值显存。精度不达标时优先回退敏感层或时间步；位宽更低不代表实际更快。
 
 ### 接口和使用
 
@@ -199,6 +219,12 @@ FA（Flash Attention）量化针对注意力计算中的 Q/K/V 激活值进行�
 | `C8V16_TILING512` | `7/7/12` | `4`（C8V16） | 512×64 |
 
 后续新特性以新的枚举成员扩展，不要再拆成互不绑定的量化开关。
+
+### FA 选型与工具算法
+
+本仓 `FP8_DYNAMIC`、`MXFP8_DYNAMIC`、`MXFP4_DYNAMIC` 与 `MXFP4_FOUROVERSIX_DYNAMIC` 的 Q/K/V 格式、块大小和旋转权重须与推理算子匹配。可参考工具仓 [FA3 Quant](https://gitcode.com/Ascend/msmodelslim/blob/master/docs/zh/knowledge_base/quantization_algorithms/fa3_quant/usage_fa3_quant.md) 了解 Attention 激活量化与 `dtype` / `scope` 配置，但不能直接将其默认 INT8 per-head 产物用于本仓 FP8/MXFP FA 路径。
+
+先验证 FP8 路径；只有目标设备支持且生成质量达标时，再考虑 MXFP4 及敏感时间步回退。工具侧旋转或缩放等预处理需与模型适配、导出产物一致。
 
 ### 接口说明
 
