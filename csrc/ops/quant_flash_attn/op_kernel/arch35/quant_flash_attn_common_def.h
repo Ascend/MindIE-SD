@@ -39,6 +39,18 @@ static constexpr uint32_t BUFFER_SIZE_BYTE_32K = 32768;
 static constexpr uint32_t BUFFER_SIZE_BYTE_64K = 65536;
 static constexpr uint32_t BUFFER_SIZE_BYTE_128K = 131072;
 
+// ================================= qk192 L1 布局单一来源 =================================
+// Q/K 侧按支持上限 qkHeadDim=192 规划, V 侧固定 dSizeV=128。L1 布局终点（GMAX mailbox 锚点）:
+//   P 320K + P descale 25K + Q 24K + Q descale 1.5K + KV 128K + KV descale 8K = 506.5K
+// mailbox 2KB 后总占用 508.5K ≤ 512K。
+static constexpr uint32_t GMAX_MAILBOX_SLOTS = 4;
+static constexpr uint32_t GMAX_MAILBOX_HALF_SIZE = 128;
+static constexpr uint32_t GMAX_MAILBOX_SLOT_SIZE = 2 * GMAX_MAILBOX_HALF_SIZE;
+static constexpr uint32_t GMAX_MAILBOX_SIZE = GMAX_MAILBOX_SLOTS * GMAX_MAILBOX_SLOT_SIZE;
+static constexpr uint32_t GMAX_MAILBOX_L1_ADDR = 506 * 1024 + 512;
+// cube 跨核写、vector 读的 peer max UB 基地址（由 vector UB 布局推导, 两侧共享）。
+static constexpr uint32_t PEER_GMAX_UB_ADDR = 229888;
+
 #ifndef SET_MARK2_JSELF
 #define SET_MARK2_JSELF
 __aicore__ inline void set_mark(uint64_t v) {

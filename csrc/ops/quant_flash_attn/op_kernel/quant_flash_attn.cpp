@@ -76,7 +76,7 @@ template <uint8_t KV_STORAGE_MODE> __aicore__ inline constexpr bool IsPageAttent
     return (KV_STORAGE_MODE != KV_STORAGE_MODE_CONTINUE);
 }
 
-template <uint8_t Q_OUT_LAYOUT_T, uint8_t KV_STORAGE_MODE, bool HAS_MASK>
+template <uint8_t Q_OUT_LAYOUT_T, uint8_t KV_STORAGE_MODE, bool HAS_MASK, bool SAME_D>
 __global__ __aicore__ void quant_flash_attn(__gm__ uint8_t *query, __gm__ uint8_t *key, __gm__ uint8_t *value,
     __gm__ uint8_t *q_descale, __gm__ uint8_t *k_descale, __gm__ uint8_t *v_descale, __gm__ uint8_t *blockTable,
     __gm__ uint8_t *cuSeqlensQ, __gm__ uint8_t *cuSeqlensKv, __gm__ uint8_t *sequsedQ, __gm__ uint8_t *sequsedKv,
@@ -119,7 +119,7 @@ __global__ __aicore__ void quant_flash_attn(__gm__ uint8_t *query, __gm__ uint8_
 
     using QFA_T = QFAType<fp4x2_e2m1_t, fp8_e8m0_t, bfloat16_t, IsPageAttention<KV_STORAGE_MODE>(),
         GetQueryLayout<Q_OUT_LAYOUT_T>(), GetKvLayout<Q_OUT_LAYOUT_T, KV_STORAGE_MODE>(),
-        GetOutLayout<Q_OUT_LAYOUT_T>(), HAS_MASK>;
+        GetOutLayout<Q_OUT_LAYOUT_T>(), HAS_MASK, SAME_D>;
     using CubBlock = QuantFlashAttnBlockCubeDn<QFA_T>;
     using VectorBlock = QuantFlashAttnBlockVectorDn<QFA_T>;
     QuantFlashAttnKernelDn<QFA_T, CubBlock, VectorBlock> op;

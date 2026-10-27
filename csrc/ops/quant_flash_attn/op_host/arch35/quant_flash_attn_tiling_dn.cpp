@@ -125,8 +125,11 @@ void QuantFlashAttnTilingDn::GenTilingKey() {
     }
 
     bool hasMask = tilingInfo_->attnMaskFlag;
+    // D128 (qkHeadDim == vHeadDim == 128) compiles the pre-qk192 path; D192 keeps the
+    // qk192 dSizeV/192-layout path. This is a compile-time kernel variant, not a runtime branch.
+    bool sameD = (tilingInfo_->qkHeadDim == 128U && tilingInfo_->vHeadDim == 128U);
 
-    tilingKey_ = GET_TPL_TILING_KEY(queryOutLayout, kvStorageMode, hasMask);
+    tilingKey_ = GET_TPL_TILING_KEY(queryOutLayout, kvStorageMode, hasMask, sameD);
 }
 
 void QuantFlashAttnTilingDn::CalcNumBlocks(uint32_t aicNum) {

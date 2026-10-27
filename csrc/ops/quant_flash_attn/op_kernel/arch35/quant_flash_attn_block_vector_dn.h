@@ -71,6 +71,7 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
     static constexpr bool SOFTMAX_DN = true;
     static constexpr bool PAGE_ATTENTION = QFAT::pageAttention;
     static constexpr bool HAS_MASK = QFAT::hasMask;
+    static constexpr bool SAME_D = QFAT::sameD;
 
     static constexpr QFA_LAYOUT LAYOUT_Q = QFAT::qLayout;
     static constexpr QFA_LAYOUT LAYOUT_KV = QFAT::kvLayout;
@@ -125,6 +126,13 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
     static constexpr uint32_t UB_UPDATE_BUFCNT = 4;
     static constexpr uint32_t UB_INDEX_BUFCNT = 1;
     static constexpr uint32_t UB_FD_BUFCNT = 8;
+
+    // peerGlobalMaxUB 的 UB 基地址必须与 cube 侧共享常量一致。
+    static_assert(UB_S_SIZE * UB_S_BUFCNT * sizeof(half) + UB_PV_SIZE * UB_PV_BUFCNT * sizeof(float) +
+                2 * UB_ROWSUM_SIZE * UB_ROWSUM_BUFCNT * sizeof(float) + UB_P_SIZE * UB_P_BUFCNT * sizeof(uint8_t) +
+                UB_ATTENTIONOUT_SIZE * UB_ATTENTIONOUT_BUFCNT * sizeof(float) ==
+            PEER_GMAX_UB_ADDR,
+        "peerGlobalMaxUB 的 UB 基地址与 common_def.h 的共享常量不一致");
     static constexpr uint32_t INIT_OUTPUT_UB_BYTES = UB_S_SIZE * UB_S_BUFCNT * sizeof(half) +
         UB_PV_SIZE * UB_PV_BUFCNT * sizeof(float) + UB_ROWSUM_SIZE * UB_ROWSUM_BUFCNT * sizeof(float) +
         UB_ROWSUM_SIZE * UB_ROWSUM_BUFCNT * sizeof(float) + UB_P_SIZE * UB_P_BUFCNT * sizeof(uint8_t) +
@@ -184,8 +192,9 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
         : constInfo(constInfo), qSeqLensTool(qSeqLensTool), kvSeqLensTool(kvSeqLensTool){};
 
     __aicore__ inline void InitInput(__gm__ uint8_t *attentionOut) {
-        // 初始化 attentionOut GM Buffer 及 GmTensor
-        InitAttentionOutBuffer(constInfo.bSize, constInfo.n2Size, constInfo.gSize, constInfo.s1Size, constInfo.dSize,
+        // 输出 D 维：D128 用 pre-qk192 的 dSize，D192 用 dSizeV。
+        const uint32_t outDim = SAME_D ? constInfo.dSize : constInfo.dSizeV;
+        InitAttentionOutBuffer(constInfo.bSize, constInfo.n2Size, constInfo.gSize, constInfo.s1Size, outDim,
             qSeqLensTool, outGmTensor, attentionOut);
     }
 
@@ -200,7 +209,12 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
         pScaleL1 = LocalTensor<uint8_t>(TPosition::A1, addrL1Start, L1_P_DESCALE_SIZE * L1_P_BUFCNT); // 1K * 20 = 20K
 
         // Match the four tileMaxIdx slots allocated by the cube block.
-        localGlobalMaxL1 = LocalTensor<half>(TPosition::A1, 498 * 1024, 256 * UB_LOCALGLOBALMAX_BUFCNT);
+        // D128 用 pre-qk192 的 498K 锚点，D192 用 common_def.h 的共享常量。
+        if constexpr (SAME_D) {
+            localGlobalMaxL1 = LocalTensor<half>(TPosition::A1, 498 * 1024, 256 * UB_LOCALGLOBALMAX_BUFCNT);
+        } else {
+            localGlobalMaxL1 = LocalTensor<half>(TPosition::A1, GMAX_MAILBOX_L1_ADDR, GMAX_MAILBOX_SIZE);
+        }
 
         // =================================UB Tensor Init=================================
         uint32_t addrUBStart = 0;
@@ -450,7 +464,8 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
                 PipeBarrier<PIPE_V>();
                 LocalTensor<OUT_T> outTensorBf16Ub = attentionTransUB.template ReinterpretCast<OUT_T>();
                 LocalTensor<OUT_T> attentionOutUBBf16 = attentionOutUB.template ReinterpretCast<OUT_T>();
-                uint32_t columnCnt = constInfo.dSize + AttentionCommon::BYTE_BLOCK / sizeof(OUT_T);
+                const uint32_t outDim = SAME_D ? constInfo.dSize : constInfo.dSizeV;
+                uint32_t columnCnt = outDim + AttentionCommon::BYTE_BLOCK / sizeof(OUT_T);
                 DataCopy(attentionOutUBBf16, outTensorBf16Ub, actDealMSize * columnCnt);
                 PipeBarrier<PIPE_V>();
 
@@ -466,7 +481,7 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
                 gmCoord.gS1Idx = runInfo.gS1Idx + constInfo.subBlockIdx * vec2MBaseSize;
                 gmCoord.dIdx = 0;
                 gmCoord.gS1DealSize = actDealMSize;
-                gmCoord.dDealSize = constInfo.dSize;
+                gmCoord.dDealSize = outDim; // 输出 D 维：D128 用 dSize，D192 用 dSizeV
 
                 FaUbTensor<OUT_T> ubTensor{
                     .tensor = attentionOutUBBf16, .rowCount = actDealMSize, .colCount = columnCnt};
