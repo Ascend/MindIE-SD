@@ -27,6 +27,7 @@
 #include "fused_infer_attention_score.h"
 #include "mul_add.h"
 #include "norm_rope_concat.h"
+#include "eagle_split_norm_rope_concat.h"
 #include "eagle_ffn_linear.h"
 #include "quant_four_over_six_a5.h"
 
@@ -135,6 +136,11 @@ TORCH_LIBRARY(mindiesd, m) {
     m.def("quant_four_over_six_a5(Tensor x, int axis=-1, str round_mode='rint', \
         int dst_type=40, int blocksize=32, int scale_alg=2, float dst_type_max=4.0) \
         -> (Tensor, Tensor)");
+    m.def(
+        "eagle_split_norm_rope_concat(Tensor qkv, "
+        "Tensor? norm_query_weight, Tensor? norm_key_weight, Tensor rope_cos, Tensor rope_sin, "
+        "int[] head_counts, int norm_type, int rope_type, int? rotary_dim=None, float eps=1e-5, bool output_bnsd=True) "
+        "-> (Tensor, Tensor, Tensor)");
     m.def("norm_rope_concat(Tensor query, Tensor key, Tensor value, \
         Tensor? encoder_query=None, Tensor? encoder_key=None, Tensor? encoder_value=None, \
         Tensor? norm_query_weight=None, Tensor? norm_query_bias=None, \
@@ -166,7 +172,7 @@ TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m) {
     m.impl("eagle_ffn_linear", &eagle_ffn_linear_mindie_sd_impl_npu);
     m.impl("quant_four_over_six_a5", &quant_four_over_six_a5_mindie_sd_impl_npu);
     m.impl("norm_rope_concat", &norm_rope_concat_mindie_sd_impl_npu);
+    m.impl("eagle_split_norm_rope_concat", &eagle_split_norm_rope_concat_impl_npu);
 }
 
 TORCH_LIBRARY_IMPL(mindiesd, CatchAll, m) { m.impl("quant_flash_attn_metadata", &quant_flash_attn_metadata_impl_npu); }
-

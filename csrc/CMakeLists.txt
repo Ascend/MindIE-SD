@@ -62,6 +62,7 @@ add_library(PTAExtensionOPS SHARED
     ./plugin/fused_infer_attention_score.cpp
     ./plugin/mul_add.cpp
     ./plugin/norm_rope_concat.cpp
+    ./plugin/eagle_split_norm_rope_concat.cpp
     ./plugin/eagle_ffn_linear.cpp
     ./plugin/quant_four_over_six_a5.cpp)
 
@@ -139,4 +140,3 @@ target_link_libraries(PTAExtensionOPS PUBLIC
   ${ASCEND_PATH}/lib64/libnnopbase.so
   ${ASCEND_PATH}/lib64/libopapi.so
   )
-

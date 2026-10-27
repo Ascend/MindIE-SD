@@ -12,6 +12,7 @@
 # See the Mulan PSL v2 for more details.
 from typing import Tuple, List, Optional
 import math
+import struct
 import torch
 import torch_npu
 from . import register_ops
@@ -20,6 +21,123 @@ from ..utils import ParametersInvalid
 FREQUENCY_REGULATOR_MAX_FREQ = 0xFFFFFFFF
 APPLY_ROTARY_POS_EMB_LAYOUTS = ("BSND", "SBND", "BNSD", "TND")
 APPLY_ROTARY_POS_EMB_ROTARY_MODES = ("half", "interleave", "quarter")
+
+
+def eagle_split_norm_rope_concat(
+    qkv: torch.Tensor,
+    norm_query_weight: Optional[torch.Tensor],
+    norm_key_weight: Optional[torch.Tensor],
+    rope_cos: torch.Tensor,
+    rope_sin: torch.Tensor,
+    head_counts: List[int],
+    norm_type: int,
+    rope_type: int,
+    rotary_dim: Optional[int] = None,
+    eps: float = 1e-5,
+    output_bnsd: bool = True,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Split packed QKV, RMS-normalize Q/K and rotate their first rotary_dim features.
+
+    qkv is contiguous FP16/BF16 [S,Hq+Hk+Hv,D] or [B,S,Hq+Hk+Hv,D].
+    head_counts is an integer list [Hq,Hk,Hv]: positive counts, Hk=Hv, Hq%Hk=0, sum=qkv's head dimension.
+    D must be 128; rotary_dim is a multiple of 32 in [32,128], or None (the full D).
+    norm_type is required: 2=RMSNorm, 3=RMSNorm with weights; other modes, including skipping norm, are unsupported.
+    Weights are [D], required for type 3 and unused for type 2 (pass None).
+    Caches are [S,W], [Bc,S,W] or [Bc,S,1,W], with Bc=1 or B and W=R or R/2.
+    R is the resolved rotary_dim; half-width caches repeat adjacent values for interleave,
+    or repeat the entire half for half mode. All floating inputs share dtype/device and are contiguous.
+    rope_type is required: 0 for interleave, 1 for half. V is copied without normalization/RoPE.
+    Q/K normalization and RoPE stay FP32; only the final outputs round to the input dtype.
+    Outputs default to [B,H,S,D] (B=1 for 3D input); output_bnsd=False preserves SND/BSND.
+    Tensors must be nonempty with numel <= INT32_MAX. Shapes use qkv.shape/head_counts without data reads; no backward.
+    """
+    return torch.ops.mindiesd.eagle_split_norm_rope_concat(
+        qkv,
+        norm_query_weight,
+        norm_key_weight,
+        rope_cos,
+        rope_sin,
+        head_counts,
+        norm_type,
+        rope_type,
+        rotary_dim,
+        eps,
+        output_bnsd,
+    )
+
+
+@register_ops.register_mindie_fake_op("eagle_split_norm_rope_concat")
+def eagle_split_norm_rope_concat_fake(
+    qkv: torch.Tensor,
+    norm_query_weight: Optional[torch.Tensor],
+    norm_key_weight: Optional[torch.Tensor],
+    rope_cos: torch.Tensor,
+    rope_sin: torch.Tensor,
+    head_counts: List[int],
+    norm_type: int,
+    rope_type: int,
+    rotary_dim: Optional[int] = None,
+    eps: float = 1e-5,
+    output_bnsd: bool = True,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    torch._check(qkv.ndim in (3, 4), lambda: "qkv must be SND or BSND")
+    torch._check(qkv.dtype in (torch.float16, torch.bfloat16), lambda: "qkv must be FP16/BF16")
+    torch._check(len(head_counts) == 3, lambda: "head_counts must contain exactly three integers [Hq,Hk,Hv]")
+    batch = qkv.shape[0] if qkv.ndim == 4 else 1
+    sequence, total_heads, dim = qkv.shape[-3:]
+    for heads in head_counts:
+        torch._check(heads > 0, lambda: "each head count must be in [1,Htotal]")
+        torch._check(heads <= total_heads, lambda: "each head count must be in [1,Htotal]")
+    torch._check(sum(head_counts) == total_heads, lambda: "head counts must sum to Htotal")
+    torch._check(head_counts[1] == head_counts[2], lambda: "require Hk=Hv and Hq divisible by Hk")
+    torch._check(head_counts[0] % head_counts[1] == 0, lambda: "require Hk=Hv and Hq divisible by Hk")
+    rotary_dim = dim if rotary_dim is None else rotary_dim
+    torch._check(dim == 128, lambda: "head_dim must be 128; other dimensions are not supported")
+    torch._check(rotary_dim >= 32)
+    torch._check(rotary_dim % 32 == 0)
+    torch._check(rotary_dim <= dim)
+    torch._check(rope_type in (0, 1), lambda: "rope_type must be 0 (interleave) or 1 (half)")
+    torch._check(norm_type in (2, 3), lambda: "norm_type must be 2 (RMS_NORM) or 3 (RMS_NORM_AFFINE)")
+    try:
+        float_eps = struct.unpack("f", struct.pack("f", eps))[0]
+    except OverflowError:
+        float_eps = math.inf
+    torch._check(
+        math.isfinite(float_eps) and float_eps > 0,
+        lambda: "eps must be finite and positive after conversion to float32",
+    )
+    for tensor in (qkv, norm_query_weight, norm_key_weight, rope_cos, rope_sin):
+        if tensor is None:
+            continue
+        torch._check(tensor.dtype == qkv.dtype and tensor.device == qkv.device)
+        torch._check(tensor.is_contiguous())
+        torch._check(tensor.numel() > 0)
+        torch._check(tensor.numel() <= 2147483647)
+    for weight in (norm_query_weight, norm_key_weight):
+        torch._check(norm_type != 3 or weight is not None, lambda: "weights are required for norm_type=3")
+        if weight is not None:
+            torch._check(weight.ndim == 1)
+            torch._check(weight.shape[0] == dim)
+    torch._check(rope_cos.ndim in (2, 3, 4))
+    torch._check(rope_sin.ndim == rope_cos.ndim)
+    for cos_size, sin_size in zip(rope_cos.shape, rope_sin.shape):
+        torch._check(cos_size == sin_size)
+    torch._check((rope_cos.shape[-1] == rotary_dim) | (rope_cos.shape[-1] == rotary_dim // 2))
+    torch._check(rope_cos.shape[1 if rope_cos.ndim == 4 else -2] == sequence)
+    if rope_cos.ndim > 2:
+        torch._check((rope_cos.shape[0] == 1) | (rope_cos.shape[0] == batch))
+    if rope_cos.ndim == 4:
+        torch._check(rope_cos.shape[2] == 1)
+    outputs = []
+    for heads in head_counts:
+        if output_bnsd:
+            shape = (batch, heads, sequence, dim)
+        elif qkv.ndim == 4:
+            shape = (batch, sequence, heads, dim)
+        else:
+            shape = (sequence, heads, dim)
+        outputs.append(qkv.new_empty(shape))
+    return tuple(outputs)
 
 
 def apply_rotary_pos_emb(

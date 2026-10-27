@@ -37,7 +37,7 @@ if [ ! -f ${msopgen} ]; then
     exit 1
 fi
 
-ascendc_ops=${ASCEND_OP_NAME:-'laser_attention;la_preprocess;ada_block_sparse_attention;sparse_block_estimate;norm_rope_concat;quant_flash_attn;quant_flash_attn_metadata;fused_infer_attention_score;eagle_quant_block_sparse_attention;eagle_block_sparse_attention;mul_add;eagle_ffn;quant_four_over_six_a5'}
+ascendc_ops=${ASCEND_OP_NAME:-'laser_attention;la_preprocess;ada_block_sparse_attention;sparse_block_estimate;norm_rope_concat;eagle_split_norm_rope_concat;quant_flash_attn;quant_flash_attn_metadata;fused_infer_attention_score;eagle_quant_block_sparse_attention;eagle_block_sparse_attention;mul_add;eagle_ffn;quant_four_over_six_a5'}
 
 function remove_ops_from_semicolon_list() {
     local op_list="$1"
