@@ -14,7 +14,7 @@ This guide is intended for users who can already run a Wan2.2 model repository. 
 
 As shown in the diagram below, baseline keeps the original QKV projection, RoPE, `A2A QKV`, rotation/quantization, and FA path; `insertcomm` moves `A2A -> rotation/quantization -> FA -> A2A` into a per-attention-head-chunk loop; `blockattn` further splits Q into blocks, repeats rotation, quantization, and FA for each Q block, then concatenates the Q-block and head results. During integration, `attnlayer.py` only needs to dispatch by `comm_type` among baseline, `_run_insertcomm`, and `_run_blockattn`.
 
-## When to use this feature
+## Application Scenario
 
 `FA_Power_Cap` is only meaningful when Wan inference already uses Ulysses sequence parallelism. The runtime command must use `ulysses_size > 1`, and the attention head count must be divisible by the Ulysses world size.
 
@@ -249,8 +249,7 @@ class FAPowerCapAttention:
         return torch.cat(output_chunks, dim=2)
 
     def forward(self, query, key, value):
-        # Keep the target Wan repository's existing qkv projection, RoPE,
-        # norm, padding, and other pre-attention logic.
+        # Keep the target Wan repository's existing qkv projection, RoPE, norm, padding, and other pre-attention logic.
         if self.fa_alltoall_overlap:
             output = self._run_fa_alltoall_overlap(query, key, value)
         elif self.comm_type == 1:
@@ -260,8 +259,7 @@ class FAPowerCapAttention:
         else:
             output = self._run_baseline(query, key, value)
 
-        # Keep the target Wan repository's existing output reshape, O_proj,
-        # dropout, and other post-attention logic.
+        # Keep the target Wan repository's existing output reshape, O_proj, dropout, and other post-attention logic.
         return output
 ```
 
@@ -295,7 +293,7 @@ torchrun --nproc_per_node=8 generate.py \
 
 The shell script only needs this one `COMM_TYPE` variable, which is forwarded to `generate.py` through `--comm_type`.
 
-## Run examples
+## Run Examples
 
 Baseline:
 
@@ -315,7 +313,7 @@ BlockAttn:
 COMM_TYPE=2 bash infer_t2v.sh
 ```
 
-## Validation and troubleshooting
+## Validation and Troubleshooting
 
 - Confirm `ulysses_size > 1`; otherwise `comm_type=1/2` should not be enabled.
 - Confirm the attention head count is divisible by `ulysses_size`.
@@ -324,10 +322,10 @@ COMM_TYPE=2 bash infer_t2v.sh
 - Run all three modes with the same prompt, seed, resolution, and step count, then check that generated videos are valid.
 - Compare latency logs, MSPTI kernel logs, and HCCL logs to verify that `AlltoAll` and FA are chunked as expected.
 
-## Benefit reference
+## Benefit Reference
 
 The following data was collected with the Wan2.2 customer-distilled Lite model, which uses only 4 inference steps. The test configuration is `W16A16F8`, no CFG, no VAE parallelism, and `SP4`. End-to-end time covers the full inference path. The table only includes valid scenarios where baseline finishes normally.
 
-| Resolution and frames | Baseline time (s) | InsertComm time (s) | InsertComm gain | BlockAttn time (s) | BlockAttn gain | Notes |
+| Resolution and Frames | Baseline Time (s) | InsertComm Time (s) | InsertComm Gain | BlockAttn Time (s) | BlockAttn Gain | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | 720p161 frames | 108.35 | 90.36 | 16.60% | 90.34 | 16.62% | Baseline finished normally; gains are computed as `(baseline - optimized) / baseline`. |

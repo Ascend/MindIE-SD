@@ -13,7 +13,7 @@ Tests are divided into two categories:
 
 ## Test Entry Points
 
-### Entry Point 1: CPU-Friendly Unit Tests (Recommended for users without NPU)
+### Entry Point 1: CPU-Friendly Unit Tests (Recommended for Users without NPU)
 
 `run_UT_test.sh` always runs in CPU mode, suitable for development environments without NPU hardware.
 
@@ -32,7 +32,7 @@ Default artifacts are generated in the `tests/UT/` directory, including:
 
 The `tests/scripts/check_coverage.py` script in the repository is used in CI to verify the coverage gate for newly added Python files.
 
-### Entry Point 2: Full Tests (Supports three modes)
+### Entry Point 2: Full Tests (Three Modes)
 
 `run_test.sh` controls the test scope via parameters and supports the following three modes:
 
@@ -52,14 +52,14 @@ cd tests/
 bash run_test.sh
 ```
 
-**2. Run CPU-compatible tests only (no NPU hardware required)**
+**2. CPU-compatible tests only (no NPU hardware required)**
 
 ```bash
 cd tests/
 bash run_test.sh --cpu_only
 ```
 
-**3. Run NPU-dependent tests only (NPU hardware required)**
+**3. NPU-dependent tests only (NPU hardware required)**
 
 ```bash
 cd tests/

@@ -1,4 +1,4 @@
-﻿# Core Acceleration API
+# Core Acceleration API
 
 This document describes the interfaces exposed by the `mindiesd` package through the `layers` module. All interfaces can be imported directly using `from mindiesd import <interface_name>`.
 
@@ -172,7 +172,6 @@ sparse_attention(
     keep_recent=True,
     cdf_threshold=1.0,
     sparsity=0.0,
-    precision="bf16",
     **kwargs
 ) -> torch.Tensor
 ```
@@ -199,7 +198,6 @@ sparse_attention(
 | `keep_recent` | `bool` | No | `True` | Whether to keep recent tokens, only effective when `sparse_type="ada_bsa"` |
 | `cdf_threshold` | `float` | No | `1.0` | CDF threshold, only effective when `sparse_type="ada_bsa"` |
 | `sparsity` | `float` | No | `0.0` | Sparsity ratio, range `[0, 1]`, `0` means no sparse algorithm is used |
-| `precision` | `str` | No | `"bf16"` | Kernel precision mode for `sparse_type="rf_v3"`: `"bf16"` (default) no quantization, pure BF16 sparse attention; `"mix"` EagleQBSA mixed precision (Q/K per-block INT8 + V per-channel FP8); `"fp8"` BSA FP8 path (Hadamard rotation + full FP8 block quantization) |
 
 #### Return Value
 
@@ -262,7 +260,7 @@ rotary_position_embedding(
 
 | Parameter | Type | Required | Default | Description |
 |------|------|------|--------|------|
-| `x` | `torch.Tensor` | Yes | - | Query or key tensor, 4D, supports layouts `[B,N,S,D]`, `[B,S,N,D]`, `[S,B,N,D]` |
+| `x` | `torch.Tensor` | Yes | - | Query or key tensor, 4D, supports layouts `[B,N,S,D]`, `[B,S,N,D]`, and `[S,B,N,D]` |
 | `cos` | `torch.Tensor` | Yes | - | Precomputed cosine frequency tensor, 2D `[S,D]` or 4D `[1,1,S,D]`/`[1,S,1,D]`/`[S,1,1,D]` |
 | `sin` | `torch.Tensor` | Yes | - | Precomputed sine frequency tensor, dimensions match `cos` |
 | `rotated_mode` | `str` | No | `"rotated_half"` | Rotation mode: `"rotated_half"` for half rotation, `"rotated_interleaved"` for interleaved rotation |
@@ -333,7 +331,7 @@ Use tensors on the same NPU with the same dtype. Supported floating-point types 
 | `BNSD` | `[B,Nq,S,D]` | `[B,Nk,S,D]` | `[B,1,S,D]` |
 | `TND` | `[T,Nq,D]` | `[T,Nk,D]` | `[T,1,D]` |
 
-The cache head dimension is 1 and is broadcast over attention heads. On Ascend 950, its batch dimension may also be 1; on A2/A3 it must match the input batch size. Unlike `rotary_position_embedding`, this wrapper does not reshape a 2D `[S,D]` cache automatically.
+The cache head dimension is 1 and is broadcast over attention heads. On 950PR&950DT products, its batch dimension may also be 1; on Atlas 800I A2 inference server / Atlas 800I A3 SuperPoD server, it must match the input batch size. Unlike `rotary_position_embedding`, this wrapper does not reshape a 2D `[S,D]` cache automatically.
 
 #### Rotation Modes
 
@@ -355,16 +353,16 @@ For each of query and key, the computation is `x * cos + rotate(x) * sin`. The f
 
 This is an **NPU-only API**. It has no `fused` switch and no CPU/reference fallback. The installed `torch_npu` must provide `npu_apply_rotary_pos_emb`; otherwise the wrapper raises `RuntimeError` with an upgrade hint. Invalid layout/mode names raise `ParametersInvalid`; tensor and device-specific restrictions are checked by PTA/CANN.
 
-The following summarizes the [CANN ApplyRotaryPosEmbV2 constraints](https://gitcode.com/cann/ops-transformer/blob/master/posembedding/apply_rotary_pos_emb/docs/aclnnApplyRotaryPosEmbV2.md) for A2/A3 and 950. These are backend capabilities, not a guarantee that every PTA/CANN release exposes every combination.
+The following summarizes the [CANN ApplyRotaryPosEmbV2 constraints](https://gitcode.com/cann/ops-transformer/blob/master/posembedding/apply_rotary_pos_emb/docs/aclnnApplyRotaryPosEmbV2.md) for Atlas 800I A2 inference server / Atlas 800I A3 SuperPoD server and 950PR&950DT products. These are backend capabilities, not a guarantee that every PTA/CANN release exposes every combination.
 
 | Product | Layouts | Rotation modes | Head dimension `D` | Data types |
 |------|------|------|------|------|
-| Atlas A2/A3 training and inference series | `BSND`, `TND` | `half` | 64 or 128 | `float16`, `bfloat16`, `float32` |
-| Ascend 950PR / 950DT | `BSND`, `SBND`, `BNSD`, `TND` | `half`, `interleave`, `quarter` | At most 1024; subject to mode and backend restrictions | `float16`, `bfloat16`, `float32` |
+| Atlas 800I A2 inference server / Atlas 800I A3 SuperPoD server | `BSND`, `TND` | `half` | 64 or 128 | `float16`, `bfloat16`, `float32` |
+| 950PR&950DT products | `BSND`, `SBND`, `BNSD`, `TND` | `half`, `interleave`, `quarter` | At most 1024; subject to mode and backend restrictions | `float16`, `bfloat16`, `float32` |
 
-Atlas 200I/500 A2 inference products are not included in the A2/A3 row; the cited CANN interface does not support them. For other products and release-specific limits, consult the [PTA API documentation](https://gitcode.com/Ascend/op-plugin/blob/master/docs/zh/custom_APIs/torch_npu/torch_npu-apply_rotary_pos_emb.md) and the CANN documentation matching the installed versions. Accepting a layout/mode in the Python wrapper does not bypass these restrictions.
+Atlas 200I/500 A2 inference products are not included in the Atlas 800I A2 inference server / Atlas 800I A3 SuperPoD server row; the cited CANN interface does not support them. For other products and release-specific limits, consult the [PTA API documentation](https://gitcode.com/Ascend/op-plugin/blob/master/docs/en/custom_APIs/torch_npu/torch_npu-apply_rotary_pos_emb.md) and the CANN documentation matching the installed versions. Accepting a layout/mode in the Python wrapper does not bypass these restrictions.
 
-The current RoPE regression cases were verified on Ascend 950PR with `torch-npu 2.9.0.post4` and CANN 9.1. This does not establish coverage of every device, version, head dimension or layout/mode/dtype combination.
+The current RoPE regression cases were verified on 950PR with `torch-npu 2.9.0.post4` and CANN 9.1. This does not establish coverage of every device, version, head dimension or layout/mode/dtype combination.
 
 #### Comparison with rotary_position_embedding
 

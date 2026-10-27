@@ -136,7 +136,12 @@ Callers must ensure that input activation and router logit layouts are consisten
 
 When `quant_config` is not provided, or `quant_config.quant_algo` is `None` / `NO_QUANT`, the MoE forward flow runs in non-quantized mode. The following quantization configuration is currently supported:
 
-- `QuantConfig(quant_algo=QuantAlgorithm.W8A8_DYNAMIC)`: W8A8 dynamic quantization, weights using INT8.
+<!-- npu="A3,910b" id4 -->
+- `QuantConfig(quant_algo=QuantAlgorithm.W8A8_DYNAMIC)`: W8A8 dynamic quantization, supported on Atlas 800I A2 inference server / Atlas 800I A3 SuperPoD Server.
+<!-- end id4 -->
+<!-- npu="950" id5 -->
+- `QuantConfig(quant_algo=QuantAlgorithm.W8A8_MXFP8)`: W8A8 MXFP8 quantization, supported on 950PR&950DT products.
+<!-- end id5 -->
 
 ### Routing Selection
 
@@ -230,9 +235,10 @@ out = fused_moe(
 )
 ```
 
-#### INT8 Dynamic Quant MoE
+<!-- npu="A3,910b" id6 -->
+#### W8A8 Dynamic Quant MoE (Atlas 800I A2 inference server / Atlas 800I A3 SuperPoD Server)
 
-The INT8 path requires `w13_weight` and `w2_weight` to be `torch.int8`, along with corresponding quantization scales. MindIE SD checks weight format before MLP computation; if weights are not in NPU NZ format, they are automatically converted to NZ before calling INT8 grouped MLP operators.
+The W8A8 dynamic quant path requires `w13_weight` and `w2_weight` to be `torch.int8`, along with corresponding quantization scales. MindIE SD checks weight format before MLP computation; if weights are not in NPU NZ format, they are automatically converted to NZ before calling INT8 grouped MLP operators.
 
 ```python
 import torch
@@ -281,6 +287,74 @@ out = fused_moe(
     inputs_sharded=False,
 )
 ```
+<!-- end id6 -->
+
+<!-- npu="950" id7 -->
+#### MXFP8 Dynamic Quant MoE (950PR&950DT products)
+
+The MXFP8 path uses the `QuantAlgorithm.W8A8_MXFP8` quantization config. `w13_weight` and `w2_weight` use
+`torch.float8_e4m3fn`, together with the corresponding quantization scales.
+
+```python
+import torch
+import torch_npu
+from mindiesd import fused_moe
+from mindiesd.quantization.config import QuantConfig
+from mindiesd.quantization.mode import QuantAlgorithm
+
+num_tokens = 8
+hidden_size = 4096
+intermediate_size = 14336
+num_experts = 8
+top_k = 2
+dtype = torch.bfloat16
+device = "npu"
+
+
+def prepare_mxfp8_moe_weight(weight):
+    num_experts, _, n_size = weight.shape
+    quant_weight, weight_scale = torch_npu.npu_dynamic_mx_quant(
+        weight.transpose(1, 2),
+        dst_type=torch.float8_e4m3fn,
+    )
+    weight_scale = weight_scale.reshape(num_experts, n_size, -1, 2)
+    return quant_weight.transpose(1, 2), weight_scale.transpose(1, 2)
+
+
+hidden_states = torch.randn(num_tokens, hidden_size, device=device, dtype=dtype)
+router_logits = torch.randn(num_tokens, num_experts, device=device, dtype=dtype)
+w13_weight_fp = torch.randn(
+    num_experts,
+    hidden_size,
+    2 * intermediate_size,
+    device=device,
+    dtype=dtype,
+)
+w2_weight_fp = torch.randn(
+    num_experts,
+    intermediate_size,
+    hidden_size,
+    device=device,
+    dtype=dtype,
+)
+w13_weight, w13_weight_scale = prepare_mxfp8_moe_weight(w13_weight_fp)
+w2_weight, w2_weight_scale = prepare_mxfp8_moe_weight(w2_weight_fp)
+
+out = fused_moe(
+    hidden_states=hidden_states,
+    router_logits=router_logits,
+    num_experts=num_experts,
+    top_k=top_k,
+    w13_weight=w13_weight,
+    w2_weight=w2_weight,
+    quant_config=QuantConfig(quant_algo=QuantAlgorithm.W8A8_MXFP8),
+    w13_weight_scale=w13_weight_scale,
+    w2_weight_scale=w2_weight_scale,
+    dispatcher_type="static",
+    inputs_sharded=False,
+)
+```
+<!-- end id7 -->
 
 #### TP Static MoE
 

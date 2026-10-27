@@ -331,7 +331,7 @@ apply_rotary_pos_emb(
 | `BNSD` | `[B,Nq,S,D]` | `[B,Nk,S,D]` | `[B,1,S,D]` |
 | `TND` | `[T,Nq,D]` | `[T,Nk,D]` | `[T,1,D]` |
 
-缓存的头维度为 1，沿注意力头广播。Ascend 950 上缓存的批维度也可以为 1；A2/A3 上必须与输入批大小一致。与 `rotary_position_embedding` 不同，本接口不会自动把二维 `[S,D]` 缓存转换成所需形状。
+缓存的头维度为 1，沿注意力头广播。Ascend 950PR&950DT系列产品上缓存的批维度也可以为 1；Atlas 800I A2推理服务器/Atlas 800I A3超节点服务器上必须与输入批大小一致。与 `rotary_position_embedding` 不同，本接口不会自动把二维 `[S,D]` 缓存转换成所需形状。
 
 #### 旋转模式
 
@@ -353,14 +353,14 @@ apply_rotary_pos_emb(
 
 本接口**仅支持 NPU**，没有 `fused` 开关，也没有 CPU/原生参考回退路径。安装的 `torch_npu` 必须提供 `npu_apply_rotary_pos_emb`，否则包装层抛出带升级提示的 `RuntimeError`。非法布局或模式名称会抛出 `ParametersInvalid`；张量及设备相关限制交由 PTA/CANN 检查。
 
-下表摘录 [CANN ApplyRotaryPosEmbV2 约束](https://gitcode.com/cann/ops-transformer/blob/master/posembedding/apply_rotary_pos_emb/docs/aclnnApplyRotaryPosEmbV2.md)中 A2/A3 和 950 的支持范围。这些是后端能力，不代表每个 PTA/CANN 版本都已开放所有组合。
+下表摘录 [CANN ApplyRotaryPosEmbV2 约束](https://gitcode.com/cann/ops-transformer/blob/master/posembedding/apply_rotary_pos_emb/docs/aclnnApplyRotaryPosEmbV2.md)中Atlas 800I A2推理服务器/Atlas 800I A3超节点服务器和Ascend 950PR&950DT系列产品的支持范围。这些是后端能力，不代表每个 PTA/CANN 版本都已开放所有组合。
 
 | 产品 | 布局 | 旋转模式 | 每头维度 `D` | 数据类型 |
 |------|------|------|------|------|
-| Atlas A2/A3 训练及推理系列产品 | `BSND`、`TND` | `half` | 64 或 128 | `float16`、`bfloat16`、`float32` |
-| Ascend 950PR / 950DT | `BSND`、`SBND`、`BNSD`、`TND` | `half`、`interleave`、`quarter` | 不超过 1024，且满足模式和后端限制 | `float16`、`bfloat16`、`float32` |
+| Atlas 800I A2推理服务器/Atlas 800I A3超节点服务器 | `BSND`、`TND` | `half` | 64 或 128 | `float16`、`bfloat16`、`float32` |
+| Ascend 950PR&950DT系列产品 | `BSND`、`SBND`、`BNSD`、`TND` | `half`、`interleave`、`quarter` | 不超过 1024，且满足模式和后端限制 | `float16`、`bfloat16`、`float32` |
 
-上表 A2/A3 范围不包含 Atlas 200I/500 A2 推理产品，引用的 CANN 接口不支持这些产品。其他产品及版本差异请查阅 [PTA 接口文档](https://gitcode.com/Ascend/op-plugin/blob/master/docs/zh/custom_APIs/torch_npu/torch_npu-apply_rotary_pos_emb.md)与安装版本对应的 CANN 文档。通过 Python 包装层的布局/模式校验，不代表可以绕过上述限制。
+上表Atlas 800I A2推理服务器/Atlas 800I A3超节点服务器范围不包含 Atlas 200I/500 A2 推理产品，引用的 CANN 接口不支持这些产品。其他产品及版本差异请查阅 [PTA 接口文档](https://gitcode.com/Ascend/op-plugin/blob/master/docs/zh/custom_APIs/torch_npu/torch_npu-apply_rotary_pos_emb.md)与安装版本对应的 CANN 文档。通过 Python 包装层的布局/模式校验，不代表可以绕过上述限制。
 
 当前 RoPE 回归用例已在 Ascend 950PR、`torch-npu 2.9.0.post4`、CANN 9.1 上验证；这不代表已覆盖所有设备、版本、每头维度或布局/模式/数据类型组合。
 

@@ -19,7 +19,7 @@ Also determine parameter origin:
 | functional API (e.g., `F.rms_norm`) | `register_replacement` | Parameters passed as function arguments |
 | nn.Module (e.g., `self.weight`) | Custom Graph Pass | Parameters from module member variables |
 
-## Stage 2: Create Pattern
+## Stage 2: Pattern Creation
 
 First check whether existing patterns already cover the target operator. If not, create a new one following the non-invasive principle (always create new files; do not modify existing pattern files).
 

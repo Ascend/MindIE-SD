@@ -17,11 +17,11 @@ This repository provides the following sparse approaches through the `sparse_att
 
 RainFusion2.0 is an online adaptive block-sparse attention scheme that addresses the above challenges through three techniques:
 
-**Block Representative Token Prediction** (solving "how to determine")
+**Block Representative Token Prediction** (Solving "How To Determine")
 
 Instead of computing the full attention score matrix to generate sparse masks, Q and K are partitioned into blocks by spatial shape, and the mean of each block is taken as a representative token. Sparse masks are predicted through similarity between representative tokens, significantly reducing mask prediction overhead.
 
-**Spatio-Temporal Token Reordering** (solving "how to align")
+**Spatio-Temporal Token Reordering** (Solving "How To Align")
 
 Tokens at the same spatial position in adjacent video frames are highly similar, but become far apart after raster-scan flattening, breaking block self-similarity. RainFusion2.0 reorders tokens by `[t, h, w]` 3D windows, making tokens within blocks more similar and improving sparse mask hit rate and hardware efficiency.
 
@@ -33,6 +33,19 @@ These three techniques together enable RainFusion2.0 to achieve 1.5--1.8x end-to
 
 For detailed technical description, see the [RainFusion2.0 Technical Report](../../tech_report/RainFusion2.0.pdf).
 
+<!-- npu="950" id1 -->
+### rf_v3 (RainFusion3.0 / BSA)
+
+A block sparse attention solution for 950PR&950DT products. Mask generation and spatio-temporal reordering reuse rf_v2's strategy (representative token prediction, spatio-temporal aware reordering, and first-frame protection). On the operator side, block sparse computation is performed by the `aclnnBlockSparseAttention` kernel family, and the kernel version is probed as V3 -> V2 -> V1 at load time with fallback. The `precision` parameter supports four execution precisions:
+
+- `"bf16"` (default): no quantization, plain BF16 sparse attention.
+- `"mix"`: EagleQBSA mixed precision (block-wise INT8 for Q/K plus per-channel FP8 for V).
+- `"fp8"`: apply Hadamard rotation to Q/K first to spread out outliers, then block-quantize Q/K/V to FP8 (requires V2 or later kernels).
+- `"mxfp4"`: takes the MXFP4 path of `aclnnBlockSparseAttentionV3` -- Q/K are Hadamard-rotated and then quantized to FP4 E2M1 data with E8M0 scales (grouped by 32 elements along the head dimension for Q/K and along the sequence dimension for V). `mxfp4_dst_type_max` selects the range policy: `0` for OCP (quantMode=2, floor), a positive value (6 to 12 in practice) for CX (quantMode=3, ceil, with 7.25 recommended for range calibration). Supported only on 950PR&950DT products.
+
+For API parameters and usage examples, see the [sparse_attention section in core_layers.md](core_layers.md#sparse_attention).
+<!-- end id1 -->
+
 ### ada_bsa (Adaptive Block Sparse Attention)
 
 Dynamically estimates the sparse block set through CDF thresholding, suitable for scenarios requiring flexible sparsity granularity.
@@ -40,6 +53,9 @@ Dynamically estimates the sparse block set through CDF thresholding, suitable fo
 **Recommended approach:**
 
 - **Prefer rf_v2 (RainFusion2.0)**: 1.5--1.8x end-to-end acceleration, near-lossless quality, covering image and video models.
+<!-- npu="950" id2 -->
+- **Use rf_v3 on 950PR&950DT products**: rf_v2 automatically routes to rf_v3 on 950PR&950DT products; select `precision="fp8"` or `"mxfp4"` when quantized acceleration is needed.
+<!-- end id2 -->
 - **ada_bsa as fallback**: Try when rf_v2 does not meet model compatibility requirements.
 - **Default sparsity suggestion**: Start from 0.6 for image tasks, 0.8 for video tasks, fine-tune based on generation quality.
 
@@ -99,6 +115,6 @@ out = sparse_attention(
 
 ### Notes
 
-- The sparsity rate requires balancing acceleration and generation quality. Reference experimental data: 1.5--1.8x end-to-end acceleration at `sparsity=0.8` with quality metrics nearly matching full attention; start debugging at 0.6 for image tasks and 0.8 for video tasks.
+- The sparsity rate requires balancing acceleration and generation quality. Reference experimental data: 1.5–1.8x end-to-end acceleration at `sparsity=0.8` with quality metrics nearly matching full attention; start debugging at 0.6 for image tasks and 0.8 for video tasks.
 - The `block_size` parameter currently only supports 128.
 - This API only provides forward inference; backward gradient computation is not supported.

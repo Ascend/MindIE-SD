@@ -1,4 +1,4 @@
-﻿# MindIE SD
+# MindIE SD
 
 MindIE SD is an Ascend-focused multimodal acceleration suite that works with diffusers and other model suites to provide Ascend-optimized key operators and fused operators, compilation acceleration, compute-via-storage, quantization/sparse algorithms, and multi-card parallelism capabilities, enabling fast migration of multimodal generation models to Ascend for acceleration, suitable for production-grade inference workflows.
 
@@ -51,8 +51,10 @@ developer_guide/benchmark_and_profiling
 ```
 
 ```{toctree}
-:maxdepth: 1
+:maxdepth: 2
 :caption: Appendix
 
 features/supported_matrix
+appendix/log
+appendix/error_code
 ```

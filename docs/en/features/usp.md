@@ -11,30 +11,21 @@ does not accept generic metadata, config, or options containers.
 > `kv_gather_group` means KV-AllGather, not Ring Attention. KV-AllGather
 > materializes global K/V on every rank before one local FA call. True Ring
 > Attention circulates KV blocks and merges partial results using the softmax LSE
-> returned by every hop; that path is not implemented by this API.
+> returned by every hop; this API does not implement it.
 
 ## Features
 
-- Executes parallel communication, FA, and output resharding in one call, with no
-  public `prepare()` or `plan()` lifecycle.
+- Runs parallel communication, FA, and output resharding in one call; no public `prepare()` or `plan()`.
 - Supports four-dimensional Q/K/V in `BSND` and `BNSD` layouts.
-- Supports strict Ulysses: exchanges local sequence shards for local head shards
-  before FA and performs the reverse All-to-All after FA.
-- Supports KV-AllGather: gathers K/V sequence shards while keeping local Q in
-  place.
-- Supports combined Ulysses and KV-AllGather with two-dimensional process groups.
-- Supports head-cut execution and an NPU dual-stream pipeline that overlaps
-  forward communication, FA, and reverse communication.
-- Supports FP8 E4M3 and MXFP8-style communication codecs with separate payload
-  and scale collectives.
-- Disables communication quantization by default. When enabled, the default
-  `exposed` scope quantizes only the first forward and last reverse boundary of
-  an overlap pipeline; `all` quantizes every selected communication.
-- Supports native NPU FA and block-FP8 quant FA backends.
-- Supports joint K/V, caller-owned output buffers, output dtype selection, and
-  query chunks.
-- Raises specific errors for unsupported shapes, topologies, workspaces, and
-  execution combinations instead of silently changing the execution strategy.
+- Supports strict Ulysses: converts local sequence shards into local head shards before FA and performs the reverse All-to-All after FA.
+- Supports KV-AllGather: gathers K/V sequence shards from every rank while keeping local Q in place.
+- Supports combining Ulysses and KV-AllGather for two-dimensional parallel groups.
+- Supports synchronous head-cut execution and an NPU dual-stream pipeline that overlaps forward communication, FA, and reverse communication.
+- Supports FP8 E4M3 and MXFP8-style communication codecs with separate payload and scale collectives.
+- Communication quantization is off by default; when enabled, the `exposed` scope quantizes only the first forward and last reverse communication of a pipeline, while `all` quantizes every selected communication.
+- Supports native NPU FA and block FP8 quant FA backends.
+- Supports joint K/V, caller-owned output buffers, output dtype, and query chunks.
+- Raises distinct errors for unsupported shapes, topologies, workspaces, and execution combinations instead of silently changing strategy.
 
 ## Call Contract
 
@@ -42,8 +33,7 @@ Before calling `usp_attention`:
 
 - Select local, Ulysses, KV-AllGather, or combined parallel execution.
 - Create and own process groups.
-- Supply the current rank's local Q/K/V shards and any mask or effective sequence
-  lengths.
+- Supply the current rank's local Q/K/V shards, plus any mask and effective sequence lengths.
 - Select communication quantization, chunking, and FA backend options.
 
 During the call, MindIE SD:
@@ -55,8 +45,7 @@ During the call, MindIE SD:
 - Select and invoke a MindIE SD FA backend.
 - Restore the input layout, sequence shard, and output dtype.
 
-The function does not create process groups, generate a parallel plan, or parse
-generic metadata, config, or options containers.
+The function does not create process groups, generate a parallel plan, or parse generic metadata, config, or options containers.
 
 ## Execution Flow
 
@@ -172,11 +161,7 @@ output = usp_attention(
 
 ### Quantized KV-AllGather
 
-This call encodes K/V as FP8 before communication and gathers payload and scale
-separately. With `backend="quant_fa"`, the FA block-quantized K/V and scales are
-consumed directly by fused quant FA without dequantizing and quantizing them a
-second time. Other backends restore the original FA input dtype after the
-collective.
+This call encodes K/V as FP8 before communication and gathers payload and scale separately. With `backend="quant_fa"`, the FA block-quantized K/V and scales go straight into fused quant FA without dequantizing and requantizing; other backends restore the FA input dtype after the collective.
 
 ```python
 output = usp_attention(
@@ -191,12 +176,9 @@ output = usp_attention(
 )
 ```
 
-### Head-cut and communication-compute overlap
+### Head-cut and Communication Compute Overlap
 
-`head_chunk_size` alone selects the synchronous head-cut path. With
-`overlap=True`, MindIE SD uses a communication stream and the current FA stream,
-connected by per-chunk events. If `head_chunk_size` is omitted, one local head
-per rank is used for each pipeline chunk.
+Setting only `head_chunk_size` uses the synchronous head-cut path. With `overlap=True`, MindIE SD uses a communication stream and the current FA stream, linked by per-chunk events. If `head_chunk_size` is not set, each pipeline chunk defaults to one local head per rank.
 
 ```python
 output = usp_attention(
@@ -214,14 +196,8 @@ output = usp_attention(
 )
 ```
 
-Communication quantization remains disabled unless `comm_dtype` is explicitly
-set. In synchronous execution every communication is exposed, so an enabled
-codec applies to all selected tensors. In overlap execution, `exposed` applies
-it to the first Q/K/V forward boundary and the last output reverse boundary;
-middle communication remains unquantized because it is intended to be hidden by
-FA. Only names present in `comm_tensors` are affected. Use
-`comm_quant_scope="all"` when measurements show that middle
-communication is not fully hidden.
+Communication quantization is enabled only when `comm_dtype` is set explicitly. In synchronous execution no communication can be hidden by FA, so enabling it quantizes all selected tensors. In overlap execution, `exposed` quantizes the Q/K/V forward boundary of the first chunk and the reverse output boundary of the
+last chunk, leaving middle communication to FA; use `comm_quant_scope="all"` if FA cannot fully hide it.
 
 ### Combined Ulysses and KV-AllGather
 
@@ -248,23 +224,14 @@ output = usp_attention(
 | `USPShapeError` | Tensor, layout, dtype, scale, or length violates the contract |
 | `USPWorkspaceError` | Workspace or output buffer violates the contract |
 
-Catch specific USP errors only when the caller has an explicit recovery policy.
-Avoid catching every exception and silently changing the execution strategy.
+Catch specific USP errors only when the caller has an explicit recovery policy; do not catch every exception and silently change the execution strategy.
 
 ## Current Limitations
 
-- The current implementation uses strict Ulysses; head counts must be divisible
-  by the Ulysses world size.
+- The current implementation uses strict Ulysses; head counts must be divisible by the Ulysses world size.
 - KV-AllGather requires equal local K/V shapes across all ranks in its group.
-- `seq_lens` currently validates the contract and does not produce variable
-  collective split sizes.
-- `chunk_size` cannot be combined with `attn_mask`, `head_chunk_size`, or
-  `overlap=True`.
-- `workspace` is validated for dtype, device, and contiguity but does not yet
-  replace all temporary allocations.
-- Direct FA-quant reuse currently applies to FP8 E4M3 K/V AllGather with
-  `backend="quant_fa"` when each rank's post-Ulysses K/V sequence is aligned to
-  `kv_block_size`. Other shapes, MXFP8, and native FA use the communication
-  codec and restore the FA input dtype after the collective.
-- True Ring Attention, per-hop K/V P2P, and partial output/LSE merging are not
-  supported.
+- `seq_lens` currently validates the contract and does not produce variable-length collective split sizes.
+- `chunk_size` cannot be combined with `attn_mask`, `head_chunk_size`, or `overlap=True`.
+- `workspace` is checked for dtype, device, and contiguity only; it does not yet replace all temporary allocations.
+- Direct FA-quant reuse currently covers FP8 E4M3 K/V AllGather with `backend="quant_fa"` when each rank's post-Ulysses K/V sequence length is aligned to `kv_block_size`; other shapes, MXFP8, and native FA use the communication codec and restore the FA input dtype after the collective.
+- True Ring Attention, per-hop K/V P2P, and partial output/LSE merging are not supported.

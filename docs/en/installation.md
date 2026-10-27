@@ -4,21 +4,19 @@
 
 MindIE SD is a Python package built on PyTorch that can be easily integrated into Python applications.
 
+Python package installation suits most use cases but requires installing CANN manually. If you want to skip the manual CANN installation, you can also choose image installation: pull an image from the Ascend community and start a container.
+
 ### Dependencies
 
 * OS: Linux
 * Python: >=3.10
 * PyTorch: 2.6, 2.7, 2.8, 2.9, 2.10
-* TorchNPU: 2.6, 2.7, 2.8, 2.9, 2.10
-* CANN: 9.0.0
-* triton: 3.5.0
-* triton-ascend: 3.2.1
-
-> **Note**: `triton-ascend 3.2.1` is not published on PyPI. Download the wheel matching your Python version and architecture from the [GitCode release page](https://gitcode.com/Ascend/triton-ascend/releases) and install it (it pins `triton==3.5.0`). Without 3.2.1, the SparseLinearAttention (FA sparse) feature is disabled.
+* TorchNPU: 7.3.0, 26.0.0, 26.1.0
+* CANN: 9.0.1,9.1.0
 
 #### CANN Installation
 
-MindIE SD depends on the CANN Toolkit development package and CANN ops operator package. See the [CANN Software Installation Guide](https://gitcode.com/cann/ops-cv/blob/master/docs/zh/install/quick_install.md) for installation instructions. Choose the installation scenario based on your installation method and operating system, then click "Start Reading" and follow the "Install CANN" section.
+MindIE SD depends on the CANN Toolkit development package and CANN ops operator package. See the <a href="https://gitcode.com/cann/ops-cv/blob/master/docs/zh/install/quick_install.md" target="_blank" rel="noopener noreferrer">CANN Software Installation Guide</a> for installation instructions. Choose the installation scenario based on your installation method and operating system, then click "Start Reading" and follow the "Install CANN" section.
 
 After installation, run the following command to set environment variables (using the default installation path as an example):
 
@@ -41,7 +39,15 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 
 ### Quick Install
 
-Currently the simplest way is to install via pip. Our package is named `mindiesd`, which differs from the repository name.
+Currently the simplest way is to install from the pip source. Our package is named `mindiesd`, which differs somewhat from the repository name. Before installing mindiesd, install the related Python dependency packages first:
+
+> `requirements.txt` is located in the repository root. Get this file before running the command below: clone the repository (`git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD`) or download `requirements.txt` separately from the repository.
+
+```bash
+pip install -r requirements.txt --extra-index-url https://triton-ascend.osinfra.cn/pypi/simple --trusted-host triton-ascend.osinfra.cn
+```
+
+Then install mindiesd:
 
 ```bash
 pip install mindiesd
@@ -56,14 +62,16 @@ Follow these steps to install MindIE SD from source:
 1. Clone the repository and enter the project:
 
    ```bash
-   git clone https://github.com/MindIE-SD/MindIE-SD.git && cd MindIE-SD
+   git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD && git checkout dev
    ```
 
-2. [Optional] Install dependencies:
+2. Install dependencies:
 
    ```bash
-   pip install -r requirements.txt
+   pip install -r requirements.txt --extra-index-url https://triton-ascend.osinfra.cn/pypi/simple --trusted-host triton-ascend.osinfra.cn
    ```
+
+   Note: Some operators of MindIE SD depend on triton-ascend==3.2.1, which is currently only available at <https://triton-ascend.osinfra.cn/pypi/simple>.
 
 3. Build and install:
 
@@ -82,12 +90,6 @@ Follow these steps to install MindIE SD from source:
 > * `examples/service/requirements.txt`: serving-example dependencies (ray, fastapi, uvicorn, pydantic, Pillow).
 > * Testing, linting, and docs-build dependencies are in `requirements-test.txt`, `requirements-lint.txt`, and `docs/requirements-docs.txt` respectively (see the developer guide).
 
-### Nightly Build Installation
-
-Nightly builds are available for testing the latest features:
-
-Coming soon...
-
 ## Image Installation (vLLM-Omni)
 
 The Docker image combines **vLLM-Omni + MindIE SD**. MindIE-SD 3.1.0 provides three product variants:
@@ -98,30 +100,36 @@ The Docker image combines **vLLM-Omni + MindIE SD**. MindIE-SD 3.1.0 provides th
 | Atlas 800I A3 SuperPoD Server | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0-a3` |
 | 950PR&950DT products | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0-a5` |
 
-Pull a published `mindiesd` image from the [MindIE image repository](https://www.hiascend.com/developer/ascendhub/detail/7c3b1b7c5151469a98ac08b868dab45f), or build locally from the `dev` branch. The current base images provide `linux/amd64` only.
+**Getting the image (choose one):**
 
-<!-- npu="910b" id1 -->
-```bash
-git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
-git checkout dev && cd docker/omni
-docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12 -f Dockerfile.a2.ubuntu .
-```
-<!-- end id1 -->
+* Pull a prebuilt `mindiesd` image from the [MindIE image repository](https://www.hiascend.com/developer/ascendhub/detail/7c3b1b7c5151469a98ac08b868dab45f).
+* Local build: clone the repository and switch to the `dev` branch, enter the `docker/omni` directory, then build with the Dockerfile for the corresponding product. The current base images provide `linux/amd64` only.
 
-<!-- npu="A3" id2 -->
-```bash
-git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
-git checkout dev && cd docker/omni
-docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12 -f Dockerfile.a3.ubuntu .
-```
-<!-- end id2 -->
+  <!-- npu="910b" id1 -->
+  ```bash
+  # Atlas 800I A2 inference server
+  git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
+  git checkout dev && cd docker/omni
+  docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12 -f Dockerfile.a2.ubuntu .
+  ```
+  <!-- end id1 -->
 
-<!-- npu="950" id3 -->
-```bash
-git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
-git checkout dev && cd docker/omni
-docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12 -f Dockerfile.a5.ubuntu .
-```
-<!-- end id3 -->
+  <!-- npu="A3" id2 -->
+  ```bash
+  # Atlas 800I A3 SuperPoD Server
+  git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
+  git checkout dev && cd docker/omni
+  docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12 -f Dockerfile.a3.ubuntu .
+  ```
+  <!-- end id2 -->
+
+  <!-- npu="950" id3 -->
+  ```bash
+  # 950PR&950DT products
+  git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
+  git checkout dev && cd docker/omni
+  docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12 -f Dockerfile.a5.ubuntu .
+  ```
+  <!-- end id3 -->
 
 See the [vLLM-Omni image overview](../../docker/omni/OVERVIEW.md) for runtime options and hardware requirements. The full image Tag list is in [Supported Tags](../../docker/supported_tags.md).

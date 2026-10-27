@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-    <a href="https://mindie-sd.readthedocs.io/en/latest/zh/">
+    <a href="https://mindie-sd.readthedocs.io/en/latest/en/">
         <img alt="Documentation" src="https://img.shields.io/badge/Docs-Read%20the%20Docs-8CA1AF">
     </a>
     <a href="https://pypi.org/project/mindiesd/">
@@ -29,53 +29,53 @@
 
 English | [简体中文](./README.md)
 
-## Introduction
+## 🚀 Introduction
 
-**MindIE SD** (Mind Inference Engine Stable Diffusion) is the visual generation inference model suite of MindIE. Its goal is to provide an end-to-end inference solution for Stable Diffusion (SD) series large models on Huawei Ascend hardware and its software stack. The software system internally integrates various functional modules and provides a unified programming interface externally.
+**MindIE SD** (Mind Inference Engine Stable Diffusion) is MindIE's view generation inference model suite. Its goal is to provide an end-to-end inference solution for the **Stable Diffusion** (SD) series of large models on Ascend hardware and its software stack. The software system integrates various functional modules internally and provides a unified programming interface externally.
 
 ## 📢 Latest News
 
-- 09/23/2026: [MXAttention paper](docs/tech_report/MXAttention.pdf) has been submitted to ICLR ([arXiv:2607.24377](https://arxiv.org/abs/2607.24377)) 📄
-- 09/20/2026: Completed [high-performance Qwen-Image-2.1 inference adaptation and optimization on Ascend](examples/qwen-image-2.1/infer.md) 🚀
-- 09/04/2026: MindIE SD supports the Lightx2v framework to accelerate MiniMax H3 on 950PR&950DT products
-- 08/03/2026: Completed [high-performance MiniMax-H3 inference adaptation and optimization on Ascend](examples/minimax-h3/infer.md) 🚀
-- 07/2026: [RotateAttention](docs/tech_report/RotateAttention.pdf) was accepted to ECCV 2026 🏆
-- 06/2026: Enhanced low-precision inference, multimodal MoE, sparse attention, and the deployment ecosystem ⚡
-- 05/28/2026: [Cache-DiT completed its MindIE SD integration](https://github.com/vipshop/cache-dit/pull/1004) 🤝
-- 05/2026: Completed multimodal MoE inference capability development and multi-model adaptation validation 🧠
-- 04/2026: Enhanced graph compilation, operator fusion, and sparse computation capabilities ⚙️
-- 03/2026: Extended W4A4 and MXFP4 quantization capabilities ⚡
-- 02/2026: Added sparse attention operators and Dynamic EPLB 🧩
-- 01/2026: Added memory optimization capabilities and serving examples 💾
-- 12/31/2025: MindIE SD provides sparse Attention computation capability ⚡
-- 12/25/2025: vLLM Omni x MindIE SD achieves native high-performance Ascend inference for Qwen-Image-Edit-2511 / Qwen-Image-Layered 🚀
-- 11/30/2025: MindIE SD officially open-sourced and available to the public! 🎉
+- September 23, 2026: The [MXAttention paper](docs/tech_report/MXAttention.pdf) has been submitted to ICLR ([arXiv:2607.24377](https://arxiv.org/abs/2607.24377)) 📄
+- September 20, 2026: Completed [high-performance inference adaptation and optimization of Qwen-Image-2.1 on Ascend](examples/qwen-image-2.1/infer_en.md) 🚀
+- September 4, 2026: MindIE SD supports the Lightx2v framework to accelerate MiniMax H3 on 950PR&950DT products
+- August 3, 2026: Completed [high-performance inference adaptation and optimization of MiniMax-H3 on Ascend](examples/minimax-h3/infer_en.md) 🚀
+- July 2026: [RotateAttention](docs/tech_report/RotateAttention.pdf) has been accepted by ECCV 2026 🏆
+- June 2026: Completed low-precision inference, multimodal MoE, sparse attention, and deployment ecosystem enhancements ⚡
+- May 28, 2026: [Cache-DiT has completed integration with MindIE SD](https://github.com/vipshop/cache-dit/pull/1004) 🤝
+- May 2026: Completed multimodal MoE inference capability development and multi-model adaptation verification 🧠
+- April 2026: Completed graph compilation, operator fusion, and sparse computation capability enhancements ⚙️
+- March 2026: Extended W4A4 and MXFP4 quantization capabilities ⚡
+- February 2026: Added sparse attention operators and Dynamic EPLB 🧩
+- January 2026: Added memory optimization capabilities and servitization examples 💾
+- December 31, 2025: MindIE SD provides sparse Attention computation capability ⚡
+- December 25, 2025: vLLM Omni x MindIE SD delivers native high-performance inference on Ascend for Qwen-Image-Edit-2511 / Qwen-Image-Layered 🚀
+- November 30, 2025: MindIE SD is officially open-sourced and available to the public! 🎉
 
-## Installation Guide
+## 📦 Installation Guide
 
 ```bash
 pip install mindiesd
 ```
 
-For other installation methods and environment dependencies, see [Installation Guide](docs/zh/installation.md).
+For other installation methods and environment dependencies, see [Installation Guide](docs/en/installation.md).
 
-## Architecture Overview
+## 🚀 Architecture Introduction
 
-For MindIE SD architecture and key features, see [Architecture Overview](docs/zh/architecture.md).
+For details about the MindIE SD architecture and key features, see [Architecture](docs/en/architecture.md).
 
-![MindIE SD Architecture Diagram](https://raw.gitcode.com/Ascend/MindIE-SD/raw/dev/docs/figures/architecture_overview.png)
+![MindIE SD architecture diagram](https://raw.gitcode.com/Ascend/MindIE-SD/raw/dev/docs/figures/architecture_overview.png)
 
-## Quick Start
+## ⚡️ Quick Start
 
-[Quick Start](docs/zh/quick_start.md): Using Wan2.1 as an example, introduces the overall acceleration effect with MindIE SD.
+[Quick Start](docs/en/quick_start.md): Using wan2.1 as an example, this document introduces the overall acceleration effect after using mindiesd.
 
-## Developer Documentation
+## 📚 Development Documentation
 
-- [Contribution Guide](docs/zh/developer_guide/contribution_guide.md): Explains how to submit Issues, Pull Requests, and coding standards.
-- [AI Agent Support](.agents/README.md): Introduces the default skills used in the repository and the agent-assisted development workflow.
-- [Test Verification](docs/zh/developer_guide/test.md): Introduces the unit test example execution workflow.
+- [Contribution Guide](docs/en/developer_guide/contribution_guide.md): Explains how to submit Issues, Pull Requests, and code standards.
+- [AI Agent Support](.agents/README.md): Introduces some skills used by default in the repository and the use of Agents to assist the development process.
+- [Testing and Verification](docs/en/developer_guide/test.md): Introduces the workflow for running unit test samples.
 
-## Ecosystem Support
+## 🌐 Ecosystem Support
 
 The following projects have integrated MindIE SD as a multimodal inference backend:
 
@@ -83,9 +83,9 @@ The following projects have integrated MindIE SD as a multimodal inference backe
 - [Cache-DiT](https://github.com/vipshop/cache-dit)
 - [Lightx2v](https://github.com/ModelTC/lightx2v)
 
-## Paper Citations
+## 📝 Paper Citations
 
-```text
+```txt
 @misc{RainFusion2.0@2025,
     title = {RainFusion2.0: Temporal-Spatial Awareness and Hardware-Efficient Block-wise Sparse Attention},
     url = {https://gitcode.com/Ascend/MindIE-SD.git},
@@ -97,14 +97,16 @@ The following projects have integrated MindIE SD as a multimodal inference backe
 
 <a id="wechat-community"></a>
 
-## Contact Us
+## 💬 Contact Us
 
-Join the MindIE SD WeChat community by scanning the group QR code below. If the group QR code has expired, scan the personal WeChat QR code to request an invitation.
+You are welcome to participate in discussions and provide feedback directly through [GitCode Issues](https://gitcode.com/Ascend/MindIE-SD/issues).
+
+For more convenient communication and faster responses, we have established a MindIE SD WeChat group. You can scan the WeChat group QR code on the left to join the group. If the group QR code has expired, scan the personal WeChat QR code on the right, add the contact as a friend, and they will invite you to join the group.
 
 <div align="center">
 
-| WeChat Group | Personal WeChat (if the group QR code has expired) |
+| WeChat Group | Personal WeChat (add when the group QR code expires) |
 | --- | --- |
-| ![WeChat Group QR Code](https://raw.gitcode.com/Ascend/MindIE-SD/raw/dev/docs/figures/wx_sd.jpg) | ![Personal WeChat QR Code](https://raw.gitcode.com/Ascend/MindIE-SD/raw/dev/docs/figures/wx_lwl.jpg) |
+| ![WeChat group chat QR code](./docs/figures/wx_sd_en.png) | ![Personal WeChat QR code](./docs/figures/wx_lwl_en.png) |
 
 </div>

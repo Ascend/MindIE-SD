@@ -1,6 +1,6 @@
 # Performance Analysis
 
-## Profiling Data Collection
+## Profile Data Collection
 
 Use `torch_npu.profiler` to collect NPU operator-level performance data:
 
@@ -39,7 +39,7 @@ Collected output files:
 | `step_trace_time.csv` | CANN Profiler CSV | Step-level summary |
 | `communication.json` | JSON | Communication operator details (multi-card scenarios) |
 
-## Profiling Data Analysis
+## Profile Data Analysis
 
 Analyze bottlenecks in collected profiling data using the following methods.
 
@@ -63,20 +63,20 @@ Analyze bottlenecks in collected profiling data using the following methods.
 
 | Finding | Threshold | Optimization Direction |
 | ------ | ------ | ---------- |
-| DiT MatMul proportion high | >50% | MatMul quantization |
-| DiT FA proportion high | >30% | Attention optimization (quantization + sparsification) |
-| DiT Vector proportion high | >20% | Compilation fusion |
-| DiT Comm exposed | >30% | Communication masking optimization |
+| DiT MatMul proportion high | > 50% | MatMul quantization |
+| DiT FA proportion high | > 30% | Attention optimization (quantization + sparsification) |
+| DiT Vector proportion high | > 20% | Compilation fusion |
+| DiT Comm exposed | > 30% | Communication masking optimization |
 
 ## Feature Performance Reference
 
-Technical principles and usage of each acceleration feature are detailed in `docs/zh/features/`:
+Technical principles and usage of each acceleration feature are detailed in `docs/en/features/`:
 
 | Feature | Documentation |
 | ------ | ------ |
 | Sparse | [../features/sparse.md](../features/sparse.md) |
 | Quantization | [../features/quantization.md](../features/quantization.md) |
-| Compute-via-Storage | [../features/cache.md](../features/cache.md) |
+| Compute-by-Storage | [../features/cache.md](../features/cache.md) |
 | CPU Offload | [../features/cpu_offload.md](../features/cpu_offload.md) |
 | Shared Memory | [../features/share_memory.md](../features/share_memory.md) |
 | Multi-Card Parallelism | [../features/parallelism.md](../features/parallelism.md) |

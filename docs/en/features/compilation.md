@@ -7,7 +7,7 @@ MindIE SD provides a custom backend `MindieSDBackend()` based on PyTorch's `torc
 
 Both capabilities are uniformly controlled through `CompilationConfig`.
 
->[!NOTE] Note
+>[!NOTE] NOTE
 >When this feature is enabled, there is a certain compilation overhead during initial model execution (up to 8 attempts by default), but generally no recompilation occurs in subsequent runs. During actual benchmark testing, the warm-up phase overhead should be excluded.
 
 ## Basic Usage
@@ -139,7 +139,7 @@ for audio_chunk in chunks:
 
 ## Reference Examples
 
-- **[FLUX.1-dev Inference Optimization Guide](../../../examples/cache-dit/FLUX.1-dev.md)**: An end-to-end single-card example that combines `MindieSDBackend()` compilation optimization with Cache-DiT DBCache on FLUX.1-dev. A complete, runnable reference covering:
+- **[FLUX.1-dev Inference Optimization Guide](../../../examples/cache-dit/FLUX.1-dev_en.md)**: An end-to-end single-card example that combines `MindieSDBackend()` compilation optimization with Cache-DiT DBCache on FLUX.1-dev. A complete, runnable reference covering:
 
   - Before/after comparison: how to compare runtime between the baseline and compilation-optimized runs of the same inference code, and the expected effect
   - Practical prerequisites: install dependencies with `pip install cache-dit`; DBCache requires the `PYTORCH_NPU_ALLOC_CONF='expandable_segments:True'` environment variable, otherwise memory overflow may occur
