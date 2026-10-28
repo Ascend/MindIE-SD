@@ -61,6 +61,7 @@ add_library(PTAExtensionOPS SHARED
     ./plugin/quant_flash_attn_metadata.cpp
     ./plugin/fused_infer_attention_score.cpp
     ./plugin/mul_add.cpp
+    ./plugin/eagle_indexed_gate_norm_modulate.cpp
     ./plugin/norm_rope_concat.cpp
     ./plugin/eagle_split_norm_rope_concat.cpp
     ./plugin/eagle_ffn_linear.cpp

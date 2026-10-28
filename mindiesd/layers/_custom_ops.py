@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# pylint: disable=duplicate-code
+# pylint: disable=duplicate-code,too-many-lines
 # coding=utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
 # MindIE is licensed under Mulan PSL v2.
@@ -21,6 +21,97 @@ from ..utils import ParametersInvalid
 FREQUENCY_REGULATOR_MAX_FREQ = 0xFFFFFFFF
 APPLY_ROTARY_POS_EMB_LAYOUTS = ("BSND", "SBND", "BNSD", "TND")
 APPLY_ROTARY_POS_EMB_ROTARY_MODES = ("half", "interleave", "quarter")
+
+
+def eagle_indexed_gate_norm_modulate(
+    residual: torch.Tensor,
+    gate: torch.Tensor,
+    branch: torch.Tensor,
+    shift: torch.Tensor,
+    scale: torch.Tensor,
+    indices: torch.Tensor,
+    weight: torch.Tensor | None = None,
+    bias: torch.Tensor | None = None,
+    norm_type: int = 0,
+    eps: float = 1e-6,
+    output_dtype: torch.dtype | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return (updated residual, modulated RMSNorm), with independent output dtype.
+
+    residual/branch are [N,D], gate/shift/scale are [K,D], weight is [D], and
+    indices is int32/int64 [N] with values in [0,K). All six floating inputs
+    share FP16 or BF16 dtype and one NPU device. D is in [1,7168], K >= 1,
+    and eps defaults to 1e-6 and must be finite and positive in FP32. N may be zero.
+    Only norm_type=0 (weighted RMSNorm) is supported. The optional weight
+    argument reserves the interface; this mode requires a non-None weight.
+    bias is reserved for future normalization modes and must be None.
+
+    All intermediate arithmetic stays FP32, including the updated residual
+    consumed by normalization. Both contiguous outputs use output_dtype
+    (FP16/BF16), defaulting to residual.dtype. Strided inputs are materialized
+    as contiguous ND in the native wrapper before the kernel launch.
+    """
+    return torch.ops.mindiesd.eagle_indexed_gate_norm_modulate(
+        residual,
+        gate,
+        branch,
+        shift,
+        scale,
+        indices,
+        weight=weight,
+        bias=bias,
+        norm_type=norm_type,
+        eps=eps,
+        output_dtype=output_dtype,
+    )
+
+
+@register_ops.register_mindie_fake_op("eagle_indexed_gate_norm_modulate")
+def eagle_indexed_gate_norm_modulate_fake(
+    residual, gate, branch, shift, scale, indices, weight=None, bias=None, norm_type=0, eps=1e-6, output_dtype=None
+):
+    if norm_type != 0:
+        raise ValueError("eagle_indexed_gate_norm_modulate: only norm_type=0 (weighted RMSNorm) is supported")
+    if bias is not None:
+        raise ValueError("eagle_indexed_gate_norm_modulate: bias must be None for norm_type=0 (weighted RMSNorm)")
+    if weight is None:
+        raise ValueError("eagle_indexed_gate_norm_modulate: weight is required for norm_type=0 (weighted RMSNorm)")
+    dtype = residual.dtype if output_dtype is None else output_dtype
+    if residual.dtype not in (torch.float16, torch.bfloat16) or dtype not in (torch.float16, torch.bfloat16):
+        raise ValueError("eagle_indexed_gate_norm_modulate: input/output dtype must be FP16 or BF16")
+    try:
+        eps_fp32 = struct.unpack("f", struct.pack("f", eps))[0]
+    except OverflowError:
+        eps_fp32 = math.inf
+    if not math.isfinite(eps_fp32) or eps_fp32 <= 0:
+        raise ValueError("eagle_indexed_gate_norm_modulate: eps must be finite and positive in FP32")
+    torch._check(residual.dim() == 2)
+    rows, hidden = residual.shape
+    torch._check(hidden >= 1)
+    torch._check(hidden <= 7168)
+    for value in (gate, branch, weight, shift, scale):
+        torch._check(value.dtype == residual.dtype)
+        torch._check(value.device == residual.device)
+    torch._check(branch.dim() == 2)
+    torch._check(branch.shape[0] == rows)
+    torch._check(branch.shape[1] == hidden)
+    torch._check(gate.dim() == 2)
+    torch._check(gate.shape[0] >= 1)
+    torch._check(gate.shape[1] == hidden)
+    for value in (shift, scale):
+        torch._check(value.dim() == 2)
+        torch._check(value.shape[0] == gate.shape[0])
+        torch._check(value.shape[1] == hidden)
+    torch._check(weight.dim() == 1)
+    torch._check(weight.shape[0] == hidden)
+    torch._check(indices.dim() == 1)
+    torch._check(indices.shape[0] == rows)
+    torch._check(indices.dtype in (torch.int32, torch.int64))
+    torch._check(indices.device == residual.device)
+    return (
+        torch.empty(residual.shape, dtype=dtype, device=residual.device),
+        torch.empty(residual.shape, dtype=dtype, device=residual.device),
+    )
 
 
 def eagle_split_norm_rope_concat(

@@ -26,6 +26,7 @@
 #include "quant_flash_attn_metadata.h"
 #include "fused_infer_attention_score.h"
 #include "mul_add.h"
+#include "eagle_indexed_gate_norm_modulate.h"
 #include "norm_rope_concat.h"
 #include "eagle_split_norm_rope_concat.h"
 #include "eagle_ffn_linear.h"
@@ -131,6 +132,9 @@ TORCH_LIBRARY(mindiesd, m) {
         int? dequant_scale_value_dtype=None, int? dequant_scale_key_rope_dtype=None, \
         ScalarType? out_dtype=None) -> (Tensor, Tensor)");
     m.def("mul_add(Tensor a, Tensor b, Tensor c) -> Tensor");
+    m.def("eagle_indexed_gate_norm_modulate(Tensor residual, Tensor gate, Tensor branch, "
+          "Tensor shift, Tensor scale, Tensor indices, Tensor? weight=None, Tensor? bias=None, int norm_type=0, "
+          "float eps=1e-6, ScalarType? output_dtype=None) -> (Tensor, Tensor)");
     m.def("eagle_ffn_linear(Tensor x, Tensor weight1, Tensor weight2, \
         Tensor? bias1=None, Tensor? bias2=None, str activation='gelu', int inner_precise=0) -> Tensor");
     m.def("quant_four_over_six_a5(Tensor x, int axis=-1, str round_mode='rint', \
@@ -169,6 +173,7 @@ TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m) {
     m.impl("quant_flash_attn_metadata", &quant_flash_attn_metadata_impl_npu);
     m.impl("fused_infer_attention_score_v2", &fused_infer_attention_score_v2_impl_npu);
     m.impl("mul_add", &mul_add_mindie_sd_impl_npu);
+    m.impl("eagle_indexed_gate_norm_modulate", &eagle_indexed_gate_norm_modulate_impl_npu);
     m.impl("eagle_ffn_linear", &eagle_ffn_linear_mindie_sd_impl_npu);
     m.impl("quant_four_over_six_a5", &quant_four_over_six_a5_mindie_sd_impl_npu);
     m.impl("norm_rope_concat", &norm_rope_concat_mindie_sd_impl_npu);
