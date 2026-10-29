@@ -14,10 +14,10 @@
 #   msprof          - NPU profiling tool (bundled with CANN, no extra install)
 #
 # Base image:
-#   quay.io/ascend/vllm-omni:v0.28.0-a5 (CANN-based, Ubuntu, linux/amd64)
+#   quay.io/ascend/vllm-omni:v0.32.0-a5 (CANN-based, Ubuntu, linux/amd64)
 #
 # Build:
-#   docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12 \
+#   docker build --platform linux/amd64 -t mindiesd:v3.2.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12 \
 #       -f Dockerfile.a5.ubuntu .
 #
 # Run:
@@ -36,11 +36,11 @@
 #       -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
 #       -v /etc/ascend_install.info:/etc/ascend_install.info \
 #       -v /root/.cache:/root/.cache \
-#       mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12 \
+#       mindiesd:v3.2.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12 \
 #       bash
 # ============================================================================
 
-FROM quay.io/ascend/vllm-omni:v0.28.0-a5
+FROM quay.io/ascend/vllm-omni:v0.32.0-a5
 
 # --------------------------------------------------------------------------
 # Metadata labels (OCI image spec)
@@ -48,19 +48,19 @@ FROM quay.io/ascend/vllm-omni:v0.28.0-a5
 LABEL maintainer="Ascend Container Team"
 LABEL description="MindIE-SD for Stable Diffusion inference on Ascend NPU"
 LABEL org.opencontainers.image.title="mindiesd"
-LABEL org.opencontainers.image.version="v3.1.0"
+LABEL org.opencontainers.image.version="v3.2.0"
 LABEL org.opencontainers.image.description="MindIE-SD image with Ascend tuning/debugging tools"
 
 # --------------------------------------------------------------------------
 # Environment variables for banner
 # --------------------------------------------------------------------------
 ENV ASCEND_SOFTWARE_NAME="MindIE-SD"
-ENV ASCEND_SOFTWARE_VERSION="v3.1.0"
+ENV ASCEND_SOFTWARE_VERSION="v3.2.0"
 
 # --------------------------------------------------------------------------
 # 1. Install MindIE-SD (Stable Diffusion inference engine)
 # --------------------------------------------------------------------------
-RUN pip install mindiesd==3.1.0 -i https://pypi.org/simple --no-cache-dir
+RUN pip install mindiesd==3.2.0 -i https://pypi.org/simple --no-cache-dir
 
 # --------------------------------------------------------------------------
 # 2. Install msprobe (precision debugging tool)
@@ -72,7 +72,7 @@ RUN pip install --no-cache-dir --no-deps msprobe==0.1.4
 # 3. Install msmodelslim (model compression / quantization tool)
 # --------------------------------------------------------------------------
 RUN export PIP_EXTRA_INDEX_URL=https://mirrors.huaweicloud.com/ascend/repos/pypi && \
-    pip install --no-cache-dir msmodelslim==8.2.1
+    pip install --no-cache-dir msmodelslim==26.1.0
 
 # --------------------------------------------------------------------------
 # 4. Install msprof-analyze (MindStudio Profiler analysis tool)
@@ -80,7 +80,7 @@ RUN export PIP_EXTRA_INDEX_URL=https://mirrors.huaweicloud.com/ascend/repos/pypi
 #    jinja2, PyYaml, tqdm, prettytable, ijson, numpy, pandas, etc.
 # --------------------------------------------------------------------------
 RUN export PIP_EXTRA_INDEX_URL=https://mirrors.huaweicloud.com/ascend/repos/pypi && \
-    pip install --no-cache-dir --no-deps msprof-analyze==26.0.0
+    pip install --no-cache-dir --no-deps msprof-analyze==26.2.0
 
 # --------------------------------------------------------------------------
 # Copy banner script
