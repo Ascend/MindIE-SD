@@ -1,0 +1,158 @@
+#!/usr/bin/env python
+# coding=utf-8
+# Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
+# MindIE is licensed under Mulan PSL v2.
+# You can use this software according to the terms and conditions of the Mulan PSL v2.
+# You may obtain a copy of Mulan PSL v2 at:
+#          http://license.coscl.org.cn/MulanPSL2
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+# EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+# MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+# See the Mulan PSL v2 for more details.
+# pylint: disable=no-name-in-module
+import os
+import unittest
+import torch
+
+from mindiesd.layers.rope import rotary_position_embedding
+from mindiesd.utils import ParametersInvalid
+from utils.utils.embedding import RotaryPositionEmbedding
+from utils.utils.precision_compare import data_compare
+
+
+class TestRope(unittest.TestCase):
+    def test_x_type(self):
+        device = "cpu"
+        x = [2, 64, 8, 16]
+        cos = torch.randn([1, 64, 1, 16], dtype=torch.float32).to(device)
+        sin = torch.randn([1, 64, 1, 16], dtype=torch.float32).to(device)
+        rotated_mode = "rotated_half"
+        head_first = False
+        fused = True
+
+        with self.assertRaises(ParametersInvalid):
+            rotary_position_embedding(x, cos, sin, rotated_mode, head_first, fused)
+
+    def test_x_dim(self):
+        device = "cpu"
+        x = torch.randn([2, 64, 128], dtype=torch.float16).to(device)
+        cos = torch.randn([1, 64, 1, 16], dtype=torch.float32).to(device)
+        sin = torch.randn([1, 64, 1, 16], dtype=torch.float32).to(device)
+        rotated_mode = "rotated_half"
+        head_first = False
+        fused = True
+
+        with self.assertRaises(ParametersInvalid):
+            rotary_position_embedding(x, cos, sin, rotated_mode, head_first, fused)
+
+    def test_cos_type(self):
+        device = "cpu"
+        x = torch.randn([2, 64, 8, 16], dtype=torch.float16).to(device)
+        cos = [1, 64, 1, 16]
+        sin = torch.randn([1, 64, 1, 16], dtype=torch.float32).to(device)
+        rotated_mode = "rotated_half"
+        head_first = False
+        fused = True
+
+        with self.assertRaises(ParametersInvalid):
+            rotary_position_embedding(x, cos, sin, rotated_mode, head_first, fused)
+
+    def test_sin_type(self):
+        device = "cpu"
+        x = torch.randn([2, 64, 8, 16], dtype=torch.float16).to(device)
+        cos = torch.randn([1, 64, 1, 16], dtype=torch.float32).to(device)
+        sin = [1, 64, 1, 16]
+        rotated_mode = "rotated_half"
+        head_first = False
+        fused = True
+
+        with self.assertRaises(ParametersInvalid):
+            rotary_position_embedding(x, cos, sin, rotated_mode, head_first, fused)
+
+    def test_cos_dim(self):
+        device = "cpu"
+        x = torch.randn([2, 64, 8, 16], dtype=torch.float16).to(device)
+        cos = torch.randn([1, 64, 16], dtype=torch.float32).to(device)
+        sin = torch.randn([1, 64, 1, 16], dtype=torch.float32).to(device)
+        rotated_mode = "rotated_half"
+        head_first = False
+        fused = True
+
+        with self.assertRaises(ParametersInvalid):
+            rotary_position_embedding(x, cos, sin, rotated_mode, head_first, fused)
+
+    def test_sin_dim(self):
+        device = "cpu"
+        x = torch.randn([2, 64, 8, 16], dtype=torch.float16).to(device)
+        cos = torch.randn([1, 64, 1, 16], dtype=torch.float32).to(device)
+        sin = torch.randn([1, 64, 16], dtype=torch.float32).to(device)
+        rotated_mode = "rotated_half"
+        head_first = False
+        fused = True
+
+        with self.assertRaises(ParametersInvalid):
+            rotary_position_embedding(x, cos, sin, rotated_mode, head_first, fused)
+
+    def test_cos_sin_dim_equal(self):
+        device = "cpu"
+        x = torch.randn([2, 64, 8, 16], dtype=torch.float16).to(device)
+        cos = torch.randn([64, 16], dtype=torch.float32).to(device)
+        sin = torch.randn([1, 64, 1, 16], dtype=torch.float32).to(device)
+        rotated_mode = "rotated_half"
+        head_first = False
+        fused = True
+
+        with self.assertRaises(ParametersInvalid):
+            rotary_position_embedding(x, cos, sin, rotated_mode, head_first, fused)
+
+    def test_rotated_mode_type(self):
+        device = "cpu"
+        x = torch.randn([2, 64, 8, 16], dtype=torch.float16).to(device)
+        cos = torch.randn([1, 64, 1, 16], dtype=torch.float32).to(device)
+        sin = torch.randn([1, 64, 1, 16], dtype=torch.float32).to(device)
+        rotated_mode = 1
+        head_first = False
+        fused = True
+
+        with self.assertRaises(ParametersInvalid):
+            rotary_position_embedding(x, cos, sin, rotated_mode, head_first, fused)
+
+    def test_rotated_mode(self):
+        device = "cpu"
+        x = torch.randn([2, 64, 8, 16], dtype=torch.float16).to(device)
+        cos = torch.randn([1, 64, 1, 16], dtype=torch.float32).to(device)
+        sin = torch.randn([1, 64, 1, 16], dtype=torch.float32).to(device)
+        rotated_mode = "rotated"
+        head_first = False
+        fused = True
+
+        with self.assertRaises(ParametersInvalid):
+            rotary_position_embedding(x, cos, sin, rotated_mode, head_first, fused)
+
+    def test_head_first_type(self):
+        device = "cpu"
+        x = torch.randn([2, 64, 8, 16], dtype=torch.float16).to(device)
+        cos = torch.randn([1, 64, 1, 16], dtype=torch.float32).to(device)
+        sin = torch.randn([1, 64, 1, 16], dtype=torch.float32).to(device)
+        rotated_mode = "rotated_half"
+        head_first = "False"
+        fused = True
+
+        with self.assertRaises(ParametersInvalid):
+            rotary_position_embedding(x, cos, sin, rotated_mode, head_first, fused)
+
+    def test_fused_type(self):
+        device = "cpu"
+        x = torch.randn([2, 64, 8, 16], dtype=torch.float16).to(device)
+        cos = torch.randn([1, 64, 1, 16], dtype=torch.float32).to(device)
+        sin = torch.randn([1, 64, 1, 16], dtype=torch.float32).to(device)
+        rotated_mode = "rotated_half"
+        head_first = False
+        fused = "True"
+
+        with self.assertRaises(ParametersInvalid):
+            rotary_position_embedding(x, cos, sin, rotated_mode, head_first, fused)
+
+
+if __name__ == '__main__':
+    unittest.main()

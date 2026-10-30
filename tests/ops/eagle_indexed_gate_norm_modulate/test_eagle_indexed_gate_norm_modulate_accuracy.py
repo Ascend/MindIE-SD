@@ -15,11 +15,17 @@ import os
 import pytest
 import torch
 
+from tests.ops.device_support import init_test_device, require_support
+from tests.ops.eagle_indexed_gate_norm_modulate.accuracy_cases import (
+    ACCURACY_CASES,
+    DEFAULT_OUTPUT_CASES,
+    DEFAULT_EPS_CASES,
+)
+
 from tests.ops.eagle_indexed_gate_norm_modulate.eagle_indexed_gate_norm_modulate_accuracy_common import (
     call_dut,
     compare,
     golden,
-    init_device,
     make_inputs,
 )
 
@@ -28,40 +34,19 @@ from tests.ops.eagle_indexed_gate_norm_modulate.eagle_indexed_gate_norm_modulate
 def npu_device():
     if os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU":
         pytest.skip("eagle_indexed_gate_norm_modulate requires an NPU")
-    return init_device(0)
+    selected = init_test_device()
+    import mindiesd  # noqa: F401
+
+    return selected
 
 
-@pytest.mark.parametrize("distribution", ["uniform", "normal"])
-@pytest.mark.parametrize("input_dtype", [torch.float16, torch.bfloat16])
-@pytest.mark.parametrize("output_dtype", [torch.float16, torch.bfloat16])
-@pytest.mark.parametrize(
-    "rows,hidden,index_dtype,strided",
-    [
-        (0, 129, torch.int32, False),
-        (1, 1, torch.int64, False),
-        (3, 63, torch.int32, False),
-        (3, 64, torch.int64, False),
-        (81, 65, torch.int64, False),
-        (3, 127, torch.int32, False),
-        (3, 128, torch.int64, False),
-        (81, 129, torch.int32, False),
-        (3, 255, torch.int64, True),
-        (3, 3968, torch.int32, False),
-        (3, 3969, torch.int64, False),
-        (3, 4095, torch.int32, False),
-        (3, 4096, torch.int64, False),
-        (81, 4097, torch.int32, False),
-        (3, 5376, torch.int64, False),
-        (3, 6656, torch.int32, True),
-        (3, 6144, torch.int32, False),
-        (3, 6145, torch.int64, False),
-        (3, 6655, torch.int32, True),
-        (81, 6656, torch.int64, False),
-        (3, 6657, torch.int32, False),
-        (3, 7167, torch.int32, True),
-        (81, 7168, torch.int64, False),
-    ],
-)
+@pytest.fixture(name="supported_soc", scope="module")
+def supported_soc_fixture(device):
+    require_support("eagle_indexed_gate_norm_modulate", kind="positive")
+
+
+@pytest.mark.parametrize("distribution,input_dtype,output_dtype,rows,hidden,index_dtype,strided", ACCURACY_CASES)
+@pytest.mark.usefixtures("supported_soc")
 def test_accuracy(device, distribution, input_dtype, output_dtype, rows, hidden, index_dtype, strided):
     inputs = make_inputs(rows, hidden, input_dtype, device, distribution, index_dtype=index_dtype, strided=strided)
     print("golden=CPU FP32 phase simulation; metrics=CPU FP64")
@@ -70,9 +55,8 @@ def test_accuracy(device, distribution, input_dtype, output_dtype, rows, hidden,
     compare(tuple(x.cpu() for x in actual), expected)
 
 
-@pytest.mark.parametrize("distribution", ["uniform", "normal"])
-@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
-@pytest.mark.parametrize("eps", [1e-6, 1e-3])
+@pytest.mark.parametrize("distribution,dtype,eps", DEFAULT_OUTPUT_CASES)
+@pytest.mark.usefixtures("supported_soc")
 def test_default_output_dtype(device, distribution, dtype, eps):
     inputs = make_inputs(3, 129, dtype, device, distribution)
     print("golden=CPU FP32 phase simulation; metrics=CPU FP64")
@@ -81,9 +65,8 @@ def test_default_output_dtype(device, distribution, dtype, eps):
     compare(tuple(x.cpu() for x in actual), expected)
 
 
-@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
-@pytest.mark.parametrize("distribution", ["uniform", "normal"])
-@pytest.mark.parametrize("explicit_bias", [False, True])
+@pytest.mark.parametrize("dtype,distribution,explicit_bias", DEFAULT_EPS_CASES)
+@pytest.mark.usefixtures("supported_soc")
 def test_default_eps(device, dtype, distribution, explicit_bias):
     inputs = make_inputs(3, 129, dtype, device, distribution)
     expected = golden(tuple(x.cpu() for x in inputs), dtype, 1e-6)

@@ -10,14 +10,17 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+import os
+
 import pytest
 import torch
 
-from eagle_split_norm_rope_concat_accuracy_common import (
+from tests.ops.device_support import init_test_device, require_support
+
+from tests.ops.eagle_split_norm_rope_concat.eagle_split_norm_rope_concat_accuracy_common import (
     call_dut,
     compare,
     golden,
-    init_device,
     inputs_to_cpu,
     make_inputs,
 )
@@ -25,8 +28,17 @@ from eagle_split_norm_rope_concat_accuracy_common import (
 
 @pytest.fixture(scope="module", name="device")
 def device_fixture():
-    pytest.importorskip("torch_npu")
-    return init_device(0)
+    if os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU":
+        pytest.skip("eagle_split_norm_rope_concat requires an NPU")
+    selected = init_test_device()
+    import mindiesd  # noqa: F401
+
+    return selected
+
+
+@pytest.fixture(scope="module", name="supported_soc")
+def supported_soc_fixture(device):
+    require_support("eagle_split_norm_rope_concat", kind="positive")
 
 
 @pytest.fixture(scope="module", name="registered_op")
@@ -49,6 +61,7 @@ def registered_op_fixture(device):
         ("uniform", torch.float16, 128, 1, 3, False, 4, 4, False),
     ],
 )
+@pytest.mark.usefixtures("supported_soc")
 def test_compact_cache_matches_expanded(
     device,
     distribution,
@@ -144,6 +157,7 @@ def test_rejects_invalid_cache_width(registered_op, backend, width, sin_width):
         ("normal", 2, torch.float16, (2, 2, 2), 2, 17, 4, 32, 1, True),
     ],
 )
+@pytest.mark.usefixtures("supported_soc")
 def test_accuracy(
     device,
     distribution,
@@ -191,6 +205,7 @@ def test_rejects_unsupported_head_dim(device, dim):
         ("normal", torch.bfloat16, 65, False, True),
     ],
 )
+@pytest.mark.usefixtures("supported_soc")
 def test_interleave_r96_gather_boundaries(device, distribution, dtype, heads, output_bnsd, compact):
     inputs = make_inputs((1, 3 * heads, 128), (heads, heads, heads), 96, dtype, device, distribution, compact=compact)
     attrs = dict(rope_type=0, rotary_dim=96, output_bnsd=output_bnsd)
@@ -208,6 +223,7 @@ def test_interleave_r96_gather_boundaries(device, distribution, dtype, heads, ou
         (1, 3, False),
     ],
 )
+@pytest.mark.usefixtures("supported_soc")
 def test_fp32_norm_flows_directly_into_rope(device, rope_type, norm_type, compact):
     inputs = make_inputs((1, 6, 128), (2, 2, 2), 96, torch.bfloat16, device, "uniform", compact=compact)
     inputs[0].fill_(1)
@@ -235,6 +251,7 @@ def test_fp32_norm_flows_directly_into_rope(device, rope_type, norm_type, compac
         (1, 2, "normal", True),
     ],
 )
+@pytest.mark.usefixtures("supported_soc")
 def test_resident_rope_reused_across_head_tiles(device, rope_type, rope_rank, distribution, compact):
     inputs = make_inputs(
         (2, 1, 4098, 128), (4096, 1, 1), 96, torch.bfloat16, device, distribution, rope_rank=rope_rank, compact=compact
@@ -244,6 +261,7 @@ def test_resident_rope_reused_across_head_tiles(device, rope_type, rope_rank, di
     compare(actual, golden(inputs_to_cpu(inputs), **attrs))
 
 
+@pytest.mark.usefixtures("supported_soc")
 def test_zero_input(device):
     inputs = make_inputs((1, 6, 128), (2, 2, 2), 96, torch.bfloat16, device, "uniform")
     inputs[0].zero_()
@@ -259,6 +277,7 @@ def test_zero_input(device):
         pytest.param("normal", 0, torch.float16, 81, (512, 1, 1), 64, True, True, id="fp16-mqa-r64-bnsd"),
     ],
 )
+@pytest.mark.usefixtures("supported_soc")
 def test_pipeline_reuse(device, distribution, rope_type, dtype, seq, heads, rotary_dim, output_bnsd, compact):
     # Include idle K/V cores, repeated buffer reuse, and a one-head final tile.
     attrs = dict(rotary_dim=rotary_dim, rope_type=rope_type, output_bnsd=output_bnsd)
@@ -278,6 +297,7 @@ def test_pipeline_reuse(device, distribution, rope_type, dtype, seq, heads, rota
 
 
 @pytest.mark.parametrize("output_bnsd", [False, True])
+@pytest.mark.usefixtures("supported_soc")
 def test_value_signed_zero_bits(device, output_bnsd):
     inputs = make_inputs((1, 6, 128), (2, 2, 2), 96, torch.bfloat16, device, "uniform")
     inputs[0][:, 4:, :].fill_(-0.0)
@@ -293,6 +313,7 @@ def test_value_signed_zero_bits(device, output_bnsd):
 
 
 @pytest.mark.parametrize("rope_type", [0, 1])
+@pytest.mark.usefixtures("supported_soc")
 def test_tail_is_normalized_but_not_rotated(device, rope_type):
     inputs = list(make_inputs((17, 12, 128), (8, 2, 2), 96, torch.bfloat16, device, "uniform"))
     first = call_dut(inputs, rope_type=rope_type)
@@ -313,6 +334,7 @@ def test_tail_is_normalized_but_not_rotated(device, rope_type):
         (3, 128, 1, True, False),
     ],
 )
+@pytest.mark.usefixtures("supported_soc")
 def test_full_rope_and_bnsd_defaults(device, norm_type, dim, rope_type, batched, compact):
     shape = (2, 17, 12, dim) if batched else (17, 12, dim)
     inputs = list(make_inputs(shape, (8, 2, 2), dim, torch.bfloat16, device, "normal", compact=compact))
@@ -336,6 +358,7 @@ def test_full_rope_and_bnsd_defaults(device, norm_type, dim, rope_type, batched,
         (128, 0, (1, 2)),
     ],
 )
+@pytest.mark.usefixtures("supported_soc")
 def test_unweighted_rmsnorm_ignores_supplied_weights(device, dim, rope_type, missing_weights):
     inputs = list(make_inputs((17, 12, dim), (8, 2, 2), 32, torch.bfloat16, device, "normal"))
     attrs = dict(norm_type=2, rope_type=rope_type, rotary_dim=32, output_bnsd=False)

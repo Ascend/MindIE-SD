@@ -16,7 +16,10 @@ import random
 
 import torch
 
-from eagle_split_norm_rope_concat_cases import PROD_HEADS, PROD_SHAPE
+if __package__:
+    from .eagle_split_norm_rope_concat_cases import PROD_HEADS, PROD_SHAPE  # pylint: disable=relative-beyond-top-level
+else:
+    from eagle_split_norm_rope_concat_cases import PROD_HEADS, PROD_SHAPE
 
 SEED = 20261017
 PROD_ATTRS = dict(norm_type=3, rope_type=1, rotary_dim=96, eps=1e-5, output_bnsd=False)

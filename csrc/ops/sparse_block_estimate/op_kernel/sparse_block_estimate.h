@@ -85,6 +85,7 @@ template <typename PFAT> class SparseBlockEstimate {
     AscendC::TPipe pipe;
     AscendC::GlobalTensor<Q_T> queryGm;
     AscendC::GlobalTensor<KV_T> keyGm;
+    AscendC::GlobalTensor<KV_T> keyTailGm[2];
     AscendC::GlobalTensor<MM_OUT_T> bmm1ResGmDb[2];
     AscendC::GlobalTensor<T> firstReduceGm;
     AscendC::GlobalTensor<int64_t> actualSeqLengthsGm;
@@ -246,6 +247,13 @@ template <typename PFAT> class SparseBlockEstimate {
             __gm__ T *)(workspace + offset + this->blockIdx * singleCoreNBase * 2 * this->singleCoreMBase * sizeof(T)));
         offset += totalBlockNum * singleCoreNBase * 2 * this->singleCoreMBase * sizeof(T); // 2个singleCoreNBase大小
 
+        // Partial K tiles and interleaved head layouts use dense per-core tiles.
+        for (uint32_t slot = 0; slot < 2; ++slot) {
+            keyTailGm[slot].SetGlobalBuffer(
+                (__gm__ KV_T *)(workspace + offset + this->blockIdx * singleCoreNBase * stride * dim * sizeof(KV_T)));
+            offset += totalBlockNum * singleCoreNBase * stride * dim * sizeof(KV_T);
+        }
+
         if (GetSysWorkSpacePtr() == nullptr) {
             return;
         }
@@ -312,7 +320,7 @@ template <typename PFAT> class SparseBlockEstimate {
             params->actualSeqLengthKVPerBatch =
                 params->sOuterOffset + params->singleProcessSOuterSize / stride * stride; // causal忽略key尾块
         }
-        auto computeSize = params->actualSeqLengthKVPerBatch / stride; // <= 16k
+        auto computeSize = (params->actualSeqLengthKVPerBatch + stride - 1) / stride; // include partial K pack
         auto innerLoopTimes = (computeSize + basicSInnerSize - 1) / basicSInnerSize; // 内循环次数,<=16
         for (auto sInnerLoopIdx = 0; sInnerLoopIdx < innerLoopTimes; sInnerLoopIdx++) {
             params->sInnerLoopTimes = innerLoopTimes;
@@ -456,6 +464,55 @@ template <typename PFAT> class SparseBlockEstimate {
         }
     }
 
+    __aicore__ inline bool RequiresPackedKeyTile(SPFAEstParam *params) {
+        if constexpr (LAYOUT_T != INPUT_LAYOUT::BNSD) {
+            return true;
+        }
+        return !CAUSAL && params->actualSeqLengthKVPerBatch % stride != 0 &&
+            params->sInnerLoopIdx + 1 == params->sInnerLoopTimes;
+    }
+
+    __aicore__ inline void PackKeyTile(SPFAEstParam *params) {
+        // Never increase the cube tail against the original GM pointer: its
+        // final stride-sized pack is incomplete. BSH/TND additionally need KV
+        // head gathering because cube Kb is dense stride*dim for every layout.
+        auto buffer = tmpBuff1.Get<KV_T>();
+        uint32_t rawRows = params->actualSeqLengthKVPerBatch - params->sInnerLoopIdx * singleCoreNBase * stride;
+        uint32_t elements = params->singleProcessSInnerBmmTail * stride * dim;
+        uint32_t chunkLimit = BUFFER_SIZE_BYTE_8K / sizeof(KV_T) / dim * dim;
+        if constexpr (LAYOUT_T != INPUT_LAYOUT::BNSD) {
+            chunkLimit = dim; // BSH/TND have interleaved KV heads in original GM.
+        }
+        auto loadReady = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::V_MTE2));
+        auto copyReady = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE2_MTE3));
+        auto copyDone = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE3_MTE2));
+        auto vectorReady = static_cast<event_t>(GetTPipePtr()->FetchEventID(HardEvent::MTE3_V));
+        for (uint32_t offset = 0; offset < elements; offset += chunkLimit) {
+            uint32_t count = elements - offset < chunkLimit ? elements - offset : chunkLimit;
+            Duplicate(buffer, static_cast<KV_T>(0), count);
+            SetFlag<HardEvent::V_MTE2>(loadReady);
+            WaitFlag<HardEvent::V_MTE2>(loadReady);
+            uint32_t valid = offset < rawRows * dim ? rawRows * dim - offset : 0;
+            valid = valid < count ? valid : count;
+            if (valid > 0) {
+                uint64_t source = offset;
+                if constexpr (LAYOUT_T != INPUT_LAYOUT::BNSD) {
+                    source = static_cast<uint64_t>(offset / dim) * MultiHeadKV;
+                }
+                DataCopy(buffer, keyGm[params->tensorBOffset + source], valid);
+            }
+            SetFlag<HardEvent::MTE2_MTE3>(copyReady);
+            WaitFlag<HardEvent::MTE2_MTE3>(copyReady);
+            DataCopy(keyTailGm[params->gmPingpong][offset], buffer, count);
+            SetFlag<HardEvent::MTE3_MTE2>(copyDone);
+            WaitFlag<HardEvent::MTE3_MTE2>(copyDone);
+            // MTE3_MTE2 alone does not fence the next Vector Duplicate or the
+            // later softmax reuse of tmpBuff1.
+            SetFlag<HardEvent::MTE3_V>(vectorReady);
+            WaitFlag<HardEvent::MTE3_V>(vectorReady);
+        }
+    }
+
     __aicore__ inline void Bmm1ComputeIterate(SPFAEstParam *params) {
         if (this->mm1SingleCoreNPrev != params->mm1SingleCoreN) {
             this->mm.SetOrgShape(this->tilingData->cubeTilingData.M, this->tilingData->cubeTilingData.N,
@@ -464,7 +521,12 @@ template <typename PFAT> class SparseBlockEstimate {
         }
         this->mm.SetTail((params->singleProcessSOuterSize + stride - 1) / stride, params->singleProcessSInnerBmmTail);
         this->mm.SetTensorA(this->queryGmTmp[params->sOuterLoopIdx & 1]);
-        this->mm.SetTensorB(this->keyGm[params->tensorBOffset], true);
+        if (RequiresPackedKeyTile(params)) {
+            PackKeyTile(params);
+            this->mm.SetTensorB(this->keyTailGm[params->gmPingpong], true);
+        } else {
+            this->mm.SetTensorB(this->keyGm[params->tensorBOffset], true);
+        }
 
         this->mm.template IterateAll<false>(this->bmm1ResGmDb[params->gmPingpong], false, false, true, false);
     }
@@ -1004,7 +1066,7 @@ template <typename PFAT> class SparseBlockEstimate {
                 queryCopyParams.blockLen = dim * sizeof(Q_T) / 32; // 32 is BYTES_PER_BLOCK
                 ;
                 queryCopyParams.blockCount = len;
-                queryCopyParams.srcStride = (head_num_q - 1) * dim / 32; // 32 is BYTES_PER_BLOCK
+                queryCopyParams.srcStride = (head_num_q - 1) * queryCopyParams.blockLen; // 32-byte blocks
                 queryCopyParams.dstStride = 0; // 连续
                 DataCopy(queryUb, queryGm[tensorAOffset + t * M * head_num_q * dim],
                     queryCopyParams); // TND layout, offset re compute

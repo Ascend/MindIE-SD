@@ -54,11 +54,9 @@ SMALL_CASES = (
 
 
 def _require_950():
-    from mindiesd.utils.get_platform import NPUDevice, get_npu_device
+    from tests.ops.device_support import require_support
 
-    npu = get_npu_device()
-    if npu != NPUDevice.A5:
-        pytest.skip(f"eagle_quant_block_sparse_attention is an Ascend 950 operator, got {npu}")
+    require_support("eagle_quant_block_sparse_attention")
 
 
 @pytest.mark.skipif(
@@ -92,12 +90,8 @@ def test_eagle_quant_block_sparse_attention_small_vs_cpu_golden(case):
     key_npu = key.to(device)
     value_npu = value.to(device)
     mask_npu = mask.to(device)
-    query_q, key_q, value_q, query_scale, key_scale, value_scale = quantize_eqbsa_qkv(
-        query_npu, key_npu, value_npu
-    )
-    cpu_out = cpu_eqbsa_golden(
-        query_q, key_q, value_q, query_scale, key_scale, value_scale, mask, BLOCK_SHAPE, scale
-    )
+    query_q, key_q, value_q, query_scale, key_scale, value_scale = quantize_eqbsa_qkv(query_npu, key_npu, value_npu)
+    cpu_out = cpu_eqbsa_golden(query_q, key_q, value_q, query_scale, key_scale, value_scale, mask, BLOCK_SHAPE, scale)
     dut_out, softmax_lse = call_eagle_quant_block_sparse_attention(
         query_q, key_q, value_q, mask_npu, query_scale, key_scale, value_scale, BLOCK_SHAPE, scale
     )

@@ -98,11 +98,9 @@ SMALL_CASES = (
 
 
 def _require_910b():
-    from mindiesd.utils.get_platform import NPUDevice, get_npu_device
+    from tests.ops.device_support import require_support
 
-    npu = get_npu_device()
-    if npu not in (NPUDevice.A2, NPUDevice.A3):
-        pytest.skip(f"eagle_block_sparse_attention is a 910B/910_93 operator, got {npu}")
+    require_support("eagle_block_sparse_attention")
 
 
 @pytest.mark.skipif(

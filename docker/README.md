@@ -42,7 +42,7 @@ docker run -itd \
 Run test:
 
 ```bash
-docker exec -it mindiesd-910b-test bash -lc 'python3 -m pip install coverage && cd /workspace/MindIE-SD && bash tests/run_test.sh --all'
+docker exec -it mindiesd-910b-test bash -lc 'python3 -m pip install coverage && cd /workspace/MindIE-SD && python3 tests/scripts/run_suites.py --all'
 ```
 
 ## Omni images (Atlas 800I A2 inference server / Atlas 800I A3 SuperPoD server / 950PR&950DT products)

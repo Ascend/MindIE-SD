@@ -22,6 +22,7 @@ import unittest
 import torch
 
 from device import DEVICE_ID
+from tests.UT.ops_reference.reference_math import torch_mul_add_ref as _torch_mul_add_ref
 
 # ============================================================================
 # Helpers
@@ -54,11 +55,6 @@ def _to_npu(*tensors):
         torch.npu.set_device(device)
         return tuple(t.to(device) for t in tensors)
     return tensors
-
-
-def _torch_mul_add_ref(a, b, c):
-    """PyTorch reference for mul_add: out = a + b * c."""
-    return a.float() + b.float() * c.float()
 
 
 # ============================================================================
@@ -131,32 +127,6 @@ class TestMulAddNPU(unittest.TestCase):
                 b = torch.randn(batch, seq_len, hidden_size, dtype=torch.bfloat16)
                 c = torch.randn(batch, 1, hidden_size, dtype=torch.bfloat16)
                 self._run_and_check(a, b, c, label=f"[BF16] shape=({batch},{seq_len},{hidden_size})")
-
-
-class TestMulAddReference(unittest.TestCase):
-    """Reference tests: pure PyTorch computation, always runnable."""
-
-    def test_ref_basic(self):
-        """Reference basic functionality."""
-        batch, seq_len, hidden_size = 1, 4, 128
-        a = torch.randn(batch, seq_len, hidden_size, dtype=torch.bfloat16)
-        b = torch.randn(batch, seq_len, hidden_size, dtype=torch.bfloat16)
-        c = torch.randn(batch, 1, hidden_size, dtype=torch.bfloat16)
-
-        ref = _torch_mul_add_ref(a, b, c)
-        expected = a.float() + b.float() * c.float()
-        torch.testing.assert_close(ref, expected, atol=1e-5, rtol=1e-5)
-
-    def test_ref_broadcast(self):
-        """Reference verifies c broadcasts along seq_len dimension."""
-        batch, seq_len, hidden_size = 2, 8, 64
-        a = torch.randn(batch, seq_len, hidden_size, dtype=torch.float32)
-        b = torch.randn(batch, seq_len, hidden_size, dtype=torch.float32)
-        c = torch.randn(batch, 1, hidden_size, dtype=torch.float32)
-
-        ref = _torch_mul_add_ref(a, b, c)
-        expected = a + b * c
-        torch.testing.assert_close(ref, expected, atol=1e-5, rtol=1e-5)
 
 
 # ============================================================================

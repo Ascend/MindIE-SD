@@ -10,9 +10,13 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+# pylint: disable=redefined-outer-name
+
 """Small physical shapes: direct NPU QFA against CPU kernel-stage simulation."""
 
 import pytest
+
+from tests.ops.device_support import init_test_device, require_support
 
 from tests.ops.quant_flash_attn.qfa_accuracy_common import (
     Case,
@@ -20,9 +24,21 @@ from tests.ops.quant_flash_attn.qfa_accuracy_common import (
     check_outputs,
     compare,
     cpu_golden,
-    initialize,
     make_inputs,
 )
+
+
+@pytest.fixture(scope="module")
+def qfa_device():
+    require_support("quant_flash_attn")
+    device = init_test_device()
+    import torch
+    import torch_npu
+    import mindiesd  # noqa: F401  # Register native operators after selecting a visible device.
+
+    torch.npu.config.allow_internal_format = False
+    torch.npu.matmul.allow_hf32 = False
+    return torch, torch_npu, str(device)
 
 
 @pytest.mark.parametrize("layout", ("BNSD", "BSND"))
@@ -41,7 +57,7 @@ from tests.ops.quant_flash_attn.qfa_accuracy_common import (
 )
 @pytest.mark.parametrize("length_mode", ("used",))
 @pytest.mark.parametrize("distribution", ("uniform", "normal"))
-def test_qfa_small_accuracy(layout, q_seq, kv_seq, q_valid, kv_valid, length_mode, distribution):
+def test_qfa_small_accuracy(qfa_device, layout, q_seq, kv_seq, q_valid, kv_valid, length_mode, distribution):
     from tests.ops.quant_flash_attn.qfa_tolerance import BUDGET
 
     # Mixed per-batch lengths exercise the shared scheduler's cost accounting.
@@ -58,7 +74,7 @@ def test_qfa_small_accuracy(layout, q_seq, kv_seq, q_valid, kv_valid, length_mod
         q_used=q_used,
         kv_used=kv_used,
     )
-    torch, torch_npu, device = initialize(0)
+    torch, torch_npu, device = qfa_device
     with torch.inference_mode():
         native, encodings = make_inputs(case, distribution, 21, torch, device)
         invoke, _ = bind(case, native, torch, torch_npu, device)
