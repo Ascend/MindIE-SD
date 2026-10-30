@@ -5,12 +5,12 @@
 | 项目 | 值 |
 |------|-----|
 | **镜像** | `mindiesd` |
-| **Tags** | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12` |
-| | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12` |
-| | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12` |
-| **基础镜像** | Atlas 800I A2推理服务器：`quay.io/ascend/vllm-omni:v0.28.0` |
-| | Atlas 800I A3超节点服务器：`quay.io/ascend/vllm-omni:v0.28.0-a3` |
-| | Ascend 950PR&950DT系列产品：`quay.io/ascend/vllm-omni:v0.28.0-a5` |
+| **Tags** | `v3.2.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12` |
+| | `v3.2.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12` |
+| | `v3.2.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12` |
+| **基础镜像** | Atlas 800I A2推理服务器：`quay.io/ascend/vllm-omni:v0.32.0` |
+| | Atlas 800I A3超节点服务器：`quay.io/ascend/vllm-omni:v0.32.0-a3` |
+| | Ascend 950PR&950DT系列产品：`quay.io/ascend/vllm-omni:v0.32.0-a5` |
 | **架构** | `linux/amd64`（x86_64） |
 | **操作系统** | Ubuntu 22.04 |
 | **Python** | 3.12 |
@@ -33,9 +33,9 @@
 
 镜像基于 `quay.io/ascend/vllm-omni` 基础镜像构建（已包含 CANN 9.1.0、torch、TorchNPU、vllm 及 vllm_ascend），提供三个版本以适配不同的 NPU 系列：
 
-- **Atlas 800I A2推理服务器**：基于 `quay.io/ascend/vllm-omni:v0.28.0`，适用于Atlas 800I A2推理服务器
-- **Atlas 800I A3超节点服务器**：基于 `quay.io/ascend/vllm-omni:v0.28.0-a3`，适用于Atlas 800I A3超节点服务器
-- **Ascend 950PR&950DT系列产品**：基于 `quay.io/ascend/vllm-omni:v0.28.0-a5`，适用于Ascend 950PR&950DT系列产品
+- **Atlas 800I A2推理服务器**：基于 `quay.io/ascend/vllm-omni:v0.32.0`，适用于Atlas 800I A2推理服务器
+- **Atlas 800I A3超节点服务器**：基于 `quay.io/ascend/vllm-omni:v0.32.0-a3`，适用于Atlas 800I A3超节点服务器
+- **Ascend 950PR&950DT系列产品**：基于 `quay.io/ascend/vllm-omni:v0.32.0-a5`，适用于Ascend 950PR&950DT系列产品
 
 三个基础镜像标签仅提供 `linux/amd64`。
 
@@ -43,10 +43,10 @@
 
 | 组件 | 版本 | 说明 |
 |------|------|------|
-| mindiesd | 3.1.0 | MindIE Stable Diffusion 推理引擎 |
+| mindiesd | 3.2.0 | MindIE Stable Diffusion 推理引擎 |
 | msprobe | 0.1.4 | 精度调试工具 |
-| msmodelslim | 8.2.1 | 模型压缩/量化工具 |
-| msprof-analyze | 26.0.0 | MindStudio Profiler 分析工具 |
+| msmodelslim | 26.1.0 | 模型压缩/量化工具 |
+| msprof-analyze | 26.2.0 | MindStudio Profiler 分析工具 |
 | msprof | *（随 CANN 捆绑）* | NPU 性能Profiling工具 |
 
 ## 镜像Tag说明及Dockerfile归档路径
@@ -59,19 +59,19 @@
 
 | 系列 | 示例 Tag | 基础镜像 |
 |------|----------|----------|
-| Atlas 800I A2推理服务器 | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0` |
-| Atlas 800I A3超节点服务器 | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0-a3` |
-| Ascend 950PR&950DT系列产品 | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0-a5` |
+| Atlas 800I A2推理服务器 | `v3.2.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.32.0` |
+| Atlas 800I A3超节点服务器 | `v3.2.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.32.0-a3` |
+| Ascend 950PR&950DT系列产品 | `v3.2.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.32.0-a5` |
 
-### v3.1.0 版本 Dockerfile 目录
+### v3.2.0 版本 Dockerfile 目录
 
 每个系列均有独立 Dockerfile，存放于 MindIE SD 源码仓库的 `docker/omni` 目录：
 
 | 系列 | 示例 Tag | Dockerfile |
 |------|----------|------------|
-| Atlas 800I A2推理服务器 | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a2.ubuntu) |
-| Atlas 800I A3超节点服务器 | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a3.ubuntu) |
-| Ascend 950PR&950DT系列产品 | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a5.ubuntu) |
+| Atlas 800I A2推理服务器 | `v3.2.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a2.ubuntu) |
+| Atlas 800I A3超节点服务器 | `v3.2.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a3.ubuntu) |
+| Ascend 950PR&950DT系列产品 | `v3.2.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a5.ubuntu) |
 
 已发布镜像的 Tag（包括 v3.0.0）见 [Supported Tags](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/supported_tags.md)。
 
@@ -85,7 +85,7 @@
 Atlas 800I A2推理服务器：
 
 ```bash
-docker pull quay.io/ascend/vllm-omni:v0.28.0
+docker pull quay.io/ascend/vllm-omni:v0.32.0
 ```
 <!-- end id1 -->
 
@@ -93,7 +93,7 @@ docker pull quay.io/ascend/vllm-omni:v0.28.0
 Atlas 800I A3超节点服务器：
 
 ```bash
-docker pull quay.io/ascend/vllm-omni:v0.28.0-a3
+docker pull quay.io/ascend/vllm-omni:v0.32.0-a3
 ```
 <!-- end id2 -->
 
@@ -101,7 +101,7 @@ docker pull quay.io/ascend/vllm-omni:v0.28.0-a3
 Ascend 950PR&950DT系列产品：
 
 ```bash
-docker pull quay.io/ascend/vllm-omni:v0.28.0-a5
+docker pull quay.io/ascend/vllm-omni:v0.32.0-a5
 ```
 <!-- end id3 -->
 
@@ -129,7 +129,7 @@ docker run -it --rm --name=mindiesd \
     -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
     -v /etc/ascend_install.info:/etc/ascend_install.info \
     -v /root/.cache:/root/.cache \
-    mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12 \
+    mindiesd:v3.2.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12 \
     bash
 ```
 <!-- end id4 -->
@@ -154,7 +154,7 @@ docker run -it --rm --name=mindiesd \
     -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
     -v /etc/ascend_install.info:/etc/ascend_install.info \
     -v /root/.cache:/root/.cache \
-    mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12 \
+    mindiesd:v3.2.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12 \
     bash
 ```
 <!-- end id5 -->
@@ -179,7 +179,7 @@ docker run -it --rm --name=mindiesd \
     -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
     -v /etc/ascend_install.info:/etc/ascend_install.info \
     -v /root/.cache:/root/.cache \
-    mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12 \
+    mindiesd:v3.2.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12 \
     bash
 ```
 <!-- end id6 -->
@@ -199,7 +199,7 @@ cd MindIE-SD
 git checkout dev
 cd docker/omni
 
-docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12 \
+docker build --platform linux/amd64 -t mindiesd:v3.2.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12 \
     -f Dockerfile.a2.ubuntu .
 ```
 <!-- end id7 -->
@@ -213,7 +213,7 @@ cd MindIE-SD
 git checkout dev
 cd docker/omni
 
-docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12 \
+docker build --platform linux/amd64 -t mindiesd:v3.2.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12 \
     -f Dockerfile.a3.ubuntu .
 ```
 <!-- end id8 -->
@@ -227,7 +227,7 @@ cd MindIE-SD
 git checkout dev
 cd docker/omni
 
-docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12 \
+docker build --platform linux/amd64 -t mindiesd:v3.2.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12 \
     -f Dockerfile.a5.ubuntu .
 ```
 <!-- end id9 -->
@@ -237,7 +237,7 @@ docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0
 如需添加自定义依赖或应用代码，可基于本镜像创建新的 Dockerfile：
 
 ```dockerfile
-FROM mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12
+FROM mindiesd:v3.2.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12
 
 # 安装自定义依赖包
 RUN pip install --no-cache-dir your-package

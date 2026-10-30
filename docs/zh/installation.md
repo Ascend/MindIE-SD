@@ -92,13 +92,13 @@ pip install mindiesd
 
 ## 镜像安装（vLLM-Omni）
 
-除 Python 包安装外，还提供集成 **vLLM-Omni + MindIE SD** 的 Docker 镜像。MindIE SD 3.1.0 提供以下三个产品版本：
+除 Python 包安装外，还提供集成 **vLLM-Omni + MindIE SD** 的 Docker 镜像。MindIE SD 3.2.0 提供以下三个产品版本：
 
 | 适用产品 | 镜像 Tag | 基础镜像 |
 |--|--|--|
-| Atlas 800I A2推理服务器 | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0` |
-| Atlas 800I A3超节点服务器 | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0-a3` |
-| Ascend 950PR&950DT系列产品 | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0-a5` |
+| Atlas 800I A2推理服务器 | `v3.2.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.32.0` |
+| Atlas 800I A3超节点服务器 | `v3.2.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.32.0-a3` |
+| Ascend 950PR&950DT系列产品 | `v3.2.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.32.0-a5` |
 
 **获取镜像（二选一）：**
 
@@ -110,7 +110,7 @@ pip install mindiesd
   # Atlas 800I A2推理服务器
   git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
   git checkout dev && cd docker/omni
-  docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12 -f Dockerfile.a2.ubuntu .
+  docker build --platform linux/amd64 -t mindiesd:v3.2.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12 -f Dockerfile.a2.ubuntu .
   ```
   <!-- end id2 -->
 
@@ -119,7 +119,7 @@ pip install mindiesd
   # Atlas 800I A3超节点服务器
   git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
   git checkout dev && cd docker/omni
-  docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12 -f Dockerfile.a3.ubuntu .
+  docker build --platform linux/amd64 -t mindiesd:v3.2.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12 -f Dockerfile.a3.ubuntu .
   ```
   <!-- end id1 -->
 
@@ -128,7 +128,7 @@ pip install mindiesd
   # Ascend 950PR&950DT系列产品
   git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
   git checkout dev && cd docker/omni
-  docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12 -f Dockerfile.a5.ubuntu .
+  docker build --platform linux/amd64 -t mindiesd:v3.2.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12 -f Dockerfile.a5.ubuntu .
   ```
   <!-- end id3 -->
 
