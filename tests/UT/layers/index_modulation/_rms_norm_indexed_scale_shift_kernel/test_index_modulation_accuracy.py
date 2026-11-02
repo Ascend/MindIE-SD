@@ -66,6 +66,7 @@ def fixture_contract_dut(monkeypatch):
     utils_name = "_index_modulation_contract.triton_utils"
     utils = types.ModuleType(utils_name)
     utils._HAS_TRITON = True
+    utils.get_vectorcore_num = lambda: 1
     utils.triton = types.SimpleNamespace(jit=lambda function: function)
     utils.tl = types.SimpleNamespace(constexpr=object)
     runtime = types.ModuleType("triton.runtime")
