@@ -31,6 +31,11 @@ ASCEND_LASER_ATTENTION_MIN_SEQLEN = 2048
 _A5_DEPRECATED_OP_TYPES = {"ascend_laser_attention", "prompt_flash_attn"}
 
 
+# attention_forward is a hand-tuned NPU implementation whose internals (autocast /
+# NPU private ops) are incompatible with Dynamo symbolic trace in the old environment
+# and can break whole-graph compilation (aclgraph_with_compile / npugraph_ex). The
+# decorator below is applied conditionally at the end of this module (default on) so
+# the behavior can be re-validated on the NPU without editing the source.
 def attention_forward(query, key, value, attn_mask=None, scale=None, fused=True, head_first=False, **kwargs):
     """
     Attention forward function for npu. Input layout must be 'BSND' or 'BNSD'.
@@ -101,6 +106,21 @@ def attention_forward(query, key, value, attn_mask=None, scale=None, fused=True,
             f"The list of supported options is ['runtime', 'static', 'manual']"
         )
     return attn_func(query, key, value, attn_mask, scale)
+
+
+def _attention_dynamo_disable_enabled() -> bool:
+    """是否对 ``attention_forward`` 关闭 Dynamo 追踪（默认开启）。
+
+    关闭追踪是为绕开旧环境中 autocast 相关的 trace 崩溃（见 8880cce 提交说明），
+    并不表示放弃 attention 的图内收益。设置
+    ``MINDIE_SD_ATTENTION_DYNAMO_DISABLE=0`` 可让 attention 回到图内，用于在 NPU
+    上复验该崩溃是否已消失，并做 eager/图内 A/B 性能对比。
+    """
+    return os.environ.get("MINDIE_SD_ATTENTION_DYNAMO_DISABLE", "1") != "0"
+
+
+if _attention_dynamo_disable_enabled():
+    attention_forward = torch._dynamo.disable(attention_forward)
 
 
 def check_input_params(input_params):

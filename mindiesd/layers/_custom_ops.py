@@ -861,6 +861,176 @@ def eagle_quant_block_sparse_attention_fake(
     return attention_out, softmax_lse
 
 
+# ---------------------------------------------------------------------------
+# fused_infer_attention_score_v2 的 Meta 形状/类型规则
+# ---------------------------------------------------------------------------
+# 与 csrc/plugin/fused_infer_attention_score.cpp 的 FIA_LAYOUT_MAP / GetQueryBnsd /
+# GetQueryTnd / GetValueD / InferAttentionOut / InferOutputDtype / InferLseOut 一一对应。
+# fake 必须给出与真实算子一致的元数据：输出末维来自 value 的 head dim（Dq != Dv 时与
+# query 不同），量化输出类型由 quant_scale_out / query dtype 决定，NTD/TND 的 LSE 是
+# [T, N, 1]。给不出等价结论的组合显式报错，不返回近似值。
+_FIA_LAYOUT_MAP = {
+    "BSH": ("BSH", "BSH", 3),
+    "BSND": ("BSND", "BSND", 4),
+    "BNSD": ("BNSD", "BNSD", 4),
+    "TND": ("TND", "TND", 3),
+    "NTD": ("NTD", "NTD", 3),
+    "BNSD_BSND": ("BNSD", "BSND", 4),
+    "BSH_BNSD": ("BSH", "BNSD", 3),
+    "BSND_BNSD": ("BSND", "BNSD", 4),
+    "NTD_TND": ("NTD", "TND", 3),
+    "BSH_NBSD": ("BSH", "NBSD", 3),
+    "BSND_NBSD": ("BSND", "NBSD", 4),
+    "BNSD_NBSD": ("BNSD", "NBSD", 4),
+    "TND_NTD": ("TND", "NTD", 3),
+    "NSD": ("NSD", "NSD", 3),
+}
+_FIA_TND_LAYOUTS = ("TND", "NTD", "TND_NTD", "NTD_TND")
+_FIA_PA_VALUE_DIMS = (3, 4, 5)
+
+
+def _fia_layouts(query, input_layout):
+    """input_layout -> (queryLayout, outputLayout)，并按真实算子校验维度。"""
+    info = _FIA_LAYOUT_MAP.get(input_layout)
+    if info is None:
+        raise RuntimeError(f"unsupported fused_infer_attention_score input_layout: {input_layout}")
+    query_layout, output_layout, query_dim = info
+    if query.dim() != query_dim:
+        raise RuntimeError(f"query dim does not match input_layout {input_layout}: got {query.dim()}, want {query_dim}")
+    return query_layout, output_layout
+
+
+def _fia_query_bnsd(query, query_layout, num_heads):
+    """(query -> b, n, s, d)，对齐 GetQueryBnsd。"""
+    if query_layout == "BSH":
+        return query.shape[0], num_heads, query.shape[1], query.shape[2] // num_heads
+    if query_layout == "BSND":
+        return query.shape[0], query.shape[2], query.shape[1], query.shape[3]
+    if query_layout == "BNSD":
+        return query.shape[0], query.shape[1], query.shape[2], query.shape[3]
+    if query_layout == "NSD":
+        return 1, query.shape[0], query.shape[1], query.shape[2]
+    raise RuntimeError(f"layout is not supported as BNSD-like query layout: {query_layout}")
+
+
+def _fia_query_tnd(query, query_layout):
+    """(query -> t, n, d)，对齐 GetQueryTnd；NTD 的前两维是 [N, T]。"""
+    if query_layout == "TND":
+        return query.shape[0], query.shape[1], query.shape[2]
+    if query_layout == "NTD":
+        return query.shape[1], query.shape[0], query.shape[2]
+    raise RuntimeError(f"layout is not supported as TND-like query layout: {query_layout}")
+
+
+def _fia_value_d(value, block_table, query, query_layout, num_kv_heads):
+    """输出末维的 head dim，对齐 GetValueD。"""
+    if block_table is not None:
+        if value.dim() not in _FIA_PA_VALUE_DIMS:
+            raise RuntimeError(f"when page attention is enabled, value dim should be 3, 4, or 5, but got {value.dim()}")
+        if value.dim() == 3:
+            return value.shape[2] // num_kv_heads
+        if value.dim() == 4:
+            return value.shape[3]
+        return value.shape[2] * value.shape[4]
+    if value.dim() != query.dim():
+        raise RuntimeError("when page attention is disabled, value dim should equal query dim.")
+    if query_layout == "BSH":
+        return value.shape[2] // num_kv_heads
+    if query_layout in ("BSND", "BNSD"):
+        return value.shape[3]
+    if query_layout in ("TND", "NTD", "NSD"):
+        return value.shape[2]
+    raise RuntimeError(f"unsupported query layout for value dim inference: {query_layout}")
+
+
+def _fia_attention_out_shape(query, query_layout, output_layout, num_heads, value_d):
+    """注意力输出形状，对齐 InferAttentionOut。"""
+    if output_layout == "BSH":
+        batch, _, seq_len, _ = _fia_query_bnsd(query, query_layout, num_heads)
+        out_h = num_heads * value_d
+        out_h = query.shape[2] if (out_h == 0 or seq_len == 0) else out_h
+        return (batch, seq_len, out_h)
+    if output_layout == "BSND":
+        batch, heads, seq_len, d = _fia_query_bnsd(query, query_layout, num_heads)
+        out_d = d if (value_d == 0 or d == 0) else value_d
+        return (batch, seq_len, heads, out_d)
+    if output_layout == "BNSD":
+        batch, heads, seq_len, d = _fia_query_bnsd(query, query_layout, num_heads)
+        out_d = d if (value_d == 0 or d == 0) else value_d
+        return (batch, heads, seq_len, out_d)
+    if output_layout == "NBSD":
+        batch, heads, seq_len, d = _fia_query_bnsd(query, query_layout, num_heads)
+        out_d = d if (value_d == 0 or d == 0) else value_d
+        return (heads, batch, seq_len, out_d)
+    if output_layout == "TND":
+        t, n, d = _fia_query_tnd(query, query_layout)
+        out_d = d if (value_d == 0 or d == 0) else value_d
+        return (t, n, out_d)
+    if output_layout == "NTD":
+        t, n, d = _fia_query_tnd(query, query_layout)
+        out_d = d if (value_d == 0 or d == 0) else value_d
+        return (n, t, out_d)
+    if output_layout == "NSD":
+        _, n, s, d = _fia_query_bnsd(query, query_layout, num_heads)
+        out_d = d if (value_d == 0 or d == 0) else value_d
+        return (n, s, out_d)
+    raise RuntimeError(f"unsupported fused_infer_attention_score output layout: {output_layout}")
+
+
+def _fia_output_dtype(query, query_rope, quant_scale_out, out_dtype):
+    """输出 dtype，对齐 InferOutputDtype。"""
+    if out_dtype is not None:
+        return out_dtype
+    if quant_scale_out is not None:
+        return torch.int8
+    if query.dtype == torch.int8:
+        return query_rope.dtype if query_rope is not None else torch.float16
+    return query.dtype
+
+
+def _fia_lse_shape(query, input_layout, query_layout, num_heads, return_softmax_lse):
+    """softmax_lse 形状，对齐 InferLseOut。"""
+    if not return_softmax_lse:
+        return (0,)
+    if input_layout in _FIA_TND_LAYOUTS:
+        t, n, _ = _fia_query_tnd(query, query_layout)
+        return (t, n, 1)
+    batch, n, seq_len, _ = _fia_query_bnsd(query, query_layout, num_heads)
+    return (batch, n, seq_len, 1)
+
+
+@register_ops.register_mindie_fake_op("fused_infer_attention_score_v2")
+def fused_infer_attention_score_v2_fake(query, key, value, **kwargs):
+    # Block-FP8 attention path (quant_flash_attn._fp8_attention_forward) calls the
+    # mindiesd custom op (eagle_fused_infer_attention_score kernel). Without a fake
+    # impl, Dynamo/AOT fake-tensor propagation cannot infer output metadata and
+    # breaks the graph at exactly this op call site. Output metadata follows the
+    # rules in csrc/plugin/fused_infer_attention_score.cpp rather than query.shape:
+    # the last output dim is valueD (differs from Dq when Dq != Dv), int8 query
+    # defaults back to fp16, and NTD/TND lse is [T, N, 1].
+    input_layout = kwargs.get("input_layout", "BSH")
+    query_layout, output_layout = _fia_layouts(query, input_layout)
+    num_heads = kwargs.get("num_query_heads", 1)
+    if num_heads <= 0:
+        raise RuntimeError(f"num_query_heads should be greater than 0, but got {num_heads}")
+    num_kv_heads = kwargs.get("num_key_value_heads", 0) or num_heads
+    value_d = _fia_value_d(value, kwargs.get("block_table"), query, query_layout, num_kv_heads)
+    out_dtype = _fia_output_dtype(
+        query, kwargs.get("query_rope"), kwargs.get("quant_scale_out"), kwargs.get("out_dtype")
+    )
+    attention_out = torch.empty(
+        _fia_attention_out_shape(query, query_layout, output_layout, num_heads, value_d),
+        device=query.device,
+        dtype=out_dtype,
+    )
+    softmax_lse = torch.empty(
+        _fia_lse_shape(query, input_layout, query_layout, num_heads, kwargs.get("return_softmax_lse", False)),
+        device=query.device,
+        dtype=torch.float32,
+    )
+    return attention_out, softmax_lse
+
+
 def adaln(
     x: torch.Tensor,
     scale: torch.Tensor,
