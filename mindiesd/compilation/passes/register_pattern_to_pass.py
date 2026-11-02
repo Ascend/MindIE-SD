@@ -12,7 +12,7 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
-from typing import Union, Type
+
 from .pattern_match_pass import PatternMatchPass
 
 
@@ -20,40 +20,38 @@ class PatternBase(ABC):
     @staticmethod
     @abstractmethod
     def name() -> str:
-        raise NotImplementedError(
-            f"Pass must implement the 'name' method!"
-        )
+        raise NotImplementedError("Pass must implement the 'name' method!")
 
     @staticmethod
     @abstractmethod
     def inputs():
-        raise NotImplementedError(
-            f"Pass must implement the 'pattern' method!"
-        )
+        raise NotImplementedError("Pass must implement the 'pattern' method!")
 
     @staticmethod
     @abstractmethod
     def pattern(*args, **kwargs):
-        raise NotImplementedError(
-            f"Pass must implement the 'pattern' method!"
-        )
+        raise NotImplementedError("Pass must implement the 'pattern' method!")
 
     @staticmethod
     @abstractmethod
     def replacement(*args, **kwargs):
-        raise NotImplementedError(
-            f"Pass must implement the 'replacement' method!"
-        )
+        raise NotImplementedError("Pass must implement the 'replacement' method!")
+
+    @staticmethod
+    def backend() -> str:
+        """声明该模板注册到的后端，默认 Inductor；npugraph_ex 专用模板可覆写为 "npugraph_ex"。
+
+        非 abstract：现有模板无需改动即可沿用默认值。
+        """
+        return "inductor"
 
 
 patterns = PatternMatchPass()
 
 
 def register_pattern_to_pass(
-    pattern_or_patterns: Union[PatternBase, Type[PatternBase],
-        Iterable[Union[PatternBase, Type[PatternBase]]]
-    ]) -> None:
-
+    pattern_or_patterns: PatternBase | type[PatternBase] | Iterable[PatternBase | type[PatternBase]],
+) -> None:
     if isinstance(pattern_or_patterns, type) and issubclass(pattern_or_patterns, PatternBase):
         pattern_group = [pattern_or_patterns]
     elif isinstance(pattern_or_patterns, (list, tuple)):
@@ -68,4 +66,5 @@ def register_pattern_to_pass(
             pattern.replacement,
             pattern.inputs(),
             extra_check=getattr(pattern, "extra_check", None),
+            backend=pattern.backend(),
         )

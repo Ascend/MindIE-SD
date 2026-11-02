@@ -2,11 +2,22 @@ cmake_minimum_required(VERSION 3.10)
 
 project(PTAExtensionOPS)
 
+# Locate torch WITHOUT importing it. Importing torch (or torch_npu) can print
+# stray lines to stdout (e.g. a 'path string is NULL' message at interpreter
+# shutdown), which would corrupt the captured path. find_spec resolves the
+# package location without running the package's init code, sidestepping that.
+# Validate the result exists so a bad path fails here with a clear message,
+# instead of surfacing later in the include/link stage where it is hard to find.
 execute_process(
-  COMMAND python3 -c "import os;import torch; print(os.path.dirname(os.path.dirname(torch.__file__)))"
+  COMMAND python3 -c "import os, importlib.util; spec = importlib.util.find_spec('torch'); print(os.path.dirname(os.path.dirname(spec.origin)))"
   OUTPUT_VARIABLE python_site_packages_path
+  OUTPUT_STRIP_TRAILING_WHITESPACE
 )
-string(STRIP "${python_site_packages_path}" python_site_packages_path)
+if(NOT EXISTS "${python_site_packages_path}/torch")
+    message(FATAL_ERROR
+        "Failed to locate torch at '${python_site_packages_path}/torch'. "
+        "Captured python output was: '${python_site_packages_path}'")
+endif()
 set(CMAKE_SKIP_RPATH TRUE)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-conversion-null")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
