@@ -291,7 +291,7 @@ out = rotary_position_embedding(x, cos, sin, rotated_mode="rotated_half", head_f
 
 ### apply_rotary_pos_emb
 
-Applies RoPE to query and key together, updating both tensors in place. This API directly wraps `torch_npu.npu_apply_rotary_pos_emb`; it does not register a separate MindIE-SD C++ operator.
+Applies RoPE to query and key together, updating both tensors in place. This API directly wraps `torch_npu.npu_apply_rotary_pos_emb`; it does not register a separate MindIE SD C++ operator.
 
 ```python
 from mindiesd import apply_rotary_pos_emb
@@ -362,7 +362,7 @@ The following summarizes the [CANN ApplyRotaryPosEmbV2 constraints](https://gitc
 
 Atlas 200I/500 A2 inference products are not included in the Atlas 800I A2 inference server / Atlas 800I A3 SuperPoD server row; the cited CANN interface does not support them. For other products and release-specific limits, consult the [PTA API documentation](https://gitcode.com/Ascend/op-plugin/blob/master/docs/en/custom_APIs/torch_npu/torch_npu-apply_rotary_pos_emb.md) and the CANN documentation matching the installed versions. Accepting a layout/mode in the Python wrapper does not bypass these restrictions.
 
-The current RoPE regression cases were verified on 950PR with `torch-npu 2.9.0.post4` and CANN 9.1. This does not establish coverage of every device, version, head dimension or layout/mode/dtype combination.
+The current RoPE regression cases were verified on 950PR with `TorchNPU 2.9.0.post4` and CANN 9.1. This does not establish coverage of every device, version, head dimension or layout/mode/dtype combination.
 
 #### Comparison with rotary_position_embedding
 

@@ -37,7 +37,7 @@ English | [简体中文](./README.md)
 
 - September 23, 2026: The [MXAttention paper](docs/tech_report/MXAttention.pdf) has been submitted to ICLR ([arXiv:2607.24377](https://arxiv.org/abs/2607.24377)) 📄
 - September 20, 2026: Completed [high-performance inference adaptation and optimization of Qwen-Image-2.1 on Ascend](examples/qwen-image-2.1/infer_en.md) 🚀
-- September 4, 2026: MindIE SD supports the Lightx2v framework to accelerate MiniMax H3 on 950PR&950DT products
+- September 4, 2026: MindIE SD supports the Lightx2v framework to accelerate MiniMax-H3 on 950PR&950DT products
 - August 3, 2026: Completed [high-performance inference adaptation and optimization of MiniMax-H3 on Ascend](examples/minimax-h3/infer_en.md) 🚀
 - July 2026: [RotateAttention](docs/tech_report/RotateAttention.pdf) has been accepted by ECCV 2026 🏆
 - June 2026: Completed low-precision inference, multimodal MoE, sparse attention, and deployment ecosystem enhancements ⚡

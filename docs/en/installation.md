@@ -11,8 +11,8 @@ Python package installation suits most use cases but requires installing CANN ma
 * OS: Linux
 * Python: >=3.10
 * PyTorch: 2.6, 2.7, 2.8, 2.9, 2.10
-* TorchNPU: 7.3.0, 26.0.0, 26.1.0
-* CANN: 9.0.1,9.1.0
+* TorchNPU: 7.3.0, 26.0.0, 26.1.0, 26.2.0
+* CANN: 9.0.1,9.1.0, 9.2.0
 
 #### CANN Installation
 

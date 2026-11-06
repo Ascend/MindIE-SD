@@ -1,6 +1,6 @@
 # 错误码参考
 
-MindIE SD 的错误码统一采用 `MIE<XX>E<NNNNNN>` 的格式，其中产品段 `06` 代表 MindIE SD。错误码会在 Error 级别的日志中输出，日志格式与字段含义请参见[日志参考](log.md)。
+MindIE SD 的错误码统一采用 `MIE<XX>E<NNNNNN>` 格式，其中 MIE 为 MindIE 错误码固定前缀，`<XX>` 为两位产品段（06=MindIE SD），E 为错误码标识位，`<NNNNNN>` 为六位十进制序列号。错误码会在 Error 级别的日志中输出，日志格式与字段含义请参见[日志参考](log.md)。
 
 MindIE SD 常见错误码及其含义、可能原因与排查建议如[表1](#table1)所示。
 
@@ -13,6 +13,3 @@ MindIE SD 常见错误码及其含义、可能原因与排查建议如[表1](#ta
 |MIE06E000003|Torch 执行错误（Torch exec err）。torch/TorchNPU 算子执行失败。|torch 或 TorchNPU 算子在执行过程中失败。|检查算子的输入 shape、dtype、设备放置，以及 CANN/TorchNPU 的错误栈。|
 |MIE06E000004|模型初始化错误（Model init err）。模型初始化失败。|模型权重、配置或运行时资源未就绪。|检查模型路径、权重文件、配置取值、NPU 显存，以及初始化错误栈。|
 |MIE06E000005|模型执行错误（Model exec err）。模型执行失败。|模型 forward、调度或自定义算子路径在执行过程中失败。|检查请求参数、tensor 的 shape 与 dtype、调度器状态，以及 CANN 算子的错误栈。|
-
-> [!NOTE]说明
-> 以上为 MindIE SD 常见错误码。

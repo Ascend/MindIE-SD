@@ -1,12 +1,14 @@
 # 仓库结构
 
+本文档介绍仓库结构，涵盖顶层目录、mindiesd/ 关键模块、tests/ 测试架构、docs/ 文档架构与关键配置文件，适用于需要了解本仓库代码组织与各目录职责的开发者。
+
 ## 顶层目录
 
 | 目录 | 定位 |
 |------|------|
 | `mindiesd/` | 核心 Python 包，包含层算子、编译、缓存、并行、量化等模块 |
-| `csrc/` | C/C++ 源码（AscendC / triton 算子实现） |
-| `tests/` | 测试套件，按模块与 mindiesd/ 层次对应 |
+| `csrc/` | C/C++ 源码（AscendC / Triton 算子实现） |
+| `tests/` | 测试套件，按模块与 `mindiesd/` 层次对应 |
 | `examples/` | 模型推理示例（dummy_run、cache、service、wan） |
 | `docs/` | Sphinx 文档源码（中英双语） |
 | `docker/` | 开发容器与镜像定义 |
@@ -18,8 +20,8 @@
 
 | 模块 | 说明 |
 |------|------|
-| `layers/` | 对外加速 API（attn、moe、quant 等 layer 实现） |
-| `kernel/` | 昇腾高性能 kernel 封装 |
+| `layers/` | 对外加速 API（attn、MoE、quant 等 layer 实现） |
+| `kernel/` | 昇腾高性能 Kernel 封装 |
 | `cache/` | 以存代算（Attention Cache、DiT Cache） |
 | `parallelism/` | 多卡并行（CFG、USP、EPLB） |
 | `quantization/` | 量化自动使能 |

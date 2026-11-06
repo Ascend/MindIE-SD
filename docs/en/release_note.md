@@ -72,7 +72,7 @@ MindIE SD components must be used with matching versions. Do not mix components 
 | 12   | mindie_bench operator performance benchmarking tool. Adds the `benchmarks/scripts/mindie_bench.py` CLI (run/report/compare subcommands) with a built-in NPU backend and FA/BSA/GMM/MM operator definitions, supporting sequence-length sweeps, baseline snapshots, HTML/CSV reports, and CI threshold gating. |
 | 13   | Build acceleration. Adds the `SKIP_ALL_OPS_PLUGIN_BUILD` environment variable: operator and plugin compilation is skipped when cached artifacts are complete and compatible, with automatic fallback to a full build otherwise; the default behavior is unchanged. |
 | 14   | DummyRun toolchain enhancement. Quantization options are unified into `--quant {fp32,bf16,w8a8}`, with device-aware w8a8 quantization format selection (W8A8-MXFP8 on 950PR&950DT products, W8A8-DYNAMIC INT8 on Atlas 800I A2 inference server / Atlas 800I A3 SuperPoD server); Wan2.2 dummy run adds frame count and resolution configuration. |
-| 15   | Deployment and ecosystem extension. The vLLM-Omni joint images are aligned to base image v0.28.0 with a new variant for 950PR&950DT products; new inference deployment guides for MiniMax-H3, Qwen-Image-2.1, and DiffSynth-Engine, plus a FLUX.1-dev Cache-DiT example, are added. |
+| 15   | Deployment and ecosystem extension. The vLLM-Omni joint images are aligned to base image v0.32.0; new inference deployment guides for MiniMax-H3, Qwen-Image-2.1, and DiffSynth-Engine, plus a FLUX.1-dev Cache-DiT example, are added. |
 
 ## Modified Features
 
@@ -154,7 +154,7 @@ API changes include additions, modifications, deprecations, and removals. API ch
 - MoE API parameters have been renamed: existing code calling `fused_moe(..., tokens_full=..., reduce_results=...)` with keyword arguments must migrate to `inputs_sharded=` / `reduce_routed_out=`; code calling `resolve_dispatcher_class` directly must pass `top_k` explicitly. The default-value semantics are unchanged (the former `tokens_full=True` is equivalent to the current `inputs_sharded=False`).
 - Under newer CANN toolkits (which no longer ship the TBE/TIK project templates), TIK operators are automatically skipped during build; build pipelines that depend on TIK operator artifacts should take note.
 - The dummy run example CLI has changed: the `--compute-precision` and boolean `--quant` arguments have been removed in favor of the unified `--quant {fp32,bf16,w8a8}`; the diffusers dependency of `examples/dummy_run` has been upgraded to 0.40.0.
-- The vLLM-Omni joint images have been upgraded to base image v0.28.0 (Atlas 800I A2 inference server / Atlas 800I A3 SuperPoD server) with a new variant for 950PR&950DT products, and image tag naming has been updated accordingly.
+- The vLLM-Omni joint images have been upgraded to base image v0.32.0 (Atlas 800I A2 inference server / Atlas 800I A3 SuperPoD server / 950PR&950DT products), and image tag naming has been updated accordingly.
 
 # Virus Scan Results
 

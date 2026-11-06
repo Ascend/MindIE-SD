@@ -47,7 +47,7 @@
  | Z-Image-Turbo |  Atlas 800I A2推理服务器  |    ✅️    | ✖️  |  ✖️   | ✖️ |   ✅️    |
 
 > [!NOTE]说明
->Atlas 800I A2推理服务器默认使用的版本算力313T，内存64 GB。
+>Atlas 800I A2推理服务器默认使用算力313T，内存64 GB。
 
 ## Cache DiT + diffusers 特性&模型性能
 

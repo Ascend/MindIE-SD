@@ -152,7 +152,7 @@ for i, timestep in enumerate(timesteps):
 
 - 文件必须为 UTF-8 编码的标准 JSON 对象，不能包含重复字段、未转义的控制字符或 `NaN`、`Infinity` 等非标准常量。
 - `model_quant_type` 必填，值必须为字符串，且精确匹配 `QuantAlgorithm` 的枚举值，例如 `W8A8` 或 `W4A4_MXFP4`。该字段是文件级元数据，不作为层配置。
-- 支持可选的 AscendV1 导出元数据：`version`、`kv_cache_type`、`kv_quant_type`、`fa_quant_type`、`reduce_quant_type` 必须为字符串；`group_size` 必须为非负整数，不能为布尔值；`metadata`、`optional` 必须为 JSON 对象。MindIE-SD 不消费的字符串字段不限制为当前导出器枚举值，以保持对新版本导出器的前向兼容。这些字段经校验后排除在层配置之外，不会启用分组、KV-cache、通信或旋转特性。`metadata`、`optional` 内部对象属于导出器扩展信息，不被解释，也不会用于打开额外文件。
+- 支持可选的 AscendV1 导出元数据：`version`、`kv_cache_type`、`kv_quant_type`、`fa_quant_type`、`reduce_quant_type` 必须为字符串；`group_size` 必须为非负整数，不能为布尔值；`metadata`、`optional` 必须为 JSON 对象。MindIE SD 不消费的字符串字段不限制为当前导出器枚举值，以保持对新版本导出器的前向兼容。这些字段经校验后排除在层配置之外，不会启用分组、KV-cache、通信或旋转特性。`metadata`、`optional` 内部对象属于导出器扩展信息，不被解释，也不会用于打开额外文件。
 - 其余字段为动态层名或张量名，名称不能全为空白或包含 ASCII 控制字符；值必须为字符串，取值为 `QuantAlgorithm` 的枚举值（忽略大小写）或精确的 `FLOAT`。
 - 不符合上述格式的字段会被拒绝，不再被静默忽略。动态名称不是固定白名单：陌生名称只要对应合法算法值，仍作为层条目处理。包括元数据对象在内的所有 JSON 数值必须为有限值。
 - 校验失败抛出 `ParametersInvalid`，消息指明问题字段或 JSON 的行列位置；不会继续打开权重文件。

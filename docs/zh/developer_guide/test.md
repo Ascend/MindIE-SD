@@ -13,7 +13,7 @@ MindIE SD 的测试套件支持在有或无昇腾 NPU 硬件的环境下运行�
 
 ## 测试入口
 
-### 入口一：CPU 友好单元测试（推荐无 NPU 用户使用）
+### 入口一：CPU 兼容测试（推荐无 NPU 用户使用）
 
 `run_UT_test.sh` 始终以 CPU 模式运行，适合无 NPU 硬件的开发环境。
 
@@ -34,9 +34,9 @@ bash tests/run_UT_test.sh
 
 ### 入口二：全量测试（支持三种模式）
 
-`run_test.sh` 通过参数控制测试范围，支持以下三种模式：
+`run_test.sh` 通过参数控制测试范围，支持以下三种模式。
 
-**1. 全量测试（默认）**
+#### 全量测试（默认）
 
 执行所有 CPU 兼容测试和 NPU 依赖测试：
 
@@ -52,14 +52,14 @@ cd tests/
 bash run_test.sh
 ```
 
-**2. 仅执行 CPU 兼容测试（无需 NPU 硬件）**
+#### 仅执行 CPU 兼容测试（无需 NPU 硬件）
 
 ```bash
 cd tests/
 bash run_test.sh --cpu_only
 ```
 
-**3. 仅执行 NPU 依赖测试（需要 NPU 硬件）**
+#### 仅执行 NPU 依赖测试（需要 NPU 硬件）
 
 ```bash
 cd tests/
@@ -107,6 +107,6 @@ bash run_test.sh --npu_only
 
 ### 测试性能规范
 
-- 单个测试文件运行超过 500 秒时，应拆分为多个文件
-- 优先复用已有的设备/模型加载，减少重复初始化开销
-- CPU 友好的测试应优先使用 `bash tests/run_UT_test.sh` 验证
+- 单个测试文件运行超过 500 秒时，应拆分为多个文件。
+- 优先复用已有的设备/模型加载，减少重复初始化开销。
+- CPU 兼容测试应优先使用 `bash tests/run_UT_test.sh` 验证。

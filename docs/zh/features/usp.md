@@ -119,7 +119,7 @@ output = usp_attention(
 | `q`, `k`, `v` | 当前 rank 的本地序列分片，布局由 `layout` 指定 |
 | `ulysses_group` | Ulysses All-to-All process group；`None` 表示不启用 |
 | `kv_gather_group` | K/V AllGather process group；`None` 表示不启用 |
-| `scatter_dim` | Ulysses 被切分的 head 维；当前仅支持标准化 BSND 的 `2` |
+| `scatter_dim` | Ulysses 切分的 head 维；当前仅支持标准化 BSND 的 `2` |
 | `gather_dim` | Ulysses 聚合的 sequence 维；当前仅支持标准化 BSND 的 `1` |
 | `seq_lens` | batch 的真实 KV 长度，类型为 `int32` 或 `int64` |
 | `chunk_size` | FA query chunk 大小；`None` 表示一次计算完整本地 query |

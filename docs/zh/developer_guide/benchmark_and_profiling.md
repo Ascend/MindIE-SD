@@ -1,5 +1,7 @@
 # 性能分析
 
+本文档介绍性能分析，说明使用 torch_npu.profiler 采集 NPU 算子级性能数据的方法，以及按阶段分离、算子分类与瓶颈判定分析 profiling 数据并定位优化方向，适用于需要定位推理性能瓶颈的用户。
+
 ## Profiling 采集
 
 使用 `torch_npu.profiler` 采集 NPU 算子级性能数据：
@@ -27,14 +29,14 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 
 Warmup 配置要点：
 
-- Profiler 开启前先执行 **2 步** warmup（含 `torch.npu.synchronize()`），排除 JIT 编译开销
+- Profiler 开启前先执行 **2 步** warmup（含 `torch_npu.synchronize()`），排除 JIT 编译开销
 - Profiler 仅在 warmup 之后开启，采集 **5 步以上** timed steps
 
 采集输出文件：
 
 | 文件 | 格式 | 说明 |
 |------|------|------|
-| `kernel_details.csv` | CANN Profiler CSV | 每算子耗时 (Name, Duration, Wait Time) |
+| `kernel_details.csv` | CANN Profiler CSV | 每算子耗时（Name, Duration, Wait Time）|
 | `trace_view.json` | Chrome Trace JSON | Host + Device 事件时间线 |
 | `step_trace_time.csv` | CANN Profiler CSV | Step 级汇总 |
 | `communication.json` | JSON | 通信算子详情（多卡场景） |
@@ -56,7 +58,7 @@ Warmup 配置要点：
 |------|---------|
 | FA | FlashAttention, SDPA, attention_forward, fused_attn_score |
 | MatMul | Linear, MatMul, GEMM, DequantGEMM |
-| Vector | 激活函数 (GELU/SiLU/ReLU), Norm (LayerNorm/RMSNorm), element-wise (Mul/Add/Div) |
+| Vector | 激活函数 (GELU/SiLU/ReLU)， Norm (LayerNorm/RMSNorm)， element-wise (Mul/Add/Div) |
 | Comm | HCCL: all_gather, all_reduce, reduce_scatter, broadcast |
 
 **瓶颈判定**：结合以下维度定位优化方向。

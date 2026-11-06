@@ -1,10 +1,12 @@
 # 架构设计
 
+本文档介绍MindIE SD的架构设计，涵盖昇腾亲和的多模态加速套件的主要特性，以及cache、parallelism、quantization、layer、kernel等模块的架构介绍与目录结构，适用于需要基于MindIE SD实现diffusers模型昇腾加速的用户。
+
 ## 架构目标
 
-MindIE SD旨在构建昇腾亲和的多模态加速系列套件，配合业内模型套件（如：diffusers），实现多模态推理在昇腾上的效率。主要专注于提供多模态生成的关键算子和融合算子，配合昇腾亲和的量化/稀疏算法，以存代算，多卡并行等策略，实现对diffusers模型的快速迁移和昇腾加速，未来会进一步扩展到多模态理解，全模态等场景的加速。
+MindIE SD旨在构建昇腾亲和的多模态加速系列套件，配合业内模型套件（如：diffusers），实现多模态推理在昇腾上的高效。主要专注于提供多模态生成的关键算子和融合算子，配合昇腾亲和的量化/稀疏算法，以存代算，多卡并行等策略，实现对diffusers模型的快速迁移和昇腾加速，未来会进一步扩展到多模态理解，全模态等场景的加速。
 
-设计上，各模块间独立解耦设计，可单独使用也可以叠加使用。业内本身存在类似Cache-DiT， xDiT等加速手段， 其效果与cache模块和parallelism模块功能相似，存在方案选择的问题，但是MindIE SD中其他组件依旧可以单独与之叠加使用。
+设计上，各模块间独立解耦设计，可单独使用也可以叠加使用。业内本身存在类似Cache-DiT，xDiT等加速手段，其效果与cache模块和parallelism模块功能相似，存在方案选择的问题，但是MindIE SD中其他组件依旧可以单独与之叠加使用。
 
 **主要特性：**
 
@@ -22,7 +24,7 @@ MindIE SD旨在构建昇腾亲和的多模态加速系列套件，配合业内�
 
 ## 架构介绍
 
-如下图所示，MindIE SD基于PyTorch框架对外提供昇腾的加速能力，各加速能力支持独立使用，主要包含cache，parallelism，quantization，layer，kernel等模块。
+如下图所示，MindIE SD基于PyTorch框架对外提供昇腾的加速能力，各加速能力支持独立使用，主要包含cache、parallelism、quantization、layer、kernel等模块。
 
 MindIE SD的相关接口遵从diffusers的接口定义，部分基于MindIE SD实现昇腾加速的diffusers模型在[Modelers](https://modelers.cn/models?name=MindIE&page=1&size=16)/[ModelZoo](https://www.hiascend.com/software/modelzoo)中发布，也支持直接基于diffusers进行简单插件化改造。
 
@@ -30,8 +32,8 @@ MindIE SD的相关接口遵从diffusers的接口定义，部分基于MindIE SD�
 
 **基础特性：**
 
-- layer模块：提供基础对外的加速接口（包含attn，moe， quant等特性的layer），是高阶特性的基础，本身可以单独使用。
-- kernel模块：提供多模态生成相关的昇腾高性能kernel，支持AscendC和triton等编程语言的算子接入。
+- layer模块：提供基础对外的加速接口（包含attn、MoE、quant等特性的layer），是高阶特性的基础，本身可以单独使用。
+- kernel模块：提供多模态生成相关的昇腾高性能kernel，支持AscendC和Triton等编程语言的算子接入。
 - compilation模块：基于fx graph的能力，开启compile后使能融合pass，实现昇腾自动亲和加速。详情请参见[编译特性](./features/compilation.md)。
 
 **高级特性：**

@@ -4,14 +4,14 @@
 
 ## 使用说明
 
-    mindie组件名称取值为（省略mindie前缀）：[motor, server, llm, llmmodels, sd]。
-    MindIE SD组件名称即为 *sd*
+MindIE组件名称取值为（省略MindIE前缀）：[motor, server, llm, llmmodels, sd]。
+MindIE SD组件名称即为 *sd*
 
-**表 1** 日志设置  <a id="table1"></a>
+**表 1** 日志设置 <a id="table1"></a>
 
 |环境变量|默认配置|取值范围及解释|
 |--|--|--|
-|MINDIE_LOG_LEVEL|INFO|统一设置MindIE各组件日志级别。<br>日志级别取值 [CRITICAL, ERROR, WARN, INFO, DEBUG]；取值为 null 时关闭日志。|
+|MINDIE_LOG_LEVEL|INFO|统一设置MindIE各组件日志级别。<br>日志级别取值：[CRITICAL, ERROR, WARN, INFO, DEBUG]；取值为 null 时关闭日志。|
 |MINDIE_LOG_TO_FILE|true|统一设置MindIE各组件日志是否写入文件。<br>取值范围为：[false, true]，且支持[0, 1]。|
 |MINDIE_LOG_TO_STDOUT|true|统一设置MindIE各组件是否打印日志。<br>取值范围为：[false, true]，且支持[0, 1]。|
 |MINDIE_LOG_VERBOSE|true|统一设置MindIE各组件日志中是否加入可选日志内容，当前日志分为固定日志内容和可选日志内容。完整调试日志格式：**[date time]** [pid] [tid] [组件名称]**[大写日志级别]** [file:line] : **[error code] [*] log message**；非加粗内容为可选内容，当环境变量设置为true时会加入可选内容。<br>取值范围为：[false, true]，且支持[0, 1]。<br>**日志格式中的[*]表示子组件或更小单位模块的名称，可以选择将其呈现在日志中，方便更好地定位问题。**|
@@ -49,7 +49,7 @@
 |组件名称|MindIE的组件名称，MindIE SD在日志中固定呈现为[MindIE-SD]。|
 |**大写日志级别**|日志级别的大写形式，日志级别请参见[表4 日志级别](#table4)。|
 |file:line|文件名:代码行号。|
-|error code|Error级别日志的错误码，错误码请参见《[MindIE SD错误码参考](error_code.md)》。|
+|error code|Error级别日志的错误码，错误码请参见[MindIE SD错误码参考](error_code.md)。|
 |**log message**|具体错误信息。|
 
 **加粗内容为日志的必选内容**，其余字段为日志的可选信息，可以通过环境变量"MINDIE\_LOG\_VERBOSE"进行配置。具体操作请参见[配置日志内容](#配置日志内容)。
@@ -85,7 +85,7 @@ cat mindie-sd_123_20241008020600.log
 
 ### 设置日志级别
 
-运行调试日志被分为如[表4](#table4)所示的5个等级。
+运行调试日志被分为如[表4 日志级别](#table4)所示的5个等级。
 
 **表 4** 日志级别 <a id="table4"></a>
 
@@ -97,14 +97,14 @@ cat mindie-sd_123_20241008020600.log
 |INFO|info|信息。用于系统运行正常的信息记录，输出一些状态或状态变化的信息，例如当前系统的状态、数据库的连接状态等信息。|
 |DEBUG|debug|调试。用于跟踪运行路径，如跟踪函数的进入和退出等，记录调试信息。记载的信息全面，是给开发人员用于定位复杂的问题。增加了代码级的信息输出，如当前调用的函数名和参数、内部变量值、函数调用返回值等。抛出异常或者错误返回之前需要记录。|
 
-日志级别等级由低到高顺序：DEBUG < INFO < WARNING < ERROR < CRITICAL，级别越低，输出日志越详细。
+日志级别由低到高顺序：DEBUG < INFO < WARNING < ERROR < CRITICAL，级别越低，输出日志越详细。
 
 通过环境变量"MINDIE\_LOG\_LEVEL"设置各组件日志级别，日志级别默认为"info"。
 
-设置某个组件日志级别的具体格式为：_组件名称_:  _日志级别_。
+设置某个组件日志级别的具体格式为：*组件名称*:  *日志级别*。
 
 - 日志级别有以下选项：[critical, error, warn, info, debug]，null 表示关闭对应组件日志。
-- 组件名称有以下选项：[motor, server, llm, llmmodels, sd]
+- 组件名称有以下选项：[motor, server, llm, llmmodels, sd]。
 - 如果":"前无组件名称，则默认为对所有组件统一进行设置。
 - 同时设置多个组件日志级别时用";"隔开，且后方设置优先级高于前方设置，后方设置会覆盖前方设置。
 
@@ -129,7 +129,7 @@ export MINDIE_LOG_LEVEL="info ; sd:debug"
 
 通过环境变量"MINDIE\_LOG\_TO\_STDOUT"设置MindIE各组件日志是否打印，默认为"true"打印。
 
-设置某个组件日志是否写入或打印的格式为：_组件名称_: \{0, 1, true, false\}。
+设置某个组件日志是否写入或打印的格式为：*组件名称*: \{0, 1, true, false\}。
 
 - "0"和"false"代表否，"1"和"true"代表是。
 - 如果":"前无组件名称，则默认为对所有组件统一进行设置。
@@ -151,7 +151,7 @@ export MINDIE_LOG_TO_STDOUT="true"
 
 通过环境变量"MINDIE\_LOG\_PATH"设置MindIE各组件日志的落盘路径，默认的落盘根目录为"~/mindie/log"，实际日志文件统一写入其下的"debug"子目录（即默认为"~/mindie/log/debug"）。
 
-设置日志落盘路径的格式为：_组件名称_:  _路径_。
+设置日志落盘路径的格式为：*组件名称*:  *路径*。
 
 - 若路径开头为"/"，则表明该路径为绝对路径，日志写入该路径下的"debug"子目录；
 - 若路径开头无"/"，则表明该路径为相对路径，相对于默认根目录"~/mindie/log"，日志写入拼接路径下的"debug"子目录；
@@ -179,7 +179,7 @@ export MINDIE_LOG_PATH="sd: sd"
 
 通过环境变量"MINDIE\_LOG\_VERBOSE"设置某个组件的日志内容中是否打印可选信息，默认为"true"打印可选信息。
 
-设置的格式为：_组件名称_: \{0, 1, true, false\}。
+设置的格式为：*组件名称*: \{0, 1, true, false\}。
 
 - "0"和"false"代表否，"1"和"true"代表是。
 - 如果":"前无组件名称，则默认为对所有组件统一进行设置。
@@ -207,11 +207,11 @@ export MINDIE_LOG_VERBOSE="sd: true"
 - 文件大小：每个日志文件大小的取值范围为1MB～500MB，默认为20MB。
 - 文件个数：每个进程可保留的最多日志文件个数的取值范围为1个～64个，默认为10个。当历史文件个数超过该值时，最旧的文件将被删除。
 
-设置某个组件的日志轮转格式为：_组件名称_: -s _cycle_ -fs _filesize_ -r _rotate_
+设置某个组件的日志轮转格式为：*组件名称*: -s *cycle* -fs *filesize* -r *rotate*
 
 - 如果":"前无组件名称，则默认为对所有组件统一进行设置。
 - 同时设置多个组件时用";"隔开，且后方设置优先级高于前方设置，后方设置会覆盖前方设置。
-- -s _cycle_表示时间周期，可取 daily/weekly/monthly/yearly，或1～180的天数；-fs _filesize_表示每个日志文件大小（单位MB）；-r _rotate_表示每个进程可保留的最多日志文件个数。
+- -s *cycle*表示时间周期，可取 daily/weekly/monthly/yearly，或1～180的天数；-fs *filesize*表示每个日志文件大小（单位MB）；-r *rotate*表示每个进程可保留的最多日志文件个数。
 
     > [!NOTE]说明
     > 轮转后新生成的日志文件命名格式为：`mindie-sd_进程号_时间戳.log`（时间戳精确到秒）。当历史文件个数超出每个进程可保留的最多日志文件个数时，最旧的日志文件会被自动删除。

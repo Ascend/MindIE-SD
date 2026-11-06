@@ -188,12 +188,12 @@ sparse_attention(
 | `is_causal` | `bool` | 否 | `False` | 是否使用因果注意力掩码 |
 | `head_num` | `int` | 否 | `1` | 注意力头数量 |
 | `input_layout` | `str` | 否 | `"BNSD"` | 张量布局，支持 `"BNSD"` 或 `"BSND"` |
-| `inner_precise` | `int` | 否 | `0` | 计算精度模式，`0` 为高精度，`1` 为高性能 |
+| `inner_precise` | `int` | 否 | `0` | 计算精度模式，`0` 为高精度，`1` 为高性能。在Ascend 950PR&950DT系列产品上，`sparse_type`="rf_v3"需要`4`（在入口强制执行）。 |
 | `sparse_type` | `str` | 否 | `None` | 稀疏类型，支持 `None`、`"rf_v2"`、`"rf_v3"`、`"ada_bsa"` |
-| `txt_len` | `int` | 否 | `0` | 文本序列长度，仅在 `sparse_type="rf_v2"` 时生效 |
+| `txt_len` | `int` | 否 | `0` | 文本序列长度，仅在 `sparse_type`=`"rf_v2"`或`"rf_v3"` 时生效 |
 | `block_size` | `int` | 否 | `128` | 块大小，当前仅支持 `128` |
-| `latent_shape_q` | `list` | 否 | `None` | 查询的潜空间形状 `[t, h, w]`，`t*h*w = qseqlen`，仅在 `sparse_type="rf_v2"` 时生效 |
-| `latent_shape_k` | `list` | 否 | `None` | 键的潜空间形状 `[t, h, w]`，`t*h*w = kseqlen`，仅在 `sparse_type="rf_v2"` 时生效 |
+| `latent_shape_q` | `list` | 否 | `None` | 查询的潜空间形状 `[t, h, w]`，`t*h*w = qseqlen`，仅在 `sparse_type`=`"rf_v2"`或`"rf_v3"` 时生效 |
+| `latent_shape_k` | `list` | 否 | `None` | 键的潜空间形状 `[t, h, w]`，`t*h*w = kseqlen`，仅在 `sparse_type`=`"rf_v2"`或`"rf_v3"` 时生效 |
 | `keep_sink` | `bool` | 否 | `True` | 是否保留 sink token，仅在 `sparse_type="ada_bsa"` 时生效 |
 | `keep_recent` | `bool` | 否 | `True` | 是否保留 recent token，仅在 `sparse_type="ada_bsa"` 时生效 |
 | `cdf_threshold` | `float` | 否 | `1.0` | CDF 阈值，仅在 `sparse_type="ada_bsa"` 时生效 |
@@ -362,7 +362,7 @@ apply_rotary_pos_emb(
 
 上表Atlas 800I A2推理服务器/Atlas 800I A3超节点服务器范围不包含 Atlas 200I/500 A2 推理产品，引用的 CANN 接口不支持这些产品。其他产品及版本差异请查阅 [PTA 接口文档](https://gitcode.com/Ascend/op-plugin/blob/master/docs/zh/custom_APIs/torch_npu/torch_npu-apply_rotary_pos_emb.md)与安装版本对应的 CANN 文档。通过 Python 包装层的布局/模式校验，不代表可以绕过上述限制。
 
-当前 RoPE 回归用例已在 Ascend 950PR、`torch-npu 2.9.0.post4`、CANN 9.1 上验证；这不代表已覆盖所有设备、版本、每头维度或布局/模式/数据类型组合。
+当前 RoPE 回归用例已在 Ascend 950PR、`TorchNPU 2.9.0.post4`、CANN 9.1 上验证；这不代表已覆盖所有设备、版本、每头维度或布局/模式/数据类型组合。
 
 #### 与 rotary_position_embedding 的区别
 

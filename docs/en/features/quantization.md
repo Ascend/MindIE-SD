@@ -167,7 +167,7 @@ FA (Flash Attention) quantization applies low-bit processing to Q/K/V activation
 
 ### FA Technical Features
 
-This repository provides FA quantization via the `FP8_DYNAMIC` and `MXFP4_DYNAMIC` algorithms, with a three-step processing flow:
+This repository provides FA quantization via the `FP8_DYNAMIC` and `MXFP4_DYNAMIC` algorithms. `FP8_DYNAMIC` uses FP8 block quantization; `MXFP4_DYNAMIC` reuses the custom quant_flash_attn AI Core operator and supports switching among `MXFP4`, `FP8` and `FLOAT` by timestep.
 
 #### Rotate
 

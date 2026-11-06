@@ -22,7 +22,7 @@ SPHINX_LANGUAGE=en sphinx-build -b html -c docs docs/en docs/_build/en/html
 python -m http.server 8080 --directory docs/_build
 ```
 
-<http://localhost:8080> → 自动跳转中文版
+<http://localhost:8080> → 自动跳转中文版。
 
 ## 开发镜像构建
 

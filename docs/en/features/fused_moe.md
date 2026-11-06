@@ -511,8 +511,8 @@ out = fused_moe(
 ### Notes
 
 - The current API only supports forward inference; backward gradient computation is not supported.
-- Currently supports non-quantized MoE and INT8 dynamic quant MoE paths.
-- `w13_weight` and `w2_weight` must use the weight layout required by grouped matmul.
+- Currently supports non-quantized MoE, W8A8 dynamic quant MoE, and W8A8 MXFP8 quant MoE paths.
+- Non-quantized weights must use the layout required by grouped matmul; quamtized weights and scales must match `quant_config`.
 - The last dimension of `router_logits` must equal `num_experts`.
 - The `dynamic` dispatcher must be used in EP communication scenarios.
 - When using distributed communication, callers must initialize communication groups in advance and ensure consistent input layout across all ranks.

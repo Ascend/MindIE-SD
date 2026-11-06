@@ -1,5 +1,7 @@
 # 安装指导
 
+本文档介绍 MindIE SD 的安装指导，涵盖 Python 包安装（安装依赖、快速安装、源码安装）与 vLLM-Omni 镜像安装两种方式，适用于需要安装 MindIE SD 的用户。
+
 ## Python包安装
 
 MindIE SD 是一个 Python 包，它基于PyTorch构建，可以轻松集成到 Python 应用程序中。
@@ -10,13 +12,13 @@ Python 包安装适用于大多数使用场景，但需要手动安装 CANN。�
 
 * OS: Linux
 * Python: >=3.10
-* Pytorch：2.6, 2.7, 2.8, 2.9, 2.10
-* TorchNPU: 7.3.0, 26.0.0, 26.1.0
-* CANN: 9.0.1, 9.1.0
+* PyTorch: 2.6, 2.7, 2.8, 2.9, 2.10
+* TorchNPU: 7.3.0, 26.0.0, 26.1.0, 26.2.0
+* CANN: 9.0.1, 9.1.0, 9.2.0
 
 #### CANN 安装
 
-MindIE SD 依赖 CANN Toolkit 开发套件包和 CANN ops 算子包，请参考 <a href="https://gitcode.com/cann/ops-cv/blob/master/docs/zh/install/quick_install.md" target="_blank" rel="noopener noreferrer">CANN 软件安装指南</a>
+MindIE SD 依赖 CANN Toolkit 开发套件包和 CANN ops 算子包，请参考 <a href="https://gitcode.com/cann/ops-cv/blob/master/docs/zh/install/quick_install.md" target="_blank" rel="noopener noreferrer">CANN 软件安装指南</a>。
 
 安装完成后，执行以下命令设置环境变量（以默认安装路径为例）：
 
@@ -39,7 +41,7 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 
 ### 快速安装
 
-现在最简单的方式是通过 pip 源安装，我们的软件包名字叫 mindiesd，与仓库名有些不一样。在安装 mindiesd 之前，需要先安装相关 python 依赖包：
+现在最简单的方式是通过 pip 源安装，我们的软件包名字叫 mindiesd，与仓库名有些不一样。在安装 mindiesd 之前，需要先安装相关 Python 依赖包。
 
 > `requirements.txt` 位于本仓库根目录，执行下面的命令前需先获取该文件：克隆仓库（`git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD`）或从仓库单独下载 `requirements.txt`。
 

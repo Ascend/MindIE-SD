@@ -21,7 +21,7 @@
 
 ## 阶段二：创建 Pattern
 
-先检查现有 pattern 是否已覆盖目标算子。确认不匹配后新建，遵循非侵入原则（始终创建新文件，不修改现有 pattern 文件）。
+先检查现有 Pattern 是否已覆盖目标算子。确认不匹配后新建，遵循非侵入原则（始终创建新文件，不修改现有 Pattern 文件）。
 
 根据阶段一的参数来源选择路径：
 
@@ -32,7 +32,7 @@
 
 涉及 3 个文件的修改，全部是代码追加（不修改已有代码）：
 
-1. `patterns/__init__.py` — `__all__` 追加 + `from .xxx_pattern import XxxPatternGroup`
+1. `patterns/__init__.py` —— `__all__` 追加 + `from .xxx_pattern import XxxPatternGroup`
 2. `passes/__init__.py` — `pattern_registry` 字典追加
 3. `compiliation_config.py` — `FusionPatterns` dataclass 追加 `enable_xxx: bool = True`
 
@@ -52,11 +52,11 @@
 |------|------|---------|
 | 1. Pattern 命中 | graph dump + 日志 | `PatternMatchPass replace N` 数量增加 |
 | 2. Fusion kernel | profiling → `kernel_details.csv` | 融合 kernel 出现 + 原始 kernel 消失 |
-| 3. 全模型回归 | dummy run + compile | 推理正常完成无 crash |
+| 3. 全模型回归 | dummy run + compile | 推理正常完成，无 crash |
 
 Kernel 名称对应：
 
-| 算子 | kernel 名称 |
+| 算子 | Kernel 名称 |
 |------|------------|
 | RMSNorm | `rms_norm` / `RmsNorm` |
 | RoPE | `npu_rotary_mul` / `RotaryMul` |

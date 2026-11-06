@@ -1,12 +1,10 @@
 # 编译指导
 
-## 编译说明
-
-本文档介绍如何从源码编译MindIE SD。安装已编译的 `.whl` 包请参见[安装指导](../installation.md#源码安装)。
+本文档介绍编译指导，说明如何从源码编译MindIE SD并用python -m build生成`.whl`包，适用于需要从源码编译MindIE SD的用户。安装已编译的 `.whl` 包请参见[安装指导](../installation.md#源码安装)。
 
 ## 编译安装
 
-1. 使用以下命令拉取代码。
+1. 使用以下命令拉取代码并构建wheel包。
 
     ```bash
     git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD

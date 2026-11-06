@@ -56,30 +56,30 @@ bash infer_t2v.sh
 
 ## 加速效果展示
 
-下面以 Wan2.1 模型为例，展示在 Atlas 800I A2推理服务器（1*64G）上单卡和多卡实现不同加速特性的加速效果。
+下面以 Wan2.1 模型为例，展示在 Atlas 800I A2推理服务器（1*64GB）上单卡和多卡实现不同加速特性的加速效果。
 
 其中：
 
 - Cache：表示使用[AttentionCache](./features/cache.md#attentioncache)特性；
-- TP：表示使用[Tensor Parallel](./features/parallelism.md)特性；
+- TP：表示使用[Tensor Parallel](./features/parallelism.md#tensor-parallel)特性；
 - FA 稀疏：表示使用 FA 稀疏中的[RainFusion 特性](./features/sparse.md)；
-- CFG：表示使用[CFG 并行](./features/parallelism.md)特性；
+- CFG：表示使用[CFG 并行](./features/parallelism.md#cfg-parallel)特性；
 - Ulysses：表示使用[Ulysses 并行](./features/parallelism.md#ulysses-sequence-parallel)加速特性，模型生成的视频的 H*W 为 832*480，`sample_steps` 为 50。
 
 ### 单卡加速效果
 
-**Cache 加速效果**
+#### Cache 加速效果
 
 | Baseline | + Cache 加速比1.6 | + Cache 加速比2.0 | + Cache 加速比2.4 |
 |:---:|:---:|:---:|:---:|
 | 860.2s | 631.7s 1.36x | 541.8s 1.59x | 516.9s ***1.66x** |
-| ![](../figures/single_card_base_fa.gif) | ![](../figures/single_card_fa_attentioncache_speedup_1_6.gif) | ![](../figures/single_card_fa_attentioncache_speedup_2_0.gif) | ![](../figures/single_card_fa_attentioncache_speedup_2_4.gif) |
+| ![单卡 FA 基线（未启用 Cache）生成视频的动态画面示例](../figures/single_card_base_fa.gif) | ![单卡启用 AttentionCache（加速比 1.6）生成视频的动态画面示例](../figures/single_card_fa_attentioncache_speedup_1_6.gif) | ![单卡启用 AttentionCache（加速比 2.0）生成视频的动态画面示例](../figures/single_card_fa_attentioncache_speedup_2_0.gif) | ![单卡启用 AttentionCache（加速比 2.4）生成视频的动态画面示例](../figures/single_card_fa_attentioncache_speedup_2_4.gif) |
 
 ### 并行策略效果
 
-**双卡单个并行策略效果**
+#### 双卡单个并行策略效果
 
-| 模型 | 卡数 | 并行策略 | 视频输出分辨率 | 算子优化 | cache 算法优化 | FA 稀疏 | 50 步 E2E 耗时(s) | 加速比 |
+| 模型 | 卡数 | 并行策略 | 视频输出分辨率 | 算子优化 | Cache 算法优化 | FA 稀疏 | 50 步 E2E 耗时（s） | 加速比 |
 |:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | Wan2.1 | 2 | VAE | 832*480 | √ | √ | √ | 548.8 | 1.02x |
 | Wan2.1 | 2 | TP | 832*480 | √ | √ | √ | 502.8 | 1.12x |
@@ -88,9 +88,9 @@ bash infer_t2v.sh
 
 注：`*` 表示最优加速效果。
 
-**多卡并行策略组合效果**
+#### 多卡并行策略组合效果
 
-| 模型 | 卡数 | 并行策略 | 视频输出分辨率 | 算子优化 | cache 算法优化 | FA 稀疏 | 50 步 E2E 耗时(s) | 加速比 |
+| 模型 | 卡数 | 并行策略 | 视频输出分辨率 | 算子优化 | Cache 算法优化 | FA 稀疏 | 50 步 E2E 耗时(s) | 加速比 |
 |:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | Wan2.1 | 4 | TP=4, VAE | 832*480 | √ | √ | √ | 204.0 | 2.754x |
 | Wan2.1 | 4 | CFG=2, TP=2, VAE | 832*480 | √ | √ | √ | 175.8 | 3.19x |
