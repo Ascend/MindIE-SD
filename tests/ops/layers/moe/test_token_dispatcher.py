@@ -17,6 +17,7 @@ import torch
 import torch.distributed as dist
 import torch_npu
 
+from mindiesd.utils.get_platform import is_cann_version_at_least
 from mindiesd.layers.moe.moe_dataclass import (
     MoEDynamicCombineMetadata,
     MoEPrepareInput,
@@ -173,6 +174,9 @@ class TestTokenDispatcher(unittest.TestCase):
 
     @a5_test
     def test_static_w8a8_mxfp8_dispatch_matches_prequantized_input(self):
+        if not is_cann_version_at_least((9, 2, 0)):
+            self.skipTest("MXFP8 dispatch equivalence requires CANN >= 9.2.0")
+
         device = torch.device("npu")
         hidden_states = (torch.randn(4, 32, device=device, dtype=torch.bfloat16) / 10).contiguous()
         # This block distinguishes OCP scaling from the fused ceil scale rule.

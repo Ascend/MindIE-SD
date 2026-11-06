@@ -19,6 +19,7 @@ from unittest.mock import MagicMock, patch
 import torch
 
 from mindiesd.utils.exception import ParametersInvalid
+from mindiesd.utils.get_platform import is_cann_version_at_least
 
 from tests.ops.device_support import init_test_device
 from tests.utils.utils.precision_compare import data_compare
@@ -108,6 +109,11 @@ PRECISION_HEAD_DIM = 128
 PRECISION_BLK = 128
 PRECISION_INNER_PRECISE = 0
 PRECISION_SEED = 42
+
+
+def _use_950_branch():
+    """Use A5 expectations only for tests requiring CANN >= 9.2.0."""
+    return is_a5_device() and is_cann_version_at_least((9, 2, 0))
 
 
 def _backend_for(mod):
@@ -321,8 +327,8 @@ class TestSparseLinearAttentionNPU(unittest.TestCase):
 
     def test_a5_ascendc_block64_fp16_and_bf16(self):
         """A5实机：Block64 自然选择 AscendC BSA，覆盖 fp16/bf16。"""
-        if not self.is_950:
-            self.skipTest('A5-only Block64 BSA test.')
+        if not _use_950_branch():
+            self.skipTest('Block64 BSA requires A5 with CANN >= 9.2.0.')
         self.assertTrue(_ascendc_shape_supported(HEADDIM, 64, 64, is_950=True))
         self.assertEqual(_resolve_sparse_attn_backend(HEADDIM, 64, 64, is_950=True), 'ascendc')
         for use_bf16 in (False, True):
@@ -403,8 +409,14 @@ class TestSparseLinearAttentionNPU(unittest.TestCase):
             device=self.device,
         )
         k = torch.randn_like(q)
-        with self.assertRaises(self._expect_triton_compile_error()):
+        if _use_950_branch():
+            # A5 with CANN >= 9.2.0 must execute successfully.
             get_block_map(q, k, topk_ratio=0.5, BLKQ=BLK, BLKK=BLK)
+            torch.npu.synchronize()
+        else:
+            # Preserve the original expectation on older CANN versions and other devices.
+            with self.assertRaises(self._expect_triton_compile_error()):
+                get_block_map(q, k, topk_ratio=0.5, BLKQ=BLK, BLKK=BLK)
 
     def test_ascendc_hd128_blkk256_get_block_map_ub_overflow(self):
         """ascendc 声明 BLKK=256，但 head_dim=128 时 get_block_map 在 910B UB 溢出。"""
@@ -417,8 +429,14 @@ class TestSparseLinearAttentionNPU(unittest.TestCase):
             device=self.device,
         )
         k = torch.randn_like(q)
-        with self.assertRaises(self._expect_triton_compile_error()):
+        if _use_950_branch():
+            # A5 with CANN >= 9.2.0 must execute successfully.
             get_block_map(q, k, topk_ratio=0.5, BLKQ=BLK, BLKK=256)
+            torch.npu.synchronize()
+        else:
+            # Preserve the original expectation on older CANN versions and other devices.
+            with self.assertRaises(self._expect_triton_compile_error()):
+                get_block_map(q, k, topk_ratio=0.5, BLKQ=BLK, BLKK=256)
 
     def test_triton_hd128_blk64_128_attention_device_contract(self):
         """The declared Triton shape must compute attention, independent of old compiler failures."""
