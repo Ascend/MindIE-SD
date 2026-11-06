@@ -88,9 +88,12 @@ MindIE SD 架构和关键特性详见[架构介绍](docs/zh/architecture.md)。
 感谢 [CANN ops-transformer](https://gitcode.com/cann/ops-transformer) 和 [CANN ops-nn](https://gitcode.com/cann/ops-nn) 社区提供的算子源码。
 
 - **迁移与多模态性能优化**：本仓的 `QuantFlashAttn`、`EagleFusedInferAttentionScore`、`EagleBlockSparseAttention` 和 `EagleFfn` 分别迁移自 CANN 的 [QuantFlashAttn](https://gitcode.com/cann/ops-transformer/tree/master/attention/quant_flash_attn)、[FusedInferAttentionScore](https://gitcode.com/cann/ops-transformer/tree/master/attention/fused_infer_attention_score)、[BlockSparseAttention](https://gitcode.com/cann/ops-transformer/tree/master/attention/block_sparse_attention) 和 [FFN](https://gitcode.com/cann/ops-transformer/tree/master/ffn/ffn)，并针对多模态推理场景进行性能优化。
-- **基于 CANN 算子开发**：`EagleQuantBlockSparseAttention` 基于 CANN [BlockSparseAttention](https://gitcode.com/cann/ops-transformer/tree/master/attention/block_sparse_attention) 开发混合精度块稀疏注意力；`quant_four_over_six_a5` 基于 CANN [动态 MX 量化](https://gitcode.com/cann/ops-nn/tree/master/quant/dynamic_mx_quant) 基础代码开发 Four Over Six 量化扩展。
+- **基于 CANN 算子开发**：
+  - `EagleQuantBlockSparseAttention` 基于 CANN [BlockSparseAttention](https://gitcode.com/cann/ops-transformer/tree/master/attention/block_sparse_attention) 开发混合精度块稀疏注意力。
+  - `quant_four_over_six_a5` 基于 CANN [动态 MX 量化](https://gitcode.com/cann/ops-nn/tree/master/quant/dynamic_mx_quant) 基础代码开发 Four Over Six 量化扩展。
+  - `eagle_quant_batch_matmul_swiglu` 基于 CANN [QuantBatchMatmulV3](https://gitcode.com/cann/ops-nn/tree/a5a8fbf3e02d7632ffa2c56b29e8755f1aa62720/matmul/quant_batch_matmul_v3) 的量化矩阵乘实现，参考 [SwiGlu](https://gitcode.com/cann/ops-nn/tree/a5a8fbf3e02d7632ffa2c56b29e8755f1aa62720/activation/swi_glu) 的门控计算，在同一算子内完成 INT8 矩阵乘、FP32 反量化和 SwiGLU 激活。
 
-感谢以下贡献者在相关 CANN 算子上的工作：[cardiac_index](https://gitcode.com/cardiac_index), [XiyueL](https://gitcode.com/XiyueL), [jiang-lirui](https://gitcode.com/jiang-lirui), [monologue815](https://gitcode.com/monologue815), [chenyizhou](https://gitcode.com/chenyizhou), [liwenguihw](https://gitcode.com/liwenguihw)。
+感谢以下贡献者在相关 CANN 算子上的工作：[cardiac_index](https://gitcode.com/cardiac_index), [XiyueL](https://gitcode.com/XiyueL), [jiang-lirui](https://gitcode.com/jiang-lirui), [monologue815](https://gitcode.com/monologue815), [chenyizhou](https://gitcode.com/chenyizhou), [liwenguihw](https://gitcode.com/liwenguihw), [wmg1](https://gitcode.com/wmg1), [liyuanqiang](https://gitcode.com/liyuanqiang), [llqx-1](https://gitcode.com/llqx-1), [wuyi_huawei](https://gitcode.com/wuyi_huawei), [merlinsantosh](https://gitcode.com/merlinsantosh)。
 
 <a id="paper-citations"></a>
 

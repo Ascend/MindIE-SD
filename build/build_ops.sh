@@ -37,7 +37,7 @@ if [ ! -f ${msopgen} ]; then
     exit 1
 fi
 
-ascendc_ops=${ASCEND_OP_NAME:-'laser_attention;la_preprocess;ada_block_sparse_attention;sparse_block_estimate;norm_rope_concat;eagle_split_norm_rope_concat;quant_flash_attn;quant_flash_attn_metadata;fused_infer_attention_score;eagle_quant_block_sparse_attention;eagle_block_sparse_attention;mul_add;eagle_indexed_gate_norm_modulate;eagle_ffn;quant_four_over_six_a5'}
+ascendc_ops=${ASCEND_OP_NAME:-'laser_attention;la_preprocess;ada_block_sparse_attention;sparse_block_estimate;norm_rope_concat;eagle_split_norm_rope_concat;quant_flash_attn;quant_flash_attn_metadata;fused_infer_attention_score;eagle_quant_block_sparse_attention;eagle_block_sparse_attention;mul_add;eagle_indexed_gate_norm_modulate;eagle_ffn;quant_four_over_six_a5;eagle_quant_batch_matmul_swiglu'}
 
 function remove_ops_from_semicolon_list() {
     local op_list="$1"
@@ -78,7 +78,7 @@ ascend950_only_ops='quant_flash_attn;quant_flash_attn_metadata;fused_infer_atten
 # eagle_block_sparse_attention pulls in the MXFP4 type fp4x2_e2m1_t (arch35 only, not
 # declared by any 8.5.0 header). AddConfig cannot express this, so such ops must leave
 # the op list entirely on older toolkits.
-cann_9_required_ops='eagle_block_sparse_attention'
+cann_9_required_ops='eagle_block_sparse_attention;eagle_quant_batch_matmul_swiglu'
 cann_version_file="${local_toolkit}/compiler/version.info"
 if [ -f "${cann_version_file}" ] && grep -Eq '^Version=([0-8])(\.|$)' "${cann_version_file}"; then
     echo "Detected CANN < 9.0 from ${cann_version_file}, disable ascend950 backend."

@@ -12,6 +12,7 @@ import unittest
 FAMILIES = frozenset(("A2", "A3", "A5", "Duo"))
 # Exact source evidence is checked by CPU tests against each operator's OpDef.
 REGISTRATIONS = {
+    "eagle_quant_batch_matmul_swiglu": ("ascend910b",),
     "eagle_indexed_gate_norm_modulate": ("ascend910b",),
     "eagle_split_norm_rope_concat": ("ascend910b",),
     "eagle_block_sparse_attention": ("ascend910b", "ascend910_93"),

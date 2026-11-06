@@ -23,6 +23,77 @@ APPLY_ROTARY_POS_EMB_LAYOUTS = ("BSND", "SBND", "BNSD", "TND")
 APPLY_ROTARY_POS_EMB_ROTARY_MODES = ("half", "interleave", "quarter")
 
 
+def eagle_quant_batch_matmul_swiglu(
+    x1: torch.Tensor,
+    x2: torch.Tensor,
+    scale: torch.Tensor,
+    offset: Optional[torch.Tensor] = None,
+    bias: Optional[torch.Tensor] = None,
+    pertoken_scale: Optional[torch.Tensor] = None,
+    output_dtype: torch.dtype = torch.bfloat16,
+    transpose_x1: bool = False,
+    transpose_x2: bool = False,
+    group_size: int = 0,
+) -> torch.Tensor:
+    """910B INT8 QBMM + FP32 SwiGLU; ND activation, ND/NZ weight, N/2 output, no bias."""
+    return torch.ops.mindiesd.eagle_quant_batch_matmul_swiglu(
+        x1,
+        x2,
+        scale,
+        offset,
+        bias,
+        pertoken_scale,
+        output_dtype,
+        transpose_x1,
+        transpose_x2,
+        group_size,
+    )
+
+
+@register_ops.register_mindie_fake_op("eagle_quant_batch_matmul_swiglu")
+def _eagle_quant_batch_matmul_swiglu_fake(
+    x1: torch.Tensor,
+    x2: torch.Tensor,
+    scale: torch.Tensor,
+    offset: Optional[torch.Tensor] = None,
+    bias: Optional[torch.Tensor] = None,
+    pertoken_scale: Optional[torch.Tensor] = None,
+    output_dtype: torch.dtype = torch.bfloat16,
+    transpose_x1: bool = False,
+    transpose_x2: bool = False,
+    group_size: int = 0,
+) -> torch.Tensor:
+    torch._check(2 <= x1.dim() <= 6 and 2 <= x2.dim() <= 6)
+    torch._check(x1.dtype == torch.int8 and x2.dtype == torch.int8)
+    output_dtype = torch.bfloat16 if output_dtype is None else output_dtype
+    torch._check(output_dtype in (torch.bfloat16, torch.float16))
+    torch._check(bias is None)
+    torch._check(pertoken_scale is not None)
+    torch._check(scale.dtype == torch.float32 and pertoken_scale.dtype == torch.float32)
+    torch._check(offset is None)
+    torch._check(group_size == 0)
+    for tensor in (x1, x2, scale, offset, bias, pertoken_scale):
+        if tensor is not None:
+            torch._check(tensor.is_contiguous())
+            torch._check(tensor.device == x1.device)
+    torch._check(x1.shape[-2 if transpose_x1 else -1] == x2.shape[-1 if transpose_x2 else -2])
+    batch = torch.broadcast_shapes(x1.shape[:-2], x2.shape[:-2])
+    batch_a, batch_b, batch_c = math.prod(x1.shape[:-2]), math.prod(x2.shape[:-2]), math.prod(batch)
+    if batch_a != 1:
+        torch._check(batch_a == batch_c)
+    if batch_b != 1:
+        torch._check(batch_b == batch_c)
+    m = x1.shape[-1 if transpose_x1 else -2]
+    n = x2.shape[-2 if transpose_x2 else -1]
+    torch._check(m > 0)
+    torch._check(x1.shape[-2 if transpose_x1 else -1] > 0)
+    torch._check(n > 0)
+    torch._check(n % 2 == 0)
+    torch._check(scale.dim() == 1 and scale.numel() == n)
+    torch._check(pertoken_scale.dim() == 1 and pertoken_scale.numel() == m)
+    return x1.new_empty((*batch, m, n // 2), dtype=output_dtype)
+
+
 def eagle_indexed_gate_norm_modulate(
     residual: torch.Tensor,
     gate: torch.Tensor,

@@ -30,9 +30,14 @@
 #include "norm_rope_concat.h"
 #include "eagle_split_norm_rope_concat.h"
 #include "eagle_ffn_linear.h"
+#include "eagle_quant_batch_matmul_swiglu.h"
 #include "quant_four_over_six_a5.h"
 
 TORCH_LIBRARY(mindiesd, m) {
+    m.def("eagle_quant_batch_matmul_swiglu(Tensor x1, Tensor x2, Tensor scale, "
+          "Tensor? offset=None, Tensor? bias=None, Tensor? pertoken_scale=None, "
+          "ScalarType? output_dtype=None, bool transpose_x1=False, bool transpose_x2=False, "
+          "int group_size=0) -> Tensor");
     m.def("la(Tensor query, Tensor key, Tensor value, \
         Tensor? atten_mask=None, Tensor? alibi_mask=None, Tensor? \
         drop_mask=None, float scale_value=1.0, int head_num=2, str input_layout='BNSD', \
@@ -158,6 +163,7 @@ TORCH_LIBRARY(mindiesd, m) {
 }
 
 TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m) {
+    m.impl("eagle_quant_batch_matmul_swiglu", &eagle_quant_batch_matmul_swiglu_impl_npu);
     m.impl("la", &la_mindie_sd_impl_npu);
     m.impl("adaln", &adaln_mindie_sd_impl_npu);
     m.impl("adaln_v2", &adaln_v2_mindie_sd_impl_npu);
