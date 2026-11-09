@@ -295,16 +295,20 @@ class TestMapper:
                 "tests/layers/flash_attn/test_sparse_attention.py",
             ],
             "mindiesd/cache_agent/cache_agent.py": [
-                "tests/cache/test_cache_agent.py",
+                "tests/UT/cache/test_cache_agent.py",
+                "tests/UT/cache/test_cache_hook_semantics.py",
             ],
             "mindiesd/cache_agent/attention_cache.py": [
-                "tests/cache/test_attention_cache.py",
+                "tests/UT/cache/test_attention_cache.py",
+                "tests/UT/cache/test_cache_hook_semantics.py",
             ],
             "mindiesd/cache_agent/dit_block_cache.py": [
-                "tests/cache/test_dit_block_cache.py",
+                "tests/UT/cache/test_dit_block_cache.py",
+                "tests/UT/cache/test_cache_hook_semantics.py",
             ],
             "mindiesd/cache_agent/cache.py": [
-                "tests/cache/test_cache_agent.py",
+                "tests/UT/cache/test_cache_agent.py",
+                "tests/UT/cache/test_cache_hook_semantics.py",
             ],
             "mindiesd/quantization/quantize.py": [
                 "tests/quantization/test_quantize.py",
@@ -430,7 +434,7 @@ class TestMapper:
         # 目录匹配
         "directory": {
             "mindiesd/layers/": "tests/layers/",
-            "mindiesd/cache_agent/": "tests/cache/",
+            "mindiesd/cache_agent/": "tests/UT/cache/",
             "mindiesd/quantization/": "tests/quantization/",
             "mindiesd/compilation/": "tests/compilation/",
             "mindiesd/eplb/": "tests/eplb/",

@@ -10,38 +10,49 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-from mindiesd.utils.exception import ConfigError, ParametersInvalid
+from threading import Lock
+
+from mindiesd.utils.exception import ConfigError, ModelExecError, ParametersInvalid
 from mindiesd.utils.logs.logging import logger
 from .cache import CacheConfig
 from .attention_cache import AttentionCache
 from .dit_block_cache import DiTBlockCache
 
 
-CACHE_METHOD = {
-    "attention_cache": AttentionCache,
-    "dit_block_cache": DiTBlockCache
-}
+CACHE_METHOD = {"attention_cache": AttentionCache, "dit_block_cache": DiTBlockCache}
 
 
 class CacheAgent:
     def __init__(self, config: CacheConfig):
         self._config = config
         self._check_config()
+        self._apply_lock = Lock()
 
         self._cache_method = CACHE_METHOD.get(self._config.method)(self._config)
 
     def apply(self, function: callable, *args, **kwargs):
+        # 不使用 with：并发或重入时应立即报错，而不是阻塞等待锁释放。
+        acquired = self._apply_lock.acquire(blocking=False)  # pylint: disable=consider-using-with
+        if not acquired:
+            raise ModelExecError(
+                "CacheAgent does not support concurrent or reentrant calls; "
+                "use one CacheAgent instance per execution stream."
+            )
+        try:
+            return self._apply_impl(function, *args, **kwargs)
+        finally:
+            self._apply_lock.release()
+
+    def _apply_impl(self, function: callable, *args, **kwargs):
         if not callable(function):
             raise ParametersInvalid("Input function must be callable.")
 
         # If start step[0,1,2,...] >= stpes_count(), not use cache
-        if self._config.step_start >= self._config.steps_count or \
-            self._config.step_end == self._config.step_start:
+        if self._config.step_start >= self._config.steps_count or self._config.step_end == self._config.step_start:
             return function(*args, **kwargs)
 
         # If start block[0,1,2,...] >= blocks_count(), not use cache
-        if self._config.block_start >= self._config.blocks_count or \
-            self._config.block_end == self._config.block_start:
+        if self._config.block_start >= self._config.blocks_count or self._config.block_end == self._config.block_start:
             return function(*args, **kwargs)
 
         if self._config.step_interval == 1:
@@ -50,9 +61,11 @@ class CacheAgent:
         return self._cache_method.apply(function, *args, **kwargs)
 
     def _check_config(self):
-        if self._config.method not in CACHE_METHOD.keys():
-            raise ConfigError(f"Method '{self._config.method}' is not supported, "
-                              f"the list of support methods is {CACHE_METHOD.keys()}.")
+        if self._config.method not in CACHE_METHOD:
+            raise ConfigError(
+                f"Method '{self._config.method}' is not supported, "
+                f"the list of support methods is {CACHE_METHOD.keys()}."
+            )
 
         if self._config.blocks_count <= 0:
             raise ConfigError(f"The 'blocks_count' in config must > 0, but got {self._config.blocks_count}.")
@@ -67,21 +80,25 @@ class CacheAgent:
             raise ConfigError(f"The 'block_start' in config must >= 0, but got {self._config.block_start}.")
 
         if self._config.step_end < self._config.step_start:
-            raise ConfigError(f"The 'step_end' must >= 'step_start', "
-                f"but got {self._config.step_end} and {self._config.step_start}.")
+            raise ConfigError(
+                f"The 'step_end' must >= 'step_start', but got {self._config.step_end} and {self._config.step_start}."
+            )
         if self._config.block_end < self._config.block_start:
-            raise ConfigError(f"The 'block_end' must >= 'block_start', "
-                f"but got {self._config.block_end} and {self._config.block_start}.")
+            raise ConfigError(
+                f"The 'block_end' must >= 'block_start', "
+                f"but got {self._config.block_end} and {self._config.block_start}."
+            )
         if self._config.method == "dit_block_cache":
             if self._config.block_end > self._config.blocks_count:
-                raise ConfigError(f"The 'block_end' must <= 'blocks_count', "
-                    f"but got {self._config.block_end} and {self._config.blocks_count}.")
-        if self._config.step_start >= self._config.steps_count or \
-            self._config.step_end == self._config.step_start:
-            logger.debug(f"'step_start' >= 'steps_count' or 'step_end' == 'step_start', do not apply cache function.")
-        if self._config.block_start >= self._config.blocks_count or \
-            self._config.block_end == self._config.block_start:
-            logger.debug("'block_start' >= 'blocks_count' or 'block_end' == 'block_start', "
-                         "do not apply cache function.")
+                raise ConfigError(
+                    f"The 'block_end' must <= 'blocks_count', "
+                    f"but got {self._config.block_end} and {self._config.blocks_count}."
+                )
+        if self._config.step_start >= self._config.steps_count or self._config.step_end == self._config.step_start:
+            logger.debug("'step_start' >= 'steps_count' or 'step_end' == 'step_start', do not apply cache function.")
+        if self._config.block_start >= self._config.blocks_count or self._config.block_end == self._config.block_start:
+            logger.debug(
+                "'block_start' >= 'blocks_count' or 'block_end' == 'block_start', do not apply cache function."
+            )
         if self._config.step_interval == 1:
             logger.debug("'step_interval' is 1, do not apply cache function.")
