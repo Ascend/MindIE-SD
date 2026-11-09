@@ -197,7 +197,7 @@ FA（Flash Attention）量化针对注意力计算中的 Q/K/V 激活值进行�
 
 ### FA 技术特点
 
-本仓库通过 `FP8_DYNAMIC` 和 `MXFP4_DYNAMIC` 算法提供 FA 量化能力。`FP8_DYNAMIC` 使用 FP8 块量化；`MXFP4_DYNAMIC` 复用自定义 `quant_flash_attn` AI Core 算子，并支持按时间步在 `MXFP4`、`FP8`、`FLOAT` 间切换。`MXFP4_FOUROVERSIX_DYNAMIC` 在 MXFP4 FA 的基础上，将 Q/K 的激活量化替换为 `quant_four_over_six_a5`（4/6 自适应）；该算子仅支持尾轴，而 `quant_flash_attn` 要求 V 沿序列轴分块量化，因此 V 仍走 `npu_dynamic_mx_quant`。
+本仓库通过 `FP8_DYNAMIC`、`MXFP8_DYNAMIC` 和 `MXFP4_DYNAMIC` 算法提供 FA 量化能力。`FP8_DYNAMIC` 使用 FP8 块量化；`MXFP8_DYNAMIC` 使用 MXFP8 格式全量化；`MXFP4_DYNAMIC` 复用自定义 `quant_flash_attn` AI Core 算子，并支持按时间步在 `MXFP4`、`FP8`、`FLOAT` 间切换。`MXFP4_FOUROVERSIX_DYNAMIC` 在 MXFP4 FA 的基础上，将 Q/K 的激活量化替换为 `quant_four_over_six_a5`（4/6 自适应）；该算子仅支持尾轴，而 `quant_flash_attn` 要求 V 沿序列轴分块量化，因此 V 仍走 `npu_dynamic_mx_quant`。
 
 #### 旋转（Rotate）
 
@@ -291,7 +291,7 @@ FA 没有离线权重约束，因此可以在不同时间步选择任意算法�
 
 #### 注意事项
 
-- 硬件要求：仅 Atlas 800I A2推理服务器支持此特性。
+- 硬件要求：`FP8_DYNAMIC`、`MXFP8_DYNAMIC` 和 `MXFP4_DYNAMIC` 三种 FA 量化算法（分别对应 `fp8`、`mxfp8`、`mxfp4` 精度）仅 Ascend 950PR&950DT系列产品支持；Atlas 800I A2/A3 不支持上述算法。
 - Q/K/V 输入布局支持 `BNSD` 和 `BSND`。
 - K/V 头数可以少于 Q（GQA, Grouped Query Attention, 分组查询注意力）。`FP8RotateQuantFA` 按 K 的头数向 FIA 传入 `num_key_value_heads`。
 - 旋转矩阵（`q_rot`、`k_rot`）可选。若使用，需通过大模型压缩工具 msmodelslim 预先导出，详情请参见 msmodelslim 工具说明；权重中没有这两项时，`FP8RotateQuantFA` 跳过旋转。

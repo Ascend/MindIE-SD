@@ -158,7 +158,7 @@ FA (Flash Attention) quantization applies low-bit processing to Q/K/V activation
 
 ### FA Technical Features
 
-This repository provides FA quantization via the `FP8_DYNAMIC` and `MXFP4_DYNAMIC` algorithms, with a three-step processing flow:
+This repository provides FA quantization via the `FP8_DYNAMIC`, `MXFP8_DYNAMIC`, and `MXFP4_DYNAMIC` algorithms, with a three-step processing flow:
 
 #### Rotate
 
@@ -228,7 +228,7 @@ FA quantization layers are implemented through the `FP8RotateQuantFA` module. Se
 
 #### Notes
 
-- Hardware requirement: Only Atlas 800I A2 inference server support this feature.
+- Hardware requirement: The `FP8_DYNAMIC`, `MXFP8_DYNAMIC`, and `MXFP4_DYNAMIC` FA quantization algorithms (`fp8`, `mxfp8`, and `mxfp4` precisions, respectively) are supported only on 950PR&950DT products; Atlas 800I A2/A3 do not support these algorithms.
 - Q/K/V input layout supports both `BNSD` and `BSND`.
 - K/V may have fewer heads than Q (GQA, Grouped Query Attention). `FP8RotateQuantFA` passes `num_key_value_heads` from the K head count.
 - Rotation matrices (`q_rot`, `k_rot`) are optional. When used, they must be pre-exported with the msmodelslim model compression tool; see the msmodelslim documentation. If the two tensors are absent, `FP8RotateQuantFA` skips rotation.

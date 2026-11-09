@@ -41,7 +41,7 @@ Wan2.1-T2V-14B/
 > **Note**
 >
 > - In addition to HuggingFace, model weights can also be obtained from [modelscope](https://modelscope.cn/models).
-> - For weights of other models (FLUX.1-dev, HunyuanVideo, etc.), see the links in [Model/Framework Support Matrix](features/supported_matrix.md).
+> - For weights of other models (FLUX.1-dev, HunyuanVideo, etc.), see the links in [Model/Framework Support](features/supported_matrix.md).
 
 ### 3. Run Inference
 
@@ -68,16 +68,16 @@ Where:
 
 ### Single-Card Acceleration
 
-**Cache Acceleration**
+#### Cache Acceleration
 
 | Baseline | + Cache Speedup 1.6 | + Cache Speedup 2.0 | + Cache Speedup 2.4 |
 | :---: | :---: | :---: | :---: |
 | 860.2s | 631.7s 1.36x | 541.8s 1.59x | 516.9s ***1.66x** |
-| ![](../figures/single_card_base_fa.gif) | ![](../figures/single_card_fa_attentioncache_speedup_1_6.gif) | ![](../figures/single_card_fa_attentioncache_speedup_2_0.gif) | ![](../figures/single_card_fa_attentioncache_speedup_2_4.gif) |
+| ![Baseline](../figures/single_card_base_fa.gif) | ![Cache speedup 1.6](../figures/single_card_fa_attentioncache_speedup_1_6.gif) | ![Cache speedup 2.0](../figures/single_card_fa_attentioncache_speedup_2_0.gif) | ![Cache speedup 2.4](../figures/single_card_fa_attentioncache_speedup_2_4.gif) |
 
 ### Parallel Strategy Results
 
-**Dual-Card Single Parallel Strategy**
+#### Dual-Card Single Parallel Strategy
 
 | Model | Cards | Parallel Strategy | Video Output Resolution | Operator Optimization | Cache Optimization | FA Sparse | 50-Step E2E Time(s) | Speedup |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -88,7 +88,7 @@ Where:
 
 Note: `*` indicates the best acceleration result.
 
-**Multi-Card Combined Parallel Strategies**
+#### Multi-Card Combined Parallel Strategies
 
 | Model | Cards | Parallel Strategy | Video Output Resolution | Operator Optimization | Cache Optimization | FA Sparse | 50-Step E2E Time(s) | Speedup |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |

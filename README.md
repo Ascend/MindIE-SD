@@ -33,6 +33,8 @@
 
 **MindIE SD**（Mind Inference Engine Stable Diffusion）是 MindIE 的视图生成推理模型套件，它的目标是为稳定扩散（**Stable Diffusion**, SD）系列大模型提供在昇腾硬件及其软件栈上的端到端推理解决方案。该软件系统内部集成了各功能模块，并对外提供统一的编程接口。
 
+支持的模型及特性叠加情况请参见[模型/框架支持矩阵](docs/zh/features/supported_matrix.md)。
+
 ## 📢 Latest News
 
 - 09/23/2026: [MXAttention 论文](docs/tech_report/MXAttention.pdf) 已投稿 ICLR（[arXiv:2607.24377](https://arxiv.org/abs/2607.24377)）📄
