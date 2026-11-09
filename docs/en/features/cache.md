@@ -59,6 +59,34 @@ apply(function: callable, *args, **kwargs) -> Any
 | `*args` | - | No | Positional arguments for the function |
 | `**kwargs` | - | No | Keyword arguments for the function |
 
+> **Note**: When the cache hits, the real forward of `function` is not invoked
+> and the cached result is reused instead. For cache-eligible modules using the
+> standard PyTorch call chain, forward pre-hooks / forward hooks are still
+> triggered (module-level hooks support `with_kwargs`; global forward hooks also
+> fire, while global pre-hooks do not support `with_kwargs`), and each hook fires
+> exactly once per logical forward pass.
+> Hooks receive the cached raw output (the hook-free forward output), and the
+> value passed to them is a copy, so in-place hooks (e.g. `out.mul_(2)`) do not
+> rewrite the cache. Input modifications made by pre-hooks on a cache hit do not
+> affect the cached output. If `function` is not an `nn.Module` or has no hooks,
+> the caller receives an isolated copy of the cached result, so in-place changes
+> by the caller do not rewrite subsequent cache hits.
+>
+> Modules with registered backward hooks or `always_call` forward hooks, and
+> modules under TorchScript tracing, use the native PyTorch call path on every
+> call and are not cached. Modules that override `__call__` / `_call_impl` (on
+> the class or an instance) or set `_compiled_call_impl` preserve their custom
+> call semantics by using the native call path on every invocation and are not
+> cached. Copy isolation preserves Tensor aliases and shared storage, container
+> subtypes, cyclic references, and `torch.return_types.*`; if an output graph
+> cannot be copied safely, cache application raises `ModelExecError`. Cache reuse
+> targets inference; isolated tensors do not retain the original autograd graph.
+> On a cache hit, global hooks fire only for the wrapped `function` itself (its
+> child modules are not executed). A `CacheAgent` is stateful and must not be
+> called concurrently or reentrantly; use one instance per execution stream.
+
+---
+
 ## DiTCache
 
 - **Background**

@@ -59,6 +59,28 @@ apply(function: callable, *args, **kwargs) -> Any
 | `*args` | - | 否 | 函数位置参数 |
 | `**kwargs` | - | 否 | 函数关键字参数 |
 
+> **说明**：缓存命中时不会调用 `function` 的真实前向，而是复用缓存结果。对使用
+> 标准 PyTorch 调用链的可缓存模块，命中时仍会触发 `function` 上的 forward
+> pre-hook / forward hook（模块级 hook 支持 `with_kwargs`；全局 forward hook 也可
+> 触发，但全局 pre-hook 不支持 `with_kwargs`），且每个 hook 在每次
+> 逻辑前向中恰好触发一次；
+> hook 收到的输出为缓存模拟输出（即未经 forward hook 处理的原始输出），且交付的
+> 是该输出的副本，原地修改型 hook（如 `out.mul_(2)`）不会改写缓存。命中时
+> pre-hook 对输入的修改不影响缓存输出（输出为缓存模拟结果）。当 `function` 为
+> 非 `nn.Module` 或未注册任何 hook 时，调用方收到缓存结果的独立副本，因此调用方
+> 原地修改返回值不会改写后续缓存命中结果。
+>
+> 注册了 backward hook 或 `always_call` forward hook 的模块，以及处于 TorchScript
+> tracing 状态时，将始终使用 PyTorch 原生调用链且不缓存。对在类或实例上重写了
+> `__call__` / `_call_impl`，或设置了 `_compiled_call_impl` 的模块，保留其自定义
+> 调用语义的方式是每次执行原生调用且不缓存。副本隔离会保留 Tensor 别名和共享
+> storage、容器子类、循环引用以及 `torch.return_types.*` 类型；无法安全复制时，
+> CacheAgent 会抛出 `ModelExecError`。缓存复用面向推理；隔离后的 Tensor 不保留
+> 原 autograd 图。命中时全局 hook 仅对被包装的 `function` 触发（其子模块未执行）。
+> `CacheAgent` 是有状态对象，不支持并发或重入调用；每个执行流应使用独立实例。
+
+---
+
 ## DiTCache
 
 - **背景**

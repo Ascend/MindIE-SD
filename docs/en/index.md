@@ -24,6 +24,7 @@ features/parallelism
 features/usp
 features/fa_power_cap
 features/cache
+features/cache_hook_design
 features/cpu_offload
 features/share_memory
 features/DyEPLB
