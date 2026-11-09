@@ -34,6 +34,7 @@ __all__ = [
     'quantize',
     'rotary_position_embedding',
     'rms_norm_indexed_scale_shift',
+    'rms_norm_indexed_scale_shift_dynamic_mx_quant',
     'sparse_attention',
 ]
 
@@ -57,6 +58,7 @@ from .layers import (  # noqa: E402
     group_norm_silu,
     layernorm_scale_shift,
     quant_attention,
+    rms_norm_indexed_scale_shift_dynamic_mx_quant,
     rotary_position_embedding,
     sparse_attention,
 )

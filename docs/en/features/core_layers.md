@@ -238,6 +238,7 @@ The fused operator series interfaces provide Ascend high-performance fused opera
 | `group_norm_silu` | Function | Fused GroupNorm and SiLU operator |
 | `fast_layernorm` | Function | High-performance LayerNorm fused operator |
 | `layernorm_scale_shift` | Function | Adaptive LayerNorm (AdaLayerNorm) fused operator |
+| `rms_norm_indexed_scale_shift_dynamic_mx_quant` | Function | Fused RMSNorm, indexed AdaLN affine and dynamic MX quantization operator |
 | `get_activation_layer` | Function | Get activation function instance (with NPU-accelerated versions) |
 
 ### rotary_position_embedding
@@ -711,6 +712,82 @@ out = layernorm_scale_shift(norm, x, scale, shift, fused=True)
 
 - The last dimension of `x` must equal the last dimension of `scale` and `shift`.
 - If `scale` or `shift` is a 3D tensor, its second dimension must be 1 or equal to the second dimension (sequence length) of `x`.
+
+### rms_norm_indexed_scale_shift_dynamic_mx_quant
+
+Fused RMSNorm, indexed AdaLN affine and dynamic MX (Microscaling) quantization (DynamicMxQuant): merges the three AdaLN block steps (normalization, adaptive modulation, and quantization) into a single call that emits the quantized activation and its block scales.
+
+Formula:
+
+1. `x_norm = rms_norm(x, weight, eps)`
+2. `fused = x_norm * (1 + scale[indices]) + shift[indices]`
+3. `y, mxscale = dynamic_mx_quant(fused, dst_type, block_size=32)`
+
+On the single-kernel path, the modulation result stays in registers and is consumed directly by quantization. On the two-stage path, the result is written to a temporary HBM tensor and then read by the quantizer. Both paths return only the quantized values `y` and block scales `mxscale`. Call `rms_norm_indexed_scale_shift` when the floating-point activation itself is required.
+
+```python
+from mindiesd import rms_norm_indexed_scale_shift_dynamic_mx_quant
+```
+
+#### Function Signature
+
+```python
+rms_norm_indexed_scale_shift_dynamic_mx_quant(
+    x, weight, shift, scale, indices,
+    eps=1e-6,
+    dst_type="float8_e4m3fn"
+) -> tuple[torch.Tensor, torch.Tensor]
+```
+
+#### Parameter Description
+
+| Parameter | Type | Required | Default | Description |
+|------|------|------|--------|------|
+| `x` | `torch.Tensor` | Yes | - | Input activation, 2D `[rows, hidden]`, `bfloat16` or `float16` |
+| `weight` | `torch.Tensor` | Yes | - | RMSNorm weight, 1D `[hidden]`, same dtype as `x` |
+| `shift` | `torch.Tensor` | Yes | - | Indexed AdaLN shift, 2D `[conditions, hidden]`, same dtype as `x` |
+| `scale` | `torch.Tensor` | Yes | - | Indexed AdaLN scale, 2D `[conditions, hidden]`, same dtype as `x` |
+| `indices` | `torch.Tensor` | Yes | - | Per-row condition index, 1D `[rows]`, `int32` or `int64` |
+| `eps` | `float` | No | `1e-6` | Finite positive value added to the RMSNorm variance |
+| `dst_type` | `str` | No | `"float8_e4m3fn"` | MX output type: `"float8_e4m3fn"`, `"float8_e5m2"`, `"float4_e2m1fn_x2"` or `"float4_e1m2fn_x2"`; aliases `"float4_e2m1"` and `"float4_e1m2"` are also accepted |
+
+#### Return Value
+
+Returns a tuple `(y, mxscale)`:
+
+| Value | Type | Description |
+|--------|------|------|
+| `y` | `torch.Tensor` | Quantized result. `[rows, hidden]` for FP8 output; packed `uint8` of `[rows, hidden // 2]` for FP4 output |
+| `mxscale` | `torch.Tensor` | `float8_e8m0fnu` block scale of 32 elements per group, shape `[rows, ceil(groups / 2), 2]` |
+
+#### Usage Example
+
+```python
+import torch
+from mindiesd import rms_norm_indexed_scale_shift_dynamic_mx_quant
+
+rows, hidden, conditions = 1024, 2048, 8
+x = torch.randn(rows, hidden, device="npu", dtype=torch.bfloat16)
+weight = torch.randn(hidden, device="npu", dtype=torch.bfloat16)
+shift = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+scale = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+indices = torch.randint(0, conditions, (rows,), device="npu", dtype=torch.int32)
+
+y, mxscale = rms_norm_indexed_scale_shift_dynamic_mx_quant(
+    x, weight, shift, scale, indices,
+    eps=1e-6,
+    dst_type="float8_e4m3fn",
+)
+```
+
+#### Constraints
+
+- `x` must be 2D; `weight` must be 1D with length `hidden`; `shift` and `scale` must both have shape `[conditions, hidden]` with `conditions > 0`.
+- `x`, `weight`, `shift` and `scale` must share the same dtype, either `bfloat16` or `float16`; `indices` supports `int32`/`int64`, must have shape `[rows]`, and every value must satisfy `0 <= index < conditions`.
+- Invalid indices are rejected on the device and reported as a device error on the next NPU synchronization. The operator does not introduce a host synchronization for index-range validation.
+- All inputs must live on the same device.
+- `dst_type` must be one of the four values above; MXFP4 output requires an even `hidden` size.
+- Requires an Ascend NPU environment where Triton is available.
 
 ### get_activation_layer
 

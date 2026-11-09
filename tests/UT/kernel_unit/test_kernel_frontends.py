@@ -8,6 +8,7 @@ import pytest
 import torch
 
 from UT.kernel_unit.triton_cpu import install
+from mindiesd.utils import ParametersInvalid
 
 
 @pytest.mark.parametrize("enabled", [False, True])
@@ -211,6 +212,132 @@ def test_indexed_public_launch_math_with_device_interface_mock(monkeypatch, empt
     expected = expected * (1 + scale[indices].float()) + shift[indices].float()
     torch.testing.assert_close(actual, expected.to(x.dtype), rtol=0, atol=0)
     assert actual.is_contiguous()
+
+
+def test_rms_norm_indexed_mx_frontend_contract(monkeypatch):
+    module = importlib.import_module("mindiesd.layers.rms_norm_indexed_scale_shift_dynamic_mx_quant")
+    install(monkeypatch, module)
+
+    x = torch.ones((4, 32), dtype=torch.bfloat16)
+    weight = torch.ones(32, dtype=torch.bfloat16)
+    shift = torch.ones((3, 32), dtype=torch.bfloat16)
+    scale = torch.zeros((3, 32), dtype=torch.bfloat16)
+    indices = torch.tensor([0, 1, 2, 0], dtype=torch.int64)
+    module._validate_inputs(x, weight, shift, scale, indices, 1e-6, "float8_e4m3fn")
+    module._validate_indices(indices, 3)
+    assert module._mxscale_shape(4, 32) == (4, 1, 2)
+    assert module._mxscale_shape(4, 33) == (4, 1, 2)
+    assert module._e4m3_rows_per_prog(32, 32, 64) == 0
+    assert module._e4m3_rows_per_prog(32, 32, 4096) == 256
+    assert not module._use_hybrid(1024, 1024)
+    assert module._use_hybrid(1024, 5376)
+    assert module._use_hybrid(32768, 1000)
+
+    invalid = [
+        {"x": "bad"},
+        {"eps": 0.0},
+        {"x": x.unsqueeze(0)},
+        {"weight": weight[:-1]},
+        {"shift": shift.flatten()},
+        {"scale": scale[:-1]},
+        {"shift": shift[:, :-1], "scale": scale[:, :-1]},
+        {"shift": shift[:0], "scale": scale[:0]},
+        {"x": x.float()},
+        {"weight": weight.float()},
+        {"indices": indices.float()},
+        {"indices": indices.reshape(2, 2)},
+        {"indices": indices.to("meta")},
+        {"dst_type": "invalid"},
+        {"dst_type": "float4_e2m1fn_x2", "x": x[:, :-1], "weight": weight[:-1]},
+        {"x": x[:, :0], "weight": weight[:0]},
+    ]
+    for override in invalid:
+        arguments = {
+            "x": x,
+            "weight": weight,
+            "shift": shift,
+            "scale": scale,
+            "indices": indices,
+            "eps": 1e-6,
+            "dst_type": "float8_e4m3fn",
+        }
+        arguments.update(override)
+        with pytest.raises(ParametersInvalid):
+            module._validate_inputs(**arguments)
+
+
+def test_rms_norm_indexed_mx_public_dispatch_and_fake(monkeypatch):
+    module = importlib.import_module("mindiesd.layers.rms_norm_indexed_scale_shift_dynamic_mx_quant")
+    x = torch.ones((2, 32), dtype=torch.bfloat16)
+    weight = torch.ones(32, dtype=torch.bfloat16)
+    shift = torch.ones((2, 32), dtype=torch.bfloat16)
+    scale = torch.zeros((2, 32), dtype=torch.bfloat16)
+    indices = torch.tensor([0, 1], dtype=torch.int64)
+    expected = (torch.empty((2, 32)), torch.empty((2, 1, 2)))
+    calls = []
+
+    def fused_e4m3(*args):
+        calls.append("e4m3")
+        return expected
+
+    def fused_general(*args):
+        calls.append(args[-1])
+        return expected
+
+    monkeypatch.setattr(module, "_TRITON_ON_ASCEND", True)
+    monkeypatch.setattr(module, "_fused_e4m3", fused_e4m3)
+    monkeypatch.setattr(module, "_fused_general_mx", fused_general)
+    assert (
+        module.rms_norm_indexed_scale_shift_dynamic_mx_quant(
+            x,
+            weight,
+            shift,
+            scale,
+            indices,
+            1e-6,
+            "float8_e4m3fn",
+        )
+        == expected
+    )
+    fp16 = x.half()
+    assert (
+        module.rms_norm_indexed_scale_shift_dynamic_mx_quant(
+            fp16,
+            weight.half(),
+            shift.half(),
+            scale.half(),
+            indices,
+            1e-6,
+            "float8_e5m2",
+        )
+        == expected
+    )
+    assert calls == ["e4m3", "float8_e5m2"]
+
+    fake_output = module._(
+        x,
+        weight,
+        shift,
+        scale,
+        indices,
+        1e-6,
+        "float4_e2m1fn_x2",
+    )
+    assert fake_output[0].shape == (2, 16)
+    assert fake_output[0].dtype == torch.uint8
+    assert fake_output[1].shape == (2, 1, 2)
+
+    monkeypatch.setattr(module, "_TRITON_ON_ASCEND", False)
+    with pytest.raises(RuntimeError, match="Ascend"):
+        module.rms_norm_indexed_scale_shift_dynamic_mx_quant(
+            x,
+            weight,
+            shift,
+            scale,
+            indices,
+            1e-6,
+            "float8_e4m3fn",
+        )
 
 
 @pytest.mark.parametrize("invalid", ["rank", "branch", "gate", "empty", "device", "dtype", "stride"])

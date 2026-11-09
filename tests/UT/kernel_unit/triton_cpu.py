@@ -11,6 +11,11 @@ from types import SimpleNamespace
 
 import torch
 
+# Some CPU builds do not implement the index kernels for the float8 dtypes, so
+# gathering/scattering through them raises "index_cpu not implemented". Both
+# kernels below move the identical bytes through a uint8 alias instead.
+_FLOAT8_DTYPES = (torch.float8_e4m3fn, torch.float8_e5m2)
+
 
 class Pointer:
     """Element-addressed storage pointer, including a tensor's storage offset."""
@@ -58,9 +63,17 @@ class Language:
     float32 = torch.float32
     float16 = torch.float16
     bfloat16 = torch.bfloat16
+    float8e4nv = torch.float8_e4m3fn
+    float8e5 = torch.float8_e5m2
     int64 = torch.int64
     int32 = torch.int32
+    int16 = torch.int16
     int8 = torch.int8
+    uint8 = torch.uint8
+    # Signed storage preserves the same bit pattern, while CPU PyTorch supports
+    # shifts on int16/int32 (it does not implement them for uint16/uint32).
+    uint16 = torch.int16
+    uint32 = torch.int32
     int1 = torch.bool
     PropagateNan = SimpleNamespace(ALL=True)
     math = SimpleNamespace(exp=torch.exp, exp2=torch.exp2, log=torch.log, log2=torch.log2)
@@ -96,7 +109,10 @@ class Language:
         if torch.any(mask & ((index < 0) | (index >= storage.numel()))):
             raise IndexError("unmasked CPU kernel load outside storage")
         result = torch.full(index.shape, other, dtype=storage.dtype)
-        result[mask] = storage[index[mask]]
+        if storage.dtype in _FLOAT8_DTYPES:
+            result.view(torch.uint8)[mask] = storage.view(torch.uint8)[index[mask]]
+        else:
+            result[mask] = storage[index[mask]]
         return result
 
     @staticmethod
@@ -109,7 +125,11 @@ class Language:
         storage = pointer.storage()
         if torch.any(mask & ((index < 0) | (index >= storage.numel()))):
             raise IndexError("unmasked CPU kernel store outside storage")
-        storage[index[mask]] = value[mask].to(storage.dtype)
+        stored = value.to(storage.dtype)
+        if storage.dtype in _FLOAT8_DTYPES:
+            storage.view(torch.uint8)[index[mask]] = stored.contiguous().view(torch.uint8)[mask]
+        else:
+            storage[index[mask]] = stored[mask]
 
     @staticmethod
     def full(shape, value, dtype):
@@ -125,11 +145,56 @@ class Language:
 
     @staticmethod
     def max(value, axis=0, **kwargs):
+        if isinstance(value, torch.Tensor) and value.dtype in (
+            torch.uint8,
+            torch.uint16,
+            torch.uint32,
+            torch.uint64,
+        ):
+            return value.to(torch.int64).max(dim=axis).values.to(value.dtype)
         return value.max(dim=axis).values
 
     @staticmethod
     def maximum(left, right, **kwargs):
         return torch.maximum(torch.as_tensor(left), torch.as_tensor(right))
+
+    @staticmethod
+    def minimum(left, right, **kwargs):
+        return torch.minimum(torch.as_tensor(left), torch.as_tensor(right))
+
+    @staticmethod
+    def abs(value):
+        return torch.abs(value)
+
+    @staticmethod
+    def reshape(value, shape):
+        return torch.reshape(value, tuple(shape))
+
+    @staticmethod
+    def broadcast_to(value, shape):
+        return torch.broadcast_to(value, tuple(shape))
+
+    @staticmethod
+    def split(value):
+        if value.shape[-1] != 2:
+            raise TypeError("split requires a final dimension of size 2")
+        return value[..., 0], value[..., 1]
+
+    @staticmethod
+    def zeros_like(value):
+        return torch.zeros_like(value)
+
+    @staticmethod
+    def fdiv(left, right, **kwargs):
+        return torch.div(left, right)
+
+    @staticmethod
+    def device_assert(condition, message="", mask=None):
+        condition = torch.as_tensor(condition, dtype=torch.bool)
+        if mask is not None:
+            condition = condition | ~torch.as_tensor(mask, dtype=torch.bool)
+        if not bool(condition.all()):
+            raise AssertionError(message)
 
     @staticmethod
     def dot(left, right, **kwargs):
@@ -252,12 +317,26 @@ def original(kernel):
 class Launch:
     """Explicit CPU launch; unpatched production launches remain forbidden."""
 
-    def __init__(self, kernel, language):
+    def __init__(self, kernel, language, module):
         self.fn = original(kernel)
         self.language = language
+        self.module = module
+
+    def _call_with_kernel_semantics(self, *args, **kwargs):
+        namespace = vars(self.module)
+        had_range = "range" in namespace
+        original_range = namespace.get("range")
+        self.module.range = self.language.range
+        try:
+            return self.fn(*args, **kwargs)
+        finally:
+            if had_range:
+                self.module.range = original_range
+            else:
+                del self.module.range
 
     def __call__(self, *args, **kwargs):
-        return self.fn(*args, **kwargs)
+        return self._call_with_kernel_semantics(*args, **kwargs)
 
     def __getitem__(self, grid):
         def run(*args, **kwargs):
@@ -270,10 +349,20 @@ class Launch:
                     bound.arguments[key] = Pointer(value)
             actual_grid = grid(kwargs) if callable(grid) else grid
             self.language.grid = tuple(int(x) for x in actual_grid)
-            for pid in itertools.product(*(range(x) for x in self.language.grid)):
-                self.language.pid = pid
-                with torch.no_grad():
-                    self.fn(*bound.args, **bound.kwargs)
+            namespace = vars(self.module)
+            had_range = "range" in namespace
+            original_range = namespace.get("range")
+            self.module.range = self.language.range
+            try:
+                for pid in itertools.product(*(range(x) for x in self.language.grid)):
+                    self.language.pid = pid
+                    with torch.no_grad():
+                        self.fn(*bound.args, **bound.kwargs)
+            finally:
+                if had_range:
+                    self.module.range = original_range
+                else:
+                    del self.module.range
 
         return run
 
@@ -281,11 +370,28 @@ class Launch:
 def install(monkeypatch, module):
     """Patch only this test's module globals, preserving original code objects."""
     language = Language()
+    original_to = torch.Tensor.to
+    original_rshift = torch.Tensor.__rshift__
+
+    def tensor_to(value, *args, **kwargs):
+        if kwargs.pop("bitcast", False):
+            dtype = args[0] if args else kwargs.get("dtype")
+            return value.view(dtype)
+        return original_to(value, *args, **kwargs)
+
+    def tensor_rshift(value, shift):
+        if value.dtype in (torch.int16, torch.int32):
+            bits = 16 if value.dtype == torch.int16 else 32
+            unsigned = value.to(torch.int64) & ((1 << bits) - 1)
+            return (unsigned >> int(shift)).to(value.dtype)
+        return original_rshift(value, shift)
+
+    monkeypatch.setattr(torch.Tensor, "to", tensor_to)
+    monkeypatch.setattr(torch.Tensor, "__rshift__", tensor_rshift)
     monkeypatch.setattr(module, "tl", language, raising=False)
-    monkeypatch.setattr(module, "range", language.range, raising=False)
     monkeypatch.setattr(module, "bl", Buffers(), raising=False)
     monkeypatch.setattr(module, "al", Ascend(), raising=False)
     for name, value in list(vars(module).items()):
         if hasattr(value, "fn") and inspect.isfunction(value.fn):
-            monkeypatch.setattr(module, name, Launch(value, language))
+            monkeypatch.setattr(module, name, Launch(value, language, module))
     return language

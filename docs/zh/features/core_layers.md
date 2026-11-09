@@ -236,6 +236,7 @@ out = sparse_attention(
 | `group_norm_silu` | 函数 | GroupNorm 与 SiLU 融合算子 |
 | `fast_layernorm` | 函数 | 高性能 LayerNorm 融合算子 |
 | `layernorm_scale_shift` | 函数 | 自适应 LayerNorm（AdaLayerNorm）融合算子 |
+| `rms_norm_indexed_scale_shift_dynamic_mx_quant` | 函数 | RMSNorm、索引 AdaLN 仿射与动态 MX 量化融合算子 |
 | `get_activation_layer` | 函数 | 获取激活函数实例（含 NPU 加速版本） |
 
 ### rotary_position_embedding
@@ -707,6 +708,82 @@ out = layernorm_scale_shift(norm, x, scale, shift, fused=True)
 
 - `x` 的最后一维必须与 `scale`、`shift` 的最后一维相等。
 - 若 `scale` 或 `shift` 为 3D 张量，则第二维必须为 1 或与 `x` 的第二维（序列长度）相等。
+
+### rms_norm_indexed_scale_shift_dynamic_mx_quant
+
+融合 RMSNorm、索引 AdaLN 仿射与动态 MX（Microscaling）量化（DynamicMxQuant），将 AdaLN 块内“归一化 → 自适应调制 → 量化”三步合并为一次调用，直接产出量化激活与块缩放。
+
+计算公式：
+
+1. `x_norm = rms_norm(x, weight, eps)`
+2. `fused = x_norm * (1 + scale[indices]) + shift[indices]`
+3. `y, mxscale = dynamic_mx_quant(fused, dst_type, block_size=32)`
+
+走单 kernel 路径时，调制结果直接在寄存器内参与量化。走两段执行路径时，先把调制结果写回 HBM 临时张量，再由量化算子读入。两条路径均返回量化值 `y` 和块缩放 `mxscale`。若调用方还需要 AdaLN 的浮点激活，应使用 `rms_norm_indexed_scale_shift`。
+
+```python
+from mindiesd import rms_norm_indexed_scale_shift_dynamic_mx_quant
+```
+
+#### 函数签名
+
+```python
+rms_norm_indexed_scale_shift_dynamic_mx_quant(
+    x, weight, shift, scale, indices,
+    eps=1e-6,
+    dst_type="float8_e4m3fn"
+) -> tuple[torch.Tensor, torch.Tensor]
+```
+
+#### 参数说明
+
+| 参数 | 类型 | 必选 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `x` | `torch.Tensor` | 是 | - | 输入激活，2D `[rows, hidden]`，支持 `bfloat16` 与 `float16` |
+| `weight` | `torch.Tensor` | 是 | - | RMSNorm 权重，1D `[hidden]`，dtype 与 `x` 一致 |
+| `shift` | `torch.Tensor` | 是 | - | 索引 AdaLN 偏移，2D `[conditions, hidden]`，dtype 与 `x` 一致 |
+| `scale` | `torch.Tensor` | 是 | - | 索引 AdaLN 缩放，2D `[conditions, hidden]`，dtype 与 `x` 一致 |
+| `indices` | `torch.Tensor` | 是 | - | 每行对应的条件索引，1D `[rows]`，`int32` 或 `int64` |
+| `eps` | `float` | 否 | `1e-6` | RMSNorm 方差中使用的有限正数 |
+| `dst_type` | `str` | 否 | `"float8_e4m3fn"` | MX 输出类型，支持 `"float8_e4m3fn"`、`"float8_e5m2"`、`"float4_e2m1fn_x2"`、`"float4_e1m2fn_x2"`，同时接受别名 `"float4_e2m1"` 与 `"float4_e1m2"` |
+
+#### 返回值
+
+返回二元组 `(y, mxscale)`：
+
+| 返回值 | 类型 | 说明 |
+|--------|------|------|
+| `y` | `torch.Tensor` | 量化结果。FP8 输出为 `[rows, hidden]`；FP4 输出为 `[rows, hidden // 2]` 的打包 `uint8` |
+| `mxscale` | `torch.Tensor` | `float8_e8m0fnu` 的 32 元素块缩放，形状 `[rows, ceil(groups / 2), 2]` |
+
+#### 使用示例
+
+```python
+import torch
+from mindiesd import rms_norm_indexed_scale_shift_dynamic_mx_quant
+
+rows, hidden, conditions = 1024, 2048, 8
+x = torch.randn(rows, hidden, device="npu", dtype=torch.bfloat16)
+weight = torch.randn(hidden, device="npu", dtype=torch.bfloat16)
+shift = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+scale = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+indices = torch.randint(0, conditions, (rows,), device="npu", dtype=torch.int32)
+
+y, mxscale = rms_norm_indexed_scale_shift_dynamic_mx_quant(
+    x, weight, shift, scale, indices,
+    eps=1e-6,
+    dst_type="float8_e4m3fn",
+)
+```
+
+#### 约束条件
+
+- `x` 必须为 2D，`weight` 必须为 1D 且长度等于 `hidden`，`shift` 与 `scale` 形状必须同为 `[conditions, hidden]`，且 `conditions > 0`。
+- `x`、`weight`、`shift`、`scale` 的 dtype 必须一致，仅支持 `bfloat16` 与 `float16`；`indices` 支持 `int32`/`int64`，形状必须严格为 `[rows]`，每个索引必须满足 `0 <= index < conditions`。
+- 非法索引会在设备侧被拦截，并在后续 NPU 同步时报告设备错误；算子不会为索引范围检查执行主机同步。
+- 所有输入必须位于同一 device。
+- `dst_type` 必须为上述四种取值之一；MXFP4 输出要求 `hidden` 为偶数。
+- 需要在支持 Triton 的昇腾 NPU 环境运行。
 
 ### get_activation_layer
 

@@ -20,6 +20,9 @@ from .norm import RMSNorm, add_layer_norm, add_rms_norm, fast_layernorm, group_n
 from .adalayernorm import layernorm_scale_shift
 from .muls_add import muls_add
 from .residual_gate_add import qwen_residual_gate_add, residual_gate_add
+from .rms_norm_indexed_scale_shift_dynamic_mx_quant import (
+    rms_norm_indexed_scale_shift_dynamic_mx_quant,
+)
 from .rope import rotary_position_embedding
 from .fused_moe import fused_moe
 from .eagle_ffn_linear import eagle_ffn_linear
@@ -43,6 +46,7 @@ __all__ = [
     "muls_add",
     "qwen_residual_gate_add",
     "residual_gate_add",
+    "rms_norm_indexed_scale_shift_dynamic_mx_quant",
     "rotary_position_embedding",
     "sparse_attention",
     "SparseLinearAttention",
