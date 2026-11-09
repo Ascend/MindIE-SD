@@ -90,13 +90,13 @@ Coming soon...
 
 ## Image Installation (vLLM-Omni)
 
-The Docker image combines **vLLM-Omni + MindIE SD**. MindIE-SD 3.1.0 provides three product variants:
+The Docker image combines **vLLM-Omni + MindIE SD**. MindIE-SD 3.2.0 provides three product variants:
 
 | Supported Product | Image Tag | Base Image |
 | --- | --- | --- |
-| Atlas 800I A2 inference server | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0` |
-| Atlas 800I A3 SuperPoD Server | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0-a3` |
-| 950PR&950DT products | `v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.28.0-a5` |
+| Atlas 800I A2 inference server | `v3.2.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.32.0` |
+| Atlas 800I A3 SuperPoD Server | `v3.2.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.32.0-a3` |
+| 950PR&950DT products | `v3.2.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12` | `quay.io/ascend/vllm-omni:v0.32.0-a5` |
 
 Pull a published `mindiesd` image from the [MindIE image repository](https://www.hiascend.com/developer/ascendhub/detail/7c3b1b7c5151469a98ac08b868dab45f), or build locally from the `dev` branch. The current base images provide `linux/amd64` only.
 
@@ -104,7 +104,7 @@ Pull a published `mindiesd` image from the [MindIE image repository](https://www
 ```bash
 git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
 git checkout dev && cd docker/omni
-docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12 -f Dockerfile.a2.ubuntu .
+docker build --platform linux/amd64 -t mindiesd:v3.2.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12 -f Dockerfile.a2.ubuntu .
 ```
 <!-- end id1 -->
 
@@ -112,7 +112,7 @@ docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0
 ```bash
 git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
 git checkout dev && cd docker/omni
-docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12 -f Dockerfile.a3.ubuntu .
+docker build --platform linux/amd64 -t mindiesd:v3.2.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12 -f Dockerfile.a3.ubuntu .
 ```
 <!-- end id2 -->
 
@@ -120,7 +120,7 @@ docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0
 ```bash
 git clone https://gitcode.com/Ascend/MindIE-SD.git && cd MindIE-SD
 git checkout dev && cd docker/omni
-docker build --platform linux/amd64 -t mindiesd:v3.1.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12 -f Dockerfile.a5.ubuntu .
+docker build --platform linux/amd64 -t mindiesd:v3.2.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12 -f Dockerfile.a5.ubuntu .
 ```
 <!-- end id3 -->
 
