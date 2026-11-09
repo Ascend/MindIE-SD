@@ -239,6 +239,7 @@ The fused operator series interfaces provide Ascend high-performance fused opera
 | `fast_layernorm` | Function | High-performance LayerNorm fused operator |
 | `layernorm_scale_shift` | Function | Adaptive LayerNorm (AdaLayerNorm) fused operator |
 | `rms_norm_indexed_scale_shift_dynamic_mx_quant` | Function | Fused RMSNorm, indexed AdaLN affine and dynamic MX quantization operator |
+| `split_qkv_norm_rope_concat` | Function | Fused Split QKV, Q/K RMSNorm, partial RoPE, and optional V copy |
 | `get_activation_layer` | Function | Get activation function instance (with NPU-accelerated versions) |
 
 ### rotary_position_embedding
@@ -448,6 +449,32 @@ operator execution errors propagate unchanged.
 
 For legacy BSND-input/BNSD-output calls, explicitly pass `output_layout="BNSD"`.
 Omitting both layout arguments selects BSND input and output.
+
+### split_qkv_norm_rope_concat
+
+Fuses packed-QKV split, per-head Q/K RMSNorm, partial NeoX RoPE, tail concatenation, and an optional V copy into one Triton kernel. Q/K normalization and rotation use FP32 arithmetic and round back to the input dtype.
+
+```python
+from mindiesd import split_qkv_norm_rope_concat
+```
+
+The API is also available from `mindiesd.layers`. The `torch.ops.mindiesd.split_qkv_norm_rope_concat` operator allocates Q/K/V and provides fake/meta support; the Python wrapper retains the optional `v_out` zero-copy path.
+
+```python
+split_qkv_norm_rope_concat(
+    qkv, q_weight, k_weight, cos_sin_cache, positions,
+    *, num_heads, head_dim, rope_dim, eps=1e-5, validate_values=False, v_out=None, out_dtype=None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]
+```
+
+- `qkv`: `[T, 3*N*D]`; `q_weight`/`k_weight`: `[D]`; `cos_sin_cache`: `[maxPos, R]` containing `concat(cos, sin)` rows; `positions`: int32 `[T]`.
+- `N in [1,128]`; `D in [96,256]` and divisible by 8; `R` is even and `R <= D`; `T=0` is valid.
+- All tensors must share a device; `qkv`, weights, cache, and `v_out` must be contiguous; positions must be contiguous int32. Only bf16/fp16 on Ascend NPU are supported.
+- Returns `(q_out, k_out, v_out)`, each `[T,N,D]`; the third value is `None` when `v_out=None`.
+- `validate_values=False` by default so only metadata is checked; set it to `True` for debugging or boundary checks to avoid full-tensor scans and host synchronization on hot paths.
+- A5 reference stack: CANN 9.2.1, torch_npu 2.10.0.post7, triton-ascend 3.6.0.post2. A6 requires an available Ascend 960DT.
+
+---
 
 ### add_layer_norm
 

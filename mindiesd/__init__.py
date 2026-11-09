@@ -36,6 +36,9 @@ __all__ = [
     'rms_norm_indexed_scale_shift',
     'rms_norm_indexed_scale_shift_dynamic_mx_quant',
     'sparse_attention',
+    'split_qkv_norm_rope_concat',
+    'triton_split_qkv_norm_rope_concat',
+    'validate_split_qkv_norm_rope_concat_inputs',
 ]
 
 
@@ -61,6 +64,9 @@ from .layers import (  # noqa: E402
     rms_norm_indexed_scale_shift_dynamic_mx_quant,
     rotary_position_embedding,
     sparse_attention,
+    split_qkv_norm_rope_concat,
+    triton_split_qkv_norm_rope_concat,
+    validate_split_qkv_norm_rope_concat_inputs,
 )
 from .layers.norm_rope_concat import norm_rope_concat  # noqa: E402
 from .layers.index_modulation import rms_norm_indexed_scale_shift  # noqa: E402

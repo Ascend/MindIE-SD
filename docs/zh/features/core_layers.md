@@ -237,6 +237,7 @@ out = sparse_attention(
 | `fast_layernorm` | 函数 | 高性能 LayerNorm 融合算子 |
 | `layernorm_scale_shift` | 函数 | 自适应 LayerNorm（AdaLayerNorm）融合算子 |
 | `rms_norm_indexed_scale_shift_dynamic_mx_quant` | 函数 | RMSNorm、索引 AdaLN 仿射与动态 MX 量化融合算子 |
+| `split_qkv_norm_rope_concat` | 函数 | Split QKV、Q/K RMSNorm、Partial RoPE 与可选 V 拷贝融合算子 |
 | `get_activation_layer` | 函数 | 获取激活函数实例（含 NPU 加速版本） |
 
 ### rotary_position_embedding
@@ -444,6 +445,32 @@ BSND 输出为 BNSD 存储上的转置视图，可能不连续；八个统计输
 
 迁移旧版 BSND 输入、BNSD 输出调用时，显式指定 `output_layout="BNSD"`。
 省略两个 layout 参数时，输入和输出均按 BSND 解释。
+
+### split_qkv_norm_rope_concat
+
+将 packed QKV 拆分、Q/K 逐 head RMSNorm、partial NeoX RoPE、尾段拼接和可选 V 拷贝融合到单个 Triton kernel。Q/K 归一化与旋转使用 FP32 计算，最终按输入 dtype 写回。
+
+```python
+from mindiesd import split_qkv_norm_rope_concat
+```
+
+该接口也可从 `mindiesd.layers` 导入。`torch.ops.mindiesd.split_qkv_norm_rope_concat` 返回新分配的 Q/K/V，并提供 fake/meta 实现；Python 封装保留可选 `v_out` 的零额外拷贝语义。
+
+```python
+split_qkv_norm_rope_concat(
+    qkv, q_weight, k_weight, cos_sin_cache, positions,
+    *, num_heads, head_dim, rope_dim, eps=1e-5, validate_values=False, v_out=None, out_dtype=None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]
+```
+
+- `qkv`: `[T, 3*N*D]`；`q_weight`/`k_weight`: `[D]`；`cos_sin_cache`: `[maxPos, R]`，行为 `concat(cos, sin)`；`positions`: int32 `[T]`。
+- `N in [1,128]`；`D in [96,256]` 且为 8 的倍数；`R` 为偶数且 `R <= D`；`T=0` 合法。
+- 所有张量必须同设备；`qkv`、权重、cache 和 `v_out` 连续，`positions` 为连续 int32。仅支持 bf16/fp16 和 Ascend NPU。
+- 返回 `(q_out, k_out, v_out)`，形状均为 `[T,N,D]`；`v_out=None` 时第三项为 `None`。
+- 默认 `validate_values=False`，仅执行元数据校验；调试或边界检查时显式设为 `True`，避免热路径扫描完整张量并触发 host 同步。
+- A5 参考验证栈为 CANN 9.2.1、torch_npu 2.10.0.post7、triton-ascend 3.6.0.post2；A6 依赖可用的 Ascend 960DT。
+
+---
 
 ### add_layer_norm
 

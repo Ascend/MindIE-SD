@@ -24,6 +24,11 @@ from .rms_norm_indexed_scale_shift_dynamic_mx_quant import (
     rms_norm_indexed_scale_shift_dynamic_mx_quant,
 )
 from .rope import rotary_position_embedding
+from .split_qkv_norm_rope_concat import (
+    split_qkv_norm_rope_concat,
+    triton_split_qkv_norm_rope_concat,
+    validate_split_qkv_norm_rope_concat_inputs,
+)
 from .fused_moe import fused_moe
 from .eagle_ffn_linear import eagle_ffn_linear
 from .flash_attn import SparseLinearAttention
@@ -49,5 +54,8 @@ __all__ = [
     "rms_norm_indexed_scale_shift_dynamic_mx_quant",
     "rotary_position_embedding",
     "sparse_attention",
+    "split_qkv_norm_rope_concat",
     "SparseLinearAttention",
+    "triton_split_qkv_norm_rope_concat",
+    "validate_split_qkv_norm_rope_concat_inputs",
 ]
