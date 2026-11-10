@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD024 -->
 # 核心加速API
 
 本文档描述 `mindiesd` 包通过 `layers` 模块对外暴露的接口。所有接口均可通过 `from mindiesd import <接口名>` 直接导入使用。
@@ -237,6 +238,7 @@ out = sparse_attention(
 | `fast_layernorm` | 函数 | 高性能 LayerNorm 融合算子 |
 | `layernorm_scale_shift` | 函数 | 自适应 LayerNorm（AdaLayerNorm）融合算子 |
 | `rms_norm_indexed_scale_shift_dynamic_mx_quant` | 函数 | RMSNorm、索引 AdaLN 仿射与动态 MX 量化融合算子 |
+| `indexed_gate_rms_norm_scale_shift_dynamic_mx_quant` | 函数 | 索引门控残差 RMSNorm、索引 AdaLN 仿射与动态 MX 量化融合算子 |
 | `split_qkv_norm_rope_concat` | 函数 | Split QKV、Q/K RMSNorm、Partial RoPE 与可选 V 拷贝融合算子 |
 | `get_activation_layer` | 函数 | 获取激活函数实例（含 NPU 加速版本） |
 
@@ -811,6 +813,84 @@ y, mxscale = rms_norm_indexed_scale_shift_dynamic_mx_quant(
 - 所有输入必须位于同一 device。
 - `dst_type` 必须为上述四种取值之一；MXFP4 输出要求 `hidden` 为偶数。
 - 需要在支持 Triton 的昇腾 NPU 环境运行。
+
+### indexed_gate_rms_norm_scale_shift_dynamic_mx_quant
+
+融合索引门控残差、RMSNorm、索引 AdaLN 仿射与动态 MX（Microscaling）量化（DynamicMxQuant），将“门控残差 → 归一化 → 自适应调制 → 量化”合并为一次调用。
+
+计算公式：
+
+1. `updated = residual + gate[indices] * branch`
+2. `modulated = rms_norm(updated, weight, eps) * (1 + scale[indices]) + shift[indices]`
+3. `y, mxscale = dynamic_mx_quant(modulated, dst_type, block_size=32)`
+
+```python
+from mindiesd import indexed_gate_rms_norm_scale_shift_dynamic_mx_quant
+```
+
+#### 函数签名
+
+```python
+indexed_gate_rms_norm_scale_shift_dynamic_mx_quant(
+    residual, gate, branch, weight, shift, scale, indices,
+    eps=1e-6,
+    dst_type="float8_e4m3fn",
+) -> tuple[torch.Tensor, torch.Tensor]
+```
+
+#### 参数说明
+
+| 参数 | 类型 | 必选 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `residual` | `torch.Tensor` | 是 | - | 输入残差，2D `[rows, hidden]`，支持 `bfloat16` 或 `float16` |
+| `gate` | `torch.Tensor` | 是 | - | 门控权重，2D `[conditions, hidden]`，dtype 与 `residual` 一致 |
+| `branch` | `torch.Tensor` | 是 | - | 分支激活，2D `[rows, hidden]`，dtype 与 `residual` 一致 |
+| `weight` | `torch.Tensor` | 是 | - | RMSNorm 权重，1D `[hidden]`，dtype 与 `residual` 一致 |
+| `shift` | `torch.Tensor` | 是 | - | 索引 AdaLN 偏移，2D `[conditions, hidden]`，dtype 与 `residual` 一致 |
+| `scale` | `torch.Tensor` | 是 | - | 索引 AdaLN 缩放，2D `[conditions, hidden]`，dtype 与 `residual` 一致 |
+| `indices` | `torch.Tensor` | 是 | - | 每行对应的条件索引，1D `[rows]`，`int32` 或 `int64` |
+| `eps` | `float` | 否 | `1e-6` | RMSNorm 方差中使用的有限正数 |
+| `dst_type` | `str` | 否 | `"float8_e4m3fn"` | MX 输出类型，支持 `"float8_e4m3fn"`、`"float8_e5m2"`、`"float4_e2m1fn_x2"`、`"float4_e1m2fn_x2"`，同时接受别名 `"float4_e2m1"`、`"float4_e2m1fn"`、`"float4_e1m2"` 与 `"float4_e1m2fn"` |
+
+#### 返回值
+
+返回二元组 `(y, mxscale)`：
+
+| 返回值 | 类型 | 说明 |
+|--------|------|------|
+| `y` | `torch.Tensor` | 量化结果。FP8 输出为 `[rows, hidden]`；FP4 输出为 `[rows, hidden // 2]` 的打包 `uint8` |
+| `mxscale` | `torch.Tensor` | `float8_e8m0fnu` 的 32 元素块缩放，形状 `[rows, ceil(groups / 2), 2]` |
+
+#### 使用示例
+
+```python
+import torch
+from mindiesd import indexed_gate_rms_norm_scale_shift_dynamic_mx_quant
+
+rows, hidden, conditions = 1024, 2048, 8
+residual = torch.randn(rows, hidden, device="npu", dtype=torch.bfloat16)
+gate = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+branch = torch.randn(rows, hidden, device="npu", dtype=torch.bfloat16)
+weight = torch.randn(hidden, device="npu", dtype=torch.bfloat16)
+shift = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+scale = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+indices = torch.randint(0, conditions, (rows,), device="npu", dtype=torch.int32)
+
+y, mxscale = indexed_gate_rms_norm_scale_shift_dynamic_mx_quant(
+    residual, gate, branch, weight, shift, scale, indices,
+    eps=1e-6,
+    dst_type="float8_e4m3fn",
+)
+```
+
+#### 约束条件
+
+- `residual` 与 `branch` 形状一致且必须为 2D `[rows, hidden]`；`gate`、`shift`、`scale` 形状一致且为 2D `[conditions, hidden]`；`weight` 为 1D 且长度等于 `hidden`。
+- `residual`、`gate`、`branch`、`weight`、`shift`、`scale` 的 dtype 必须一致，支持 `bfloat16` 或 `float16`；`indices` 支持 `int32`/`int64`，元素个数必须等于 `rows`。
+- 所有输入必须位于同一 device。
+- `dst_type` 必须为上述取值之一；MXFP4 输出要求 `hidden` 为偶数。
+- 需要在支持 Triton 的昇腾 NPU 环境运行。
+- 算子内部按输入形状选择“单 kernel 融合实现”或“Triton 调制 kernel + `npu_dynamic_mx_quant` 链式实现”，两条实现路径结果逐字节一致。待 Triton 支持 AscendC 量化指令后统一走融合实现。
 
 ### get_activation_layer
 

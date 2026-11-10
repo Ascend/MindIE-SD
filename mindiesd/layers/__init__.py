@@ -32,6 +32,9 @@ from .split_qkv_norm_rope_concat import (
 from .fused_moe import fused_moe
 from .eagle_ffn_linear import eagle_ffn_linear
 from .flash_attn import SparseLinearAttention
+from .indexed_gate_rms_norm_scale_shift_dynamic_mx_quant import (
+    indexed_gate_rms_norm_scale_shift_dynamic_mx_quant,
+)
 
 __all__ = [
     "RMSNorm",
@@ -47,6 +50,7 @@ __all__ = [
     "fused_moe",
     "get_activation_layer",
     "group_norm_silu",
+    "indexed_gate_rms_norm_scale_shift_dynamic_mx_quant",
     "layernorm_scale_shift",
     "muls_add",
     "qwen_residual_gate_add",

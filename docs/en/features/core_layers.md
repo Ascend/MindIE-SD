@@ -1,4 +1,5 @@
-﻿# Core Acceleration API
+<!-- markdownlint-disable MD024 -->
+# Core Acceleration API
 
 This document describes the interfaces exposed by the `mindiesd` package through the `layers` module. All interfaces can be imported directly using `from mindiesd import <interface_name>`.
 
@@ -239,6 +240,7 @@ The fused operator series interfaces provide Ascend high-performance fused opera
 | `fast_layernorm` | Function | High-performance LayerNorm fused operator |
 | `layernorm_scale_shift` | Function | Adaptive LayerNorm (AdaLayerNorm) fused operator |
 | `rms_norm_indexed_scale_shift_dynamic_mx_quant` | Function | Fused RMSNorm, indexed AdaLN affine and dynamic MX quantization operator |
+| `indexed_gate_rms_norm_scale_shift_dynamic_mx_quant` | Function | Fused indexed gate residual RMSNorm, indexed AdaLN affine and dynamic MX quantization operator |
 | `split_qkv_norm_rope_concat` | Function | Fused Split QKV, Q/K RMSNorm, partial RoPE, and optional V copy |
 | `get_activation_layer` | Function | Get activation function instance (with NPU-accelerated versions) |
 
@@ -815,6 +817,84 @@ y, mxscale = rms_norm_indexed_scale_shift_dynamic_mx_quant(
 - All inputs must live on the same device.
 - `dst_type` must be one of the four values above; MXFP4 output requires an even `hidden` size.
 - Requires an Ascend NPU environment where Triton is available.
+
+### indexed_gate_rms_norm_scale_shift_dynamic_mx_quant
+
+Fuses indexed gate residual, RMSNorm, indexed AdaLN affine and dynamic MX (Microscaling) quantization (DynamicMxQuant): merges the gate residual, normalization, adaptive modulation and quantization into a single call.
+
+Formula:
+
+1. `updated = residual + gate[indices] * branch`
+2. `modulated = rms_norm(updated, weight, eps) * (1 + scale[indices]) + shift[indices]`
+3. `y, mxscale = dynamic_mx_quant(modulated, dst_type, block_size=32)`
+
+```python
+from mindiesd import indexed_gate_rms_norm_scale_shift_dynamic_mx_quant
+```
+
+#### Function Signature
+
+```python
+indexed_gate_rms_norm_scale_shift_dynamic_mx_quant(
+    residual, gate, branch, weight, shift, scale, indices,
+    eps=1e-6,
+    dst_type="float8_e4m3fn",
+) -> tuple[torch.Tensor, torch.Tensor]
+```
+
+#### Parameter Description
+
+| Parameter | Type | Required | Default | Description |
+|------|------|------|--------|------|
+| `residual` | `torch.Tensor` | Yes | - | Input residual, 2D `[rows, hidden]`, `bfloat16` or `float16` |
+| `gate` | `torch.Tensor` | Yes | - | Gate weight, 2D `[conditions, hidden]`, same dtype as `residual` |
+| `branch` | `torch.Tensor` | Yes | - | Branch activation, 2D `[rows, hidden]`, same dtype as `residual` |
+| `weight` | `torch.Tensor` | Yes | - | RMSNorm weight, 1D `[hidden]`, same dtype as `residual` |
+| `shift` | `torch.Tensor` | Yes | - | Indexed AdaLN shift, 2D `[conditions, hidden]`, same dtype as `residual` |
+| `scale` | `torch.Tensor` | Yes | - | Indexed AdaLN scale, 2D `[conditions, hidden]`, same dtype as `residual` |
+| `indices` | `torch.Tensor` | Yes | - | Per-row condition index, 1D `[rows]`, `int32` or `int64` |
+| `eps` | `float` | No | `1e-6` | Finite positive value added to the RMSNorm variance |
+| `dst_type` | `str` | No | `"float8_e4m3fn"` | MX output type: `"float8_e4m3fn"`, `"float8_e5m2"`, `"float4_e2m1fn_x2"` or `"float4_e1m2fn_x2"`; aliases `"float4_e2m1"`, `"float4_e2m1fn"`, `"float4_e1m2"` and `"float4_e1m2fn"` are also accepted |
+
+#### Return Value
+
+Returns a tuple `(y, mxscale)`:
+
+| Value | Type | Description |
+|--------|------|------|
+| `y` | `torch.Tensor` | Quantized result. `[rows, hidden]` for FP8 output; packed `uint8` of `[rows, hidden // 2]` for FP4 output |
+| `mxscale` | `torch.Tensor` | `float8_e8m0fnu` block scale of 32 elements per group, shape `[rows, ceil(groups / 2), 2]` |
+
+#### Usage Example
+
+```python
+import torch
+from mindiesd import indexed_gate_rms_norm_scale_shift_dynamic_mx_quant
+
+rows, hidden, conditions = 1024, 2048, 8
+residual = torch.randn(rows, hidden, device="npu", dtype=torch.bfloat16)
+gate = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+branch = torch.randn(rows, hidden, device="npu", dtype=torch.bfloat16)
+weight = torch.randn(hidden, device="npu", dtype=torch.bfloat16)
+shift = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+scale = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+indices = torch.randint(0, conditions, (rows,), device="npu", dtype=torch.int32)
+
+y, mxscale = indexed_gate_rms_norm_scale_shift_dynamic_mx_quant(
+    residual, gate, branch, weight, shift, scale, indices,
+    eps=1e-6,
+    dst_type="float8_e4m3fn",
+)
+```
+
+#### Constraints
+
+- `residual` and `branch` must share the same 2D shape `[rows, hidden]`; `gate`, `shift` and `scale` must share the same 2D shape `[conditions, hidden]`; `weight` must be 1D with length `hidden`.
+- `residual`, `gate`, `branch`, `weight`, `shift` and `scale` must share the same dtype, `bfloat16` or `float16`; `indices` supports `int32`/`int64` and must contain exactly `rows` values.
+- All inputs must live on the same device.
+- `dst_type` must be one of the values above; MXFP4 output requires an even `hidden` size.
+- Requires an Ascend NPU environment where Triton is available.
+- The operator picks, per input shape, either the single-kernel fused implementation or the Triton modulation kernel followed by `npu_dynamic_mx_quant`; both are byte-exact. Once Triton supports the AscendC quantization instructions, all shapes use the fused implementation.
 
 ### get_activation_layer
 

@@ -233,3 +233,125 @@ def test_rms_norm_indexed_mx_hybrid_modulation_body(monkeypatch, dtype, hidden):
     assert outputs[0].shape == (2, hidden)
     assert len(modulated) == 1
     torch.testing.assert_close(modulated[0], torch.full_like(modulated[0], 2.125), rtol=0, atol=0)
+
+
+def test_indexed_gate_mx_e4m3_full_row_body(monkeypatch):
+    module = importlib.import_module("mindiesd.layers.indexed_gate_rms_norm_scale_shift_dynamic_mx_quant")
+    install(monkeypatch, module)
+    rows, hidden = 2, 32
+    residual = torch.ones((rows, hidden), dtype=torch.bfloat16)
+    gate = torch.zeros((3, hidden), dtype=torch.bfloat16)
+    branch = torch.ones((rows, hidden), dtype=torch.bfloat16)
+    weight = torch.ones(hidden, dtype=torch.bfloat16)
+    shift = torch.ones((3, hidden), dtype=torch.bfloat16)
+    scale = torch.zeros((3, hidden), dtype=torch.bfloat16)
+    indices = torch.tensor([0, 2], dtype=torch.int64)
+    y = torch.empty((rows, hidden), dtype=torch.float8_e4m3fn)
+    mxscale = torch.empty((rows, 1, 2), dtype=torch.uint8)
+    module._indexed_gate_rms_norm_mx_quant_kernel[(rows,)](
+        y,
+        mxscale,
+        residual,
+        gate,
+        branch,
+        weight,
+        shift,
+        scale,
+        indices,
+        0,
+        hidden,
+        1e-6,
+        hidden,
+        2,
+        multibuffer=False,
+    )
+    assert torch.equal(y.float(), torch.full_like(y, 256.0, dtype=torch.float32))
+    assert torch.equal(mxscale[:, 0, 0], torch.full((rows,), 120, dtype=torch.uint8))
+
+
+def _gate_mx_inputs(rows, hidden, dtype, conditions=3):
+    residual = torch.ones((rows, hidden), dtype=dtype)
+    gate = torch.zeros((conditions, hidden), dtype=dtype)
+    branch = torch.ones((rows, hidden), dtype=dtype)
+    weight = torch.ones(hidden, dtype=dtype)
+    shift = torch.ones((conditions, hidden), dtype=dtype)
+    scale = torch.full((conditions, hidden), 0.125, dtype=dtype)
+    indices = torch.arange(rows, dtype=torch.int64) % conditions
+    return residual, gate, branch, weight, shift, scale, indices
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
+@pytest.mark.parametrize(
+    "dst_type",
+    ["float8_e4m3fn", "float8_e5m2", "float4_e2m1fn_x2", "float4_e1m2fn_x2"],
+)
+def test_indexed_gate_mx_general_multirow_body(monkeypatch, dtype, dst_type):
+    module = importlib.import_module("mindiesd.layers.indexed_gate_rms_norm_scale_shift_dynamic_mx_quant")
+    install(monkeypatch, module)
+    outputs = module._fused_general_mx(*_gate_mx_inputs(32, 32, dtype), 1e-6, dst_type)
+    _assert_uniform_mx(outputs, 32, 32, dst_type)
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
+@pytest.mark.parametrize(
+    "dst_type",
+    ["float8_e4m3fn", "float8_e5m2", "float4_e2m1fn_x2", "float4_e1m2fn_x2"],
+)
+def test_indexed_gate_mx_general_full_row_body(monkeypatch, dtype, dst_type):
+    module = importlib.import_module("mindiesd.layers.indexed_gate_rms_norm_scale_shift_dynamic_mx_quant")
+    install(monkeypatch, module)
+    outputs = module._fused_general_mx(*_gate_mx_inputs(2, 1000, dtype), 1e-6, dst_type)
+    _assert_uniform_mx(outputs, 2, 1000, dst_type)
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
+@pytest.mark.parametrize(
+    "dst_type,hidden",
+    [
+        ("float8_e4m3fn", 8192),
+        ("float8_e5m2", 8192),
+        ("float4_e2m1fn_x2", 4098),
+        ("float4_e1m2fn_x2", 4098),
+    ],
+)
+def test_indexed_gate_mx_general_tiled_body(monkeypatch, dtype, dst_type, hidden):
+    module = importlib.import_module("mindiesd.layers.indexed_gate_rms_norm_scale_shift_dynamic_mx_quant")
+    install(monkeypatch, module)
+    outputs = module._fused_general_mx(*_gate_mx_inputs(1, hidden, dtype), 1e-6, dst_type)
+    _assert_uniform_mx(outputs, 1, hidden, dst_type)
+
+
+@pytest.mark.parametrize(
+    "rows,hidden",
+    [(1, 1), (128, 32), (1, 8194), (1, 32769)],
+)
+def test_indexed_gate_mx_e4m3_branch_bodies(monkeypatch, rows, hidden):
+    module = importlib.import_module("mindiesd.layers.indexed_gate_rms_norm_scale_shift_dynamic_mx_quant")
+    install(monkeypatch, module)
+    outputs = module._fused_e4m3(
+        *_gate_mx_inputs(rows, hidden, torch.bfloat16),
+        1e-6,
+        "float8_e4m3fn",
+    )
+    _assert_uniform_mx(outputs, rows, hidden, "float8_e4m3fn")
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
+@pytest.mark.parametrize("hidden", [1000, 1024])
+def test_indexed_gate_mx_hybrid_modulation_body(monkeypatch, dtype, hidden):
+    module = importlib.import_module("mindiesd.layers.indexed_gate_rms_norm_scale_shift_dynamic_mx_quant")
+    install(monkeypatch, module)
+    modulated = []
+
+    def quantize(value, **kwargs):
+        del kwargs
+        modulated.append(value.clone())
+        rows, width = value.shape
+        scales = torch.empty(module._mxscale_shape(rows, width), dtype=torch.uint8)
+        return torch.empty((rows, width), dtype=torch.float8_e4m3fn), scales
+
+    monkeypatch.setattr(module.torch_npu, "npu_dynamic_mx_quant", quantize)
+    outputs = module._hybrid_mx(*_gate_mx_inputs(2, hidden, dtype), 1e-6, "float8_e4m3fn")
+    assert outputs[0].shape == (2, hidden)
+    assert len(modulated) == 1
+    torch.testing.assert_close(modulated[0], torch.full_like(modulated[0], 2.125), rtol=0, atol=0)

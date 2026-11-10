@@ -74,6 +74,7 @@ MindIE各组件需要配套使用，请勿跨版本混用各组件。
 | 14   | DummyRun 工具链增强。量化参数统一为 `--quant {fp32,bf16,w8a8}`，w8a8 按设备感知选择量化格式（Ascend 950PR&950DT系列产品走 W8A8-MXFP8，Atlas 800I A2推理服务器/Atlas 800I A3超节点服务器走 W8A8-DYNAMIC INT8）；Wan2.2 dummy run 新增帧数与分辨率配置。 |
 | 15   | 部署与生态扩展。vLLM-Omni 联合镜像基础镜像对齐 v0.28.0 并新增 Ascend 950PR&950DT系列产品版本；新增 MiniMax-H3、Qwen-Image-2.1、DiffSynth-Engine 推理部署指南与 FLUX.1-dev Cache-DiT 示例。 |
 | 16   | AdaLN 索引调制 MX 量化融合算子。新增公共 API `mindiesd.rms_norm_indexed_scale_shift_dynamic_mx_quant`，将 RMSNorm、索引 AdaLN 仿射（`x * (1 + scale[idx]) + shift[idx]`）与 32 元素动态 MX 量化（FP8 E4M3/E5M2、FP4 E2M1/E1M2）融合为一次调用，返回量化激活与 E8M0 块缩放，供下游量化矩阵乘使用。 |
+| 17   | 索引门控残差 AdaLN MX 量化融合算子。新增公共 API `mindiesd.indexed_gate_rms_norm_scale_shift_dynamic_mx_quant`，将门控残差（`residual + gate[idx] * branch`）、RMSNorm、索引 AdaLN 仿射（`x * (1 + scale[idx]) + shift[idx]`）与 32 元素动态 MX 量化（FP8 E4M3、MXFP4 E2M1/E1M2）融合为一次调用，返回量化结果与 E8M0 块缩放。 |
 
 ### 修改特性
 
@@ -106,8 +107,9 @@ MindIE各组件需要配套使用，请勿跨版本混用各组件。
 | def mindiesd.layers.eagle_ffn_linear | 新增 | FFN 融合算子接口，Ascend 950PR&950DT系列产品走融合路径 |
 | def mindiesd.layers.residual_gate_add | 新增 | 残差门控融合算子接口 |
 | def mindiesd.layers.rms_norm_indexed_scale_shift_dynamic_mx_quant | 新增 | RMSNorm、索引 AdaLN 仿射与动态 MX 量化融合算子，量化输出支持 FP8 E4M3/E5M2 与 MXFP4 E2M1/E1M2，并输出 E8M0 块缩放 |
+| def mindiesd.layers.indexed_gate_rms_norm_scale_shift_dynamic_mx_quant | 新增 | 索引门控残差 RMSNorm、索引 AdaLN 仿射与动态 MX 量化融合算子，量化输出支持 FP8 E4M3 与 MXFP4 E2M1/E1M2，并输出 E8M0 块缩放 |
 | def mindiesd.layers.usp.usp_attention | 新增 | USP 序列并行注意力接口（模块级导出，未加入 mindiesd 顶层命名空间） |
-| torch.ops.mindiesd 新增算子 | 新增 | eagle_block_sparse_attention、eagle_quant_block_sparse_attention、quant_four_over_six_a5、mul_add、norm_rope_concat、rms_norm_indexed_scale_shift_dynamic_mx_quant |
+| torch.ops.mindiesd 新增算子 | 新增 | eagle_block_sparse_attention、eagle_quant_block_sparse_attention、quant_four_over_six_a5、mul_add、norm_rope_concat、rms_norm_indexed_scale_shift_dynamic_mx_quant、indexed_gate_rms_norm_scale_shift_dynamic_mx_quant |
 | def mindiesd.fused_moe | 修改 | 参数 `tokens_full` 更名为 `inputs_sharded`（默认值相应取反）、`reduce_results` 更名为 `reduce_routed_out`，新增 `return_dispatcher_type` |
 | def mindiesd.sparse_attention | 修改 | 新增 `video_spans` 参数支持多视频稀疏注意力；rf_v3 新增 `precision="mxfp4"` 档位 |
 | class mindiesd.QuantConfig | 修改 | 新增 `fp8_fa_mode` 配置项 |
