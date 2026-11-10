@@ -14,8 +14,8 @@
  * \file flash_attn_metadata_proto.h
  * \brief
  */
-#ifndef QUANT_FLASH_ATTN_METADATA_PROTO_H
-#define QUANT_FLASH_ATTN_METADATA_PROTO_H
+#ifndef EAGLE_QUANT_FLASH_ATTN_METADATA_PROTO_H
+#define EAGLE_QUANT_FLASH_ATTN_METADATA_PROTO_H
 
 #include "graph/operator_reg.h"
 #include "graph/types.h"
@@ -54,7 +54,7 @@ namespace ge {
 * @li metadata: A matrix tensor. The type support int32.
 * The output of attention structure.
 */
-REG_OP(QuantFlashAttnMetadata)
+REG_OP(EagleQuantFlashAttnMetadata)
     .OPTIONAL_INPUT(cu_seqlens_q, TensorType({DT_INT32}))
     .OPTIONAL_INPUT(cu_seqlens_kv, TensorType({DT_INT32}))
     .OPTIONAL_INPUT(seqused_q, TensorType({DT_INT32}))
@@ -75,7 +75,7 @@ REG_OP(QuantFlashAttnMetadata)
     .REQUIRED_ATTR(custom_soc_version, String)
     .REQUIRED_ATTR(aic_core_num, Int)
     .REQUIRED_ATTR(aiv_core_num, Int)
-    .OP_END_FACTORY_REG(QuantFlashAttnMetadata)
+    .OP_END_FACTORY_REG(EagleQuantFlashAttnMetadata)
 
 } // namespace ge
 

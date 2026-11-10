@@ -35,7 +35,7 @@ using namespace AttentionCommon;
 
 namespace QFA_KERNEL {
 
-template <typename QFAT, typename CubeBlock, typename VectorBlock> class QuantFlashAttnKernelDn {
+template <typename QFAT, typename CubeBlock, typename VectorBlock> class EagleQuantFlashAttnKernelDn {
   public:
     using QUANT_T = typename QFAT::quantType;
     using SCALE_T = typename QFAT::scaleType;
@@ -110,7 +110,7 @@ template <typename QFAT, typename CubeBlock, typename VectorBlock> class QuantFl
     CubeBlock cubeBlock;
     VectorBlock vectorBlock;
 
-    __aicore__ inline QuantFlashAttnKernelDn()
+    __aicore__ inline EagleQuantFlashAttnKernelDn()
         : cubeBlock(constInfo, qSeqLensTool, kvSeqLensTool), vectorBlock(constInfo, qSeqLensTool, kvSeqLensTool){};
     __aicore__ inline void Init(__gm__ uint8_t *query, __gm__ uint8_t *key, __gm__ uint8_t *value,
         __gm__ uint8_t *dequantScaleQuery, __gm__ uint8_t *dequantScaleKey, __gm__ uint8_t *dequantScaleValue,

@@ -14,8 +14,8 @@
  * \file quant_flash_attn_tiling_dn.h
  * \brief
  */
-#ifndef QUANT_FLASH_ATTN_TILING_H
-#define QUANT_FLASH_ATTN_TILING_H
+#ifndef EAGLE_QUANT_FLASH_ATTN_TILING_H
+#define EAGLE_QUANT_FLASH_ATTN_TILING_H
 
 #include "register/tilingdata_base.h"
 #include "exe_graph/runtime/tiling_context.h"
@@ -41,10 +41,10 @@ struct FaTilingKeyInfo {
     bool enableS1OutSplit = false;
 };
 
-class QuantFlashAttnTilingDn : public FiaTilingBase {
+class EagleQuantFlashAttnTilingDn : public FiaTilingBase {
   public:
-    explicit QuantFlashAttnTilingDn(gert::TilingContext *context) : FiaTilingBase(context) {}
-    ~QuantFlashAttnTilingDn() override = default;
+    explicit EagleQuantFlashAttnTilingDn(gert::TilingContext *context) : FiaTilingBase(context) {}
+    ~EagleQuantFlashAttnTilingDn() override = default;
 
   protected:
     void InitTilingInfo(TilingInfo *tilingInfo) override;
@@ -60,9 +60,9 @@ class QuantFlashAttnTilingDn : public FiaTilingBase {
     void CalcScheduleMode();
     void CalcNumBlocks(uint32_t coreNum);
     void FillTiling();
-    ge::graphStatus SetTilingData(QuantFlashAttnTilingData &tilingData);
+    ge::graphStatus SetTilingData(EagleQuantFlashAttnTilingData &tilingData);
 
-    QuantFlashAttnTilingData tilingData_;
+    EagleQuantFlashAttnTilingData tilingData_;
     QfaPlatFormInfo platformInfo_;
     FaTilingKeyInfo tilingKeyInfo_;
 
@@ -72,7 +72,7 @@ class QuantFlashAttnTilingDn : public FiaTilingBase {
     int32_t numBlocks_ = 0;
 
     // Tiling Info
-    QuantFlashAttnTilingInfo *tilingInfo_ = nullptr;
+    EagleQuantFlashAttnTilingInfo *tilingInfo_ = nullptr;
 };
 
 } // namespace optiling

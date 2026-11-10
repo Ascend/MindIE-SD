@@ -12,7 +12,7 @@
 
 /*!
  * \file quant_flash_attn_tiling.cpp
- * \brief QuantFlashAttn Tiling主入口
+ * \brief EagleQuantFlashAttn Tiling主入口
  */
 
 #include <cmath>
@@ -28,7 +28,7 @@ using namespace ge;
 namespace optiling {
 
 //参考训练算子公共info
-struct QuantFlashAttnCompileInfo {
+struct EagleQuantFlashAttnCompileInfo {
     uint32_t aivNum;
     uint32_t aicNum;
     uint64_t ubSize;
@@ -39,14 +39,14 @@ struct QuantFlashAttnCompileInfo {
     NpuArch npuArch;
 };
 
-ASCENDC_EXTERN_C ge::graphStatus TilingQuantFlashAttn(gert::TilingContext *context) {
-    OP_LOGW(context, "QuantFlashAttn TilingQuantFlashAttn start.");
+ASCENDC_EXTERN_C ge::graphStatus TilingEagleQuantFlashAttn(gert::TilingContext *context) {
+    OP_LOGW(context, "EagleQuantFlashAttn TilingEagleQuantFlashAttn start.");
 
     auto platformInfoPtr = context->GetPlatformInfo();
     OP_CHECK_IF(platformInfoPtr == nullptr, OP_LOGE(context, "platformInfoPtr is null"), return ge::GRAPH_FAILED);
 
-    QuantFlashAttnTilingInfo faInfo;
-    QuantFlashAttnTilingInfoParser faInfoParser(context, faInfo);
+    EagleQuantFlashAttnTilingInfo faInfo;
+    EagleQuantFlashAttnTilingInfoParser faInfoParser(context, faInfo);
     if (faInfoParser.Parse() != ge::GRAPH_SUCCESS) {
         return ge::GRAPH_FAILED;
     }
@@ -58,14 +58,14 @@ ASCENDC_EXTERN_C ge::graphStatus TilingQuantFlashAttn(gert::TilingContext *conte
     //     return ge::GRAPH_FAILED;
     // }
 
-    // OP_LOGI(context, "QuantFlashAttn Tiling bSize:%d.", faInfo.bSize);
+    // OP_LOGI(context, "EagleQuantFlashAttn Tiling bSize:%d.", faInfo.bSize);
     return FiaTilingRegistry::GetInstance().DoTilingImpl(context, &faInfo);
 }
 
-ASCENDC_EXTERN_C ge::graphStatus TilingPrepareForQuantFlashAttn(gert::TilingParseContext *context) {
+ASCENDC_EXTERN_C ge::graphStatus TilingPrepareForEagleQuantFlashAttn(gert::TilingParseContext *context) {
     auto platformInfoPtr = context->GetPlatformInfo();
     OP_CHECK_IF(platformInfoPtr == nullptr, OP_LOGE(context, "platformInfoPtr is null"), return ge::GRAPH_FAILED);
-    auto compileInfoPtr = context->GetCompiledInfo<QuantFlashAttnCompileInfo>();
+    auto compileInfoPtr = context->GetCompiledInfo<EagleQuantFlashAttnCompileInfo>();
     OP_CHECK_IF(compileInfoPtr == nullptr, OP_LOGE(context, "compileInfoPtr is null"), return ge::GRAPH_FAILED);
 
     auto ascendcPlatform = platform_ascendc::PlatformAscendC(platformInfoPtr);
@@ -82,8 +82,8 @@ ASCENDC_EXTERN_C ge::graphStatus TilingPrepareForQuantFlashAttn(gert::TilingPars
 }
 
 // 注册tiling函数：
-IMPL_OP_OPTILING(QuantFlashAttn)
-    .Tiling(TilingQuantFlashAttn)
-    .TilingParse<QuantFlashAttnCompileInfo>(TilingPrepareForQuantFlashAttn);
+IMPL_OP_OPTILING(EagleQuantFlashAttn)
+    .Tiling(TilingEagleQuantFlashAttn)
+    .TilingParse<EagleQuantFlashAttnCompileInfo>(TilingPrepareForEagleQuantFlashAttn);
 
 } // namespace optiling

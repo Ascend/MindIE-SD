@@ -25,7 +25,7 @@ extern "C" {
 #endif
 
 // 第一段接口：计算workspace大小
-aclnnStatus aclnnQuantFlashAttnGetWorkspaceSize(const aclTensor *q, const aclTensor *k, const aclTensor *v,
+aclnnStatus aclnnEagleQuantFlashAttnGetWorkspaceSize(const aclTensor *q, const aclTensor *k, const aclTensor *v,
     const aclTensor *qDescale, const aclTensor *kDescale, const aclTensor *vDescale,
     const aclTensor *blockTableOptional, const aclTensor *cuSeqlensQOptional, const aclTensor *cuSeqlensKvOptional,
     const aclTensor *sequsedQOptional, const aclTensor *sequsedKvOptional, const aclTensor *sinksOptional,
@@ -35,7 +35,7 @@ aclnnStatus aclnnQuantFlashAttnGetWorkspaceSize(const aclTensor *q, const aclTen
     const char *layoutQ, const char *layoutKv, const char *layoutOut, int32_t softmaxPrecision,
     int32_t returnSoftmaxLse, const aclTensor *attnOut, const aclTensor *softmaxLseOptional, uint64_t *workspaceSize,
     aclOpExecutor **executor) {
-    OP_LOGI("start aclnnQuantFlashAttnGetWorkspaceSize");
+    OP_LOGI("start aclnnEagleQuantFlashAttnGetWorkspaceSize");
     OP_LOGI("q_quant_mode = %d", qQuantMode);
     OP_LOGI("k_quant_mode = %d", kQuantMode);
     OP_LOGI("v_quant_mode = %d", vQuantMode);
@@ -44,14 +44,14 @@ aclnnStatus aclnnQuantFlashAttnGetWorkspaceSize(const aclTensor *q, const aclTen
     OP_LOGI("quant_block_size_vs = %d", quantBlockSizeVs);
 
     // sinks shape为{0}时置nullptr
-    QuantFlashAttnProcessSinks(sinksOptional);
+    EagleQuantFlashAttnProcessSinks(sinksOptional);
 
     const aclTensor *placeHolder = nullptr;
     const aclTensor *tempTensor = nullptr;
     //todo:check and set  预留
-    QuantFlashAttnProcessSoftmaxLse(returnSoftmaxLse, softmaxLseOptional, tempTensor, placeHolder);
+    EagleQuantFlashAttnProcessSoftmaxLse(returnSoftmaxLse, softmaxLseOptional, tempTensor, placeHolder);
 
-    aclnnStatus ret = aclnnInnerQuantFlashAttnGetWorkspaceSize(q, k, v, qDescale, kDescale, vDescale,
+    aclnnStatus ret = aclnnInnerEagleQuantFlashAttnGetWorkspaceSize(q, k, v, qDescale, kDescale, vDescale,
         blockTableOptional, cuSeqlensQOptional, cuSeqlensKvOptional, sequsedQOptional, sequsedKvOptional, sinksOptional,
         attnMaskOptional, metadataOptional, qQuantMode, kQuantMode, vQuantMode, quantBlockSizeQs, quantBlockSizeKs,
         quantBlockSizeVs, softmaxScale, maskMode, winLeft, winRight, maxSeqlenQ, maxSeqlenKV, layoutQ, layoutKv,
@@ -66,9 +66,9 @@ aclnnStatus aclnnQuantFlashAttnGetWorkspaceSize(const aclTensor *q, const aclTen
 }
 
 // 第二段接口：执行计算
-aclnnStatus aclnnQuantFlashAttn(
+aclnnStatus aclnnEagleQuantFlashAttn(
     void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, const aclrtStream stream) {
-    return aclnnInnerQuantFlashAttn(workspace, workspaceSize, executor, stream);
+    return aclnnInnerEagleQuantFlashAttn(workspace, workspaceSize, executor, stream);
 }
 
 #ifdef __cplusplus

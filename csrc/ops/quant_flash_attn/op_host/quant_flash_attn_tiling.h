@@ -12,11 +12,11 @@
 
 /*!
  * \file quant_flash_attn_tiling.h
- * \brief QuantFlashAttn Tiling
+ * \brief EagleQuantFlashAttn Tiling
  */
 
-#ifndef QUANT_FLASH_ATTN_TILING_H_
-#define QUANT_FLASH_ATTN_TILING_H_
+#ifndef EAGLE_QUANT_FLASH_ATTN_TILING_H_
+#define EAGLE_QUANT_FLASH_ATTN_TILING_H_
 
 #include <cstdint>
 #include <register/op_impl_registry.h>
@@ -29,9 +29,9 @@
 
 namespace optiling {
 
-ASCENDC_EXTERN_C ge::graphStatus TilingQuantFlashAttn(gert::TilingContext *context);
-ASCENDC_EXTERN_C ge::graphStatus TilingPrepareForQuantFlashAttn(gert::TilingParseContext *context);
+ASCENDC_EXTERN_C ge::graphStatus TilingEagleQuantFlashAttn(gert::TilingContext *context);
+ASCENDC_EXTERN_C ge::graphStatus TilingPrepareForEagleQuantFlashAttn(gert::TilingParseContext *context);
 
 } // namespace optiling
 
-#endif // QUANT_FLASH_ATTN_TILING_H_
+#endif // EAGLE_QUANT_FLASH_ATTN_TILING_H_

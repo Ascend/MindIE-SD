@@ -14,8 +14,8 @@
  * \file quant_flash_attn_block_vector_dn.h
  * \brief
  */
-#ifndef QUANT_FLASH_ATTN_BLOCK_VECTOR_DN_H_
-#define QUANT_FLASH_ATTN_BLOCK_VECTOR_DN_H_
+#ifndef EAGLE_QUANT_FLASH_ATTN_BLOCK_VECTOR_DN_H_
+#define EAGLE_QUANT_FLASH_ATTN_BLOCK_VECTOR_DN_H_
 
 #include "vf/vf_softmax_dn_cast_nz_mxfp4_qs128_kvs256.h"
 #include "vf/vf_softmax_dn_cast_nz_mxfp4_align_qs128_kvs32.h"
@@ -63,7 +63,7 @@ template <QFA_LAYOUT LAYOUT_Q> __aicore__ inline constexpr UbFormat GetOutUbForm
     }
 }
 
-template <typename QFAT> class QuantFlashAttnBlockVectorDn {
+template <typename QFAT> class EagleQuantFlashAttnBlockVectorDn {
   public:
     /* =================编译期常量的基本块信息================= */
     using OUT_T = typename QFAT::outputType;
@@ -187,8 +187,8 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
 
   public:
     // 初始化 Vec Block 层
-    __aicore__ inline QuantFlashAttnBlockVectorDn(ConstInfo &constInfo, SeqLensTool<LAYOUT_Q, SEQLEN_T> &qSeqLensTool,
-        SeqLensTool<LAYOUT_KV, SEQLEN_T> &kvSeqLensTool)
+    __aicore__ inline EagleQuantFlashAttnBlockVectorDn(ConstInfo &constInfo,
+        SeqLensTool<LAYOUT_Q, SEQLEN_T> &qSeqLensTool, SeqLensTool<LAYOUT_KV, SEQLEN_T> &kvSeqLensTool)
         : constInfo(constInfo), qSeqLensTool(qSeqLensTool), kvSeqLensTool(kvSeqLensTool){};
 
     __aicore__ inline void InitInput(__gm__ uint8_t *attentionOut) {
@@ -630,4 +630,4 @@ template <typename QFAT> class QuantFlashAttnBlockVectorDn {
     }
 };
 }
-#endif // QUANT_FLASH_ATTN_BLOCK_VECTOR_DN_H_
+#endif // EAGLE_QUANT_FLASH_ATTN_BLOCK_VECTOR_DN_H_

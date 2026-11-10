@@ -19,7 +19,7 @@
 
 using namespace at;
 
-constexpr std::string_view QUANT_FLASH_ATTN_METADATA_NAME = "aclnnQuantFlashAttnMetadata";
+constexpr std::string_view QUANT_FLASH_ATTN_METADATA_NAME = "aclnnEagleQuantFlashAttnMetadata";
 
 inline int64_t CalculateQfaMetadataBatchSize(const c10::optional<int64_t> &batch_size,
     const c10::optional<at::Tensor> &cu_seqlens_q, const c10::optional<at::Tensor> &seqused_q) {

@@ -112,7 +112,7 @@ class FlashAttnTilingData {
     FlashAttnEmptyTensorParams flashAttnEmptyTensorParams;
 };
 
-class QuantFlashAttnTilingData {
+class EagleQuantFlashAttnTilingData {
   public:
     FlashAttnTilingData baseTiling;
     FlashAttnMetaData flashAttnMetaData;

@@ -18,9 +18,9 @@ using namespace op;
 
 namespace l0op {
 
-OP_TYPE_REGISTER(QuantFlashAttn);
+OP_TYPE_REGISTER(EagleQuantFlashAttn);
 
-const std::array<const aclTensor *, 2> QuantFlashAttn(const aclTensor *q, const aclTensor *k, const aclTensor *v,
+const std::array<const aclTensor *, 2> EagleQuantFlashAttn(const aclTensor *q, const aclTensor *k, const aclTensor *v,
     const aclTensor *qDescale, const aclTensor *kDescale, const aclTensor *vDescale,
     const aclTensor *blockTableOptional, const aclTensor *cuSeqlensQOptional, const aclTensor *cuSeqlensKvOptional,
     const aclTensor *sequsedQOptional, const aclTensor *sequsedKvOptional, const aclTensor *sinksOptional,
@@ -29,7 +29,7 @@ const std::array<const aclTensor *, 2> QuantFlashAttn(const aclTensor *q, const 
     double softmaxScale, int32_t maskMode, int32_t winLeft, int32_t winRight, int32_t maxSeqlenQ, int32_t maxSeqlenKV,
     const char *layoutQ, const char *layoutKv, const char *layoutOut, int32_t softmaxPrecision,
     int32_t returnSoftmaxLse, aclOpExecutor *executor) {
-    L0_DFX(QuantFlashAttn, q, k, v, qDescale, kDescale, vDescale, blockTableOptional, cuSeqlensQOptional,
+    L0_DFX(EagleQuantFlashAttn, q, k, v, qDescale, kDescale, vDescale, blockTableOptional, cuSeqlensQOptional,
         cuSeqlensKvOptional, sequsedQOptional, sequsedKvOptional, sinksOptional, attnMaskOptional, metadataOptional,
         qQuantMode, kQuantMode, vQuantMode, quantBlockSizeQs, quantBlockSizeKs, quantBlockSizeVs, softmaxScale,
         maskMode, winLeft, winRight, maxSeqlenQ, maxSeqlenKV, layoutQ, layoutKv, layoutOut, softmaxPrecision,
@@ -63,7 +63,7 @@ const std::array<const aclTensor *, 2> QuantFlashAttn(const aclTensor *q, const 
     auto attentionOutAlloc = executor->AllocTensor(DataType::DT_BF16, Format::FORMAT_ND, Format::FORMAT_ND);
     auto softmaxLseAlloc = executor->AllocTensor(DataType::DT_FLOAT, Format::FORMAT_ND, Format::FORMAT_ND);
 
-    auto ret = INFER_SHAPE(QuantFlashAttn,
+    auto ret = INFER_SHAPE(EagleQuantFlashAttn,
         OP_INPUT(q, k, v, qDescale, kDescale, vDescale, blockTableOptional, cuSeqlensQOptional, cuSeqlensKvOptional,
             sequsedQOptional, sequsedKvOptional, sinksOptional, attnMaskOptional, metadataOptional),
         OP_OUTPUT(attentionOutAlloc, softmaxLseAlloc),
@@ -71,11 +71,11 @@ const std::array<const aclTensor *, 2> QuantFlashAttn(const aclTensor *q, const 
             maskMode, winLeft, winRight, maxSeqlenQ, maxSeqlenKV, layoutQ, layoutKv, layoutOut, softmaxPrecision,
             returnSoftmaxLse));
     if (ret != ACLNN_SUCCESS) {
-        OP_LOGE(ACLNN_ERR_PARAM_INVALID, "QuantFlashAttn InferShape failed.");
+        OP_LOGE(ACLNN_ERR_PARAM_INVALID, "EagleQuantFlashAttn InferShape failed.");
         return {nullptr, nullptr};
     }
 
-    ret = ADD_TO_LAUNCHER_LIST_AICORE(QuantFlashAttn,
+    ret = ADD_TO_LAUNCHER_LIST_AICORE(EagleQuantFlashAttn,
         OP_INPUT(q, k, v, qDescale, kDescale, vDescale, blockTableOptional, cuSeqlensQOptional, cuSeqlensKvOptional,
             sequsedQOptional, sequsedKvOptional, sinksOptional, attnMaskOptional, metadataOptional),
         OP_OUTPUT(attentionOutAlloc, softmaxLseAlloc),
@@ -83,7 +83,7 @@ const std::array<const aclTensor *, 2> QuantFlashAttn(const aclTensor *q, const 
             maskMode, winLeft, winRight, maxSeqlenQ, maxSeqlenKV, layoutQ, layoutKv, layoutOut, softmaxPrecision,
             returnSoftmaxLse));
     if (ret != ACLNN_SUCCESS) {
-        OP_LOGE(ACLNN_ERR_PARAM_INVALID, "QuantFlashAttn launch kernel failed.");
+        OP_LOGE(ACLNN_ERR_PARAM_INVALID, "EagleQuantFlashAttn launch kernel failed.");
         return {nullptr, nullptr};
     }
 

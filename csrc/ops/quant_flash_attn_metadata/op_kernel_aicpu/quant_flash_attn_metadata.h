@@ -15,8 +15,8 @@
  * \brief
  */
 
-#ifndef QUANT_FLASH_ATTN_METADATA_H
-#define QUANT_FLASH_ATTN_METADATA_H
+#ifndef EAGLE_QUANT_FLASH_ATTN_METADATA_H
+#define EAGLE_QUANT_FLASH_ATTN_METADATA_H
 
 #include <cstdint>
 #include <cassert>

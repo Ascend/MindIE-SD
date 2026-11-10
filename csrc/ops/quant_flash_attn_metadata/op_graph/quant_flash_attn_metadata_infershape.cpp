@@ -23,8 +23,8 @@
 using namespace ge;
 
 namespace ops {
-static ge::graphStatus InferShapeQuantFlashAttnMetadata(gert::InferShapeContext *context) {
-    OP_LOGD(context->GetNodeName(), "InferShapeQuantFlashAttnMetadata");
+static ge::graphStatus InferShapeEagleQuantFlashAttnMetadata(gert::InferShapeContext *context) {
+    OP_LOGD(context->GetNodeName(), "InferShapeEagleQuantFlashAttnMetadata");
 
     gert::Shape *oShape = context->GetOutputShape(0);
     OP_CHECK_NULL_WITH_CONTEXT(context, oShape);
@@ -33,14 +33,14 @@ static ge::graphStatus InferShapeQuantFlashAttnMetadata(gert::InferShapeContext 
     return GRAPH_SUCCESS;
 }
 
-static ge::graphStatus InferDtypeQuantFlashAttnMetadata(gert::InferDataTypeContext *context) {
-    OP_LOGD(context->GetNodeName(), "InferDtypeQuantFlashAttnMetadata");
+static ge::graphStatus InferDtypeEagleQuantFlashAttnMetadata(gert::InferDataTypeContext *context) {
+    OP_LOGD(context->GetNodeName(), "InferDtypeEagleQuantFlashAttnMetadata");
 
     context->SetOutputDataType(0, DT_INT32);
     return GRAPH_SUCCESS;
 }
 
-IMPL_OP_INFERSHAPE(QuantFlashAttnMetadata)
-    .InferShape(InferShapeQuantFlashAttnMetadata)
-    .InferDataType(InferDtypeQuantFlashAttnMetadata);
+IMPL_OP_INFERSHAPE(EagleQuantFlashAttnMetadata)
+    .InferShape(InferShapeEagleQuantFlashAttnMetadata)
+    .InferDataType(InferDtypeEagleQuantFlashAttnMetadata);
 } // namespace ops

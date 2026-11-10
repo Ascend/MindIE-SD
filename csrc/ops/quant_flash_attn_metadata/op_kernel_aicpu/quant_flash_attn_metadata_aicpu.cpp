@@ -26,7 +26,7 @@
 #define KERNEL_STATUS_PARAM_INVALID 1
 
 namespace aicpu {
-uint32_t QuantFlashAttnMetadataCpuKernel::Compute(CpuKernelContext &ctx) {
+uint32_t EagleQuantFlashAttnMetadataCpuKernel::Compute(CpuKernelContext &ctx) {
     bool success = Prepare(ctx);
     if (!success) {
         return KERNEL_STATUS_PARAM_INVALID;
@@ -36,7 +36,7 @@ uint32_t QuantFlashAttnMetadataCpuKernel::Compute(CpuKernelContext &ctx) {
     return success ? KERNEL_STATUS_OK : KERNEL_STATUS_PARAM_INVALID;
 }
 
-bool QuantFlashAttnMetadataCpuKernel::Prepare(CpuKernelContext &ctx) {
+bool EagleQuantFlashAttnMetadataCpuKernel::Prepare(CpuKernelContext &ctx) {
     // input
     cuSeqlensQ_ = ctx.Input(static_cast<uint32_t>(ParamId::cuSeqlensQ));
     cuSeqlensKv_ = ctx.Input(static_cast<uint32_t>(ParamId::cuSeqlensKv));
@@ -70,7 +70,7 @@ bool QuantFlashAttnMetadataCpuKernel::Prepare(CpuKernelContext &ctx) {
     // return true;
 }
 
-std::vector<int64_t> QuantFlashAttnMetadataCpuKernel::GetTensorDataAsInt64(Tensor *tensor, size_t size) {
+std::vector<int64_t> EagleQuantFlashAttnMetadataCpuKernel::GetTensorDataAsInt64(Tensor *tensor, size_t size) {
     std::vector<int64_t> result(size);
     if (tensor == nullptr || tensor->GetData() == nullptr || size == 0) {
         return result;
@@ -128,7 +128,7 @@ std::vector<int64_t> QuantFlashAttnMetadataCpuKernel::GetTensorDataAsInt64(Tenso
     return result;
 }
 
-bool QuantFlashAttnMetadataCpuKernel::ParamsInit() {
+bool EagleQuantFlashAttnMetadataCpuKernel::ParamsInit() {
     // Device info
     deviceInfo.aicCoreMaxNum = aicCoreNum_;
     deviceInfo.aivCoreMaxNum = aivCoreNum_;
@@ -219,11 +219,11 @@ bool QuantFlashAttnMetadataCpuKernel::ParamsInit() {
     return true;
 }
 
-bool QuantFlashAttnMetadataCpuKernel::BalanceSchedule(SectionStreamKResult &splitRes) {
+bool EagleQuantFlashAttnMetadataCpuKernel::BalanceSchedule(SectionStreamKResult &splitRes) {
     return qfa_metadata::BalanceSchedule(deviceInfo, baseInfo, param, splitRes) == LOAD_BALANCE_SUCCESS;
 }
 
-bool QuantFlashAttnMetadataCpuKernel::GenMetaData(SectionStreamKResult &splitRes) {
+bool EagleQuantFlashAttnMetadataCpuKernel::GenMetaData(SectionStreamKResult &splitRes) {
     uint32_t sectionNum = splitRes.sectionNum;
     detail::QFaMetaData faMetadata(metaData_->GetData(), sectionNum);
     uint32_t *ptr = (uint32_t *)metaData_->GetData();
@@ -294,8 +294,8 @@ bool QuantFlashAttnMetadataCpuKernel::GenMetaData(SectionStreamKResult &splitRes
 }
 
 namespace {
-static const char *kernelType = "QuantFlashAttnMetadata";
-REGISTER_CPU_KERNEL(kernelType, QuantFlashAttnMetadataCpuKernel);
+static const char *kernelType = "EagleQuantFlashAttnMetadata";
+REGISTER_CPU_KERNEL(kernelType, EagleQuantFlashAttnMetadataCpuKernel);
 } // namespace
 
 } // namespace aicpu

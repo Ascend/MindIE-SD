@@ -15,8 +15,8 @@
  * \brief
  */
 
-#ifndef QUANT_FLASH_ATTN_TILING_UTILS_H
-#define QUANT_FLASH_ATTN_TILING_UTILS_H
+#ifndef EAGLE_QUANT_FLASH_ATTN_TILING_UTILS_H
+#define EAGLE_QUANT_FLASH_ATTN_TILING_UTILS_H
 
 namespace optiling {
 template <typename T> inline auto CeilDivision(T num1, T num2) -> T {
@@ -56,4 +56,4 @@ template <typename T> inline auto increGcd(T a, T b) -> T {
 
 } // namespace optiling
 
-#endif // QUANT_FLASH_ATTN_TILING_UTILS_H
+#endif // EAGLE_QUANT_FLASH_ATTN_TILING_UTILS_H

@@ -19,7 +19,7 @@
 extern "C" {
 #endif
 
-__attribute__((visibility("default"))) aclnnStatus aclnnQuantFlashAttnMetadataGetWorkspaceSize(
+__attribute__((visibility("default"))) aclnnStatus aclnnEagleQuantFlashAttnMetadataGetWorkspaceSize(
     const aclTensor *cuSeqlensQOptional, const aclTensor *cuSeqlensKvOptional, const aclTensor *sequsedQOptional,
     const aclTensor *sequsedKvOptional, int64_t batchSize, int64_t maxSeqlenQ, int64_t maxSeqlenKv, int64_t numHeadsQ,
     int64_t numHeadsKv, int64_t headDim, int64_t qQuantMode, int64_t kQuantMode, int64_t vQuantMode, int64_t qDtype,
@@ -27,7 +27,7 @@ __attribute__((visibility("default"))) aclnnStatus aclnnQuantFlashAttnMetadataGe
     const char *layoutKv, const char *layoutOut, const aclTensor *metaData, uint64_t *workspaceSize,
     aclOpExecutor **executor);
 
-__attribute__((visibility("default"))) aclnnStatus aclnnQuantFlashAttnMetadata(
+__attribute__((visibility("default"))) aclnnStatus aclnnEagleQuantFlashAttnMetadata(
     void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, aclrtStream stream);
 
 #ifdef __cplusplus

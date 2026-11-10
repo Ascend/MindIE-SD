@@ -14,8 +14,8 @@
  * \file quant_flash_atten_block_cube_dn.h
  * \brief
  */
-#ifndef QUANT_FLASH_ATTN_NOQUANT_BLOCK_CUBE_DN_H_
-#define QUANT_FLASH_ATTN_NOQUANT_BLOCK_CUBE_DN_H_
+#ifndef EAGLE_QUANT_FLASH_ATTN_NOQUANT_BLOCK_CUBE_DN_H_
+#define EAGLE_QUANT_FLASH_ATTN_NOQUANT_BLOCK_CUBE_DN_H_
 
 #if ASC_DEVKIT_MAJOR >= 9
 #include "kernel_vec_intf.h"
@@ -132,12 +132,12 @@ template <typename T> __aicore__ inline constexpr uint32_t GetBlockElemCnt() {
 }
 
 // V 行宽成员只在 D192 实例中存在。D128 实例派生自空基类，保持 pre-qk192 的类布局/代码生成。
-template <bool SAME_D> struct QuantFlashAttnVDimStorage {};
-template <> struct QuantFlashAttnVDimStorage<false> {
+template <bool SAME_D> struct EagleQuantFlashAttnVDimStorage {};
+template <> struct EagleQuantFlashAttnVDimStorage<false> {
     uint32_t headDimVInt8 = 0; // V 侧行宽(字节), 由 dSizeV 推导
 };
 
-template <typename QFAT> class QuantFlashAttnBlockCubeDn : public QuantFlashAttnVDimStorage<QFAT::sameD> {
+template <typename QFAT> class EagleQuantFlashAttnBlockCubeDn : public EagleQuantFlashAttnVDimStorage<QFAT::sameD> {
   public:
     using QUANT_T = typename QFAT::quantType;
     using SCALE_T = typename QFAT::scaleType;
@@ -279,8 +279,8 @@ template <typename QFAT> class QuantFlashAttnBlockCubeDn : public QuantFlashAttn
     uint32_t headDimInt8 = 0; // Q/K 侧行宽(字节), 由 dSize 推导
 
   public:
-    __aicore__ inline QuantFlashAttnBlockCubeDn(ConstInfo &constInfo, SeqLensTool<LAYOUT_Q, SEQLEN_T> &qSeqLensTool,
-        SeqLensTool<LAYOUT_KV, SEQLEN_T> &kvSeqLensTool)
+    __aicore__ inline EagleQuantFlashAttnBlockCubeDn(ConstInfo &constInfo,
+        SeqLensTool<LAYOUT_Q, SEQLEN_T> &qSeqLensTool, SeqLensTool<LAYOUT_KV, SEQLEN_T> &kvSeqLensTool)
         : constInfo(constInfo), qSeqLensTool(qSeqLensTool), kvSeqLensTool(kvSeqLensTool){};
 
     // V 侧有效行宽：D128 用 dSize（pre-qk192），D192 用 dSizeV。

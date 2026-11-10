@@ -563,7 +563,11 @@ add_custom_target(generate_adapt_py
 add_dependencies(generate_adapt_py opbuild_gen_default opbuild_gen_inner opbuild_gen_exc)
 
 foreach (_op_name ${OP_LIST})
-    install(FILES ${ASCEND_IMPL_OUT_DIR}/dynamic/${_op_name}.py
+    set(_impl_op_name ${_op_name})
+    if (_op_name STREQUAL "quant_flash_attn" OR _op_name STREQUAL "quant_flash_attn_metadata")
+        set(_impl_op_name eagle_${_op_name})
+    endif ()
+    install(FILES ${ASCEND_IMPL_OUT_DIR}/dynamic/${_impl_op_name}.py
             DESTINATION ${IMPL_DYNAMIC_INSTALL_DIR}
             OPTIONAL
     )
@@ -575,6 +579,9 @@ install(DIRECTORY ${OPS_ADV_UTILS_KERNEL_INC}/
 
 foreach (op_dir ${OP_DIR_LIST})
     get_filename_component(_op_name "${op_dir}" NAME)
+    if (_op_name STREQUAL "quant_flash_attn")
+        set(_op_name eagle_quant_flash_attn)
+    endif ()
 
     file(GLOB KERNEL_FILES
             ${op_dir}/op_kernel/*.cpp

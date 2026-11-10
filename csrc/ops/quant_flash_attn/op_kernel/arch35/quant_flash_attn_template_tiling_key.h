@@ -15,8 +15,8 @@
  * \brief
  */
 
-#ifndef TEMPLATE_TILING_KEY_QUANT_FLASH_ATTN_H_
-#define TEMPLATE_TILING_KEY_QUANT_FLASH_ATTN_H_
+#ifndef TEMPLATE_TILING_KEY_EAGLE_QUANT_FLASH_ATTN_H_
+#define TEMPLATE_TILING_KEY_EAGLE_QUANT_FLASH_ATTN_H_
 
 #include "ascendc/host_api/tiling/template_argument.h"
 #include "quant_flash_attn_tiling_data.h"
@@ -58,7 +58,7 @@ struct QFAType {
     static constexpr bool sameD = SAME_D;
 };
 
-ASCENDC_TPL_ARGS_DECL(QuantFlashAttn,
+ASCENDC_TPL_ARGS_DECL(EagleQuantFlashAttn,
     //    bit 0-7 QueryLayout
     //    0: BSND
     //    1: BNSD
@@ -84,6 +84,6 @@ ASCENDC_TPL_SEL(ASCENDC_TPL_ARGS_SEL(ASCENDC_TPL_UINT_SEL(queryOutLayout, ASCEND
                     ASCENDC_TPL_UINT_SEL(kvStorageMode, ASCENDC_TPL_UI_LIST, KV_STORAGE_MODE_CONTINUE,
                         KV_STORAGE_MODE_PA_BSND, KV_STORAGE_MODE_PA_BNSD),
                     ASCENDC_TPL_BOOL_SEL(hasMask, 0, 1), ASCENDC_TPL_BOOL_SEL(sameD, 0, 1),
-                    ASCENDC_TPL_TILING_STRUCT_SEL(QuantFlashAttnTilingData)), );
+                    ASCENDC_TPL_TILING_STRUCT_SEL(EagleQuantFlashAttnTilingData)), );
 
-#endif // TEMPLATE_TILING_KEY_QUANT_FLASH_ATTN_H_
+#endif // TEMPLATE_TILING_KEY_EAGLE_QUANT_FLASH_ATTN_H_

@@ -22,11 +22,11 @@ extern "C" {
 
 namespace {
 
-void QuantFlashAttnProcessSoftmaxLse(int32_t returnSoftmaxLse, const aclTensor *softmaxLse,
+void EagleQuantFlashAttnProcessSoftmaxLse(int32_t returnSoftmaxLse, const aclTensor *softmaxLse,
     const aclTensor *&tempTensor, const aclTensor *&placeHolder) {}
 
 // sinks shape为{0}时置nullptr
-void QuantFlashAttnProcessSinks(const aclTensor *&sinksOptional) {
+void EagleQuantFlashAttnProcessSinks(const aclTensor *&sinksOptional) {
     if (sinksOptional != nullptr) {
         const auto &shape = sinksOptional->GetViewShape();
         if (shape.GetDimNum() == 1U && shape[0] == 0) {

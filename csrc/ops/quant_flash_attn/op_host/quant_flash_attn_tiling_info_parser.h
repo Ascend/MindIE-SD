@@ -21,11 +21,12 @@
 #include "../../common/op_host/fia_tiling_shape.h"
 
 namespace optiling {
-class QuantFlashAttnTilingInfoParser {
+class EagleQuantFlashAttnTilingInfoParser {
   public:
-    explicit QuantFlashAttnTilingInfoParser(const gert::TilingContext *context, QuantFlashAttnTilingInfo &faInfo)
+    explicit EagleQuantFlashAttnTilingInfoParser(
+        const gert::TilingContext *context, EagleQuantFlashAttnTilingInfo &faInfo)
         : context_(context), tilingInfo_(faInfo) {}
-    ~QuantFlashAttnTilingInfoParser() = default;
+    ~EagleQuantFlashAttnTilingInfoParser() = default;
     ge::graphStatus Parse();
 
   private:
@@ -71,7 +72,7 @@ class QuantFlashAttnTilingInfoParser {
 
   private:
     const gert::TilingContext *context_ = nullptr;
-    QuantFlashAttnTilingInfo &tilingInfo_;
+    EagleQuantFlashAttnTilingInfo &tilingInfo_;
 
     // NPU信息
     NpuArch npuArch_ = NpuArch::DAV_3510;

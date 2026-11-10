@@ -194,6 +194,6 @@ ge::graphStatus InferDataTypeFlashAttn(gert::InferDataTypeContext *context) {
     return ge::GRAPH_SUCCESS;
 }
 
-IMPL_OP_INFERSHAPE(QuantFlashAttn).InferShape(InferShapeFlashAttn).InferDataType(InferDataTypeFlashAttn);
+IMPL_OP_INFERSHAPE(EagleQuantFlashAttn).InferShape(InferShapeFlashAttn).InferDataType(InferDataTypeFlashAttn);
 
 } // namespace ops

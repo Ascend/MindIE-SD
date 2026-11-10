@@ -10,8 +10,8 @@
  * See the Mulan PSL v2 for more details.
  */
 
-#ifndef ACLNN_QUANT_FLASH_ATTN_INNER_H_
-#define ACLNN_QUANT_FLASH_ATTN_INNER_H_
+#ifndef ACLNN_EAGLE_QUANT_FLASH_ATTN_INNER_H_
+#define ACLNN_EAGLE_QUANT_FLASH_ATTN_INNER_H_
 #define ACLNN_API __attribute__((visibility("default")))
 
 #include "aclnn/aclnn_base.h"
@@ -20,8 +20,8 @@
 extern "C" {
 #endif
 
-extern aclnnStatus aclnnInnerQuantFlashAttnGetWorkspaceSize(const aclTensor *q, const aclTensor *k, const aclTensor *v,
-    const aclTensor *qDescale, const aclTensor *kDescale, const aclTensor *vDescale,
+extern aclnnStatus aclnnInnerEagleQuantFlashAttnGetWorkspaceSize(const aclTensor *q, const aclTensor *k,
+    const aclTensor *v, const aclTensor *qDescale, const aclTensor *kDescale, const aclTensor *vDescale,
     const aclTensor *blockTableOptional, const aclTensor *cuSeqlensQOptional, const aclTensor *cuSeqlensKvOptional,
     const aclTensor *sequsedQOptional, const aclTensor *sequsedKvOptional, const aclTensor *sinksOptional,
     const aclTensor *attnMaskOptional, const aclTensor *metadataOptional, int32_t qQuantMode, int32_t kQuantMode,
@@ -31,13 +31,13 @@ extern aclnnStatus aclnnInnerQuantFlashAttnGetWorkspaceSize(const aclTensor *q, 
     int32_t returnSoftmaxLse, const aclTensor *attnOut, const aclTensor *softmaxLse, uint64_t *workspaceSize,
     aclOpExecutor **executor);
 
-extern aclnnStatus aclnnInnerQuantFlashAttn(
+extern aclnnStatus aclnnInnerEagleQuantFlashAttn(
     void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, const aclrtStream stream);
 
-void QuantFlashAttnProcessSoftmaxLse(
+void EagleQuantFlashAttnProcessSoftmaxLse(
     int32_t returnSoftmaxLse, const aclTensor *softmaxLse, const aclTensor *&tempTensor, const aclTensor *&placeHolder);
 
-void QuantFlashAttnProcessSinks(const aclTensor *&sinksOptional);
+void EagleQuantFlashAttnProcessSinks(const aclTensor *&sinksOptional);
 
 #ifdef __cplusplus
 }

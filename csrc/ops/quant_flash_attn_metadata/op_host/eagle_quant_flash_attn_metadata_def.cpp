@@ -14,9 +14,9 @@
 
 namespace ops {
 
-class QuantFlashAttnMetadata : public OpDef {
+class EagleQuantFlashAttnMetadata : public OpDef {
   public:
-    explicit QuantFlashAttnMetadata(const char *name) : OpDef(name) {
+    explicit EagleQuantFlashAttnMetadata(const char *name) : OpDef(name) {
         this->Input("cu_seqlens_q")
             .ParamType(OPTIONAL)
             .DataTypeList({ge::DT_INT32})
@@ -84,6 +84,6 @@ class QuantFlashAttnMetadata : public OpDef {
     }
 };
 
-OP_ADD(QuantFlashAttnMetadata);
+OP_ADD(EagleQuantFlashAttnMetadata);
 
 } // namespace ops

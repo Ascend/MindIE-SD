@@ -30,16 +30,16 @@ using namespace ge;
 // using namespace AscendC;
 namespace optiling {
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetOpName() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetOpName() {
     if (context_->GetNodeName() == nullptr) {
-        OP_LOGE("quant_flash_attn", "opName got from TilingContext is nullptr");
+        OP_LOGE("eagle_quant_flash_attn", "opName got from TilingContext is nullptr");
         return ge::GRAPH_FAILED;
     }
     tilingInfo_.opName = context_->GetNodeName();
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetNpuInfo() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetNpuInfo() {
     tilingInfo_.platformInfo = context_->GetPlatformInfo();
     OP_CHECK_IF(tilingInfo_.platformInfo == nullptr,
         OPS_REPORT_VECTOR_INNER_ERR(tilingInfo_.opName, "GetPlatformInfo is nullptr."), return ge::GRAPH_FAILED);
@@ -58,7 +58,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetNpuInfo() {
     return ge::GRAPH_SUCCESS;
 }
 
-void QuantFlashAttnTilingInfoParser::GetOptionalInputParaInfo() {
+void EagleQuantFlashAttnTilingInfoParser::GetOptionalInputParaInfo() {
     tilingInfo_.opParamInfo.blockTable.tensor = context_->GetOptionalInputTensor(BLOCK_TABLE_INDEX);
     tilingInfo_.opParamInfo.blockTable.desc = context_->GetOptionalInputDesc(BLOCK_TABLE_INDEX);
     tilingInfo_.opParamInfo.cuSeqlensQ.tensor = context_->GetOptionalInputTensor(CU_SEQLENS_Q_INDEX);
@@ -77,7 +77,7 @@ void QuantFlashAttnTilingInfoParser::GetOptionalInputParaInfo() {
     tilingInfo_.opParamInfo.metadata.desc = context_->GetOptionalInputDesc(METADATA_INDEX);
 }
 
-void QuantFlashAttnTilingInfoParser::GetInputParaInfo() {
+void EagleQuantFlashAttnTilingInfoParser::GetInputParaInfo() {
     tilingInfo_.opParamInfo.query.desc = context_->GetInputDesc(QUERY_INDEX);
     tilingInfo_.opParamInfo.query.shape = context_->GetInputShape(QUERY_INDEX);
     tilingInfo_.opParamInfo.key.desc = context_->GetInputDesc(KEY_INDEX);
@@ -93,14 +93,14 @@ void QuantFlashAttnTilingInfoParser::GetInputParaInfo() {
     GetOptionalInputParaInfo();
 }
 
-void QuantFlashAttnTilingInfoParser::GetOutputParaInfo() {
+void EagleQuantFlashAttnTilingInfoParser::GetOutputParaInfo() {
     tilingInfo_.opParamInfo.attnOut.desc = context_->GetOutputDesc(ATTN_OUT_INDEX);
     tilingInfo_.opParamInfo.attnOut.shape = context_->GetOutputShape(ATTN_OUT_INDEX);
     tilingInfo_.opParamInfo.lseOut.desc = context_->GetOutputDesc(SOFTMAX_LSE_INDEX);
     tilingInfo_.opParamInfo.lseOut.shape = context_->GetOutputShape(SOFTMAX_LSE_INDEX);
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetAttrParaInfo() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetAttrParaInfo() {
     auto attrs = context_->GetAttrs();
     OP_CHECK_IF(attrs == nullptr, OPS_REPORT_VECTOR_INNER_ERR(context_->GetNodeName(), "attrs got from ge is nullptr"),
         return ge::GRAPH_FAILED);
@@ -126,13 +126,13 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetAttrParaInfo() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetOpParaInfo() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetOpParaInfo() {
     GetInputParaInfo();
     GetOutputParaInfo();
     return GetAttrParaInfo();
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::CheckRequiredInOutExistence() const {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::CheckRequiredInOutExistence() const {
     OP_CHECK_IF(tilingInfo_.opParamInfo.query.shape == nullptr,
         OP_LOGE(tilingInfo_.opName, "Shape of tensor query is nullptr"), return ge::GRAPH_FAILED);
     OP_CHECK_IF(tilingInfo_.opParamInfo.query.desc == nullptr,
@@ -165,7 +165,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::CheckRequiredInOutExistence() co
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::CheckOptionalInputExistence() const {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::CheckOptionalInputExistence() const {
     if ((tilingInfo_.opParamInfo.blockTable.tensor == nullptr && tilingInfo_.opParamInfo.blockTable.desc != nullptr) ||
         (tilingInfo_.opParamInfo.blockTable.tensor != nullptr && tilingInfo_.opParamInfo.blockTable.desc == nullptr)) {
         OP_LOGE(tilingInfo_.opName, "tensor and desc of %s are either both not nullptr or both nullptr.",
@@ -219,7 +219,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::CheckOptionalInputExistence() co
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::CheckRequiredAttrExistence() const {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::CheckRequiredAttrExistence() const {
     OP_CHECK_IF(tilingInfo_.opParamInfo.qQuantMode == nullptr,
         OP_LOGE(tilingInfo_.opName, "attr q_quant_mode is nullptr"), return ge::GRAPH_FAILED);
     OP_CHECK_IF(tilingInfo_.opParamInfo.kQuantMode == nullptr,
@@ -229,7 +229,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::CheckRequiredAttrExistence() con
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::CheckRequiredParaExistence() const {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::CheckRequiredParaExistence() const {
     if (CheckRequiredInOutExistence() != ge::GRAPH_SUCCESS || CheckRequiredAttrExistence() != ge::GRAPH_SUCCESS ||
         CheckOptionalInputExistence() != ge::GRAPH_SUCCESS) {
         return ge::GRAPH_FAILED;
@@ -238,7 +238,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::CheckRequiredParaExistence() con
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetCuSeqLenQDims() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetCuSeqLenQDims() {
     if (tilingInfo_.layoutQ == FiaLayout::TND) {
         if (tilingInfo_.opParamInfo.cuSeqlensQ.tensor == nullptr) {
             OP_LOGE(tilingInfo_.opName, "when %s's layout is %s, %s must be provided.", QUERY_NAME.c_str(),
@@ -256,7 +256,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetCuSeqLenQDims() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetCuSeqLenKvDims() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetCuSeqLenKvDims() {
     if (tilingInfo_.layoutKV == FiaLayout::TND) {
         if (tilingInfo_.opParamInfo.cuSeqlensKv.tensor == nullptr) {
             OP_LOGE(tilingInfo_.opName, "when key/value's layout is %s, %s must be provided.",
@@ -274,7 +274,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetCuSeqLenKvDims() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetSeqUsedQDims() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetSeqUsedQDims() {
     tilingInfo_.qSeqUsedSize = 0;
     if (tilingInfo_.opParamInfo.sequsedQ.tensor != nullptr) {
         int64_t shapeSize = tilingInfo_.opParamInfo.sequsedQ.tensor->GetShapeSize();
@@ -288,7 +288,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetSeqUsedQDims() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetSeqUsedKvDims() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetSeqUsedKvDims() {
     tilingInfo_.kvSeqUsedSize = 0;
     if (tilingInfo_.opParamInfo.sequsedKv.tensor != nullptr) {
         int64_t shapeSize = tilingInfo_.opParamInfo.sequsedKv.tensor->GetShapeSize();
@@ -302,7 +302,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetSeqUsedKvDims() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetBatchSize() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetBatchSize() {
     // 获取B基准值
     // 1、非TND时, 以query的batch_size维度为基准;
     // 2、TND时, cu_seqlens_q必须传入, 以cu_seqlens_q数组的长度为B+1
@@ -317,7 +317,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetBatchSize() {
     }
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetN1Size() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetN1Size() {
     // 从 Q 形状获取 N1 值
     if (queryShape_ != nullptr && queryShape_->HasShapeN()) {
         tilingInfo_.n1Size = static_cast<uint32_t>(queryShape_->GetShapeN());
@@ -328,7 +328,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetN1Size() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetN2Size() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetN2Size() {
     // 从 K 形状获取 N2 值
     if (keyShape_ != nullptr && keyShape_->HasShapeN()) {
         tilingInfo_.n2Size = static_cast<uint32_t>(keyShape_->GetShapeN());
@@ -339,7 +339,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetN2Size() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetGSize() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetGSize() {
     // 获取G基准值
     if (tilingInfo_.n1Size % tilingInfo_.n2Size != 0U) {
         OP_LOGE(tilingInfo_.opName, "Q numHeads(%u) should be a multiple of Kv Heads(%u).", tilingInfo_.n1Size,
@@ -350,7 +350,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetGSize() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetQkHeadDim() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetQkHeadDim() {
     // 获取qkHeadDim基准值
     // 以query的D维度为基准
     if (queryShape_->CheckHasShapeD(__func__) != ge::GRAPH_SUCCESS) {
@@ -361,7 +361,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetQkHeadDim() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetValueHeadDim() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetValueHeadDim() {
     // 获取vHeadDim基准值
     // 以value的D维度为基准
     if (valueShape_->CheckHasShapeD(__func__) != ge::GRAPH_SUCCESS) {
@@ -371,18 +371,18 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetValueHeadDim() {
     return ge::GRAPH_SUCCESS;
 }
 
-void QuantFlashAttnTilingInfoParser::GetQueryTSize() {
+void EagleQuantFlashAttnTilingInfoParser::GetQueryTSize() {
     // 获取query的T基准值
     // 1、非TND/NTD时, 以query的batch_size维度为基准;
     // 2、TND/NTD时, actual_seq_lens_q必须传入, 以actual_seq_lens_q数组的长度为B轴大小
     tilingInfo_.queryTSize = (queryShape_->HasShapeT()) ? static_cast<uint32_t>(queryShape_->GetShapeT()) : 0;
 }
 
-void QuantFlashAttnTilingInfoParser::GetKeyTSize() {
+void EagleQuantFlashAttnTilingInfoParser::GetKeyTSize() {
     tilingInfo_.keyTSize = (keyShape_->HasShapeT()) ? static_cast<uint32_t>(keyShape_->GetShapeT()) : 0;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetMaxSeqLenQ() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetMaxSeqLenQ() {
     tilingInfo_.maxSeqLenQ = -1;
     if (tilingInfo_.opParamInfo.maxSeqlenQ != nullptr) {
         tilingInfo_.maxSeqLenQ = *tilingInfo_.opParamInfo.maxSeqlenQ;
@@ -394,7 +394,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetMaxSeqLenQ() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetMaxSeqLenKv() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetMaxSeqLenKv() {
     tilingInfo_.maxSeqLenKv = -1;
     if (tilingInfo_.opParamInfo.maxSeqlenKV != nullptr) {
         tilingInfo_.maxSeqLenKv = *tilingInfo_.opParamInfo.maxSeqlenKV;
@@ -406,7 +406,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetMaxSeqLenKv() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetS1Size() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetS1Size() {
     // 获取S1基准值
     // BSH/BSND/BNSD: 以query的S维度为基准
     if (tilingInfo_.layoutQ == FiaLayout::TND) {
@@ -425,7 +425,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetS1Size() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetS2SizeForBatchContinuous() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetS2SizeForBatchContinuous() {
     if (tilingInfo_.layoutKV == FiaLayout::TND) {
         GetKeyTSize();
         if (tilingInfo_.maxSeqLenKv >= 0) {
@@ -442,7 +442,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetS2SizeForBatchContinuous() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetBlockSize() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetBlockSize() {
     if (keyShape_->CheckHasShapeBlockSize(__func__) != ge::GRAPH_SUCCESS) {
         return ge::GRAPH_FAILED;
     }
@@ -450,7 +450,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetBlockSize() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetMaxBlockNumPerBatch() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetMaxBlockNumPerBatch() {
     if (tilingInfo_.kvStorageMode == KvStorageMode::PAGE_ATTENTION) {
         uint32_t dimNum = tilingInfo_.opParamInfo.blockTable.tensor->GetStorageShape().GetDimNum();
         if (dimNum != 2U) {
@@ -465,7 +465,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetMaxBlockNumPerBatch() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetS2SizeForPageAttention() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetS2SizeForPageAttention() {
     if (GetBlockSize() != ge::GRAPH_SUCCESS && GetMaxBlockNumPerBatch() != ge::GRAPH_SUCCESS) {
         return ge::GRAPH_FAILED;
     }
@@ -474,7 +474,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetS2SizeForPageAttention() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetS2Size() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetS2Size() {
     // 获取S2基准值
     // 1、BATCH_CONTINUOUS时, 从key的S轴获取
     // 2、TENSOR_LIST时, 从kCache_的所有Tensor的S轴的最大值
@@ -485,7 +485,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetS2Size() {
     return GetS2SizeForPageAttention();
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetInAndOutLayout() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetInAndOutLayout() {
     if (tilingInfo_.opParamInfo.layoutQ == nullptr) {
         tilingInfo_.layoutQ = FiaLayout::BSND;
     } else {
@@ -531,7 +531,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::GetInAndOutLayout() {
     return ge::GRAPH_SUCCESS;
 }
 
-void QuantFlashAttnTilingInfoParser::GetPreNextToken() {
+void EagleQuantFlashAttnTilingInfoParser::GetPreNextToken() {
     // 特殊场景下需要更新值
     tilingInfo_.maskMode = tilingInfo_.opParamInfo.maskMode == nullptr ? 0 : *tilingInfo_.opParamInfo.maskMode;
 
@@ -548,14 +548,14 @@ void QuantFlashAttnTilingInfoParser::GetPreNextToken() {
     }
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::GetQkvDataType() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::GetQkvDataType() {
     tilingInfo_.inputQType = tilingInfo_.opParamInfo.query.desc->GetDataType();
     tilingInfo_.inputKType = tilingInfo_.opParamInfo.key.desc->GetDataType();
     tilingInfo_.inputVType = tilingInfo_.opParamInfo.value.desc->GetDataType();
     return ge::GRAPH_SUCCESS;
 }
 
-void QuantFlashAttnTilingInfoParser::SetFaShape() {
+void EagleQuantFlashAttnTilingInfoParser::SetFaShape() {
     queryShape_ = std::make_shared<FiaTilingShape>(
         tilingInfo_.opParamInfo.query.shape->GetStorageShape(), tilingInfo_.layoutQ, QUERY_NAME, tilingInfo_.opName);
     keyShape_ = std::make_shared<FiaTilingShape>(
@@ -570,7 +570,7 @@ void QuantFlashAttnTilingInfoParser::SetFaShape() {
     //     std::make_shared<FiaTilingShape>(tilingInfo_.opParamInfo.vDescale.shape->GetStorageShape(), tilingInfo_.layoutKV, V_DESCALE_NAME, tilingInfo_.opName);
 }
 
-void QuantFlashAttnTilingInfoParser::GetKvStorageMode() {
+void EagleQuantFlashAttnTilingInfoParser::GetKvStorageMode() {
     if (tilingInfo_.opParamInfo.blockTable.tensor != nullptr) {
         tilingInfo_.kvStorageMode = KvStorageMode::PAGE_ATTENTION;
     } else {
@@ -578,7 +578,7 @@ void QuantFlashAttnTilingInfoParser::GetKvStorageMode() {
     }
 }
 
-void QuantFlashAttnTilingInfoParser::GetSoftmaxScale() {
+void EagleQuantFlashAttnTilingInfoParser::GetSoftmaxScale() {
     if (tilingInfo_.opParamInfo.softmaxScale != nullptr) {
         tilingInfo_.softmaxScale = *tilingInfo_.opParamInfo.softmaxScale;
     } else {
@@ -586,7 +586,7 @@ void QuantFlashAttnTilingInfoParser::GetSoftmaxScale() {
     }
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::ParseAxisInfo() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::ParseAxisInfo() {
     if (ge::GRAPH_SUCCESS != GetSeqUsedQDims() || ge::GRAPH_SUCCESS != GetSeqUsedKvDims() ||
         ge::GRAPH_SUCCESS != GetCuSeqLenQDims() || ge::GRAPH_SUCCESS != GetCuSeqLenKvDims() ||
         ge::GRAPH_SUCCESS != GetBatchSize()) {
@@ -613,7 +613,7 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::ParseAxisInfo() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::ParseFeatureInfo() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::ParseFeatureInfo() {
     tilingInfo_.attnMaskFlag = (tilingInfo_.opParamInfo.attnMask.tensor != nullptr);
     tilingInfo_.learnableSinkFlag = (tilingInfo_.opParamInfo.sinks.tensor != nullptr);
     tilingInfo_.softmaxPresision = (tilingInfo_.opParamInfo.softmaxPrecision == nullptr)
@@ -635,9 +635,9 @@ ge::graphStatus QuantFlashAttnTilingInfoParser::ParseFeatureInfo() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingInfoParser::Parse() {
+ge::graphStatus EagleQuantFlashAttnTilingInfoParser::Parse() {
     if (context_ == nullptr) {
-        OP_LOGE("quant_flash_attn", "tiling context is nullptr!");
+        OP_LOGE("eagle_quant_flash_attn", "tiling context is nullptr!");
         return ge::GRAPH_FAILED;
     }
 

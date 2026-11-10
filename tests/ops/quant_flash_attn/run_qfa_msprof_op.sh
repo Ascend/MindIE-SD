@@ -79,7 +79,7 @@ while read -r layout scene; do
         for ((run_index=1; run_index<=TEST_COUNT; run_index++)); do
             printf -v run_dir '%s/%s/%s/run_%02d' "$OUTPUT_DIR" "$scene" "$distribution" "$run_index"
             mkdir -p "$run_dir"
-            msprof op --kernel-name=QuantFlashAttn --warm-up="$MSPROF_WARMUP" \
+            msprof op --kernel-name=EagleQuantFlashAttn --warm-up="$MSPROF_WARMUP" \
                 --launch-count=1 --kill=on --output="$run_dir" \
                 python3 -m tests.ops.quant_flash_attn.profile_qfa_prod --device-id "$DEVICE_ID" \
                 --msprof-mode --distribution "$distribution" "${EXTRA_ARGS[@]}" --layout "$layout" \

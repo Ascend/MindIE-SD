@@ -15,8 +15,8 @@
  * \brief
  */
 
-#ifndef QUANT_FLASH_ATTN_METADATA_AICPU_H
-#define QUANT_FLASH_ATTN_METADATA_AICPU_H
+#ifndef EAGLE_QUANT_FLASH_ATTN_METADATA_AICPU_H
+#define EAGLE_QUANT_FLASH_ATTN_METADATA_AICPU_H
 
 #include <array>
 #include <string>
@@ -45,10 +45,10 @@ static const int64_t NUM_128 = 128L;
 static const int64_t NUM_64 = 64L;
 static const int64_t NUM_32 = 32L;
 
-class QuantFlashAttnMetadataCpuKernel : public CpuKernel {
+class EagleQuantFlashAttnMetadataCpuKernel : public CpuKernel {
   public:
-    QuantFlashAttnMetadataCpuKernel() = default;
-    ~QuantFlashAttnMetadataCpuKernel() = default;
+    EagleQuantFlashAttnMetadataCpuKernel() = default;
+    ~EagleQuantFlashAttnMetadataCpuKernel() = default;
     uint32_t Compute(CpuKernelContext &ctx) override;
 
   private:

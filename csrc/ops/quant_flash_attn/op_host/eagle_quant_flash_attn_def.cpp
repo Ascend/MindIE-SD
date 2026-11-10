@@ -11,8 +11,8 @@
  */
 
 /*!
- * \file quant_flash_attn_def.cpp
- * \brief QuantFlashAttn算子定义（训练推理归一，仅非量化）
+ * \file eagle_quant_flash_attn_def.cpp
+ * \brief EagleQuantFlashAttn算子定义（训练推理归一，仅非量化）
  *        输入数据类型仅支持FLOAT16和BFLOAT16。
  *        支持BSND/BNSD/TND三种layout，支持分页KV缓存（PA_ND/PA_Nz）。
  */
@@ -21,9 +21,9 @@
 
 namespace ops {
 
-class QuantFlashAttn : public OpDef {
+class EagleQuantFlashAttn : public OpDef {
   public:
-    explicit QuantFlashAttn(const char *name) : OpDef(name) {
+    explicit EagleQuantFlashAttn(const char *name) : OpDef(name) {
         this->Input("q")
             .ParamType(REQUIRED)
             .DataType({ge::DT_FLOAT4_E2M1})
@@ -147,13 +147,13 @@ class QuantFlashAttn : public OpDef {
             .PrecisionReduceFlag(true)
             .ExtendCfgInfo("prebuildPattern.value", "Opaque")
             .ExtendCfgInfo("coreType.value", "AiCore")
-            .ExtendCfgInfo("opFile.value", "quant_flash_attn")
+            .ExtendCfgInfo("opFile.value", "eagle_quant_flash_attn")
             .ExtendCfgInfo("jitCompile.flag", "static_false,dynamic_false");
 
         this->AICore().AddConfig("ascend950", aicore_config_95);
     }
 };
 
-OP_ADD(QuantFlashAttn);
+OP_ADD(EagleQuantFlashAttn);
 
 } // namespace ops

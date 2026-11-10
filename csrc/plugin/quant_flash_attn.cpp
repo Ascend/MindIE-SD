@@ -19,7 +19,7 @@
 
 using namespace at;
 
-constexpr std::string_view QUANT_FLASH_ATTN_NAME = "aclnnQuantFlashAttn";
+constexpr std::string_view QUANT_FLASH_ATTN_NAME = "aclnnEagleQuantFlashAttn";
 
 inline bool IsByteTensor(const at::Tensor &tensor) { return tensor.scalar_type() == at::ScalarType::Byte; }
 

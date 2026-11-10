@@ -10,13 +10,13 @@
  * See the Mulan PSL v2 for more details.
  */
 
-#ifndef L0_QUANT_FLASH_ATTN_METADATA_H
-#define L0_QUANT_FLASH_ATTN_METADATA_H
+#ifndef L0_EAGLE_QUANT_FLASH_ATTN_METADATA_H
+#define L0_EAGLE_QUANT_FLASH_ATTN_METADATA_H
 
 #include "opdev/op_executor.h"
 
 namespace l0op {
-const aclTensor *QuantFlashAttnMetadata(const aclTensor *cuSeqlensQOptional, const aclTensor *cuSeqlensKvOptional,
+const aclTensor *EagleQuantFlashAttnMetadata(const aclTensor *cuSeqlensQOptional, const aclTensor *cuSeqlensKvOptional,
     const aclTensor *sequsedQOptional, const aclTensor *sequsedKvOptional, int64_t batchSize, int64_t maxSeqlenQ,
     int64_t maxSeqlenKv, int64_t numHeadsQ, int64_t numHeadsKv, int64_t headDim, int64_t qQuantMode, int64_t kQuantMode,
     int64_t vQuantMode, int64_t qDtype, int64_t kDtype, int64_t vDtype, int64_t maskMode, int64_t winLeft,

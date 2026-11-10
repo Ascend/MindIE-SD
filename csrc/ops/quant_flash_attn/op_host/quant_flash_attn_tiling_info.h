@@ -180,7 +180,7 @@ struct FAParaInfo {
     FARequiredParaInfo lseOut = {nullptr, nullptr};
 };
 
-class QuantFlashAttnTilingInfo : public TilingInfo {
+class EagleQuantFlashAttnTilingInfo : public TilingInfo {
   public:
     const char *opName = nullptr;
     fe::PlatFormInfos *platformInfo = nullptr;

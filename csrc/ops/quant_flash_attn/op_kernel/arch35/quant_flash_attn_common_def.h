@@ -15,8 +15,8 @@
  * \brief
  */
 
-#ifndef QUANT_FLASH_ATTN_COMMON_DEF_H_
-#define QUANT_FLASH_ATTN_COMMON_DEF_H_
+#ifndef EAGLE_QUANT_FLASH_ATTN_COMMON_DEF_H_
+#define EAGLE_QUANT_FLASH_ATTN_COMMON_DEF_H_
 
 #include "asc_simd.h"
 #include "quant_flash_attn_template_tiling_key.h"
