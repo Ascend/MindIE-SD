@@ -37,7 +37,7 @@ if [ ! -f ${msopgen} ]; then
     exit 1
 fi
 
-ascendc_ops=${ASCEND_OP_NAME:-'laser_attention;la_preprocess;ada_block_sparse_attention;sparse_block_estimate;norm_rope_concat;eagle_split_norm_rope_concat;quant_flash_attn;quant_flash_attn_metadata;fused_infer_attention_score;eagle_quant_block_sparse_attention;eagle_block_sparse_attention;mul_add;eagle_indexed_gate_norm_modulate;eagle_ffn;quant_four_over_six_a5;eagle_quant_batch_matmul_swiglu'}
+ascendc_ops=${ASCEND_OP_NAME:-'laser_attention;la_preprocess;ada_block_sparse_attention;sparse_block_estimate;ada_relu2_block_estimate;norm_rope_concat;eagle_split_norm_rope_concat;quant_flash_attn;quant_flash_attn_metadata;fused_infer_attention_score;eagle_quant_block_sparse_attention;eagle_block_sparse_attention;mul_add;eagle_indexed_gate_norm_modulate;eagle_ffn;quant_four_over_six_a5;eagle_quant_batch_matmul_swiglu'}
 
 function remove_ops_from_semicolon_list() {
     local op_list="$1"
@@ -73,7 +73,7 @@ function remove_ops_from_semicolon_list() {
 default_compute_unit='ascend910;ascend910b;ascend910_93;ascend950'
 # Ops whose OpDef registers ascend950 as its only AICore().AddConfig() soc.
 # Exclude their sources entirely on CANN < 9.0, which does not support this backend.
-ascend950_only_ops='quant_flash_attn;quant_flash_attn_metadata;fused_infer_attention_score;eagle_ffn;eagle_quant_block_sparse_attention;quant_four_over_six_a5'
+ascend950_only_ops='quant_flash_attn;quant_flash_attn_metadata;fused_infer_attention_score;eagle_ffn;ada_relu2_block_estimate;eagle_quant_block_sparse_attention;quant_four_over_six_a5'
 # Ops whose sources use CANN 9+ only APIs even when built for ascend910b/ascend910_93:
 # eagle_block_sparse_attention pulls in the MXFP4 type fp4x2_e2m1_t (arch35 only, not
 # declared by any 8.5.0 header). AddConfig cannot express this, so such ops must leave
