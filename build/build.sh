@@ -11,6 +11,9 @@
 # See the Mulan PSL v2 for more details.
 
 set -e
+if [ -n "${ATOMGIT_WORKSPACE:-}" ]; then
+    export BUILD_JOB_NUM=${BUILD_JOB_NUM:-8}
+fi
 BUILD_DIR=$(dirname $(readlink -f $0))
 PROJ_ROOT_DIR=${BUILD_DIR}/..
 export OUTPUT_DIR=$PROJ_ROOT_DIR/output
