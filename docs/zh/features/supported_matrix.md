@@ -1,10 +1,10 @@
 # 模型/框架支持介绍
 
-当前，MindIE SD支持vLLM Omni框架、Cache DiT框架和魔乐社区等。理论上，MindIE SD支持任何多模态模型的推理加速，此处仅列出了我们支持的典型模型的特性叠加情况。
+当前，MindIE SD支持vLLM Omni框架、Cache-DiT框架和魔乐社区等。理论上，MindIE SD支持任何多模态模型的推理加速，此处仅列出了我们支持的典型模型的特性叠加情况。
 
 ## 模型支持情况
 
- |  模型       |  vLLM Omni | Cache DiT + diffusers |  魔乐社区  |
+ |  模型       |  vLLM Omni | Cache-DiT + diffusers |  魔乐社区  |
  |:----------:|:---------:|:---------------------:|:------:|
  | Stable Diffusion 1.5 |     ✖️    |          ✖️           |  ✅️    |
  | Stable Diffusion 2.1 |     ✖️    |          ✖️           |  ✅️    |
@@ -22,7 +22,7 @@
  | CogView3-Plus-3B |     ✖️    |          ✖️           |  ✅️    |
  | CogVideoX-2B |     ✖️    |          ✖️           |  ✅️    |
  | CogVideoX-5B |     ✖️    |          ✖️           |  ✅️    |
- | HunyuanDit |     ✖️    |          ✖️           |  ✅️    |
+ | HunyuanDiT |     ✖️    |          ✖️           |  ✅️    |
  | HunyuanVideo |     ✖️    |          ✖️           |  ✅️    |
  | HunyuanVideo-1.5 |     ✖️    |          ✖️           |  ✅️    |
  | Hunyuan3D-2.1 |     ✖️    |          ✖️           |  ✅️    |
@@ -49,7 +49,7 @@
 > [!NOTE]说明
 >Atlas 800I A2推理服务器默认使用算力313T，内存64 GB。
 
-## Cache DiT + diffusers 特性&模型性能
+## Cache-DiT + diffusers 特性&模型性能
 
  |   模型     |  硬件  | Cache   | 并行 | 稀疏FA | 量化 | 融合算子 |
  |:----------:|:----:|:-------:|:--:|:----:|:--:|:---------:|
@@ -78,7 +78,7 @@
  | [CogVideoX-5B](https://modelers.cn/models/MindIE/CogVideoX) |  <ul><li>Atlas 800I A2推理服务器</li><li>Atlas 800I A3超节点服务器</li></ul>  |    ✅️    | ✅️  |  ✖️   | ✖️ |   ✅️    |  无  |
  | [FLUX.1-dev](https://modelers.cn/models/MindIE/FLUX.1-dev) |  <ul><li>Atlas 800I A2推理服务器</li><li>Atlas 800I A3超节点服务器</li></ul>  |    ✅️    | ✅️  |  ✖️   | ✅️ |   ✅️    |  无  |
  | [FLUX.2-dev](https://modelers.cn/models/MindIE/FLUX.2-dev) |  <ul><li>Atlas 800I A2推理服务器</li><li>Atlas 800I A3超节点服务器</li></ul>  |    ✅️    | ✅️  |  ✖️   | ✅️ |   ✅️    |  无  |
- | [HunyuanDit](https://modelers.cn/models/MindIE/hunyuan_dit) |  <ul><li>Atlas 800I A2推理服务器</li><li>Atlas 800I A3超节点服务器</li></ul>  |    ✅️    | ✖️  |  ✖️   | ✖️ |   ✅️    |  无  |
+ | [HunyuanDiT](https://modelers.cn/models/MindIE/hunyuan_dit) |  <ul><li>Atlas 800I A2推理服务器</li><li>Atlas 800I A3超节点服务器</li></ul>  |    ✅️    | ✖️  |  ✖️   | ✖️ |   ✅️    |  无  |
  | [HunyuanVideo](https://modelers.cn/models/MindIE/hunyuan_video) |  <ul><li>Atlas 800I A2推理服务器</li><li>Atlas 800I A3超节点服务器</li></ul>  |    ✅️    | ✅️  |  ✖️   | ✅️ |   ✅️    |  无  |
  | [HunyuanVideo-1.5](https://modelers.cn/models/MindIE/HunyuanVideo-1.5) |  <ul><li>Atlas 800I A2推理服务器</li><li>Atlas 800I A3超节点服务器</li></ul>  |    ✅️    | ✅️  |  ✅️   | ✅️ |   ✅️    |  无  |
  | [Hunyuan3D-2.1](https://modelers.cn/models/MindIE/Hunyuan3D-2.1) |  <ul><li>Atlas 800I A2推理服务器</li><li>Atlas 800I A3超节点服务器</li></ul>  |    ✅️    | ✅️  |  ✖️   | ✅️ |   ✅️    |  无  |

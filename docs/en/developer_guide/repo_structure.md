@@ -5,7 +5,7 @@
 | Directory | Purpose |
 | ------ | ------ |
 | `mindiesd/` | Core Python package with layer operators, compilation, cache, parallelism, and quantization modules |
-| `csrc/` | C/C++ source code (AscendC / triton operator implementations) |
+| `csrc/` | C/C++ source code (Ascend C / triton operator implementations) |
 | `tests/` | Test suite organized to mirror the mindiesd/ hierarchy |
 | `examples/` | Model inference examples (dummy_run, cache, service, wan) |
 | `docs/` | Sphinx documentation source (bilingual: Chinese and English) |

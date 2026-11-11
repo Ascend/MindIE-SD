@@ -8,7 +8,7 @@ MindIE SD 基于 PyTorch 的 `torch.compile` 编译器提供自定义后端 `Min
 两项能力通过 `CompilationConfig` 统一控制。
 
 >[!NOTE]说明
->当使能该特性后，模型运行初期存在一定的编译耗时（默认最多进行8次尝试），但是在后续运行中，一般不会再次编译。在实际benchmark测试过程中，需要将预热阶段的耗时去除。
+>使能该特性后，模型运行初期存在一定的编译耗时（默认最多进行8次尝试），但是在后续运行中，一般不会再次编译。在实际benchmark测试过程中，需要将预热阶段的耗时去除。
 
 ## 基本用法
 
@@ -127,7 +127,7 @@ for audio_chunk in chunks:
 - **环境依赖**：仅昇腾 NPU 环境支持
 - **输入 shape**：运行时输入 shape 须与捕获时一致，变更会触发重新捕获
 - **动态特性**：不支持动态 shape、动态 control flow 或 conditional branching
-- **首次耗时**：首次触发图捕获存在一次性耗时开销
+- **首次耗时**：首次触发图捕获存在一次性耗时
 - **graph.update**：不提供 `graph.update` 接口（该接口用于 LLM 场景动态注入 attention metadata，SD 场景不需要）
 - **配置时机**：`CompilationConfig` 需在 `torch.compile()` 调用前完成配置
 

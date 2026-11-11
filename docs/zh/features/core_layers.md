@@ -287,7 +287,7 @@ out = rotary_position_embedding(x, cos, sin, rotated_mode="rotated_half", head_f
 #### 旋转模式说明
 
 - **rotated_half**：适用于 OpenSoraPlan、Stable Audio 等模型，将 `x` 拆分为前后两半进行旋转。
-- **rotated_interleaved**：适用于 HunyuanDiT、OpenSora、Flux、CogVideox 等模型，将 `x` 按相邻元素交错进行旋转。
+- **rotated_interleaved**：适用于 HunyuanDiT、OpenSora、Flux、CogVideoX 等模型，将 `x` 按相邻元素交错进行旋转。
 
 ### apply_rotary_pos_emb
 

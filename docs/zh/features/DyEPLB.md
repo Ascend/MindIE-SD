@@ -126,7 +126,7 @@ from mindiesd.eplb.dispatcher import DynamicDispatcher
 | `expert_num` | `int` | 是 | - | 全局专家数 |
 | `weight1` | `Tensor` | 是 | - | UP 权重 |
 | `weight2` | `Tensor` | 是 | - | DOWN 权重 |
-| `rank_in_group` | `int` | 是 | - | EP 通信组组内编号 |
+| `rank_in_group` | `int` | 是 | - | EP 通信组内编号 |
 | `ep_size` | `int` | 是 | - | EP 数 |
 
 #### construct_expert_info_transfer_pool
@@ -138,7 +138,7 @@ from mindiesd.eplb.task_manager import construct_expert_info_transfer_pool
 | 参数 | 类型 | 必选 | 默认值 | 说明 |
 |------|------|------|--------|------|
 | `module` | `Module` | 是 | - | 初始化后的 model |
-| `rank_in_group` | `int` | 是 | - | EP 通信组组内编号 |
+| `rank_in_group` | `int` | 是 | - | EP 通信组内编号 |
 | `device` | `int` | 是 | - | rank 对应的 device 编号 |
 | `ip` | `str` | 是 | - | 与服务端 ip 一致 |
 | `port` | `int` | 是 | - | 与服务端 port 一致 |

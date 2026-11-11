@@ -47,14 +47,14 @@ Analyze bottlenecks in collected profiling data using the following methods.
 
 | Stage | Identifying Features | Typical Operators |
 | ------ | --------- | --------- |
-| DiT (Transformer) | attention_forward, MatMul, LayerNorm, RoPE | FlashAttention, Linear, RMSNorm |
+| DiT (Transformer) | attention_forward, MatMul, LayerNorm, RoPE | Flash Attention, Linear, RMSNorm |
 | VAE | Conv2D, GroupNorm, Upsample | Conv2D, ResBlock |
 
 **Operator Classification**: Summarize operators in each stage into four categories.
 
 | Category | Included Operators |
 | ------ | --------- |
-| FA | FlashAttention, SDPA, attention_forward, fused_attn_score |
+| FA | Flash Attention, SDPA, attention_forward, fused_attn_score |
 | MatMul | Linear, MatMul, GEMM, DequantGEMM |
 | Vector | Activation (GELU/SiLU/ReLU), Norm (LayerNorm/RMSNorm), element-wise (Mul/Add/Div) |
 | Comm | HCCL: all_gather, all_reduce, reduce_scatter, broadcast |

@@ -29,7 +29,7 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 #### 注意事项
 
 1. MindIE SD主要依赖TorchNPU的版本，会尽力满足其要求的CANN以及Python版本要求。
-2. CANN版本安装后，安装路径下提供进程级环境变量设置脚本`set_env.sh`，以自动完成环境变量设置，该脚本包含如[表1 环境变量](#table_environment0001)所示中的LD_LIBRARY_PATH和ASCEND_CUSTOM_OPP_PATH，用户进程结束后自动失效。
+2. CANN版本安装后，安装路径下提供进程级环境变量设置脚本`set_env.sh`，以自动完成环境变量设置，该脚本包含如[表1 环境变量](#table_environment0001)所示的LD_LIBRARY_PATH和ASCEND_CUSTOM_OPP_PATH，用户进程结束后自动失效。
 
 **表 1** 环境变量<a id="table_environment0001"></a>
 

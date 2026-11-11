@@ -287,7 +287,7 @@ out = rotary_position_embedding(x, cos, sin, rotated_mode="rotated_half", head_f
 #### Rotation Mode Description
 
 - **rotated_half**: Suitable for models like OpenSoraPlan, Stable Audio, etc. Splits `x` into front and back halves for rotation.
-- **rotated_interleaved**: Suitable for models like HunyuanDiT, OpenSora, Flux, CogVideox, etc. Rotates `x` by interleaving adjacent elements.
+- **rotated_interleaved**: Suitable for models like HunyuanDiT, OpenSora, Flux, CogVideoX, etc. Rotates `x` by interleaving adjacent elements.
 
 ### apply_rotary_pos_emb
 

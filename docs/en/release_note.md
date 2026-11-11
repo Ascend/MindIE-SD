@@ -134,7 +134,7 @@ API changes include additions, modifications, deprecations, and removals. API ch
 | No. | Category | Issue Description |
 | :--- | :--- | :--- |
 | 1 | Operators | Matrix multiplication operators based on CATLASS and Triton are being continuously added. |
-| 2 | Usability | End-to-end integration and runnable examples for third-party frameworks such as Cache DiT and DiffSynth-Engine are being continuously improved. |
+| 2 | Usability | End-to-end integration and runnable examples for third-party frameworks such as Cache-DiT and DiffSynth-Engine are being continuously improved. |
 | 3 | Performance | Parallel communication-computation overlap and fusion schemes are being continuously extended, and joint optimization of EPLB and MoE fusion is in progress. |
 
 # Upgrade Impact

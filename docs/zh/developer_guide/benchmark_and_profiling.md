@@ -49,14 +49,14 @@ Warmup 配置要点：
 
 | 阶段 | 识别特征 | 典型算子 |
 |------|---------|---------|
-| DiT (Transformer) | attention_forward, MatMul, LayerNorm, RoPE | FlashAttention, Linear, RMSNorm |
+| DiT (Transformer) | attention_forward, MatMul, LayerNorm, RoPE | Flash Attention, Linear, RMSNorm |
 | VAE | Conv2D, GroupNorm, Upsample | Conv2D, ResBlock |
 
 **算子分类**：对每个阶段的算子按四类汇总。
 
 | 分类 | 包含算子 |
 |------|---------|
-| FA | FlashAttention, SDPA, attention_forward, fused_attn_score |
+| FA | Flash Attention, SDPA, attention_forward, fused_attn_score |
 | MatMul | Linear, MatMul, GEMM, DequantGEMM |
 | Vector | 激活函数 (GELU/SiLU/ReLU)， Norm (LayerNorm/RMSNorm)， element-wise (Mul/Add/Div) |
 | Comm | HCCL: all_gather, all_reduce, reduce_scatter, broadcast |

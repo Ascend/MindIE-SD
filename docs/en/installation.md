@@ -92,7 +92,7 @@ Follow these steps to install MindIE SD from source:
 
 ## Image Installation (vLLM-Omni)
 
-The Docker image combines **vLLM-Omni + MindIE SD**. MindIE-SD 3.2.0 provides three product variants:
+The Docker image combines **vLLM-Omni + MindIE SD**. MindIE SD 3.2.0 provides three product variants:
 
 | Supported Product | Image Tag | Base Image |
 | --- | --- | --- |

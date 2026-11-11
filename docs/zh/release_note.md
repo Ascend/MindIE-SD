@@ -60,7 +60,7 @@ MindIE各组件需要配套使用，请勿跨版本混用。
 | :--- | :----------------------------------------------------------------------------------------------------------- |
 | 1    | 量化注意力函数式接口。新增公共 API `mindiesd.quant_attention`，将量化注意力执行逻辑沉淀为可复用函数式接口，调用方直接传入浮点 Q/K/V；`precision` 支持 FP8/MXFP8/MXFP4 三档，支持 BNSD/BSND 布局、可选 Q/K 旋转矩阵与注意力窗口配置；`FP8RotateQuantFA` 与公共入口统一执行逻辑，MXFP4/MXFP8 接入保留 legacy timestep 回退。 |
 | 2    | FP8 注意力模式枚举与 FIA 全量化路径扩展。新增 `FP8FAMode` 枚举（`HIGH_PRECISION`（默认）与 `C8V16_TILING512`），`QuantConfig`/`OnlineQuantConfig` 新增 `fp8_fa_mode` 配置项，一次性绑定量化块、`value_quant_mode` 与 `inner_precise`；FIA 算子新增 FP8 per-block V512 量化路径与 C8V16（inner_precise=4）全量化路径。 |
-| 3    | Eagle 块稀疏注意力算子族（EQBSA/EBSA）。新增 `eagle_quant_block_sparse_attention` 量化块稀疏注意力算子（Q/K INT8 + V FP8 混合精度，叠加量化与块稀疏降低长序列开销），并补齐 Ascend 950PR&950DT系列产品 qmode1 mix 路径；新增 `eagle_block_sparse_attention` 非量化块稀疏注意力算子，BlockK 支持放宽至 64（16 对齐）；MiniMax-H3 模型的 EagleQBSA 经 rf_v3 稀疏注意力路由接入。 |
+| 3    | Eagle 块稀疏注意力算子族（EQBSA/EBSA）。新增 `eagle_quant_block_sparse_attention` 量化块稀疏注意力算子（Q/K INT8 + V FP8 混合精度，叠加量化与块稀疏降低长序列开销），并补齐 Ascend 950PR&950DT系列产品 qmode1 mix 路径；新增 `eagle_block_sparse_attention` 非量化块稀疏注意力算子，BlockK 支持放宽至 64（16 对齐）；MiniMax-H3 模型的 EQBSA 经 rf_v3 稀疏注意力路由接入。 |
 | 4    | BF16→FP4 自适应量化算子。新增 `quant_four_over_six_a5` 算子，支持 BF16 输入到 FP4（FLOAT4_E2M1）的 4/6 自适应动态 MX 量化（E8M0 缩放、blocksize=32），适配 Ascend 950PR&950DT系列产品。 |
 | 5    | FFN 融合算子。新增 FFN 前向融合算子，将 linear→act→linear 三次 kernel launch 融合为单 kernel，激活支持 gelu/silu/swiglu，适配 Ascend 950PR&950DT系列产品，其他平台自动回退原生算子链；提供 Python 接口 `mindiesd.layers.eagle_ffn_linear`。 |
 | 6    | USP 序列并行注意力。新增 `mindiesd.layers.usp.usp_attention` 接口，单次调用组合 Ulysses 序列并行、KV AllGather、通信量化（FP8 E4M3/MXFP8，量化 payload 与 scale 分离通信）与注意力计算，支持按 head 切分的双流 overlap 流水执行。 |
@@ -134,7 +134,7 @@ MindIE各组件需要配套使用，请勿跨版本混用。
 | 编号 | 类别 | 问题描述 |
 | :--- | :--- | :--- |
 | 1 | 算子 | 持续补齐基于 CATLASS 和 Triton 实现的矩阵乘法算子。 |
-| 2 | 易用性提升 | 持续完善 Cache DiT、DiffSynth-Engine 等第三方框架的端到端对接与可运行样例。 |
+| 2 | 易用性提升 | 持续完善 Cache-DiT、DiffSynth-Engine 等第三方框架的端到端对接与可运行样例。 |
 | 3 | 性能提升 | 持续扩展并行通算掩盖与融合方案，推进 EPLB 与 MoE 融合的联合优化。 |
 
 ## 升级影响

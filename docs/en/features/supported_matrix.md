@@ -1,10 +1,10 @@
 # Model/Framework Support Matrix
 
-Currently, MindIE SD supports the vLLM Omni framework, Cache DiT framework, and Modelers community, among others. In theory, MindIE SD supports inference acceleration for any multimodal model. This page only lists the feature stacking status for our supported typical models.
+Currently, MindIE SD supports the vLLM Omni framework, Cache-DiT framework, and Modelers community, among others. In theory, MindIE SD supports inference acceleration for any multimodal model. This page only lists the feature stacking status for our supported typical models.
 
 ## Model Support
 
-| Model | vLLM Omni | Cache DiT + diffusers | Modelers |
+| Model | vLLM Omni | Cache-DiT + diffusers | Modelers |
 |:----------:|:---------:|:---------------------:|:------:|
 | Stable Diffusion 1.5 | No | No | Yes |
 | Stable Diffusion 2.1 | No | No | Yes |
@@ -22,7 +22,7 @@ Currently, MindIE SD supports the vLLM Omni framework, Cache DiT framework, and 
 | CogView3-Plus-3B | No | No | Yes |
 | CogVideoX-2B | No | No | Yes |
 | CogVideoX-5B | No | No | Yes |
-| HunyuanDit | No | No | Yes |
+| HunyuanDiT | No | No | Yes |
 | HunyuanVideo | No | No | Yes |
 | HunyuanVideo-1.5 | No | No | Yes |
 | Hunyuan3D-2.1 | No | No | Yes |
@@ -49,7 +49,7 @@ Currently, MindIE SD supports the vLLM Omni framework, Cache DiT framework, and 
 > **Note:**
 > Atlas 800I A2 inference server default to 313T compute and 64 GB memory.
 
-## Cache DiT + diffusers Features and Model Performance
+## Cache-DiT + diffusers Features and Model Performance
 
 | Model | Hardware | Cache | Parallelism | Sparse FA | Quantization | Fused Ops |
 |:----------:|:----:|:-------:|:--:|:----:|:--:|:---------:|
@@ -78,7 +78,7 @@ Currently, MindIE SD supports the vLLM Omni framework, Cache DiT framework, and 
 | [CogVideoX-5B](https://modelers.cn/models/MindIE/CogVideoX) | Atlas 800I A2 inference server / Atlas 800I A3 SuperPod server | Yes | Yes | No | No | Yes | N/A |
 | [FLUX.1-dev](https://modelers.cn/models/MindIE/FLUX.1-dev) | Atlas 800I A2 inference server / Atlas 800I A3 SuperPod server | Yes | Yes | No | Yes | Yes | N/A |
 | [FLUX.2-dev](https://modelers.cn/models/MindIE/FLUX.2-dev) | Atlas 800I A2 inference server / Atlas 800I A3 SuperPod server | Yes | Yes | No | Yes | Yes | N/A |
-| [HunyuanDit](https://modelers.cn/models/MindIE/hunyuan_dit) | Atlas 800I A2 inference server / Atlas 800I A3 SuperPod server | Yes | No | No | No | Yes | N/A |
+| [HunyuanDiT](https://modelers.cn/models/MindIE/hunyuan_dit) | Atlas 800I A2 inference server / Atlas 800I A3 SuperPod server | Yes | No | No | No | Yes | N/A |
 | [HunyuanVideo](https://modelers.cn/models/MindIE/hunyuan_video) | Atlas 800I A2 inference server / Atlas 800I A3 SuperPod server | Yes | Yes | No | Yes | Yes | N/A |
 | [HunyuanVideo-1.5](https://modelers.cn/models/MindIE/HunyuanVideo-1.5) | Atlas 800I A2 inference server / Atlas 800I A3 SuperPod server | Yes | Yes | Yes | Yes | Yes | N/A |
 | [Hunyuan3D-2.1](https://modelers.cn/models/MindIE/Hunyuan3D-2.1) | Atlas 800I A2 inference server / Atlas 800I A3 SuperPod server | Yes | Yes | No | Yes | Yes | N/A |
