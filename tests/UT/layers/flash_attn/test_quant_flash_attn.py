@@ -100,6 +100,63 @@ class TestQuantFlashAttn(unittest.TestCase):
                     if dtype == rotation_dtype:
                         self.assertIs(rotation, original)
 
+    def test_hadamard_rotation_mode_generates_shared_qk_rotation(self):
+        entry = importlib.import_module("mindiesd.layers.flash_attn.quant_flash_attn")
+        from mindiesd.quantization.utils import create_online_hadamard_rot
+
+        expected_rot = create_online_hadamard_rot(64, dtype=self.q.dtype, device=self.q.device)
+        cache_key = (str(self.q.device), self.q.dtype, 64)
+        entry._FA_ROTATION_CACHE.pop(cache_key, None)
+        with (
+            patch.object(
+                fp8,
+                "_fa_block_quant_preprocess",
+                side_effect=lambda tensor, **kw: (tensor, torch.ones(1)),
+            ) as quantize,
+            patch.object(torch.ops.mindiesd, "fused_infer_attention_score_v2", create=True, return_value=(self.q,)),
+        ):
+            quant_attention(self.q, self.q, self.q, rotation_mode="hadamard")
+            cached_rot = entry._FA_ROTATION_CACHE[cache_key]
+            quant_attention(self.q, self.q, self.q, rotation_mode="hadamard")
+
+        torch.testing.assert_close(quantize.call_args_list[0].args[0], torch.matmul(self.q, expected_rot))
+        torch.testing.assert_close(quantize.call_args_list[1].args[0], torch.matmul(self.q, expected_rot))
+        self.assertIs(quantize.call_args_list[2].args[0], self.q)
+        torch.testing.assert_close(cached_rot, expected_rot)
+        self.assertIs(entry._FA_ROTATION_CACHE[cache_key], cached_rot)
+
+    def test_hadamard_rotation_does_not_print_trace_logs(self):
+        entry = importlib.import_module("mindiesd.layers.flash_attn.quant_flash_attn")
+        cache_key = (str(self.q.device), self.q.dtype, 64)
+        entry._FA_ROTATION_CACHE.pop(cache_key, None)
+        with (
+            patch.object(
+                fp8,
+                "_fa_block_quant_preprocess",
+                side_effect=lambda tensor, **kw: (tensor, torch.ones(1)),
+            ),
+            patch.object(torch.ops.mindiesd, "fused_infer_attention_score_v2", create=True, return_value=(self.q,)),
+            patch("builtins.print") as print_log,
+        ):
+            quant_attention(self.q, self.q, self.q, rotation_mode="hadamard")
+            quant_attention(self.q, self.q, self.q, rotation_mode="hadamard")
+
+        print_log.assert_not_called()
+
+    def test_rotation_mode_rejects_explicit_rotation_matrices(self):
+        with self.assertRaisesRegex(ValueError, "rotation_mode.*q_rot.*k_rot"):
+            quant_attention(
+                self.q,
+                self.q,
+                self.q,
+                rotation_mode="hadamard",
+                q_rot=torch.eye(64),
+            )
+
+    def test_unknown_rotation_mode_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "rotation_mode"):
+            quant_attention(self.q, self.q, self.q, rotation_mode="random")
+
     def test_float_rejected_before_execution(self):
         with (
             patch.object(torch_npu, "npu_fusion_attention", create=True) as floating,
@@ -274,7 +331,8 @@ class TestQuantFlashAttn(unittest.TestCase):
             ) as op:
                 block.fa_block_quant_preprocess(self.q, dst_type=dst_type)
                 self.assertEqual(
-                    op.call_args.kwargs["dst_type"], torch_npu.float8_e4m3fn if dst_type is None else dst_type
+                    op.call_args.kwargs["dst_type"],
+                    getattr(torch_npu, "float8_e4m3fn") if dst_type is None else dst_type,
                 )
 
     def test_fp8_rejects_batch_before_quantization(self):
@@ -401,12 +459,12 @@ class TestQuantAttentionMxfp4(unittest.TestCase):
                     query = query.transpose(1, 2).contiguous()
                 scales = []
 
-                def quantize(tensor, **kwargs):
+                def quantize(tensor, *, paired=paired, append_scale=scales.append, **kwargs):
                     # Distinct per-head/per-token scale values expose a swap
                     # that an all-ones scale fixture cannot detect.
                     scale_shape = (*tensor.shape[:-1], 1, 2) if paired else (*tensor.shape[:-1], 2)
                     scale = torch.arange(tensor.numel() // 32).reshape(scale_shape)
-                    scales.append(scale)
+                    append_scale(scale)
                     return tensor, scale
 
                 with (
@@ -496,13 +554,13 @@ class TestQuantAttentionMxfp4(unittest.TestCase):
                     q = q.transpose(1, 2)
                 scales = []
 
-                def quantize(tensor, *, axis, dst_type):
+                def quantize(tensor, *, axis, dst_type, paired=paired, layout=layout, append_scale=scales.append):
                     shape = list(tensor.shape)
                     shape[axis] //= 32
                     scale = torch.arange(torch.tensor(shape).prod().item()).reshape(shape)
                     if paired and axis != -1:
                         scale = mxfp4._reshape_mxfp4_v_scale_for_fa(scale, layout)
-                    scales.append(scale)
+                    append_scale(scale)
                     return tensor, scale
 
                 with (
@@ -522,8 +580,8 @@ class TestQuantAttentionMxfp4(unittest.TestCase):
                     opts = execute.call_args.kwargs
                     for name in ("q", "k", "v"):
                         self.assertEqual(opts[name + "_quant_mode"], 3)
-                        self.assertEqual(opts[name + "_dtype"], torch_npu.float4_e2m1fn_x2)
-                        self.assertEqual(opts[name + "_descale_dtype"], torch_npu.float8_e8m0fnu)
+                        self.assertEqual(opts[name + "_dtype"], getattr(torch_npu, "float4_e2m1fn_x2"))
+                        self.assertEqual(opts[name + "_descale_dtype"], getattr(torch_npu, "float8_e8m0fnu"))
                     self.assertEqual(
                         [c.kwargs["axis"] for c in quant.call_args_list], [-1, -1, 2 if layout == "BNSD" else 1]
                     )
@@ -665,7 +723,10 @@ class TestQuantAttentionMxfp8(unittest.TestCase):
                 patch.object(torch_npu, "npu_dynamic_mx_quant", create=True) as quantize,
                 patch.object(torch_npu, "npu_fused_infer_attention_score_v2", create=True) as execute,
             ):
-                quantize.side_effect = lambda t, **kw: (t, scales[quantize.call_count - 1])
+                quantize.side_effect = lambda t, scales=scales, quantize=quantize, **kw: (
+                    t,
+                    scales[quantize.call_count - 1],
+                )
                 execute.side_effect = lambda t, *args, **kw: (t,)
                 output = quant_attention(
                     q,
@@ -687,7 +748,9 @@ class TestQuantAttentionMxfp8(unittest.TestCase):
                 for tensor, mode, descale in zip(("query", "key", "value"), (6, 6, 8), scales):
                     self.assertEqual(options[tensor + "_quant_mode"], mode)
                     self.assertIs(options["dequant_scale_" + tensor], descale)
-                    self.assertEqual(options["dequant_scale_" + tensor + "_dtype"], torch_npu.float8_e8m0fnu)
+                    self.assertEqual(
+                        options["dequant_scale_" + tensor + "_dtype"], getattr(torch_npu, "float8_e8m0fnu")
+                    )
                     self.assertEqual(options[tensor + "_dtype"], torch.float8_e4m3fn)
                 self.assertEqual(options["actual_seq_kvlen"], [17, 34])
                 self.assertEqual(options["out_dtype"], q.dtype)
