@@ -12,6 +12,7 @@
 
 
 __all__ = [
+    'AddLayerNormPatternGroup',
     'RMSNormPatternGroup',
     'GroupNormSiLUPatternGroup',
     'RopePatternGroup',
@@ -33,17 +34,18 @@ __all__ = [
 ]
 
 from .adalayernorm_pattern import AdaLayerNormPatternGroup
+from .add_layer_norm_pattern import AddLayerNormPatternGroup
 from .gelu_pattern import GELUPatternGroup
 from .group_norm_silu_pattern import GroupNormSiLUPatternGroup
 from .minimax_h3_adaln_pattern import MiniMaxH3AdaLnPatternGroup
 from .minimax_h3_gate_pattern import MiniMaxH3GatePatternGroup
-from .minimax_h3_swiglu_pattern import MiniMaxH3SwigluPatternGroup
 from .minimax_h3_rmsnorm_pattern import MiniMaxH3RmsNormPatternGroup
 from .minimax_h3_rope_pattern import MiniMaxH3RopePatternGroup
+from .minimax_h3_swiglu_pattern import MiniMaxH3SwigluPatternGroup
 from .mul_add_pattern import MulAddPatternGroup
 from .norm_out_adalayernorm_pattern import NormOutAdaLayerNormPatternGroup
-from .qwen_rope_pattern import QwenRopePatternGroup
 from .qwen_residual_gate_pattern import QwenResidualGatePatternGroup
+from .qwen_rope_pattern import QwenRopePatternGroup
 from .rms_norm_pattern import RMSNormPatternGroup
 from .rope_pattern import RopePatternGroup
 from .wan_adalayernorm_pattern import WanAdaLayerNormPatternGroup

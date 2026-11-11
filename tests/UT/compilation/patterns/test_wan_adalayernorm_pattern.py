@@ -1,5 +1,6 @@
 import os
 import unittest
+
 import torch
 
 from mindiesd.compilation import MindieSDBackend  # pylint: disable=no-name-in-module
@@ -40,16 +41,16 @@ class TestWanAdaLayerNormPatternCompilationCase(unittest.TestCase):
 
     def test_wan_adalayernorm_pattern_bfloat16(self):
         # Wan2.2-T2V-A14B: dim = 40 heads * 128 head_dim = 5120, eps=1e-6
-        B, S, D = 2, 16, 5120
+        batch, sequence, hidden_size = 2, 16, 5120
         eps = 1e-6
-        model = WanAdaLayerNormModel(D, epsilon=eps)
+        model = WanAdaLayerNormModel(hidden_size, epsilon=eps)
 
-        x = torch.randn(B, S, D, dtype=torch.float32, device="cpu")
-        scale = torch.randn(B, 1, D, dtype=torch.float32, device="cpu")
-        shift = torch.randn(B, 1, D, dtype=torch.float32, device="cpu")
+        x = torch.randn(batch, sequence, hidden_size, dtype=torch.float32, device="cpu")
+        scale = torch.randn(batch, 1, hidden_size, dtype=torch.float32, device="cpu")
+        shift = torch.randn(batch, 1, hidden_size, dtype=torch.float32, device="cpu")
 
         self._run_test_and_measure_time(model, x, scale, shift)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

@@ -22,9 +22,12 @@ def activate_pattern_once():
         import importlib
 
         from ..compiliation_config import CompilationConfig
+
         from .register_pattern_to_pass import patterns, register_pattern_to_pass
 
         pattern_registry = {
+            # Always register the shared residual before shorter residual-gate patterns.
+            "enable_add_layer_norm": ("AddLayerNormPatternGroup", "..patterns"),
             "enable_rms_norm": ("RMSNormPatternGroup", "..patterns"),
             "enable_rope": ("RopePatternGroup", "..patterns"),
             "enable_adalayernorm": ("AdaLayerNormPatternGroup", "..patterns"),

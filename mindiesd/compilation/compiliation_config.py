@@ -58,6 +58,7 @@ class BackendMode(str, Enum):
 
 @dataclasses.dataclass(frozen=False)
 class FusionPatterns:
+    enable_add_layer_norm: bool = True
     enable_rms_norm: bool = True
     enable_rope: bool = True
     enable_adalayernorm: bool = True

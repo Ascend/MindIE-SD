@@ -66,6 +66,11 @@ def test_real_pattern_graph_is_rewritten(module_name, group_name):
             )
             before = graph.code
             replacements = matcher.pattern_pass.apply(graph)
+            if pattern.name() == "WanMixedModulationPattern-float32-bfloat16":
+                # This Triton-Ascend replacement must preserve the original CPU graph.
+                assert replacements == 0
+                assert graph.code == before
+                continue
             assert replacements >= 1, pattern.name()
             graph.graph.lint()
             graph.recompile()

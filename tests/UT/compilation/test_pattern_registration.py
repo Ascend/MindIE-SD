@@ -11,11 +11,41 @@
 # See the Mulan PSL v2 for more details.
 
 import unittest
+from unittest.mock import MagicMock, patch
+
+from mindiesd.compilation import passes
 
 from mindiesd.compilation.compiliation_config import CompilationConfig
 
 
 class TestFusionConfigIntegration(unittest.TestCase):
+    def test_add_layer_norm_registers_before_shorter_patterns(self):
+        groups = MagicMock()
+        with (
+            patch.object(passes.once_flag, "is_set", return_value=False),
+            patch.object(passes.once_flag, "set"),
+            patch("mindiesd.compilation.passes.register_pattern_to_pass.register_pattern_to_pass") as register,
+            patch("importlib.import_module", return_value=groups),
+        ):
+            passes.activate_pattern_once()
+        self.assertEqual(register.call_args_list[0].args, (groups.AddLayerNormPatternGroup,))
+        self.assertEqual(
+            sum(call.args == (groups.AddLayerNormPatternGroup,) for call in register.call_args_list),
+            1,
+        )
+
+    def test_add_layer_norm_can_be_disabled(self):
+        groups = MagicMock()
+        with (
+            patch.object(CompilationConfig.fusion_patterns, "enable_add_layer_norm", False),
+            patch.object(passes.once_flag, "is_set", return_value=False),
+            patch.object(passes.once_flag, "set"),
+            patch("mindiesd.compilation.passes.register_pattern_to_pass.register_pattern_to_pass") as register,
+            patch("importlib.import_module", return_value=groups),
+        ):
+            passes.activate_pattern_once()
+        self.assertFalse(any(call.args == (groups.AddLayerNormPatternGroup,) for call in register.call_args_list))
+
     def test_fusion_config_has_new_fields(self):
         config = CompilationConfig.fusion_patterns
         self.assertTrue(hasattr(config, "enable_mul_add"))

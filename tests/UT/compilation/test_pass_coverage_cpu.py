@@ -164,7 +164,9 @@ def test_pattern_activation_respects_switches_and_runs_once(monkeypatch, enabled
     assert passes.once_flag.is_set()
     groups = [call.args[0] for call in register.call_args_list]
     if enabled:
-        assert len(groups) == 17
+        assert len(groups) == 18
+        assert groups.count(patterns.AddLayerNormPatternGroup) == 1
+        assert groups.index(patterns.AddLayerNormPatternGroup) < groups.index(patterns.WanResidualGatePatternGroup)
         assert groups.index(patterns.QwenRopePatternGroup) < groups.index(patterns.WanResidualGatePatternGroup)
         assert groups.index(patterns.MiniMaxH3RopePatternGroup) < groups.index(patterns.WanResidualGatePatternGroup)
     else:
