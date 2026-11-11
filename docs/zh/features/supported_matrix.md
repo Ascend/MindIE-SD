@@ -14,6 +14,7 @@
 | 模型 | 模型类型 | 硬件 | vLLM Omni | vLLM-Ascend | 魔乐社区 |
 | :--------- | :--------- | :--------- | :-----: | :-----: | :-----: |
 | MiniMax H3 | 音视频生成 | A2/A3/A5 | ✅️ | ✖️ | ✖️ |
+| MiniMax H3-Image | 图像生成/编辑 | A2/A3/A5 | ✅️ | ✖️ | ✖️ |
 | Wan2.2 | 视频生成 | A2/A3/A5 | ✅️ | ✖️ | ✅️ |
 | HunyuanVideo-1.5 | 视频生成 | A2/A3/A5 | ✖️ | ✖️ | ✅️ |
 | HunyuanVideo | 视频生成 | A2/A3/A5 | ✖️ | ✖️ | ✅️ |
@@ -46,6 +47,8 @@
 | :--------- | :----: | :----: | :----: | :----: | :----: | :----: | :----: | :----: | :----: | :-----: |
 | MiniMax H3 | A2/A3 | TP | USP | Tile | ✖️ | ✅️ | int8/int4 | ✅️ | ✅️ | ✖️ |
 | MiniMax H3 | A5 | TP | USP | Tile | fp8 | ✅️ | mxfp8/mxfp4 | ✅️ | ✅️ | ✖️ |
+| MiniMax H3-Image | A2/A3 | TP | USP | ✖️ | ✖️ | ✖️ | ✖️ | ✖️ | ✖️ | ✖️ |
+| MiniMax H3-Image | A5 | TP | USP | ✖️ | ✖️ | ✖️ | ✖️ | ✖️ | ✖️ | ✖️ |
 | Wan2.2 | A2/A3 | ✖️ | USP/CFG/TP | Tile | ✖️ | ✅️ | int8 | ✖️ | ✅️ | ✖️ |
 | Wan2.2 | A5 | ✖️ | USP/CFG/TP | Tile | fp8/mxfp8/mxfp4 | ✅️ | mxfp8/mxfp4 | ✖️ | ✅️ | ✖️ |
 | Qwen-Image-2.1 | A2/A3 | ✖️ | TP/USP/CFG | Tile | ✖️ | ✖️ | int8 | ✅️ | ✅️ | ✖️ |

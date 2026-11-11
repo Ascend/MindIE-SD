@@ -14,6 +14,7 @@ Currently, MindIE SD supports the vLLM Omni framework, the vLLM-Ascend framework
 | Model | Model Type | Hardware | vLLM Omni | vLLM-Ascend | Modelers |
 | :--------- | :--------- | :--------- | :-----: | :-----: | :-----: |
 | MiniMax H3 | Audio-video generation | A2/A3/A5 | Yes | No | No |
+| MiniMax H3-Image | Image generation/editing | A2/A3/A5 | Yes | No | No |
 | Wan2.2 | Video generation | A2/A3/A5 | Yes | No | Yes |
 | HunyuanVideo-1.5 | Video generation | A2/A3/A5 | No | No | Yes |
 | HunyuanVideo | Video generation | A2/A3/A5 | No | No | Yes |
@@ -46,6 +47,8 @@ Currently, MindIE SD supports the vLLM Omni framework, the vLLM-Ascend framework
 | :--------- | :----: | :----: | :----: | :----: | :----: | :----: | :----: | :----: | :----: | :-----: |
 | MiniMax H3 | A2/A3 | TP | USP | Tile | No | Yes | int8/int4 | Yes | Yes | No |
 | MiniMax H3 | A5 | TP | USP | Tile | fp8 | Yes | mxfp8/mxfp4 | Yes | Yes | No |
+| MiniMax H3-Image | A2/A3 | TP | USP | No | No | No | No | No | No | No |
+| MiniMax H3-Image | A5 | TP | USP | No | No | No | No | No | No | No |
 | Wan2.2 | A2/A3 | No | USP/CFG/TP | Tile | No | Yes | int8 | No | Yes | No |
 | Wan2.2 | A5 | No | USP/CFG/TP | Tile | fp8/mxfp8/mxfp4 | Yes | mxfp8/mxfp4 | No | Yes | No |
 | Qwen-Image-2.1 | A2/A3 | No | TP/USP/CFG | Tile | No | No | int8 | Yes | Yes | No |
