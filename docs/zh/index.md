@@ -18,6 +18,7 @@ architecture
 features/sparse
 features/quantization
 features/core_layers
+features/qbmm_swiglu_mxquant
 features/fused_moe
 features/compilation
 features/parallelism

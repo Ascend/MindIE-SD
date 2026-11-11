@@ -35,6 +35,7 @@ from .flash_attn import SparseLinearAttention
 from .indexed_gate_rms_norm_scale_shift_dynamic_mx_quant import (
     indexed_gate_rms_norm_scale_shift_dynamic_mx_quant,
 )
+from .qbmm_swiglu_mxquant import run as qbmm_swiglu_mxquant
 
 __all__ = [
     "RMSNorm",
@@ -53,6 +54,7 @@ __all__ = [
     "indexed_gate_rms_norm_scale_shift_dynamic_mx_quant",
     "layernorm_scale_shift",
     "muls_add",
+    "qbmm_swiglu_mxquant",
     "qwen_residual_gate_add",
     "residual_gate_add",
     "rms_norm_indexed_scale_shift_dynamic_mx_quant",
