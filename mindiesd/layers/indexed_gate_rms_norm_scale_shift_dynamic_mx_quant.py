@@ -78,6 +78,11 @@ _TINY_ROWS = 64
 # on; below it the single kernel stays.
 _HYBRID_MIN_ROWS = 1024
 _HYBRID_MIN_HIDDEN = 3000
+# Mid/long hidden dims (>= 3072) fall back to hybrid even at small batch sizes:
+# the software MX tail loses to CANN there, so the two-segment chain wins from
+# this lower row count on instead of the full `_HYBRID_MIN_ROWS`.
+_HYBRID_MID_HIDDEN = 3072
+_HYBRID_MIN_ROWS_MID = 128
 # Narrow rows (512 <= hidden < 3000) only take the two-segment path when the
 # fused block is padded AND the launch is this large: the masks of a padded
 # full-row block are what make the single kernel expensive there.
@@ -85,6 +90,11 @@ _HYBRID_MIN_ELEMENTS = 24 << 20
 # Below this width the fused multi-row kernel is faster than the two-segment
 # chain, so tiny rows never use the CANN quantizer.
 _HYBRID_MIN_HIDDEN_ANY = 512
+# Narrow 32-column rows: the fused MX tail hits a pure-Vector dependency-chain
+# regression that only shows at the largest single launch, so hand those to
+# CANN as well.
+_HYBRID_NARROW_HIDDEN = 32
+_HYBRID_NARROW_MIN_ROWS = _MAX_GRID
 # Canonical output types after alias resolution. The two FP8 names are already
 # the public spellings, so only the packed FP4 variants need aliases below.
 _SUPPORTED_DST_TYPES = {
@@ -109,7 +119,7 @@ _NPU_DST_TYPES = {
 }
 
 
-def _use_hybrid(rows: int, hidden: int) -> bool:
+def _use_hybrid(rows: int, hidden: int, out_fp4: bool = False) -> bool:
     """Shape-only selection of the two-segment MX tail.
 
     Args:
@@ -126,12 +136,27 @@ def _use_hybrid(rows: int, hidden: int) -> bool:
     the fused kernel avoids; it wins only when the per-row work is large enough
     to amortize that traffic and the extra launch.
     """
-    if rows < _HYBRID_MIN_ROWS or hidden < _HYBRID_MIN_HIDDEN_ANY:
+    # Narrow 32-column rows only hand the MX tail to CANN at the largest single
+    # launch, where the packed multi-row kernel's Vector blocks degrade.
+    if hidden == _HYBRID_NARROW_HIDDEN:
+        return rows >= _HYBRID_NARROW_MIN_ROWS
+    if hidden < _HYBRID_MIN_HIDDEN_ANY:
+        return False
+    # The 2048-wide row is a 64-group MXFP4 tail; the nested in-register FP4
+    # quant tree that spills at 5632 does so here too, and CANN's quantizer
+    # wins from a small batch on.
+    if out_fp4 and hidden == 2048 and rows >= _HYBRID_MIN_ROWS_MID:
+        return True
+    # Mid/long hidden dims fall back to hybrid even at small batch sizes.
+    if hidden >= _HYBRID_MID_HIDDEN and rows >= _HYBRID_MIN_ROWS_MID:
+        return True
+    if rows < _HYBRID_MIN_ROWS:
         return False
     if hidden >= _HYBRID_MIN_HIDDEN:
         return True
-    # Narrow rows: only a padded fused block (masked loads on every element) is
-    # slow enough for the two-segment path to win, and only at this launch size.
+    # Narrow rows (512 <= hidden < 3072): only a padded fused block (masked
+    # loads on every element) is slow enough for the two-segment path to win,
+    # and only at this launch size.
     block_n = (hidden + 255) // 256 * 256
     return block_n != hidden and rows * hidden >= _HYBRID_MIN_ELEMENTS
 
@@ -206,7 +231,17 @@ def _validate_inputs(
     if indices.shape != (rows,):
         raise ParametersInvalid(f"indices must have shape [{rows}], but got {tuple(indices.shape)}.")
     if (
-        len({residual.device, gate.device, branch.device, weight.device, shift.device, scale.device, indices.device})
+        len(
+            {
+                residual.device,
+                gate.device,
+                branch.device,
+                weight.device,
+                shift.device,
+                scale.device,
+                indices.device,
+            }
+        )
         != 1
     ):
         raise ParametersInvalid("The device of all inputs must be the same.")
@@ -1424,8 +1459,6 @@ if _HAS_TRITON:
         hidden_size: tl.constexpr,
         eps: tl.constexpr,
         tile_n: tl.constexpr,
-        var_block: tl.constexpr,
-        chunked_var: tl.constexpr,
         in_fp16: tl.constexpr,
         out_fp4: tl.constexpr,
         fp4_e1m2: tl.constexpr,
@@ -1437,49 +1470,28 @@ if _HAS_TRITON:
         index = tl.load(indices_ptr + row)
         n_groups: tl.constexpr = (hidden_size + 31) // 32
 
-        if chunked_var:
-            acc = 0.0
-            for off in range(0, hidden_size, tile_n):
-                cols = off + tl.arange(0, tile_n)
-                mask = cols < hidden_size
-                residual = tl.load(
-                    residual_ptr + row * hidden_size + cols,
-                    mask=mask,
-                    other=0.0,
-                ).to(tl.float32)
-                gate = tl.load(
-                    gate_ptr + index * hidden_size + cols,
-                    mask=mask,
-                    other=0.0,
-                ).to(tl.float32)
-                branch = tl.load(
-                    branch_ptr + row * hidden_size + cols,
-                    mask=mask,
-                    other=0.0,
-                ).to(tl.float32)
-                xx = (residual + gate * branch).to(residual_ptr.dtype.element_ty).to(tl.float32)
-                acc += tl.sum(xx * xx, axis=0)
-            variance = acc / hidden_size
-        else:
-            vcols = tl.arange(0, var_block)
-            vmask = vcols < hidden_size
+        acc = 0.0
+        for off in range(0, hidden_size, tile_n):
+            cols = off + tl.arange(0, tile_n)
+            mask = cols < hidden_size
             residual = tl.load(
-                residual_ptr + row * hidden_size + vcols,
-                mask=vmask,
+                residual_ptr + row * hidden_size + cols,
+                mask=mask,
                 other=0.0,
             ).to(tl.float32)
             gate = tl.load(
-                gate_ptr + index * hidden_size + vcols,
-                mask=vmask,
+                gate_ptr + index * hidden_size + cols,
+                mask=mask,
                 other=0.0,
             ).to(tl.float32)
             branch = tl.load(
-                branch_ptr + row * hidden_size + vcols,
-                mask=vmask,
+                branch_ptr + row * hidden_size + cols,
+                mask=mask,
                 other=0.0,
             ).to(tl.float32)
-            xv = (residual + gate * branch).to(residual_ptr.dtype.element_ty).to(tl.float32)
-            variance = tl.sum(xv * xv, axis=0) / hidden_size
+            xx = (residual + gate * branch).to(residual_ptr.dtype.element_ty).to(tl.float32)
+            acc += tl.sum(xx * xx, axis=0)
+        variance = acc / hidden_size
         rstd = tl.rsqrt(variance + eps)
 
         groups: tl.constexpr = tile_n // 32
@@ -1720,7 +1732,7 @@ if _HAS_TRITON:
             if not t.is_contiguous():
                 raise ParametersInvalid("The input tensors must be contiguous.")
         _validate_indices(indices, shift.shape[0])
-        if _use_hybrid(rows, hidden):
+        if _use_hybrid(rows, hidden, out_fp4):
             return _hybrid_mx(residual, gate, branch, weight, shift, scale, indices, eps, dst_type)
         n_groups = (hidden + 31) // 32
         n_pad = (n_groups + 1) // 2 * 2
@@ -1736,10 +1748,6 @@ if _HAS_TRITON:
             ybuf = torch.empty((rows, hidden), dtype=torch.float8_e5m2, device=residual.device)
         else:
             ybuf = torch.empty((rows, hidden), dtype=torch.float8_e4m3fn, device=residual.device)
-        var_block = triton.next_power_of_2(hidden)
-        chunked = var_block > 32768
-        if chunked:
-            var_block = 32768
         tile_n = 2048 if out_fp4 else (8192 if hidden == 8192 else 4096)
         if rows:
             tiny_block_n = (hidden + 31) // 32 * 32
@@ -1757,6 +1765,15 @@ if _HAS_TRITON:
                     for candidate in (16, 32, 64):
                         if rows // candidate >= 64:
                             rows_per_prog = candidate
+                elif rows >= 4096:
+                    # The e5m2 MX tail needs a wider clamp/cast and the fp16 tail
+                    # keeps one more fp32 buffer alive than the bf16 tail, so the
+                    # 128/256-row packs overflow UB for the padded 64-wide block;
+                    # halve the pack (twice when both apply) to stay under budget.
+                    if in_fp16:
+                        rows_per_prog //= 2
+                    if out_e5m2:
+                        rows_per_prog //= 2
                 rows_per_launch = rows_per_prog * _MAX_GRID
                 for row_offset in range(0, rows, rows_per_launch):
                     chunk_rows = min(rows - row_offset, rows_per_launch)
@@ -1786,7 +1803,10 @@ if _HAS_TRITON:
             elif hidden <= 6144 and (not out_fp4 or hidden <= 4096):
                 # MXFP4 keeps the whole row in one program up to a 4096-wide block;
                 # at 5632 the packed tail spills and measures slower than the tiled
-                # path on Ascend950DT.
+                # path on Ascend950DT.  e5m2/e4m3 stay in the single-row kernel: they
+                # have no nested FP4 quant tree, and routing them to the 4096-wide
+                # tiled path would add masked work for the narrower row.  The 2048-wide
+                # FP4 block is handed to the hybrid tail by `_use_hybrid` above.
                 block_n = (hidden + 255) // 256 * 256 if hidden > 512 else n_groups * 32
                 for row_offset in range(0, rows, _MAX_GRID):
                     chunk_rows = min(rows - row_offset, _MAX_GRID)
@@ -1828,8 +1848,6 @@ if _HAS_TRITON:
                         hidden,
                         eps,
                         tile_n,
-                        var_block,
-                        chunked,
                         in_fp16,
                         out_fp4,
                         fp4_e1m2,
