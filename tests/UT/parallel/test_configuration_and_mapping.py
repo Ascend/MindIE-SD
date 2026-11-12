@@ -14,12 +14,12 @@
 
 import sys
 from dataclasses import FrozenInstanceError
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
 torch = pytest.importorskip("torch")
-from cpu_support import load_parallel_module, new_package
+from cpu_support import NpuSimulation, load_parallel_module, native_rf_functions, new_package
 
 
 @pytest.fixture
@@ -282,3 +282,77 @@ def test_stream_creation_failure_is_retryable(foundation):
         state._begin_execution(SimpleNamespace(), build=fail)
     assert not state._execution_active and not state._execution_failed
     assert state._begin_execution(SimpleNamespace(), build=object) is not None
+
+
+@pytest.fixture
+def mapping_contract(foundation, monkeypatch):
+    namespace = native_rf_functions()
+    boundary = ModuleType(foundation.name + "._layers")
+    setattr(boundary, "do_multi_span_tensor_rearrange_pooling", namespace["do_multi_span_tensor_rearrange_pooling"])
+    monkeypatch.setitem(sys.modules, foundation.name + "._layers", boundary)
+    return foundation.load("attention_reorder_mapping")
+
+
+def test_mapping_covers_owned_tokens_once_and_preserves_inverse(foundation, mapping_contract):
+    block_cache, reorder_cache = {}, {}
+    mappings = [
+        mapping_contract.get_attention_reorder_mapping(
+            configuration(foundation, rank=rank), torch.device("cpu"), block_cache, reorder_cache
+        )
+        for rank in range(2)
+    ]
+    assert mappings[0].token_block_mapping is mappings[1].token_block_mapping
+    assert len(block_cache) == 1
+    assert sum(mapping.local_rank_mapping["n_tok"] for mapping in mappings) == 132
+    owners = mappings[0].reordered_position_to_token // 68
+    shared_blocks = sum(len(set(owners[start : start + 64].tolist())) > 1 for start in range(0, 132, 64))
+    assert shared_blocks > 0
+    assert mappings[0].num_cross_rank_quant_blocks == shared_blocks
+    assert int(mappings[0].pool_cell_token_counts.sum()) == 132
+    for mapping in mappings:
+        forward, inverse = mapping.reordered_position_to_token, mapping.token_to_reordered_position
+        assert torch.equal(inverse[forward], torch.arange(132))
+        assert mapping.local_rank_mapping["rank"] == mapping.rank
+
+
+def test_mapping_cache_reuses_only_matching_geometry(foundation, mapping_contract):
+    blocks, reorders = {}, {}
+    config = configuration(foundation)
+    first = mapping_contract.get_attention_reorder_mapping(config, torch.device("cpu"), blocks, reorders)
+    second = mapping_contract.get_attention_reorder_mapping(config, torch.device("cpu"), blocks, reorders)
+    assert first.token_block_mapping is second.token_block_mapping
+    changed = configuration(foundation, used_len=130, spans=[{"start": 2, "latent_shape": [1, 8, 16]}])
+    third = mapping_contract.get_attention_reorder_mapping(changed, torch.device("cpu"), blocks, reorders)
+    assert third.token_block_mapping is not first.token_block_mapping
+    assert third.used_len == 130 and first.used_len == 132
+    assert len(blocks) == len(reorders) == 2
+
+
+def test_stock_layer_boundary_reexports_the_original_reorder_helper(monkeypatch):
+    package = new_package("_parallel_stock_layer_boundary", monkeypatch)
+    boundary = load_parallel_module(package, "_layers", monkeypatch)
+    assert boundary.do_multi_span_tensor_rearrange_pooling.__module__.endswith("sparse_flash_attn_rf_v2")
+
+
+def test_shared_npu_helpers_keep_storage_on_cpu_and_preserve_stream_order(monkeypatch):
+    simulation = NpuSimulation()
+    pipeline = SimpleNamespace(
+        torch=torch, dist=SimpleNamespace(all_to_all_single=lambda recv, send, **kwargs: recv.copy_(send))
+    )
+    simulation.install(pipeline, monkeypatch, allocation_proxy=True, trace_collectives=True)
+    wrapped = pipeline.torch.tensor([1, 2], device=SimpleNamespace(type="npu", index=0))
+    assert wrapped.is_cpu and wrapped.device.type == "npu"
+    assert wrapped.tolist() == [1, 2]
+    source, target = torch.arange(4), torch.zeros(4, dtype=torch.int64)
+    ready = simulation.npu.Event()
+    ready.record(simulation.npu.current_stream(None))
+    comm = simulation.npu.Stream()
+    with simulation.npu.stream(comm):
+        comm.wait_event(ready)
+        pipeline.dist.all_to_all_single(target, source)
+    assert simulation.current[0].name == "compute0" and torch.equal(target, source)
+    assert simulation.timeline == [
+        ("record", "compute0", "event0"),
+        ("wait", "comm", "event0"),
+        ("a2a", "comm", torch.int64),
+    ]
