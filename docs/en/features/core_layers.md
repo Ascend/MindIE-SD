@@ -243,6 +243,7 @@ The fused operator series interfaces provide Ascend high-performance fused opera
 | `indexed_gate_rms_norm_scale_shift_dynamic_mx_quant` | Function | Fused indexed gate residual RMSNorm, indexed AdaLN affine and dynamic MX quantization operator |
 | `split_qkv_norm_rope_concat` | Function | Fused Split QKV, Q/K RMSNorm, partial RoPE, and optional V copy |
 | `get_activation_layer` | Function | Get activation function instance (with NPU-accelerated versions) |
+| `transpose_dynamic_quant` | Function | Transpose + dynamic quantization fused operator (FP8 output, configurable quant axis) |
 
 ### rotary_position_embedding
 
@@ -940,6 +941,60 @@ from mindiesd import get_activation_layer
 act = get_activation_layer("gelu-fast")
 out = act(hidden_states)
 ```
+
+### transpose_dynamic_quant
+
+Fused transpose and dynamic quantization operator, equivalent to the `Transpose + DynamicQuantV2 + Transpose` small-op chain: per-group symmetric dynamic quantization along the quantization axis, producing FP8 quantized output and per-group scales. Both transposes are folded into index arithmetic with no extra transpose copies.
+
+```python
+from mindiesd import transpose_dynamic_quant
+```
+
+#### Function Signature
+
+```python
+transpose_dynamic_quant(
+    x, smooth_scales, axis
+) -> tuple[torch.Tensor, torch.Tensor]
+```
+
+#### Parameter Description
+
+| Parameter | Type | Required | Default | Description |
+|------|------|------|--------|------|
+| `x` | `torch.Tensor` | Yes | - | Input tensor, ND, `float16` or `bfloat16`, at least 2 dims |
+| `smooth_scales` | `torch.Tensor` | No | `None` | Smoothing scales; `None` means unused. Must be 1-D with length equal to the quant axis length `x.shape[axis]`, multiplied element-wise along that axis (aligned with the official `aclnnDynamicQuantV2` `smoothScalesOptional` constraint); dtype must match `x` and must be on the same device as `x` |
+| `axis` | `int` | Yes | - | Quantization axis (the reduction axis for max); any axis is supported (negative axes included) |
+
+#### Return Value
+
+`tuple[torch.Tensor, torch.Tensor]`:
+
+- `y`: quantized output, `float8_e4m3fn`; shape and layout are identical to `x`
+- `scale`: per-group scales, `float32`, shape is `x` without the `axis` dim
+
+#### Usage Example
+
+```python
+import torch
+from mindiesd import transpose_dynamic_quant
+
+x = torch.randn(14, 224905, 128, device="npu", dtype=torch.bfloat16)
+y, scale = transpose_dynamic_quant(x, None, 1)
+# y: [14, 224905, 128] float8_e4m3fn (same layout as x)
+# scale: [14, 128] float32
+```
+
+#### Constraints
+
+- The input tensor must reside on an Ascend NPU, with no more than 2^31 - 1 elements (int32 index limit)
+- `smooth_scales` must be on the same device as `x`
+- Quantization formula: `scale = max(|x * smooth|) / 448`, `y = fp8_rn(x * smooth / scale)`; the product is evaluated in fp32 and the quotient is cast to fp8_e4m3fn with a single RN rounding, bit-identical to `aclnnDynamicQuantV2`; all-zero groups output `scale = 0` and `y = 0`
+- The operator requires Triton-Ascend; calls raise `RuntimeError` directly when the environment is unavailable — there is no CPU fallback implementation
+
+#### Semantics
+
+`smooth_scales` must be 1-D with length equal to the quant axis length (`x.shape[axis]`) and is multiplied element-wise along that axis — consistent with the official `aclnnDynamicQuantV2` constraint on `smoothScalesOptional` (1-D, matching the last dim of the DQ input, which corresponds to the original quantization axis in this fused chain). Each element is multiplied by its own smooth coefficient before the per-group absolute max produces `scale`, so coefficients vary along the quant axis index. This convention holds for any `axis` without special-casing.
 
 ### Linear
 

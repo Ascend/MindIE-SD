@@ -44,6 +44,7 @@ __all__ = [
     'RFMultiSpanPlan',
     'build_rf_attention_plan',
     'rf_multi_span_permutation',
+    'transpose_dynamic_quant',
 ]
 
 
@@ -74,6 +75,7 @@ from .layers import (  # noqa: E402
     split_qkv_norm_rope_concat,
     triton_split_qkv_norm_rope_concat,
     validate_split_qkv_norm_rope_concat_inputs,
+    transpose_dynamic_quant,
 )
 from .layers.norm_rope_concat import norm_rope_concat  # noqa: E402
 from .layers.index_modulation import rms_norm_indexed_scale_shift  # noqa: E402

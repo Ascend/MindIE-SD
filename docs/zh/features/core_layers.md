@@ -241,6 +241,7 @@ out = sparse_attention(
 | `indexed_gate_rms_norm_scale_shift_dynamic_mx_quant` | 函数 | 索引门控残差 RMSNorm、索引 AdaLN 仿射与动态 MX 量化融合算子 |
 | `split_qkv_norm_rope_concat` | 函数 | Split QKV、Q/K RMSNorm、Partial RoPE 与可选 V 拷贝融合算子 |
 | `get_activation_layer` | 函数 | 获取激活函数实例（含 NPU 加速版本） |
+| `transpose_dynamic_quant` | 函数 | 转置 + 动态量化融合算子（FP8 输出，量化轴可配置） |
 
 ### rotary_position_embedding
 
@@ -936,6 +937,60 @@ from mindiesd import get_activation_layer
 act = get_activation_layer("gelu-fast")
 out = act(hidden_states)
 ```
+
+### transpose_dynamic_quant
+
+融合转置与动态量化的算子，等价于 `Transpose + DynamicQuantV2 + Transpose` 小算子链：沿量化轴按组对称动态量化，输出 FP8 量化结果与每组缩放系数。两次转置折叠进索引寻址，无额外转置拷贝。
+
+```python
+from mindiesd import transpose_dynamic_quant
+```
+
+#### 函数签名
+
+```python
+transpose_dynamic_quant(
+    x, smooth_scales, axis
+) -> tuple[torch.Tensor, torch.Tensor]
+```
+
+#### 参数说明
+
+| 参数 | 类型 | 必选 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `x` | `torch.Tensor` | 是 | - | 输入张量，ND，`float16` 或 `bfloat16`，至少 2 维 |
+| `smooth_scales` | `torch.Tensor` | 否 | `None` | 平滑缩放系数，`None` 表示不使用；1-D 且长度等于量化轴长 `x.shape[axis]`，沿量化轴逐元素乘（对齐官方 `aclnnDynamicQuantV2` 的 `smoothScalesOptional` 约束），dtype 与 `x` 一致，且与 `x` 位于同一设备 |
+| `axis` | `int` | 是 | - | 量化轴（组内求 max 的轴），任意轴均支持（含负轴） |
+
+#### 返回值
+
+`tuple[torch.Tensor, torch.Tensor]`：
+
+- `y`：量化输出，`float8_e4m3fn`，形状与布局均与 `x` 一致
+- `scale`：每组缩放系数，`float32`，形状为 `x` 去掉 `axis` 维
+
+#### 使用示例
+
+```python
+import torch
+from mindiesd import transpose_dynamic_quant
+
+x = torch.randn(14, 224905, 128, device="npu", dtype=torch.bfloat16)
+y, scale = transpose_dynamic_quant(x, None, 1)
+# y: [14, 224905, 128] float8_e4m3fn（与 x 同布局）
+# scale: [14, 128] float32
+```
+
+#### 约束说明
+
+- 输入张量须位于昇腾 NPU，元素数不超过 2^31 - 1（int32 索引上限）
+- `smooth_scales` 与 `x` 必须位于同一设备
+- 量化公式：`scale = max(|x * smooth|) / 448`，`y = fp8_rn(x * smooth / scale)`；乘积在 fp32 域完成、商单次 RN 舍入到 fp8_e4m3fn，与 `aclnnDynamicQuantV2` 逐位一致；全零组输出 `scale = 0`、`y = 0`
+- 算子依赖 Triton-Ascend；环境不可用时调用直接抛出 `RuntimeError`，无 CPU 回退实现
+
+#### 语义说明
+
+`smooth_scales` 为 1-D、长度等于量化轴长（`x.shape[axis]`），沿量化轴逐元素乘——与官方 `aclnnDynamicQuantV2` 文档对 `smoothScalesOptional` 的约束一致（1-D，shape 与 DQ 输入的最后一维相同，融合链中该维即原输入的量化轴）。组内每个元素乘以各自的 smooth 系数后再取绝对值最大值得到 `scale`，因此 smooth 系数随量化轴下标变化；该约定对任意 `axis` 取值一致，无需按轴区分。
 
 ### Linear
 

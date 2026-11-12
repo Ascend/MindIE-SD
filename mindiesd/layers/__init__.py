@@ -31,6 +31,7 @@ from .split_qkv_norm_rope_concat import (
 )
 from .fused_moe import fused_moe
 from .eagle_ffn_linear import eagle_ffn_linear
+from .quant.transpose_dynamic_quant import transpose_dynamic_quant
 from .flash_attn import SparseLinearAttention
 from .indexed_gate_rms_norm_scale_shift_dynamic_mx_quant import (
     indexed_gate_rms_norm_scale_shift_dynamic_mx_quant,
@@ -64,4 +65,5 @@ __all__ = [
     "SparseLinearAttention",
     "triton_split_qkv_norm_rope_concat",
     "validate_split_qkv_norm_rope_concat_inputs",
+    "transpose_dynamic_quant",
 ]
