@@ -196,6 +196,7 @@ def sparse_attention(
             Optional scale_alg forwarded to npu_dynamic_mx_quant on the MXFP4 path.
         bsa_backend (str, optional):
             Explicit RF-v3 backend, 'cann' or 'eagle'; omitted defaults to 'cann'.
+            Mix always uses Eagle Quant BSA; either backend selection accepts it.
         exec_kernel (str, optional):
             Compatibility selection 'eagle_bsa' maps to bsa_backend='eagle'.
         pre_rearranged (bool):
@@ -203,6 +204,8 @@ def sparse_attention(
     """
     check_params(input_layout, sparse_type)
     sparse_type, inner_precise = _resolve_sparse_type_for_a5(sparse_type, inner_precise)
+    if sparse_type == "rf_v3" and precision not in ("bf16", "mix", "fp8", "mxfp4"):
+        raise ParametersInvalid("precision must be 'bf16', 'mix', 'fp8' or 'mxfp4'")
     if bsa_backend not in (None, "cann", "eagle"):
         raise ParametersInvalid("bsa_backend must be 'cann' or 'eagle'")
     if exec_kernel not in (None, "eagle_bsa"):
@@ -212,8 +215,8 @@ def sparse_attention(
     if (bsa_backend is not None or exec_kernel is not None) and sparse_type != "rf_v3":
         raise ParametersInvalid("backend selection requires sparse_type='rf_v3'")
     backend = "eagle" if exec_kernel is not None else (bsa_backend or "cann")
-    if backend == "eagle" and precision != "bf16":
-        raise ParametersInvalid("bsa_backend='eagle' requires precision='bf16'")
+    if backend == "eagle" and precision not in ("bf16", "mix"):
+        raise ParametersInvalid("bsa_backend='eagle' requires precision='bf16' or 'mix'")
     if not isinstance(pre_rearranged, bool):
         raise ParametersInvalid("pre_rearranged must be a bool")
     if pre_rearranged and (sparse_type != "rf_v3" or precision != "bf16"):

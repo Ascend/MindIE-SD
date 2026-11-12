@@ -59,8 +59,11 @@ def distributed_sparse_attention(
     if isinstance(state, ParallelState):
         state._last_call_stats = None
     _validate_attention_mode(precision, sparse_type, pre_rearranged)
+    a5 = _layers.is_a5_device()
+    if a5 and sparse_type == "rf_v2":
+        raise ValueError("A5 devices require sparse_type='rf_v3'")
     if inner_precise is None:
-        inner_precise = _layers.A5_INNER_PRECISE if precision == "mix" else 0
+        inner_precise = _layers.A5_INNER_PRECISE if a5 else 0
     if not (torch.is_tensor(q) and torch.is_tensor(k) and torch.is_tensor(v)):
         raise ValueError("q, k, v must be tensors")
     if q.dim() != 4 or k.shape != q.shape or v.shape != q.shape:
@@ -76,12 +79,14 @@ def distributed_sparse_attention(
         raise ValueError("bs=%d but q.shape[0]=%d" % (bs, bs_q))
     world, rank = topology.resolve_world_rank(group, world, rank)
     if precision == "mix":
-        if not _layers.is_a5_device():
+        if not a5:
             raise RuntimeError("precision='mix' requires the EQBSA path on Ascend 950PR/950DT (A5)")
+        require_inner_precise(inner_precise, _layers.A5_INNER_PRECISE)
+    elif a5:
         require_inner_precise(inner_precise, _layers.A5_INNER_PRECISE)
     elif inner_precise not in (0, _layers.A5_INNER_PRECISE):
         raise ValueError("bf16 inner_precise must be 0 or %d" % _layers.A5_INNER_PRECISE)
-    elif inner_precise != 0 and not _layers.is_a5_device():
+    elif inner_precise != 0:
         raise ValueError("bf16 on non-A5 devices requires inner_precise=0")
     op_block = (int(_layers.DEVICE_OP_BLOCK_SHAPE[0]), int(_layers.DEVICE_OP_BLOCK_SHAPE[1]))
     if (int(MASK_BLOCK), int(POOL_BLOCK)) != op_block or int(block_size_kv) != op_block[0]:
@@ -110,8 +115,8 @@ def distributed_sparse_attention(
     if pstate.overlap_comm:
         pstate._check_execution()
 
-    if pstate.bsa_backend != "cann" and (precision != "bf16" or sparse_type != "rf_v3"):
-        raise ValueError("bsa_backend='eagle' requires precision='bf16' and sparse_type='rf_v3'")
+    if pstate.bsa_backend == "eagle" and sparse_type != "rf_v3":
+        raise ValueError("bsa_backend='eagle' requires sparse_type='rf_v3'")
     if not pstate.optimize_attention_pipeline:
         pstate.token_block_mapping_cache.clear()
         pstate.reorder_mapping_cache.clear()

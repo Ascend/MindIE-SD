@@ -11,6 +11,7 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+from ...rf_attention import build_rf_attention_plan
 import math
 import threading
 
@@ -421,6 +422,7 @@ def rain_fusion_attention_v3(
     q_scale_dtype=None,
     k_scale_dtype=None,
     v_scale_dtype=None,
+    bsa_backend="cann",
 ):
     """Sparse attention forward using aclnnBlockSparseAttentionV3/V2.
 
@@ -456,10 +458,13 @@ def rain_fusion_attention_v3(
         dst_type_max:        MXFP4 CX quantization range; 0.0 means dtype max
         q_dtype/k_dtype/v_dtype: CANN dtype code override for packed MXFP4 tensors
         q/k/v_scale_dtype:   CANN dtype code override for MXFP4 E8M0 scales
+        bsa_backend:        'cann' (default) or 'eagle'; selected explicitly by the caller
 
     Returns:
         out (Tensor): same layout and dtype as input
     """
+    if bsa_backend not in ("cann", "eagle"):
+        raise ValueError("bsa_backend must be cann or eagle")
     if scale is None:
         scale = query.shape[-1] ** -0.5
     if num_key_value_heads is None:
@@ -519,12 +524,21 @@ def rain_fusion_attention_v3(
         if dtype is not None:
             kwargs[name] = dtype
 
-    attention_out, _ = torch.ops.mindiesd.block_sparse_attention(**kwargs)
+    attention_out, _ = _bsa_dispatch(kwargs, bsa_backend)
 
     if permuted:
         attention_out = attention_out.permute(0, 2, 1, 3).contiguous()
 
     return attention_out
+
+
+def _bsa_dispatch(kwargs, bsa_backend):
+    """Select only the final BSA kernel; preserve the caller's QKV and mask."""
+    if bsa_backend == "cann":
+        return torch.ops.mindiesd.block_sparse_attention(**kwargs)
+    if bsa_backend == "eagle":
+        return torch.ops.mindiesd.eagle_block_sparse_attention(**kwargs)
+    raise ValueError(f"bsa_backend must be cann or eagle, got {bsa_backend!r}")
 
 
 def bsa_sparse_attention_v3(
@@ -550,6 +564,8 @@ def bsa_sparse_attention_v3(
     precision="bf16",
     mxfp4_dst_type_max=0.0,
     mxfp4_scale_alg=None,
+    bsa_backend="cann",
+    pre_rearranged=False,
 ):
     """End-to-end rf_v3 sparse attention: rearrange -> mask -> [quant] -> BSA -> inv-rearrange.
 
@@ -609,11 +625,28 @@ def bsa_sparse_attention_v3(
                              OCP scaling (quantMode=2); a positive value (typically in
                              [6, 12]) selects CX scaling (quantMode=3).
         mxfp4_scale_alg:     Optional scale_alg forwarded to npu_dynamic_mx_quant.
+        pre_rearranged:      BF16 multi-span inputs already in RF order. Requires
+                             video_spans in original coordinates; output remains
+                             in RF order, with no Q/K/V gather or output inverse.
 
     Returns:
         out (Tensor):      BF16 attention output, same layout as input
         new_mask (Tensor): int8 block_sparse_mask for caching
     """
+    if bsa_backend not in ("cann", "eagle"):
+        raise ValueError("bsa_backend must be cann or eagle")
+    if bsa_backend == "eagle" and precision not in ("bf16", "mix"):
+        raise ValueError("bsa_backend='eagle' requires precision='bf16' or 'mix'")
+    if input_layout not in ("BSND", "BNSD"):
+        raise ValueError("input_layout must be BSND or BNSD")
+    if video_spans is not None and (txt_len != 0 or latent_shape_q is not None or latent_shape_k is not None):
+        raise ValueError("video_spans cannot be combined with txt_len, latent_shape_q, or latent_shape_k")
+    if not isinstance(pre_rearranged, bool):
+        raise ValueError("pre_rearranged must be a bool")
+    if pre_rearranged and precision != "bf16":
+        raise ValueError("pre_rearranged requires precision='bf16'")
+    if pre_rearranged and video_spans is None:
+        raise ValueError("pre_rearranged requires video_spans")
     multi_span = video_spans is not None
     if not multi_span and latent_shape_k is None:
         latent_shape_k = latent_shape_q
@@ -655,11 +688,33 @@ def bsa_sparse_attention_v3(
 
     new_mask = None
     inverse = None
-    if multi_span:
-        q_, k_, v_, tensor_pool, inverse, dense_blocks, first_frame_blocks = (
-            do_multi_span_tensor_rearrange_pooling(
-                q, k, v, video_spans, block_size, input_layout
+    if pre_rearranged:
+        q_, k_, v_ = q, k, v
+        if k.shape[s_dim] != q.shape[s_dim] or v.shape[s_dim] != q.shape[s_dim]:
+            raise ValueError("pre_rearranged Q/K/V must have identical sequence lengths")
+        plan = build_rf_attention_plan(video_spans, q.shape[s_dim], block_size, input_layout, q.device)
+        if cached_mask is None:
+            tensor_pool = avgpool(torch.cat((q, k), dim=0), block_size, input_layout)
+            new_mask = get_multi_span_blockwise_mask(
+                tensor_pool,
+                sparsity,
+                scale,
+                plan.dense_blocks,
+                plan.first_frame_blocks,
+                input_layout,
+                return_binary=True,
+                pool_parts=2,
             )
+    elif multi_span:
+        pool_parts = 2 if precision == "bf16" else 3
+        q_, k_, v_, tensor_pool, inverse, dense_blocks, first_frame_blocks = do_multi_span_tensor_rearrange_pooling(
+            q,
+            k,
+            v,
+            video_spans,
+            block_size,
+            input_layout,
+            pool_parts=0 if cached_mask is not None and precision == "bf16" else pool_parts,
         )
         if cached_mask is None:
             new_mask = get_multi_span_blockwise_mask(
@@ -670,6 +725,7 @@ def bsa_sparse_attention_v3(
                 first_frame_blocks,
                 input_layout,
                 return_binary=True,
+                pool_parts=pool_parts,
             )
     elif cached_mask is None:
         # --- Mask generation ---
@@ -821,6 +877,7 @@ def bsa_sparse_attention_v3(
             k_,
             v_,
             block_sparse_mask=new_mask,
+            bsa_backend=bsa_backend,
             scale=scale,
             head_num=head_num,
             num_key_value_heads=num_key_value_heads,
@@ -853,6 +910,8 @@ def bsa_sparse_attention_v3(
             out = out.narrow(s_dim, 0, seqlen).contiguous()
 
     # inverse rearrange to restore (t, h, w) order
+    if pre_rearranged:
+        return out, new_mask
     if multi_span:
         out = out.index_select(1 if input_layout == "BSND" else 2, inverse)
     elif txt_len > 0:

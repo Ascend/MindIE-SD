@@ -61,7 +61,8 @@ def test_serial_mix_commits_exact_collectives_stats_and_chain_reuse(producer, mo
 
 
 @pytest.mark.parametrize("sparse_type", ["rf_v2", "rf_v3"])
-def test_serial_bf16_uses_no_scale_reduce_and_routes_consumer(producer, sparse_type):
+def test_serial_bf16_uses_no_scale_reduce_and_routes_consumer(producer, monkeypatch, sparse_type):
+    monkeypatch.setattr(producer.layers, "is_a5_device", lambda: sparse_type == "rf_v3")
     state = producer.modules["state"].ParallelState(group=producer.group)
     output, stats = call(producer, state, precision="bf16", sparse_type=sparse_type)
     assert tuple(output.shape) == (1, 68, 4, 2)

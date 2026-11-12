@@ -423,13 +423,9 @@ def _normalize_video_spans(video_spans, sequence_len):
             start = int(span["start"])
             shape = tuple(int(dim) for dim in span["latent_shape"])
         except (KeyError, TypeError, ValueError) as exc:
-            raise ParametersInvalid(
-                f"video_spans[{index}] requires integer start and latent_shape=[T,H,W]."
-            ) from exc
+            raise ParametersInvalid(f"video_spans[{index}] requires integer start and latent_shape=[T,H,W].") from exc
         if len(shape) != 3 or any(dim <= 0 for dim in shape):
-            raise ParametersInvalid(
-                f"video_spans[{index}].latent_shape must contain three positive integers."
-            )
+            raise ParametersInvalid(f"video_spans[{index}].latent_shape must contain three positive integers.")
         length = math.prod(shape)
         if start < previous_end or start + length > sequence_len:
             raise ParametersInvalid(
@@ -479,9 +475,7 @@ def _multi_span_permutation(spans, sequence_len, pool_size, input_layout, device
         if position % pool_size:
             raise AssertionError("multi-span packing lost block alignment")
         clip_block = position // pool_size
-        first_frame_blocks.update(
-            range(clip_block, clip_block + math.ceil((shape[1] * shape[2]) / pool_size))
-        )
+        first_frame_blocks.update(range(clip_block, clip_block + math.ceil((shape[1] * shape[2]) / pool_size)))
         parts.append(_span_rearranged_indices(start, shape, input_layout, device))
         position += length
         if clip_index != len(spans) - 1 and position % pool_size:
@@ -509,24 +503,83 @@ def _multi_span_permutation(spans, sequence_len, pool_size, input_layout, device
     return permutation, inverse, dense_blocks, first_frame_blocks
 
 
+def pool_qk_separately(query, key, pool_size=128, input_layout="BSND"):
+    """Pool independent Q/K inputs; concatenate pooled values, not full payloads.
+
+    The single-batch/single-head BSND path retains the native Mean reduction
+    and tail divisor while avoiding the large concat and strided full-block
+    reduction input. Other layouts/geometries retain the stock implementation.
+    No input is modified; output batch order remains Q followed by K.
+    """
+    if query.shape != key.shape or query.dtype != key.dtype or query.device != key.device:
+        raise ValueError("query/key pooling requires equal shapes, dtypes and devices")
+    if input_layout != "BSND" or query.ndim != 4 or query.shape[0] != 1 or query.shape[2] != 1:
+        return avgpool(torch.cat((query, key), dim=0), pool_size, input_layout)
+    if pool_size <= 0 or query.shape[1] <= 0:
+        raise ValueError("pool_size and sequence length must be positive")
+    _, length, heads, dim = query.shape
+    full_cells, tail_size = divmod(length, pool_size)
+    pooled = []
+    if full_cells:
+        full = [
+            tensor[:, : full_cells * pool_size].view(1, full_cells, pool_size, heads, dim).mean(dim=2)
+            for tensor in (query, key)
+        ]
+        pooled.append(torch.cat(full, dim=0))
+    if tail_size:
+        tail = torch.cat((query[:, -tail_size:], key[:, -tail_size:]), dim=0)
+        pooled.append(tail.view(2, 1, tail_size, heads, dim).mean(dim=2))
+    return torch.cat(pooled, dim=1) if len(pooled) == 2 else pooled[0]
+
+
 def get_multi_span_blockwise_mask(
-    qkv_pool, sparsity, scale, dense_blocks, first_frame_blocks, input_layout, return_binary=False
+    qkv_pool,
+    sparsity,
+    scale,
+    dense_blocks,
+    first_frame_blocks,
+    input_layout,
+    return_binary=False,
+    *,
+    retained_idx=None,
+    retained_mask=None,
+    pool_parts=3,
+    async_index_transfer=True,
 ):
     """Global multi-video ranking with dense context and first frame per clip retained."""
-    query_pool, key_pool, _ = torch.chunk(qkv_pool, 3, dim=0)
+    if pool_parts not in (2, 3):
+        raise ValueError("pool_parts must be 2 (Q/K) or 3 (Q/K/V)")
+    if not isinstance(async_index_transfer, bool):
+        raise ValueError("async_index_transfer must be a bool")
+    if qkv_pool.shape[0] == 0 or qkv_pool.shape[0] % pool_parts:
+        raise ValueError("pooled batch dimension must be divisible by pool_parts")
+    query_pool, key_pool = torch.chunk(qkv_pool, pool_parts, dim=0)[:2]
     if input_layout == "BSND":
         scores = torch.einsum("blnd,bsnd->bnls", query_pool, key_pool) * scale
     else:
         scores = torch.einsum("bnld,bnsd->bnls", query_pool, key_pool) * scale
     score_matrix = torch.nn.functional.softmax(scores, dim=-1)
     keep_len = math.ceil(score_matrix.shape[-1] * (1 - sparsity))
-    if keep_len < 1:
+    if keep_len < 1:  # pylint: disable=consider-using-max-builtin  # Preserve upstream mask selection.
         keep_len = 1
     threshold = torch.topk(score_matrix, k=keep_len, dim=-1).values[..., -1:]
     mask = score_matrix >= threshold
-    retained = sorted(dense_blocks | first_frame_blocks)
-    if retained:
-        retained_idx = torch.tensor(retained, device=mask.device, dtype=torch.long)
+    if retained_mask is not None:
+        if not return_binary:
+            raise ValueError("retained_mask requires return_binary=True")
+        mask.logical_or_(retained_mask.to(torch.bool))
+    if retained_idx is None:
+        if return_binary:
+            # Pageable host memory still makes an NPU async copy wait for the
+            # stream. Pin these small indices; the parallel path skips the copy.
+            retained_idx = torch.tensor(
+                sorted(dense_blocks | first_frame_blocks),
+                dtype=torch.long,
+                pin_memory=mask.device.type == "npu" and async_index_transfer,
+            ).to(device=mask.device, non_blocking=async_index_transfer)
+        else:
+            retained_idx = torch.tensor(sorted(dense_blocks | first_frame_blocks), device=mask.device, dtype=torch.long)
+    if retained_idx.numel():
         mask[:, :, retained_idx, :] = True
         mask[:, :, :, retained_idx] = True
     if return_binary:
@@ -536,24 +589,26 @@ def get_multi_span_blockwise_mask(
     return select_idx, select_num_idx
 
 
-def do_multi_span_tensor_rearrange_pooling(query, key, value, video_spans, pool_size, input_layout):
+def do_multi_span_tensor_rearrange_pooling(query, key, value, video_spans, pool_size, input_layout, *, pool_parts=3):
     """Prepare one global rf_v2 call for an unpadded packed video sequence."""
     sequence_len = _sequence_length(query, input_layout)
-    if (
-        _sequence_length(key, input_layout) != sequence_len
-        or _sequence_length(value, input_layout) != sequence_len
-    ):
-        raise ParametersInvalid(
-            "Q, K, and V must have identical sequence lengths in rf_v2 multi-video mode."
-        )
+    if _sequence_length(key, input_layout) != sequence_len or _sequence_length(value, input_layout) != sequence_len:
+        raise ParametersInvalid("Q, K, and V must have identical sequence lengths in rf_v2 multi-video mode.")
     spans = _normalize_video_spans(video_spans, sequence_len)
     permutation, inverse, dense_blocks, first_frame_blocks = _multi_span_permutation(
         spans, sequence_len, pool_size, input_layout, query.device
     )
-    q_rf = _index_sequence(query, permutation, input_layout)
-    k_rf = _index_sequence(key, permutation, input_layout)
-    v_rf = _index_sequence(value, permutation, input_layout)
-    qkv_pool = avgpool(torch.cat((q_rf, k_rf, v_rf), dim=0), pool_size, input_layout)
+    if pool_parts == 3:
+        q_rf = _index_sequence(query, permutation, input_layout)
+        k_rf = _index_sequence(key, permutation, input_layout)
+        v_rf = _index_sequence(value, permutation, input_layout)
+        qkv_pool = avgpool(torch.cat((q_rf, k_rf, v_rf), dim=0), pool_size, input_layout)
+    elif pool_parts in (0, 2):
+        reordered = _index_sequence(torch.cat((query, key, value), dim=0), permutation, input_layout)
+        q_rf, k_rf, v_rf = torch.chunk(reordered, 3, dim=0)
+        qkv_pool = avgpool(reordered[: 2 * query.shape[0]], pool_size, input_layout) if pool_parts else None
+    else:
+        raise ValueError("pool_parts must be 0 (no pool), 2 (Q/K) or 3 (Q/K/V)")
     return q_rf, k_rf, v_rf, qkv_pool, inverse, dense_blocks, first_frame_blocks
 
 

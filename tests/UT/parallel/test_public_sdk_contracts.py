@@ -100,7 +100,7 @@ def test_sparse_public_options_validate_and_forward_without_renaming(public_spar
         ({"bsa_backend": "bad"}, "bsa_backend"),
         ({"exec_kernel": "bad"}, "exec_kernel"),
         ({"exec_kernel": "eagle_bsa", "bsa_backend": "cann"}, "conflicts"),
-        ({"bsa_backend": "eagle", "precision": "mix"}, "requires precision"),
+        ({"bsa_backend": "eagle", "precision": "fp8"}, "requires precision"),
         ({"pre_rearranged": 1}, "must be a bool"),
         ({"pre_rearranged": True}, "requires video_spans"),
     ):
@@ -140,3 +140,29 @@ def test_requested_head_major_mixed_fallback_is_reported(producer):
     assert stats["tally"]["consumer"] == "quantized"
     assert state.last_call_stats["actual"]["head_major_qkv"] is False
     assert state.last_call_stats["actual"]["qkv_layout_fallback_reason"] == "attention_mode_unsupported"
+
+
+@pytest.mark.parametrize("precision", ["bf16", "mix", "fp8", "mxfp4", "bad"])
+@pytest.mark.parametrize(
+    "options", [{}, {"bsa_backend": "cann"}, {"bsa_backend": "eagle"}, {"exec_kernel": "eagle_bsa"}]
+)
+@pytest.mark.parametrize("pre_rearranged", [False, True])
+def test_public_precision_backend_order_matrix(public_sparse, precision, options, pre_rearranged):
+    sparse, calls = public_sparse
+    query = torch.ones(1, 4, 1, 2, dtype=torch.bfloat16)
+    kwargs = dict(
+        sparse_type="rf_v3",
+        precision=precision,
+        video_spans=[{"start": 0, "latent_shape": [1, 2, 2]}],
+        pre_rearranged=pre_rearranged,
+        **options,
+    )
+    invalid = precision == "bad" or (pre_rearranged and precision != "bf16")
+    invalid |= bool(options and options != {"bsa_backend": "cann"} and precision in ("fp8", "mxfp4"))
+    if invalid:
+        with pytest.raises(ValueError):
+            sparse(query, query, query, **kwargs)
+        assert not calls
+    else:
+        assert sparse(query, query, query, **kwargs) is query
+        assert calls[-1]["precision"] == precision and calls[-1]["pre_rearranged"] == pre_rearranged
