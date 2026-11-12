@@ -8,4 +8,19 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-"""Internal distributed attention building blocks."""
+"""Distributed sparse attention with caller-owned process state."""
+
+# pylint: disable=cyclic-import  # public package exports the entry that imports private pipeline modules
+
+from .distributed_sparse_attention import distributed_sparse_attention
+from .qkv_layout import QKVLayoutPlan, plan_qkv_layout
+from .state import ParallelState
+
+__all__ = [
+    "distributed_sparse_attention",
+    "ParallelState",
+    "QKVLayoutPlan",
+    "plan_qkv_layout",
+]
+
+__version__ = "0.2.0"

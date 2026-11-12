@@ -14,6 +14,8 @@
 from typing import Optional
 import torch
 import torch_npu
+
+# pylint: disable=unexpected-keyword-arg  # RF-v3 accepts these after the prerequisite primitives PR
 from .sparse_flash_attn_rf_v2 import (
     rain_fusion_attention,
     get_blockwise_mask,
@@ -109,6 +111,9 @@ def sparse_attention(
     precision: str = "bf16",
     mxfp4_dst_type_max: float = 0.0,
     mxfp4_scale_alg: Optional[int] = None,
+    bsa_backend: Optional[str] = None,
+    exec_kernel: Optional[str] = None,
+    pre_rearranged: bool = False,
     **kwargs,
 ):
     """
@@ -189,14 +194,37 @@ def sparse_attention(
             a positive value (typically in [6, 12]) selects CX scaling (quantMode=3).
         mxfp4_scale_alg (int, *optional*, defaults to `None`):
             Optional scale_alg forwarded to npu_dynamic_mx_quant on the MXFP4 path.
+        bsa_backend (str, optional):
+            Explicit RF-v3 backend, 'cann' or 'eagle'; omitted defaults to 'cann'.
+        exec_kernel (str, optional):
+            Compatibility selection 'eagle_bsa' maps to bsa_backend='eagle'.
+        pre_rearranged (bool):
+            BF16 RF-v3 inputs already follow RF order; preserve that output order.
     """
     check_params(input_layout, sparse_type)
+    sparse_type, inner_precise = _resolve_sparse_type_for_a5(sparse_type, inner_precise)
+    if bsa_backend not in (None, "cann", "eagle"):
+        raise ParametersInvalid("bsa_backend must be 'cann' or 'eagle'")
+    if exec_kernel not in (None, "eagle_bsa"):
+        raise ParametersInvalid("exec_kernel must be None or 'eagle_bsa'")
+    if exec_kernel is not None and bsa_backend not in (None, "eagle"):
+        raise ParametersInvalid("exec_kernel conflicts with bsa_backend")
+    if (bsa_backend is not None or exec_kernel is not None) and sparse_type != "rf_v3":
+        raise ParametersInvalid("backend selection requires sparse_type='rf_v3'")
+    backend = "eagle" if exec_kernel is not None else (bsa_backend or "cann")
+    if backend == "eagle" and precision != "bf16":
+        raise ParametersInvalid("bsa_backend='eagle' requires precision='bf16'")
+    if not isinstance(pre_rearranged, bool):
+        raise ParametersInvalid("pre_rearranged must be a bool")
+    if pre_rearranged and (sparse_type != "rf_v3" or precision != "bf16"):
+        raise ParametersInvalid("pre_rearranged requires BF16 RF-v3")
+    if pre_rearranged and video_spans is None:
+        raise ParametersInvalid("pre_rearranged requires video_spans")
     if video_spans is not None:
         if sparse_type not in ("rf_v2", "rf_v3"):
             raise ParametersInvalid("video_spans requires sparse_type='rf_v2' or sparse_type='rf_v3'.")
         if txt_len != 0 or latent_shape_q is not None or latent_shape_k is not None:
             raise ParametersInvalid("video_spans cannot be combined with txt_len, latent_shape_q, or latent_shape_k.")
-    sparse_type, inner_precise = _resolve_sparse_type_for_a5(sparse_type, inner_precise)
     batch, head_dim = q.shape[0], q.shape[-1]
     scale = head_dim**-0.5 if scale is None else scale
 
@@ -266,6 +294,8 @@ def sparse_attention(
             precision=precision,
             mxfp4_dst_type_max=mxfp4_dst_type_max,
             mxfp4_scale_alg=mxfp4_scale_alg,
+            bsa_backend=backend,
+            pre_rearranged=pre_rearranged,
         )
     elif sparse_type == "ada_bsa":
         smask, sct = get_estimate_mask(

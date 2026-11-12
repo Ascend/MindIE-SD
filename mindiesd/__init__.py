@@ -41,6 +41,9 @@ __all__ = [
     'split_qkv_norm_rope_concat',
     'triton_split_qkv_norm_rope_concat',
     'validate_split_qkv_norm_rope_concat_inputs',
+    'RFMultiSpanPlan',
+    'build_rf_attention_plan',
+    'rf_multi_span_permutation',
 ]
 
 
@@ -74,6 +77,7 @@ from .layers import (  # noqa: E402
 )
 from .layers.norm_rope_concat import norm_rope_concat  # noqa: E402
 from .layers.index_modulation import rms_norm_indexed_scale_shift  # noqa: E402
+from .rf_attention import RFMultiSpanPlan, build_rf_attention_plan, rf_multi_span_permutation  # noqa: E402
 from .quantization import (  # noqa: E402
     FP8FAMode,
     OnlineQuantConfig,
