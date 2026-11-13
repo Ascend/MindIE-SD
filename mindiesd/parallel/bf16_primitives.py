@@ -44,11 +44,12 @@ class BF16Primitives:
                 + "; load matching parallel and sparse RF modules"
             )
         self.retained_blocks["bf16_indices"] = torch.tensor(
-            sorted(set(mapping.dense_blocks) | set(mapping.first_frame_blocks)),
+            [] if self.sparse_type == "rf_v3" else sorted(set(mapping.dense_blocks) | set(mapping.first_frame_blocks)),
             dtype=torch.long,
             device=mapping.reordered_position_to_token.device,
         )
         if self.sparse_type == "rf_v3":
+            # The complete cached protection mask replaces retained row/column index writes.
             cells = (mapping.used_len + _q.POOL_BLOCK - 1) // _q.POOL_BLOCK
             protected = torch.zeros(
                 (1, 1, cells, cells),

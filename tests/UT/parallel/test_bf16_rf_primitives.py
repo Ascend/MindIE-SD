@@ -310,3 +310,38 @@ def test_serial_rf_order_cache_and_backend(rf_plan, monkeypatch, precision, layo
         function(query, query, query, **{**options, "input_layout": "bad"})
     with pytest.raises(ValueError, match="pool_parts"):
         namespace["get_multi_span_blockwise_mask"](torch.ones(3, 2, 1, 2), 0.5, 1, set(), set(), "BSND", pool_parts=2)
+
+
+@pytest.mark.parametrize("sparsity", [0.0, 0.8, 1.0])
+def test_cached_bf16_mask_keeps_protection_without_index_rewrites(producer, monkeypatch, sparsity):
+    mask_helper = native_rf_functions()["get_multi_span_blockwise_mask"]
+    monkeypatch.setattr(producer.layers, "get_multi_span_blockwise_mask", mask_helper)
+    primitive = producer.modules["bf16_primitives"].BF16Primitives()
+    primitive.reorder_mapping = types.SimpleNamespace(
+        bs=1,
+        s_local=256,
+        hc=4,
+        hs=2,
+        chunking=2,
+        world=2,
+        used_len=512,
+        dense_blocks={0},
+        first_frame_blocks={1},
+        reordered_position_to_token=torch.arange(512),
+    )
+    primitive.optimize_attention_pipeline = True
+    primitive.sparse_type = "rf_v3"
+    primitive.retained_blocks = {}
+    primitive._init_bf16()
+    pool = torch.arange(16).reshape(2, 4, 1, 2).float() / 16
+    expected = mask_helper(pool, sparsity, 0.25, {0}, {1}, "BSND", return_binary=True, pool_parts=2)
+    writes = []
+    original = torch.Tensor.__setitem__
+
+    def tracked(tensor, key, value):
+        writes.append(key)
+        return original(tensor, key, value)
+
+    monkeypatch.setattr(torch.Tensor, "__setitem__", tracked)
+    actual = primitive._make_bf16_sparse_mask(pool, scale=0.25, sparsity=sparsity)
+    assert torch.equal(actual, expected) and not writes
