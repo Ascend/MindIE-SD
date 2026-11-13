@@ -61,6 +61,9 @@ out = sparse_attention(q, k, v, head_num=24, input_layout="BNSD", sparse_type="r
 | ------ | ------ | ------ |
 | `sparse_type` | No | Sparse strategy: `None` (full attention), `"rf_v2"`, `"ada_bsa"` |
 | `sparsity` | No | Sparsity rate, range `[0, 1]`, `0` means no sparsification |
+| `video_spans` | No | Video span list; each entry is `{"start": int, "latent_shape": [T, H, W]}`. Supports multiple video clips |
+| `image_spans` | No | Reference-image span list; each entry is `{"start": int, "latent_shape": [H, W]}`. Requires both `video_spans` and `image_sparsity` |
+| `image_sparsity` | No | Independent reference-image sparsity in `[0, 1]`; `0` keeps all reference-image blocks. Defaults to `None` |
 | `txt_len` | No | Text token length, only effective when `sparse_type="rf_v2"` |
 | `latent_shape_q` | No | Query latent space shape `[t, h, w]`, only effective when `sparse_type="rf_v2"` |
 | `latent_shape_k` | No | Key latent space shape `[t, h, w]`, only effective when `sparse_type="rf_v2"` |
@@ -94,6 +97,30 @@ out = sparse_attention(
     sparsity=0.8,
     latent_shape_q=[t, h, w],
     latent_shape_k=[t, h, w],
+)
+```
+
+### Multi-Video and Reference-Image Configuration
+
+For `rf_v2` and `rf_v3`, use `video_spans` to describe video clips in a packed sequence, and `image_spans` with `image_sparsity` to configure reference-image sparsity independently. `sparsity` still controls video sparsity.
+
+- `start` is the token offset in the original Q/K/V sequence; the span length is the product of its latent dimensions. Spans must be ordered by start, non-overlapping, and within the unpadded effective sequence.
+- When using `video_spans`, omit `txt_len`, `latent_shape_q`, and `latent_shape_k`. This mode supports self-attention with equal Q/K/V sequence lengths.
+- Provide both `image_spans` and `image_sparsity`, or omit both (default: `None`). Omit both when no reference image is present. Other non-video tokens remain dense unless configured separately.
+- Reference-image sparsity controls video queries attending to reference-image key blocks. First-frame protection is preserved, and at least one block per reference image is retained.
+
+For example, the effective sequence contains 256 text tokens, 256 reference-image tokens, and 1024 video tokens, in that order:
+
+```python
+out = sparse_attention(
+    q, k, v,  # Q/K/V sequence lengths are all 1536
+    head_num=24,
+    input_layout="BNSD",
+    sparse_type="rf_v2",
+    sparsity=0.8,
+    video_spans=[{"start": 512, "latent_shape": [4, 16, 16]}],
+    image_spans=[{"start": 256, "latent_shape": [16, 16]}],
+    image_sparsity=0.5,
 )
 ```
 

@@ -13,13 +13,19 @@
 
 from ...rf_attention import build_rf_attention_plan
 import math
+from typing import Optional
 import threading
 
 import torch
 import torch.nn.functional as F
 import torch_npu
 
+from ...utils.exception import ParametersInvalid
+
 from .sparse_flash_attn_rf_v2 import (
+    _multi_span_permutation,
+    _normalize_video_spans,
+    _normalize_image_spans,
     avgpool,
     do_tensor_rearrange_pooling,
     do_multi_span_tensor_rearrange_pooling,
@@ -566,6 +572,8 @@ def bsa_sparse_attention_v3(
     mxfp4_scale_alg=None,
     bsa_backend="cann",
     pre_rearranged=False,
+    image_spans: Optional[list] = None,
+    image_sparsity: Optional[float] = None,
 ):
     """End-to-end rf_v3 sparse attention: rearrange -> mask -> [quant] -> BSA -> inv-rearrange.
 
@@ -624,6 +632,8 @@ def bsa_sparse_attention_v3(
         mxfp4_dst_type_max:  MXFP4 quantization range (dstTypeMax). 0 (default) selects
                              OCP scaling (quantMode=2); a positive value (typically in
                              [6, 12]) selects CX scaling (quantMode=3).
+        image_spans:        Reference-image regions; provide together with image_sparsity.
+        image_sparsity:     Optional drop ratio [0, 1]; both image options default to None.
         mxfp4_scale_alg:     Optional scale_alg forwarded to npu_dynamic_mx_quant.
         pre_rearranged:      BF16 multi-span inputs already in RF order. Requires
                              video_spans in original coordinates; output remains
@@ -633,6 +643,17 @@ def bsa_sparse_attention_v3(
         out (Tensor):      BF16 attention output, same layout as input
         new_mask (Tensor): int8 block_sparse_mask for caching
     """
+    if (image_spans is None) != (image_sparsity is None):
+        raise ParametersInvalid("image_spans and image_sparsity must be provided together or both omitted.")
+    if image_sparsity is not None:
+        if (
+            isinstance(image_sparsity, bool)
+            or not isinstance(image_sparsity, (int, float))
+            or not 0 <= image_sparsity <= 1
+        ):
+            raise ParametersInvalid("image_sparsity must be a number within [0, 1].")
+    if image_spans is not None and video_spans is None:
+        raise ParametersInvalid("image_spans requires an explicit video_spans layout.")
     if bsa_backend not in ("cann", "eagle"):
         raise ValueError("bsa_backend must be cann or eagle")
     if bsa_backend == "eagle" and precision not in ("bf16", "mix"):
@@ -692,29 +713,48 @@ def bsa_sparse_attention_v3(
         q_, k_, v_ = q, k, v
         if k.shape[s_dim] != q.shape[s_dim] or v.shape[s_dim] != q.shape[s_dim]:
             raise ValueError("pre_rearranged Q/K/V must have identical sequence lengths")
-        plan = build_rf_attention_plan(video_spans, q.shape[s_dim], block_size, input_layout, q.device)
+        reference_plan = ((), ())
+        if image_spans is None:
+            plan = build_rf_attention_plan(video_spans, q.shape[s_dim], block_size, input_layout, q.device)
+            dense_blocks, first_frame_blocks = plan.dense_blocks, plan.first_frame_blocks
+        else:
+            _, _, dense_blocks, first_frame_blocks, reference_plan = _multi_span_permutation(
+                _normalize_video_spans(video_spans, q.shape[s_dim]),
+                q.shape[s_dim],
+                block_size,
+                input_layout,
+                q.device,
+                _normalize_image_spans(image_spans, q.shape[s_dim]),
+                return_reference_plan=True,
+            )
         if cached_mask is None:
             tensor_pool = avgpool(torch.cat((q, k), dim=0), block_size, input_layout)
             new_mask = get_multi_span_blockwise_mask(
                 tensor_pool,
                 sparsity,
                 scale,
-                plan.dense_blocks,
-                plan.first_frame_blocks,
+                dense_blocks,
+                first_frame_blocks,
                 input_layout,
                 return_binary=True,
                 pool_parts=2,
+                reference_plan=reference_plan,
+                image_sparsity=image_sparsity,
             )
     elif multi_span:
         pool_parts = 2 if precision == "bf16" else 3
-        q_, k_, v_, tensor_pool, inverse, dense_blocks, first_frame_blocks = do_multi_span_tensor_rearrange_pooling(
-            q,
-            k,
-            v,
-            video_spans,
-            block_size,
-            input_layout,
-            pool_parts=0 if cached_mask is not None and precision == "bf16" else pool_parts,
+        (q_, k_, v_, tensor_pool, inverse, dense_blocks, first_frame_blocks, reference_plan) = (
+            do_multi_span_tensor_rearrange_pooling(
+                q,
+                k,
+                v,
+                video_spans,
+                block_size,
+                input_layout,
+                image_spans=image_spans,
+                return_reference_plan=True,
+                pool_parts=0 if cached_mask is not None and precision == "bf16" else pool_parts,
+            )
         )
         if cached_mask is None:
             new_mask = get_multi_span_blockwise_mask(
@@ -725,6 +765,8 @@ def bsa_sparse_attention_v3(
                 first_frame_blocks,
                 input_layout,
                 return_binary=True,
+                reference_plan=reference_plan,
+                image_sparsity=image_sparsity,
                 pool_parts=pool_parts,
             )
     elif cached_mask is None:

@@ -19,6 +19,7 @@ from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
+from typing import Optional
 
 import torch
 from einops import rearrange
@@ -81,6 +82,7 @@ def native_rf_functions():
         "_sequence_length",
         "_index_sequence",
         "_normalize_video_spans",
+        "_normalize_image_spans",
         "_span_rearranged_indices",
         "_multi_span_permutation",
         "do_multi_span_tensor_rearrange_pooling",
@@ -93,6 +95,7 @@ def native_rf_functions():
         dict(
             torch=torch,
             math=math,
+            Optional=Optional,
             Mapping=Mapping,
             Sequence=Sequence,
             rearrange=rearrange,
