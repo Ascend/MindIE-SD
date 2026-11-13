@@ -575,3 +575,33 @@ def test_render_html_shows_heads_dim_and_func(tmp_path):
     assert "bf16 h16 d128 fn=torch_npu.npu_fusion_attention" in content
     assert "bf16 h32 d256" in content
     assert "fn=torch_npu.npu_fusion_attention" in content
+
+
+def test_build_csv_section_eqbsa_carries_actual_sparsity():
+    # realized (block-granularity) retention is part of the data-source CSV
+    cases = {
+        "q_len=4096|sparsity=0.99|dtype=fp8": {
+            "MFU": 0.1,
+            "latency(us)": 3.0,
+            "actual_sparsity": 0.96875,
+        },
+    }
+    rows = br.build_csv_section({"eqbsa": cases})["eqbsa"]["fp8"]
+    assert rows[0]["sparsity"] == "0.99"
+    assert rows[0]["actual_sparsity"] == 0.96875
+
+
+def test_collect_baseline_keeps_actual_sparsity(tmp_path):
+    run = _write_report(
+        tmp_path,
+        [
+            _entry(
+                "eqbsa",
+                {"q_len": 4096, "sparsity": 0.99, "dtype": "fp8", "num_heads": 32, "num_kv_heads": 32},
+                {"latency(us)": 12.0, "actual_sparsity": 0.96875},
+            )
+        ],
+    )
+    grouped = br.collect_baseline(br.load_report_entries(run))
+    metrics = next(iter(grouped["eqbsa"].values()))
+    assert metrics["actual_sparsity"] == 0.96875

@@ -30,6 +30,8 @@ from op_defs._common import (
     mx_scale_bytes,
     quant_flops,
     sbe_qk_flops,
+    sparse_block_indices,
+    sparse_kv_tokens,
     tensor_bytes,
 )
 
@@ -52,7 +54,14 @@ def _stub_xpu_perf(monkeypatch):
             self.backend = backend
 
         def summary(self, latency_us, kernel_mapping=None):
-            return {}
+            return {"latency(us)": latency_us}
+
+    class OpTensorInfo:
+        def __init__(self, shape, dtype, device):
+            self.shape = shape
+            self.dtype = dtype
+            self.device = device
+            self.creator = None
 
     class ProviderRegistry:
         @staticmethod
@@ -62,11 +71,14 @@ def _stub_xpu_perf(monkeypatch):
     op_mod = types.ModuleType("xpu_perf.micro_perf.core.op")
     op_mod.BasicOp = BasicOp
     op_mod.ProviderRegistry = ProviderRegistry
+    utils_mod = types.ModuleType("xpu_perf.micro_perf.core.utils")
+    utils_mod.OpTensorInfo = OpTensorInfo
     for mod_name, mod in (
         ("xpu_perf", types.ModuleType("xpu_perf")),
         ("xpu_perf.micro_perf", types.ModuleType("xpu_perf.micro_perf")),
         ("xpu_perf.micro_perf.core", types.ModuleType("xpu_perf.micro_perf.core")),
         ("xpu_perf.micro_perf.core.op", op_mod),
+        ("xpu_perf.micro_perf.core.utils", utils_mod),
     ):
         monkeypatch.setitem(sys.modules, mod_name, mod)
 
@@ -168,6 +180,43 @@ def test_causal_rectangular_with_sparsity():
     assert attention_valid_parts(100, 200, causal=True, sparsity=0.5) == 5_000
 
 
+# --- sparse_block_indices / sparse_kv_tokens (block-sparse accounting) ------
+def test_sparse_block_indices_spreads_kept_blocks_over_kv():
+    # 32 kv blocks, 4 kept -> evenly spread, first and last block included
+    assert sparse_block_indices(32, 0.875) == [0, 10, 21, 31]
+
+
+def test_sparse_block_indices_rounds_at_block_granularity():
+    # 32 blocks at sparsity 0.8 -> round(6.4) = 6 kept
+    assert len(sparse_block_indices(32, 0.8)) == 6
+    # sparsity 0.99 -> round(0.32) = 0 -> clamped to one block (1/32 = 3.125%)
+    assert sparse_block_indices(32, 0.99) == [0]
+
+
+def test_sparse_block_indices_full_retention():
+    assert sparse_block_indices(4, 0.0) == [0, 1, 2, 3]
+
+
+def test_sparse_block_indices_rejects_bad_block_count():
+    with pytest.raises(ValueError):
+        sparse_block_indices(0, 0.5)
+
+
+def test_sparse_kv_tokens_counts_kept_blocks_and_tail():
+    # 4096 = 32 x 128: full retention counts every token
+    assert sparse_kv_tokens(4096, 128, 0.0) == 4096
+    # sparsity 0.99 keeps 1 of 32 blocks -> 128 tokens, NOT 4096 * 0.01 = 40.96
+    assert sparse_kv_tokens(4096, 128, 0.99) == 128
+    # 4160 = 32 full blocks + a 64-token tail: the tail counts its real length
+    assert sparse_kv_tokens(4160, 128, 0.0) == 4160
+    assert sparse_kv_tokens(4160, 128, 0.8) == 6 * 128 + 64
+
+
+def test_sparse_kv_tokens_rejects_bad_args():
+    with pytest.raises(ValueError):
+        sparse_kv_tokens(4096, 0, 0.5)
+
+
 # --- flops_calc accounting (batch/quant scaling) ----------------------------
 def _fa_op(batch_size=1, q_len=1024, kv_len=1024, causal=False, sparsity=0.0, dtype="bf16"):
     from op_defs.fa import FlashAttentionOp
@@ -238,6 +287,89 @@ def test_bsa_flops_calc_ada_bsa_not_discounted():
     op.mask_type = "ada_bsa"
     op.flops_calc()
     assert op.calc_flops == pytest.approx(4 * 8 * 64 * 1024 * 1024)
+
+
+class _StubBackend:
+    """Backend stub: the accounting path only needs the device name."""
+
+    @staticmethod
+    def get_torch_device_name():
+        return "cpu"
+
+
+def _eqbsa_op(batch_size=1, q_len=4096, kv_len=4096, sparsity=0.99, num_heads=8, head_dim=64):
+    from op_defs.eqbsa import EagleQuantBlockSparseAttentionOp
+
+    op = object.__new__(EagleQuantBlockSparseAttentionOp)
+    op.batch_size = batch_size
+    op.num_heads = num_heads
+    op.num_kv_heads = num_heads
+    op.head_dim = head_dim
+    op.q_len = q_len
+    op.kv_len = kv_len
+    op.causal = False
+    op.sparsity = sparsity
+    op.args_dict = {}
+    op.backend = _StubBackend()
+    return op
+
+
+def test_eqbsa_flops_calc_uses_realized_retention():
+    # kv 4096 / 128 = 32 blocks; sparsity 0.99 keeps 1 block = 3.125% retained,
+    # so FLOPs are 3.125x the naive (1 - sparsity) discount, not 1x.
+    op = _eqbsa_op()
+    op.flops_calc()
+    naive = 4 * 8 * 64 * 4096 * 4096 * 0.01
+    assert op.calc_flops == pytest.approx(4 * 8 * 64 * 4096 * 128)
+    assert op.calc_flops == pytest.approx(naive * 3.125)
+    assert op.kept_kv_blocks == 1
+    assert op.actual_sparsity == pytest.approx(1 - 1 / 32)
+
+
+def test_eqbsa_flops_calc_counts_tail_block_length():
+    # 4160 = 33 kv blocks, the last one 64 tokens: full retention = 4160, not
+    # the padded 33 * 128 = 4224.
+    op = _eqbsa_op(kv_len=4160, sparsity=0.0)
+    op.flops_calc()
+    assert op.retained_kv_tokens == 4160
+    assert op.calc_flops == pytest.approx(4 * 8 * 64 * 4096 * 4160)
+
+
+def test_eqbsa_flops_calc_scales_with_batch():
+    op = _eqbsa_op(batch_size=2, sparsity=0.8)
+    op.flops_calc()
+    assert op.calc_flops == pytest.approx(2 * 4 * 8 * 64 * 4096 * op.retained_kv_tokens)
+
+
+def test_eqbsa_mask_matches_flops_accounting():
+    # the mask handed to the kernel keeps exactly the blocks flops_calc counts
+    torch = pytest.importorskip("torch")
+    op = _eqbsa_op(sparsity=0.8)
+    op.flops_calc()
+    shape = (1, 8, 32, 32)
+    info = op._sparse_mask_info(shape)
+    mask = info.creator(shape, torch.int8, "cpu")
+    assert mask.dtype == torch.int8
+    assert set(mask.sum(dim=-1).flatten().tolist()) == {op.kept_kv_blocks}
+    assert mask[0, 0, 0].nonzero().flatten().tolist() == sparse_block_indices(32, 0.8)
+
+
+def test_eqbsa_mask_rejects_shape_mismatch():
+    # a mask whose kv block count differs from the accounted one must fail
+    # loudly instead of silently skewing MFU
+    op = _eqbsa_op(sparsity=0.8)
+    op.flops_calc()
+    shape = (1, 8, 32, 16)
+    info = op._sparse_mask_info(shape)
+    with pytest.raises(ValueError):
+        info.creator(shape, "int8", "cpu")
+
+
+def test_eqbsa_summary_records_actual_sparsity():
+    op = _eqbsa_op()
+    op.flops_calc()
+    out = op.summary(10.0)
+    assert out["actual_sparsity"] == pytest.approx(1 - 1 / 32)
 
 
 def test_bsa_rejects_non_bf16_dtype():

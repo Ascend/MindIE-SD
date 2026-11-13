@@ -25,6 +25,17 @@ op argument does not require touching two places. These must stay in sync with
 OP_SLOT_ARGS = {
     "fa": ("q_len", "kv_len", "batch_size", "num_heads", "head_dim", "dtype", "func"),
     "bsa": ("q_len", "kv_len", "batch_size", "num_heads", "head_dim", "sparsity", "dtype", "func"),
+    "eqbsa": (
+        "q_len",
+        "kv_len",
+        "batch_size",
+        "num_heads",
+        "num_kv_heads",
+        "head_dim",
+        "sparsity",
+        "dtype",
+        "func",
+    ),
     "gmm": ("num_tokens", "hidden_size", "moe_inter", "experts", "top_k", "quant_algo"),
     "mm": ("M", "K", "N", "quant_algo"),
     # sbe scans kv_len; q_len stays the production Q (2304) unless overridden.
@@ -43,6 +54,7 @@ OP_SLOT_ARGS = {
 OP_SEQ_AXIS = {
     "fa": "q_len",
     "bsa": "q_len",
+    "eqbsa": "q_len",
     "gmm": "num_tokens",
     "mm": "M",
     "sbe": "kv_len",
@@ -52,6 +64,7 @@ OP_SEQ_AXIS = {
 OP_SERIES_KEY = {
     "fa": "dtype",
     "bsa": "dtype",
+    "eqbsa": "dtype",
     "gmm": "quant_algo",
     "mm": "quant_algo",
     "sbe": "dtype",
@@ -63,13 +76,14 @@ OP_SERIES_KEY = {
 OP_DISPLAY_METRICS = {
     "fa": ("MFU",),
     "bsa": ("MFU",),
+    "eqbsa": ("MFU",),
     "gmm": ("MFU", "MBU"),
     "mm": ("MFU",),
     "sbe": ("MFU",),
 }
 
 # slot-level metrics carried by baselines and report snapshots
-BASELINE_METRICS = ("MFU", "MBU", "latency(us)", "executed_path")
+BASELINE_METRICS = ("MFU", "MBU", "latency(us)", "executed_path", "executed_path", "actual_sparsity")
 
 # metrics compared by the drift gate
 COMPARE_METRICS = ("MFU", "MBU")
@@ -80,4 +94,9 @@ COMPARE_METRICS = ("MFU", "MBU")
 SLOT_OMIT_WHEN_DEFAULT = {
     "fa": [("kv_len", "q_len")],
     "bsa": [("kv_len", "q_len")],
+    "eqbsa": [("kv_len", "q_len")],
 }
+
+# Ops whose sparsity must be part of the report slot key when a sparsity scan
+# is merged into one report.
+OP_SPARSE_PIVOT = ("bsa", "eqbsa")

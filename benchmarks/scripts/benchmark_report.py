@@ -227,11 +227,12 @@ def parse_slot(slot):
 def _series_label(op_name, parsed, series_key):
     """Series label: dtype/quant + heads/dim + kernel function (when present)."""
     label = parsed.get(series_key, "default")
-    if op_name in ("fa", "bsa", "sbe"):
+
+    if op_name in ("fa", "bsa", "eqbsa", "sbe"):
         parts = [label]
         if "num_heads" in parsed:
             parts.append(f"h{parsed['num_heads']}")
-        if op_name == "sbe" and "num_kv_heads" in parsed:
+        if op_name in ("eqbsa", "sbe") and "num_kv_heads" in parsed:
             parts.append(f"kv{parsed['num_kv_heads']}")
         if "head_dim" in parsed:
             parts.append(f"d{parsed['head_dim']}")
@@ -256,7 +257,7 @@ def _aggregate_cases(op_name, cases):
         x = parsed.get(seq_key)
         if x is None:
             continue
-        if op_name == "bsa":
+        if op_name in ("bsa", "eqbsa"):
             sparsity = parsed.get("sparsity", "0.8")
             agg.setdefault(label, {}).setdefault(sparsity, {})[int(x)] = metrics
         else:
@@ -278,7 +279,7 @@ def build_csv_section(grouped, peaks=None):
         pk = peaks.get(op_name, {})
         agg = _aggregate_cases(op_name, cases)
         series = {}
-        if op_name == "bsa":
+        if op_name in ("bsa", "eqbsa"):
             for label in sorted(agg):
                 rows = []
                 for sparsity in sorted(agg[label], key=float):
@@ -291,6 +292,7 @@ def build_csv_section(grouped, peaks=None):
                                 "MFU": m.get("MFU"),
                                 "MBU": m.get("MBU"),
                                 "latency_us": m.get("latency(us)"),
+                                "actual_sparsity": m.get("actual_sparsity"),
                                 "peak_flops": pk.get("peak_flops"),
                                 "peak_bw": pk.get("peak_bw"),
                             }
@@ -650,7 +652,7 @@ def build_op_html(op_name, cases):
 
     parts = [f'<h2>{html.escape(op_name.upper())}</h2>', f"<p>{len(cases)} baseline cases</p>"]
 
-    if op_name == "bsa":
+    if op_name in ("bsa", "eqbsa"):
         all_x = sorted({x for label in agg.values() for sp in label.values() for x in sp})
         series = {metric: {} for metric in display}
         for label in sorted(agg):
@@ -673,7 +675,7 @@ def build_op_html(op_name, cases):
 
     for label in sorted(agg):
         parts.append(f"<h3>Data — {html.escape(label)}</h3>")
-        if op_name == "bsa":
+        if op_name in ("bsa", "eqbsa"):
             by_sparsity = agg[label]
             xs = sorted({x for m in by_sparsity.values() for x in m})
             if not xs:

@@ -35,6 +35,8 @@ from xpu_perf.micro_perf.core.common_utils import (
 )
 from xpu_perf.micro_perf.core.perf_engine import XpuPerfServer
 
+import mindiesd  # noqa: F401  # set ASCEND_CUSTOM_OPP_PATH before NPU init
+
 FILE_DIR = pathlib.Path(__file__).parent.absolute()
 BENCHMARKS_DIR = FILE_DIR.parent
 OP_DEFS_DIR = FILE_DIR.joinpath("op_defs")

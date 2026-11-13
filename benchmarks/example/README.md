@@ -1,6 +1,6 @@
 # Example（样例脚本）
 
-核心算子（FA / MM / GMM / BSA）benchmark 的样例脚本，参数由 `mindie_bench` 的 `--op` / `--config` 内联表达。
+核心算子（FA / MM / GMM / BSA / EQBSA）benchmark 的样例脚本，参数由 `mindie_bench` 的 `--op` / `--config` 内联表达。
 
 ## `run_benchmark.sh`
 
@@ -35,6 +35,11 @@ python benchmarks/scripts/mindie_bench.py run --op "{sbe: {}}" \
 python benchmarks/scripts/mindie_bench.py run --op "{bsa: {}}" \
     --config "{seqlen: [8192, 32768, 131072], dtype: [bf16], sparse: [0.6, 0.8, 0.95, 0.99], timeout: 300, peak_flops: 377.78}" \
     --report-dir reports/bsa_sparse
+
+# EQBSA 稀疏度扫描（Q/K INT8 + V FP8）
+python benchmarks/scripts/mindie_bench.py run --op "{eqbsa: {}}" \
+    --config "{seqlen: [8192, 32768, 131072], sparse: [0.6, 0.8, 0.95, 0.99], timeout: 300, peak_flops: 804, peak_bw: 2000}" \
+    --report-dir reports/eqbsa_sparse
 
 # MM 量化档位
 python benchmarks/scripts/mindie_bench.py run --op "{mm: {}}" \
