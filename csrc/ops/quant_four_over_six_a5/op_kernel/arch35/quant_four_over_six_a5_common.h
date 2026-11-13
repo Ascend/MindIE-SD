@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /*!
  * \file dynamic_mx_quant_common.h
  * \brief
@@ -23,16 +35,13 @@
 
 namespace QuantFourOverSixA5 {
 
-template <typename Tp, Tp v>
-struct IntegralConstant {
+template <typename Tp, Tp v> struct IntegralConstant {
     static constexpr Tp value = v;
 };
 using trueType = IntegralConstant<bool, true>;
 using falseType = IntegralConstant<bool, false>;
-template <typename, typename>
-struct IsSame : public falseType {};
-template <typename Tp>
-struct IsSame<Tp, Tp> : public trueType {};
+template <typename, typename> struct IsSame : public falseType {};
+template <typename Tp> struct IsSame<Tp, Tp> : public trueType {};
 
 constexpr int64_t DB_BUFFER = 2;
 constexpr int64_t DIM2 = 2;
@@ -56,21 +65,24 @@ constexpr uint32_t vfLen16Double = vfLen16 * 2;
 constexpr uint32_t vfLen32 = platform::GetVRegSize() / sizeof(uint32_t);
 constexpr int64_t UBBlockSize_ = platform::GetUbBlockSize();
 constexpr uint16_t elementAfterReduce_ = platform::GetVRegSize() / UBBlockSize_;
-constexpr uint16_t elementAfterReduceHalf_ = elementAfterReduce_ / 2;   // DeInterleave<uint8_t>→StoreUnAlign<uint16_t> 半量写出
+constexpr uint16_t elementAfterReduceHalf_ =
+    elementAfterReduce_ / 2; // DeInterleave<uint8_t>→StoreUnAlign<uint16_t> 半量写出
 
 constexpr uint16_t ADD_VALUE_FOR_BF16_MAN1 = 0x003f; // dst_type_max=6 (ceil)
 constexpr uint16_t ADD_VALUE_FOR_BF16_MAN2 = 0x001f; // dst_type_max=7
-constexpr uint16_t ADD_VALUE_FOR_BF16_D4 = 0x007f;   // dst_type_max=4 (ceil)
+constexpr uint16_t ADD_VALUE_FOR_BF16_D4 = 0x007f; // dst_type_max=4 (ceil)
 // round-to-nearest scale 常量(替代 ceil, 使 D6 有时饱和 → D4 有机会胜出)
 constexpr uint16_t ADD_VALUE_FOR_BF16_D6_ROUND = 0x0078; // D=6 round: carry @ mant≥8
 constexpr uint16_t ADD_VALUE_FOR_BF16_D4_ROUND = 0x004A; // D=4 round: carry @ mant≥54
-constexpr uint16_t SUB_OFFSET_FOR_D6_ROUND     = 0x0180; // round(log2(6))=3
-constexpr uint16_t SUB_OFFSET_FOR_D4_ROUND     = 0x0100; // round(log2(4))=2
+constexpr uint16_t SUB_OFFSET_FOR_D6_ROUND = 0x0180; // round(log2(6))=3
+constexpr uint16_t SUB_OFFSET_FOR_D4_ROUND = 0x0100; // round(log2(4))=2
 constexpr int64_t OUT_ELE_NUM_ONE_BLK = 64;
-constexpr int64_t OUT_ELE_NUM_TWO_BLK = 2 * OUT_ELE_NUM_ONE_BLK;   // 128: 单次 PACK_B16 store 覆盖两半(uint16 DeInterleave 后 Select 一次)
+constexpr int64_t OUT_ELE_NUM_TWO_BLK =
+    2 * OUT_ELE_NUM_ONE_BLK; // 128: 单次 PACK_B16 store 覆盖两半(uint16 DeInterleave 后 Select 一次)
 constexpr int64_t OUT_ELE_NUM_TWO_BLK_X2 = 2 * OUT_ELE_NUM_TWO_BLK; // 256: DINTLV_B16 y46 load stride (2×128 uint16)
 constexpr int64_t OUT_ELE_NUM_ONE_BLK_FP8 = 32;
-constexpr uint16_t elementAfterReduceDouble_ = elementAfterReduce_ * 2; // 16: INTLV_B16 half/suint stride (2×elementAfterReduce_)
+constexpr uint16_t elementAfterReduceDouble_ =
+    elementAfterReduce_ * 2; // 16: INTLV_B16 half/suint stride (2×elementAfterReduce_)
 constexpr uint16_t NAN_CUSTOMIZATION = 0x7f81;
 constexpr uint32_t NAN_CUSTOMIZATION_FP32 = 0x7f810000;
 constexpr uint16_t MAX_EXP_FOR_BF16 = 0x7f80;
@@ -86,13 +98,14 @@ constexpr uint16_t SPECIAL_EXP_THRESHOLD = 0x0040;
 constexpr uint32_t SPECIAL_EXP_THRESHOLD_FP32 = 0x00400000;
 constexpr int16_t SHR_NUM_FOR_BF16 = 7;
 constexpr int16_t SHR_NUM_FOR_FP32 = 23;
-constexpr int16_t SHR_NUM_FOR_BF16_EXP = 8;   // BF16 指数位左移(StoreScaleSelect: scale<<8 放 BF16 指数位; int16_t 满足 ShiftLefts scalar 要求)
+constexpr int16_t SHR_NUM_FOR_BF16_EXP =
+    8; // BF16 指数位左移(StoreScaleSelect: scale<<8 放 BF16 指数位; int16_t 满足 ShiftLefts scalar 要求)
 // 1-bit 决策阈值(ComputeScaleDdr46 派生 D4 from D6): decision = (m<8) OR (m≥54)
 //   m = BF16 尾数(bits 0-6). m<8 或 m≥54 → scaleE8M0_4 = scaleE8M0_6+1; 否则相等.
 //   数学: scaleE8M0_4 − scaleE8M0_6 = 1 + [m≥54] − [m≥8] ∈ {0,1}(因 m≥54⇒m≥8). 见 docs/dst_type_max_4_scale_1bit_decision.md
 //   uint16_t 以与输入 tensor(uint16_t)及 NEW_MANTISSA(0x0008)模式一致: CompareScalar<T> 标量类型应匹配 tensor 类型 T.
-constexpr uint16_t MANT_THR_D6_CARRY = 8;    // D6 round carry 阈值(m≥8 进位); 1-bit 决策用 m<MANT_THR_D6_CARRY
-constexpr uint16_t MANT_THR_D4_CARRY = 54;   // D4 round carry 阈值(m≥54 进位); 1-bit 决策用 m≥MANT_THR_D4_CARRY
+constexpr uint16_t MANT_THR_D6_CARRY = 8; // D6 round carry 阈值(m≥8 进位); 1-bit 决策用 m<MANT_THR_D6_CARRY
+constexpr uint16_t MANT_THR_D4_CARRY = 54; // D4 round carry 阈值(m≥54 进位); 1-bit 决策用 m≥MANT_THR_D4_CARRY
 constexpr uint16_t FP4_E2M1_BF16_MAX_EXP = 0x0100;
 constexpr uint32_t FP4_E2M1_FP32_MAX_EXP = 0x01000000;
 constexpr uint16_t EXP_BF16_BIAS = 0x7f00;
@@ -137,9 +150,7 @@ constexpr uint32_t MAN_FOR_FP32 = 0x007fffff;
 constexpr float INV_DTYPE_MAX = 0;
 constexpr uint32_t MAN_MASK_FP32 = 0x007fffff;
 
-template <typename T>
-__aicore__ inline constexpr int16_t GetShrNum()
-{
+template <typename T> __aicore__ inline constexpr int16_t GetShrNum() {
     if constexpr (IsSame<T, bfloat16_t>::value) {
         return SHR_NUM_FOR_BF16;
     } else {
@@ -147,9 +158,7 @@ __aicore__ inline constexpr int16_t GetShrNum()
     }
 }
 
-template <typename T>
-__aicore__ inline constexpr T GetMaxExp()
-{
+template <typename T> __aicore__ inline constexpr T GetMaxExp() {
     if constexpr (IsSame<T, uint16_t>::value) {
         return MAX_EXP_FOR_BF16;
     } else {
@@ -157,9 +166,7 @@ __aicore__ inline constexpr T GetMaxExp()
     }
 }
 
-template <typename T>
-__aicore__ inline constexpr T GetabsForX()
-{
+template <typename T> __aicore__ inline constexpr T GetabsForX() {
     if constexpr (IsSame<T, uint16_t>::value) {
         return ABS_MASK_FOR_16BIT;
     } else {
@@ -167,9 +174,7 @@ __aicore__ inline constexpr T GetabsForX()
     }
 }
 
-template <typename T>
-__aicore__ inline constexpr T GetSubNumForScale()
-{
+template <typename T> __aicore__ inline constexpr T GetSubNumForScale() {
     if constexpr (IsSame<T, uint16_t>::value) {
         return SUB_NUM_FOR_SCALE_32BIT;
     } else {
@@ -177,9 +182,7 @@ __aicore__ inline constexpr T GetSubNumForScale()
     }
 }
 
-template <typename T>
-__aicore__ inline constexpr T GetFp4MaxExp()
-{
+template <typename T> __aicore__ inline constexpr T GetFp4MaxExp() {
     if constexpr (IsSame<T, uint16_t>::value) {
         return FP4_E2M1_BF16_MAX_EXP;
     } else {
@@ -187,9 +190,7 @@ __aicore__ inline constexpr T GetFp4MaxExp()
     }
 }
 
-template <typename T>
-__aicore__ inline constexpr T GetFp8MaxExp()
-{
+template <typename T> __aicore__ inline constexpr T GetFp8MaxExp() {
     if constexpr (IsSame<T, uint16_t>::value) {
         return MAX_EXP_FOR_FP8;
     } else {
@@ -197,9 +198,7 @@ __aicore__ inline constexpr T GetFp8MaxExp()
     }
 }
 
-template <typename T>
-__aicore__ inline constexpr T GetMaxBias()
-{
+template <typename T> __aicore__ inline constexpr T GetMaxBias() {
     if constexpr (IsSame<T, uint16_t>::value) {
         return EXP_BF16_BIAS;
     } else {
@@ -207,9 +206,7 @@ __aicore__ inline constexpr T GetMaxBias()
     }
 }
 
-template <typename T>
-__aicore__ inline constexpr T GetNanValue()
-{
+template <typename T> __aicore__ inline constexpr T GetNanValue() {
     if constexpr (IsSame<T, uint16_t>::value) {
         return NAN_CUSTOMIZATION;
     } else {
@@ -217,9 +214,7 @@ __aicore__ inline constexpr T GetNanValue()
     }
 }
 
-template <typename T>
-__aicore__ inline constexpr T GetSpecialExp()
-{
+template <typename T> __aicore__ inline constexpr T GetSpecialExp() {
     if constexpr (IsSame<T, uint16_t>::value) {
         return SPECIAL_EXP_THRESHOLD;
     } else {
@@ -229,8 +224,7 @@ __aicore__ inline constexpr T GetSpecialExp()
 
 template <AscendC::RoundMode roundMode, typename outType, typename inType>
 __aicore__ inline void CalcElement(
-    AscendC::Reg::RegTensor<inType>& in, AscendC::Reg::RegTensor<int32_t>& maxEle, AscendC::Reg::MaskReg mask)
-{
+    AscendC::Reg::RegTensor<inType> &in, AscendC::Reg::RegTensor<int32_t> &maxEle, AscendC::Reg::MaskReg mask) {
     AscendC::Reg::RegTensor<float> y1;
     AscendC::Reg::MaskReg negValueMask;
     AscendC::Reg::MaskReg zeroMask;
@@ -239,11 +233,11 @@ __aicore__ inline void CalcElement(
     AscendC::Reg::RegTensor<int32_t> negZero;
     AscendC::Reg::Duplicate(negZero, NEG_ZERO);
     AscendC::Reg::CompareScalar<int32_t, AscendC::CMPMODE::EQ>(
-        zeroNegMask, (AscendC::Reg::RegTensor<int32_t>&)in, NEG_ZERO, mask);
+        zeroNegMask, (AscendC::Reg::RegTensor<int32_t> &)in, NEG_ZERO, mask);
     if constexpr (IsSame<outType, fp4x2_e2m1_t>::value) {
         AscendC::Reg::RegTensor<int32_t> exp1;
         AscendC::Reg::RegTensor<int32_t> exp2;
-        AscendC::Reg::And(exp1, (AscendC::Reg::RegTensor<int32_t>&)in, maxEle, mask);
+        AscendC::Reg::And(exp1, (AscendC::Reg::RegTensor<int32_t> &)in, maxEle, mask);
         AscendC::Reg::ShiftRights(exp1, exp1, SHR_NUM_FOR_FP32, mask);
         AscendC::Reg::Adds(exp1, exp1, FP32_BIAS_NEG, mask);
         AscendC::Reg::Maxs(exp1, exp1, 0, mask);
@@ -252,12 +246,12 @@ __aicore__ inline void CalcElement(
         AscendC::Reg::Adds(exp2, exp2, FP32_BIAS, mask);
         AscendC::Reg::ShiftLefts(exp2, exp2, SHR_NUM_FOR_FP32, mask);
 
-        AscendC::Reg::Mul(y1, in, (AscendC::Reg::RegTensor<float>&)exp2, mask);
+        AscendC::Reg::Mul(y1, in, (AscendC::Reg::RegTensor<float> &)exp2, mask);
         AscendC::Reg::Adds(exp1, exp1, FP32_BIAS, mask);
         AscendC::Reg::ShiftLefts(exp1, exp1, SHR_NUM_FOR_FP32, mask);
         AscendC::Reg::CompareScalar<float, AscendC::CMPMODE::LT>(negValueMask, y1, 0, mask);
         AscendC::Reg::Truncate<float, roundMode>(y1, y1, mask);
-        AscendC::Reg::Mul(in, y1, (AscendC::Reg::RegTensor<float>&)exp1, mask);
+        AscendC::Reg::Mul(in, y1, (AscendC::Reg::RegTensor<float> &)exp1, mask);
     } else {
         AscendC::Reg::Muls(y1, in, FOUR, mask);
         AscendC::Reg::CompareScalar<float, AscendC::CMPMODE::LT>(negValueMask, y1, 0, mask);
@@ -267,14 +261,13 @@ __aicore__ inline void CalcElement(
     AscendC::Reg::CompareScalar<float, AscendC::CMPMODE::EQ>(zeroMask, in, 0, mask);
     AscendC::Reg::MaskAnd(negZeroMask, zeroMask, negValueMask, mask);
     AscendC::Reg::MaskOr(zeroMask, negZeroMask, zeroNegMask, mask);
-    AscendC::Reg::Copy((AscendC::Reg::RegTensor<int32_t>&)in, negZero, zeroMask);
+    AscendC::Reg::Copy((AscendC::Reg::RegTensor<int32_t> &)in, negZero, zeroMask);
 }
 
 template <AscendC::RoundMode roundMode, typename outType, typename inType, typename calcTypeInt>
-__aicore__ inline void CalcElement(
-    AscendC::Reg::RegTensor<inType>& in, AscendC::Reg::RegTensor<calcTypeInt>& scaleReprocal,
-    AscendC::Reg::RegTensor<calcTypeInt>& maxEle, AscendC::Reg::RegTensor<uint8_t>& out, AscendC::Reg::MaskReg mask)
-{
+__aicore__ inline void CalcElement(AscendC::Reg::RegTensor<inType> &in,
+    AscendC::Reg::RegTensor<calcTypeInt> &scaleReprocal, AscendC::Reg::RegTensor<calcTypeInt> &maxEle,
+    AscendC::Reg::RegTensor<uint8_t> &out, AscendC::Reg::MaskReg mask) {
     static constexpr AscendC::Reg::CastTrait castTrait = {
         AscendC::Reg::RegLayout::ZERO, AscendC::Reg::SatMode::UNKNOWN, AscendC::Reg::MaskMergeMode::ZEROING, roundMode};
     static constexpr AscendC::Reg::CastTrait castTraitFp32ToBf16 = {
@@ -282,18 +275,18 @@ __aicore__ inline void CalcElement(
     AscendC::Reg::RegTensor<bfloat16_t> valueRegTensor;
     AscendC::Reg::RegTensor<outType> y;
     AscendC::Reg::RegTensor<uint16_t> yRegTensor;
-    AscendC::Reg::Mul(in, in, (AscendC::Reg::RegTensor<inType>&)scaleReprocal, mask);
+    AscendC::Reg::Mul(in, in, (AscendC::Reg::RegTensor<inType> &)scaleReprocal, mask);
     if constexpr (IsSame<inType, float>::value) {
-        CalcElement<roundMode, outType, inType>(in, (AscendC::Reg::RegTensor<int32_t>&)maxEle, mask);
+        CalcElement<roundMode, outType, inType>(in, (AscendC::Reg::RegTensor<int32_t> &)maxEle, mask);
         AscendC::Reg::Cast<bfloat16_t, inType, castTraitFp32ToBf16>(valueRegTensor, in, mask);
         AscendC::Reg::Pack(
-            (AscendC::Reg::RegTensor<uint16_t>&)valueRegTensor, (AscendC::Reg::RegTensor<uint32_t>&)valueRegTensor);
+            (AscendC::Reg::RegTensor<uint16_t> &)valueRegTensor, (AscendC::Reg::RegTensor<uint32_t> &)valueRegTensor);
         AscendC::Reg::Cast<outType, bfloat16_t, castTrait>(y, valueRegTensor, mask);
     } else {
         AscendC::Reg::Cast<outType, inType, castTrait>(y, in, mask);
     }
 
-    AscendC::Reg::Pack(yRegTensor, (AscendC::Reg::RegTensor<uint32_t>&)y);
+    AscendC::Reg::Pack(yRegTensor, (AscendC::Reg::RegTensor<uint32_t> &)y);
     AscendC::Reg::Pack(out, yRegTensor);
 }
 

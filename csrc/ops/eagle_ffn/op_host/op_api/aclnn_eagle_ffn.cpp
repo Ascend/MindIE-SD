@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /*!
  * \file aclnn_eagle_ffn.cpp
  * \brief
@@ -56,26 +68,21 @@ static const int64_t JUDGE_EVEN = 2;
 static const int64_t MAX_K = 65535;
 using DtypeCheck = std::initializer_list<op::DataType>;
 
-enum class ActiveType {
-    FASTGELU = 0,
-    RELU,
-    SILU,
-    GELU,
-    GEGLU,
-    SWIGLU,
-    REGLU,
-    INVALID_TYPE
-};
+enum class ActiveType { FASTGELU = 0, RELU, SILU, GELU, GEGLU, SWIGLU, REGLU, INVALID_TYPE };
 
 class ActiveMap {
-public:
+  public:
     const char *activeName;
     ActiveType activeType;
 };
 
 constexpr class ActiveMap g_activeMap[] = {
-    {"fastgelu", ActiveType::FASTGELU}, {"relu", ActiveType::RELU},   {"silu", ActiveType::SILU},
-    {"gelu", ActiveType::GELU},         {"geglu", ActiveType::GEGLU}, {"swiglu", ActiveType::SWIGLU},
+    {"fastgelu", ActiveType::FASTGELU},
+    {"relu", ActiveType::RELU},
+    {"silu", ActiveType::SILU},
+    {"gelu", ActiveType::GELU},
+    {"geglu", ActiveType::GEGLU},
+    {"swiglu", ActiveType::SWIGLU},
     {"reglu", ActiveType::REGLU},
 };
 
@@ -101,8 +108,7 @@ struct FFNParams {
     const aclTensor *y = nullptr;
 };
 
-static ActiveType GetActiveType(const char *activeType)
-{
+static ActiveType GetActiveType(const char *activeType) {
     for (const ActiveMap &item : g_activeMap) {
         size_t len = strlen(item.activeName);
         bool isValidActiveType = strlen(activeType) == len;
@@ -124,9 +130,8 @@ static ActiveType GetActiveType(const char *activeType)
     return ActiveType::INVALID_TYPE;
 }
 
-static aclnnStatus CheckNotNull(const aclTensor *x, const aclTensor *weight1, const aclTensor *weight2,
-                                const aclTensor *y)
-{
+static aclnnStatus CheckNotNull(
+    const aclTensor *x, const aclTensor *weight1, const aclTensor *weight2, const aclTensor *y) {
     CHECK_COND(x != nullptr, ACLNN_ERR_PARAM_NULLPTR, "x must not be nullptr.");
     CHECK_COND(weight1 != nullptr, ACLNN_ERR_PARAM_NULLPTR, "weight1 must not be nullptr.");
     CHECK_COND(weight2 != nullptr, ACLNN_ERR_PARAM_NULLPTR, "weight2 must not be nullptr.");
@@ -134,62 +139,52 @@ static aclnnStatus CheckNotNull(const aclTensor *x, const aclTensor *weight1, co
     return ACLNN_SUCCESS;
 }
 
-static inline bool CheckY(const FFNParams &ffnParams)
-{
+static inline bool CheckY(const FFNParams &ffnParams) {
     auto xDimNum = ffnParams.x->GetViewShape().GetDimNum();
     auto yDimNum = ffnParams.y->GetViewShape().GetDimNum();
     // y's dimNum should be equal to x's dimNum
     if (yDimNum != xDimNum) {
         OP_LOGE(ACLNN_ERR_PARAM_INVALID, "y's dimNum should be equal to x's dimNum, x dimNum is %zu, y dimNum is %zu",
-                xDimNum, yDimNum);
+            xDimNum, yDimNum);
         return false;
     }
 
     return true;
 }
 
-static bool CheckDtypeValidForFFNOp(const aclTensor *x, const aclTensor *weight1, const aclTensor *weight2)
-{
+static bool CheckDtypeValidForFFNOp(const aclTensor *x, const aclTensor *weight1, const aclTensor *weight2) {
     CHECK_COND(x->GetDataType() == DataType::DT_FLOAT16, false,
-               "x only support dtype float16 without expert tokens, but found %s.",
-               op::ToString(x->GetDataType()).GetString());
+        "x only support dtype float16 without expert tokens, but found %s.",
+        op::ToString(x->GetDataType()).GetString());
     CHECK_COND(weight1->GetDataType() == DataType::DT_FLOAT16, false,
-               "weight1 only support dtype float16 without expert tokens, but found %s.",
-               op::ToString(weight1->GetDataType()).GetString());
+        "weight1 only support dtype float16 without expert tokens, but found %s.",
+        op::ToString(weight1->GetDataType()).GetString());
     CHECK_COND(weight2->GetDataType() == DataType::DT_FLOAT16, false,
-               "weight2 only support dtype float16 without expert tokens, but found %s.",
-               op::ToString(weight2->GetDataType()).GetString());
+        "weight2 only support dtype float16 without expert tokens, but found %s.",
+        op::ToString(weight2->GetDataType()).GetString());
     return true;
 }
 
-static bool IsArch35Fused(const FFNParams &ffnParams)
-{
-    return GetCurrentPlatformInfo().GetSocVersion() == SocVersion::ASCEND950 &&
-           ffnParams.expertTokens == nullptr &&
-           (ffnParams.x->GetDataType() == DataType::DT_BF16 ||
-            ffnParams.x->GetDataType() == DataType::DT_FLOAT16) &&
-           (ffnParams.activationType == ActiveType::GELU || ffnParams.activationType == ActiveType::SILU ||
+static bool IsArch35Fused(const FFNParams &ffnParams) {
+    return GetCurrentPlatformInfo().GetSocVersion() == SocVersion::ASCEND950 && ffnParams.expertTokens == nullptr &&
+        (ffnParams.x->GetDataType() == DataType::DT_BF16 || ffnParams.x->GetDataType() == DataType::DT_FLOAT16) &&
+        (ffnParams.activationType == ActiveType::GELU || ffnParams.activationType == ActiveType::SILU ||
             ffnParams.activationType == ActiveType::SWIGLU);
 }
 
 // arch35 fused 布局识别（公共规则 ../ffn_layout.h；维度取最后两维）
-static ffnlayout::FfnLayout Arch35DetectLayout(const FFNParams &ffnParams)
-{
+static ffnlayout::FfnLayout Arch35DetectLayout(const FFNParams &ffnParams) {
     const auto &w1View = ffnParams.weight1->GetViewShape();
     const auto &w2View = ffnParams.weight2->GetViewShape();
     const auto &xView = ffnParams.x->GetViewShape();
-    return ffnlayout::FfnDetectLayout(w1View.GetDim(w1View.GetDimNum() - 2),
-                                      w1View.GetDim(w1View.GetDimNum() - 1),
-                                      w2View.GetDim(w2View.GetDimNum() - 2),
-                                      w2View.GetDim(w2View.GetDimNum() - 1),
-                                      xView.GetDim(xView.GetDimNum() - 1),
-                                      ffnParams.activationType == ActiveType::SWIGLU);
+    return ffnlayout::FfnDetectLayout(w1View.GetDim(w1View.GetDimNum() - 2), w1View.GetDim(w1View.GetDimNum() - 1),
+        w2View.GetDim(w2View.GetDimNum() - 2), w2View.GetDim(w2View.GetDimNum() - 1),
+        xView.GetDim(xView.GetDimNum() - 1), ffnParams.activationType == ActiveType::SWIGLU);
 }
 
 // arch35 fused：与权重校验同一公共规则（Arch35DetectLayout，含方阵 w2 消歧）；
 // 非 arch35 场景一律 canonical 语义。
-static bool IsLinearWeight(const FFNParams &ffnParams)
-{
+static bool IsLinearWeight(const FFNParams &ffnParams) {
     if (!IsArch35Fused(ffnParams)) {
         return false;
     }
@@ -197,8 +192,7 @@ static bool IsLinearWeight(const FFNParams &ffnParams)
 }
 
 static bool CheckBiasDimNum(const aclTensor *weight, const aclTensor *expertTokens, const aclTensor *bias,
-                            const char *biasName, bool transposedWeight)
-{
+    const char *biasName, bool transposedWeight) {
     bool hasExperts = (expertTokens != nullptr);
     size_t weightSize = hasExperts ? DIM_NUM_THREE : DIM_NUM_TWO;
     // bias dim size should be 2 when having experTokens, and be 1 when not having it
@@ -206,8 +200,8 @@ static bool CheckBiasDimNum(const aclTensor *weight, const aclTensor *expertToke
     auto biasDimNum = bias->GetViewShape().GetDimNum();
     if (biasDimNum != biasSize) {
         OP_LOGE(ACLNN_ERR_PARAM_INVALID,
-                "%s DimNum dim should be (2: has experts, 1: no experts), %s DimNum dim is %zu", biasName, biasName,
-                biasDimNum);
+            "%s DimNum dim should be (2: has experts, 1: no experts), %s DimNum dim is %zu", biasName, biasName,
+            biasDimNum);
         return false;
     }
     size_t weightNDimIdx = weightSize - 1;
@@ -220,7 +214,7 @@ static bool CheckBiasDimNum(const aclTensor *weight, const aclTensor *expertToke
     int64_t biasNDimValue = bias->GetViewShape().GetDim(biasNDimIdx);
     if (biasNDimValue != weightNDimValue) {
         OP_LOGE(ACLNN_ERR_PARAM_INVALID, "%s last dim should be %ld, but %s last dim is %ld", biasName, weightNDimValue,
-                biasName, biasNDimValue);
+            biasName, biasNDimValue);
         return false;
     }
     if (hasExperts) {
@@ -228,56 +222,53 @@ static bool CheckBiasDimNum(const aclTensor *weight, const aclTensor *expertToke
         int64_t biasEDimValue = bias->GetViewShape().GetDim(0);
         if (biasEDimValue != expertTokensLength) {
             OP_LOGE(ACLNN_ERR_PARAM_INVALID, "%s first dim should be %ld, but %s first dim is %ld", biasName,
-                    expertTokensLength, biasName, biasEDimValue);
+                expertTokensLength, biasName, biasEDimValue);
             return false;
         }
     }
     return true;
 }
 
-static bool CheckBias(const FFNParams &ffnParams)
-{
+static bool CheckBias(const FFNParams &ffnParams) {
     bool bias1CheckResult = true;
     bool bias2CheckResult = true;
     bool transposedWeight = IsLinearWeight(ffnParams);
     if (ffnParams.bias1 != nullptr) {
-        bias1CheckResult = CheckBiasDimNum(ffnParams.weight1, ffnParams.expertTokens, ffnParams.bias1, "bias1",
-                                           transposedWeight);
+        bias1CheckResult =
+            CheckBiasDimNum(ffnParams.weight1, ffnParams.expertTokens, ffnParams.bias1, "bias1", transposedWeight);
     }
     if (ffnParams.bias2 != nullptr) {
-        bias2CheckResult = CheckBiasDimNum(ffnParams.weight2, ffnParams.expertTokens, ffnParams.bias2, "bias2",
-                                           transposedWeight);
+        bias2CheckResult =
+            CheckBiasDimNum(ffnParams.weight2, ffnParams.expertTokens, ffnParams.bias2, "bias2", transposedWeight);
     }
     return bias1CheckResult && bias2CheckResult;
 }
 
-static bool GluShapeCheck(size_t weight1NDimValue, size_t weight2kDimValue)
-{
+static bool GluShapeCheck(size_t weight1NDimValue, size_t weight2kDimValue) {
     // remind by 2 to check if it is a odd number
     if (weight1NDimValue % 2 != 0) {
         OP_LOGE(ACLNN_ERR_PARAM_INVALID,
-                "weight1 NDimValue should be even number in glu case, but your weight1 "
-                "NDimVakue is %zu",
-                weight1NDimValue);
+            "weight1 NDimValue should be even number in glu case, but your weight1 "
+            "NDimVakue is %zu",
+            weight1NDimValue);
         return false;
     }
     // weight2 KDimValue should be equal to half of weight1 NDimValue in glu case
     if (weight2kDimValue != weight1NDimValue / 2) {
         OP_LOGE(ACLNN_ERR_PARAM_INVALID,
-                "weight2 KDimValue should be equal to half of weight1 NDimValue in glu case, "
-                "but your weight2 kDimValue is %zu and your weight1 NDimValue is  %zu",
-                weight2kDimValue, weight1NDimValue);
+            "weight2 KDimValue should be equal to half of weight1 NDimValue in glu case, "
+            "but your weight2 kDimValue is %zu and your weight1 NDimValue is  %zu",
+            weight2kDimValue, weight1NDimValue);
         return false;
     }
     return true;
 }
 
-static aclnnStatus CheckFmapWeightShape(const FFNParams &ffnParams)
-{
+static aclnnStatus CheckFmapWeightShape(const FFNParams &ffnParams) {
     auto xDimNum = ffnParams.x->GetViewShape().GetDimNum();
     // x's dim should within 2 ~ 8
     CHECK_COND(xDimNum >= DIM_LIMIT_LOWER && xDimNum <= DIM_LIMIT_UPPER, ACLNN_ERR_PARAM_INVALID,
-               "x dim should within 2 ~ 8, but x dim is %zu", xDimNum);
+        "x dim should within 2 ~ 8, but x dim is %zu", xDimNum);
     auto xKdimIndex = xDimNum - 1; // 1 represents the last dimension of x
     int64_t xKDimValue = ffnParams.x->GetViewShape().GetDim(xKdimIndex);
 
@@ -287,9 +278,9 @@ static aclnnStatus CheckFmapWeightShape(const FFNParams &ffnParams)
     size_t weight1DimNum = ffnParams.weight1->GetViewShape().GetDimNum();
     size_t weight2DimNum = ffnParams.weight2->GetViewShape().GetDimNum();
     CHECK_COND(weight1DimNum == weightSize, ACLNN_ERR_PARAM_INVALID,
-               "weight1 DimNum dim should be (3: has experts, 2: no experts), but got %zu", weight1DimNum);
+        "weight1 DimNum dim should be (3: has experts, 2: no experts), but got %zu", weight1DimNum);
     CHECK_COND(weight2DimNum == weightSize, ACLNN_ERR_PARAM_INVALID,
-               "weight2 DimNum dim should be (3: has experts, 2: no experts), but got %zu", weight2DimNum);
+        "weight2 DimNum dim should be (3: has experts, 2: no experts), but got %zu", weight2DimNum);
     size_t kDimIdx = weightSize - 2; // 2 represents the penultimate dimension of weight
     size_t nDimIdx = weightSize - 1; // 1 represents the last dimension of weight
     int64_t weight1kDimValue = ffnParams.weight1->GetViewShape().GetDim(kDimIdx);
@@ -297,16 +288,15 @@ static aclnnStatus CheckFmapWeightShape(const FFNParams &ffnParams)
     int64_t weight2kDimValue = ffnParams.weight2->GetViewShape().GetDim(kDimIdx);
     int64_t weight2NDimValue = ffnParams.weight2->GetViewShape().GetDim(nDimIdx);
     CHECK_COND(weight1kDimValue <= MAX_K && weight2kDimValue <= MAX_K, ACLNN_ERR_PARAM_INVALID,
-               "kDimValue of weight1 "
-               "%ld and weight2 %ld should both be equal to or less than 65535",
-               weight1kDimValue, weight2kDimValue);
+        "kDimValue of weight1 "
+        "%ld and weight2 %ld should both be equal to or less than 65535",
+        weight1kDimValue, weight2kDimValue);
 
     // arch35 fused gelu/silu/swiglu：支持 canonical [K, N] 与 PyTorch Linear 布局 [N, K]（out, in）
     if (GetCurrentPlatformInfo().GetSocVersion() == SocVersion::ASCEND950 && !hasExperts &&
-        (ffnParams.x->GetDataType() == DataType::DT_BF16 ||
-         ffnParams.x->GetDataType() == DataType::DT_FLOAT16) &&
+        (ffnParams.x->GetDataType() == DataType::DT_BF16 || ffnParams.x->GetDataType() == DataType::DT_FLOAT16) &&
         (ffnParams.activationType == ActiveType::GELU || ffnParams.activationType == ActiveType::SILU ||
-         ffnParams.activationType == ActiveType::SWIGLU)) {
+            ffnParams.activationType == ActiveType::SWIGLU)) {
         const auto &w1ViewShape = ffnParams.weight1->GetViewShape();
         const auto &w2ViewShape = ffnParams.weight2->GetViewShape();
         const int64_t w1Dim0 = w1ViewShape.GetDim(w1ViewShape.GetDimNum() - 2);
@@ -317,9 +307,8 @@ static aclnnStatus CheckFmapWeightShape(const FFNParams &ffnParams)
         const bool isSwiglu = (ffnParams.activationType == ActiveType::SWIGLU); // 下方 swiglu 分支校验使用
         const ffnlayout::FfnLayout layout = Arch35DetectLayout(ffnParams);
         if (layout == ffnlayout::FfnLayout::INVALID) {
-            OP_LOGE(ACLNN_ERR_PARAM_INVALID,
-                    "weight1 shape [%ld, %ld] does not match x K=%ld (expect [K,N] or [N,K])", w1Dim0, w1Dim1,
-                    xKDimValue);
+            OP_LOGE(ACLNN_ERR_PARAM_INVALID, "weight1 shape [%ld, %ld] does not match x K=%ld (expect [K,N] or [N,K])",
+                w1Dim0, w1Dim1, xKDimValue);
             return ACLNN_ERR_PARAM_INVALID;
         }
         const bool layoutLinear = (layout == ffnlayout::FfnLayout::LINEAR);
@@ -328,12 +317,12 @@ static aclnnStatus CheckFmapWeightShape(const FFNParams &ffnParams)
                 // linear swiglu：w1 [2H, K]，w2 [N, H]
                 CHECK_COND(w1Dim0 % 2 == 0, ACLNN_ERR_PARAM_INVALID, "swiglu weight1 rows must be even");
                 CHECK_COND(w1Dim0 / 2 == w2Dim1, ACLNN_ERR_PARAM_INVALID,
-                           "swiglu weight1 rows/2[%ld] is not equal to weight2 last dim[%ld]", w1Dim0 / 2, w2Dim1);
+                    "swiglu weight1 rows/2[%ld] is not equal to weight2 last dim[%ld]", w1Dim0 / 2, w2Dim1);
                 CHECK_COND(w2Dim0 > 0 && w1Dim0 > 0, ACLNN_ERR_PARAM_INVALID, "weight dims should be positive");
             } else {
                 // linear：w1 [N1, K]，w2 [N2, N1]
                 CHECK_COND(w1Dim0 == w2Dim1, ACLNN_ERR_PARAM_INVALID,
-                           "weight1 rows[%ld] is not equal to weight2 last dim[%ld]", w1Dim0, w2Dim1);
+                    "weight1 rows[%ld] is not equal to weight2 last dim[%ld]", w1Dim0, w2Dim1);
                 CHECK_COND(w2Dim0 > 0 && w1Dim0 > 0, ACLNN_ERR_PARAM_INVALID, "weight dims should be positive");
             }
         } else {
@@ -341,12 +330,12 @@ static aclnnStatus CheckFmapWeightShape(const FFNParams &ffnParams)
                 // canonical swiglu：w1 [K, 2H]，w2 [H, N]
                 CHECK_COND(w1Dim1 % 2 == 0, ACLNN_ERR_PARAM_INVALID, "swiglu weight1 last dim must be even");
                 CHECK_COND(w1Dim1 / 2 == w2Dim0, ACLNN_ERR_PARAM_INVALID,
-                           "swiglu weight1 last dim/2[%ld] is not equal to weight2 rows[%ld]", w1Dim1 / 2, w2Dim0);
+                    "swiglu weight1 last dim/2[%ld] is not equal to weight2 rows[%ld]", w1Dim1 / 2, w2Dim0);
                 CHECK_COND(w2Dim1 > 0 && w1Dim1 > 0, ACLNN_ERR_PARAM_INVALID, "weight dims should be positive");
             } else {
                 // canonical：w1 [K, N1]，w2 [N1, N2]
                 CHECK_COND(w1Dim1 == w2Dim0, ACLNN_ERR_PARAM_INVALID,
-                           "weight1 last dim[%ld] is not equal to weight2 rows[%ld]", w1Dim1, w2Dim0);
+                    "weight1 last dim[%ld] is not equal to weight2 rows[%ld]", w1Dim1, w2Dim0);
                 CHECK_COND(w2Dim1 > 0 && w1Dim1 > 0, ACLNN_ERR_PARAM_INVALID, "weight dims should be positive");
             }
         }
@@ -354,7 +343,7 @@ static aclnnStatus CheckFmapWeightShape(const FFNParams &ffnParams)
     }
 
     CHECK_COND(xKDimValue == weight1kDimValue, ACLNN_ERR_PARAM_INVALID,
-               "x KDimValue[%ld] is not equal to weight1 kDimValue[%ld]", xKDimValue, weight1kDimValue);
+        "x KDimValue[%ld] is not equal to weight1 kDimValue[%ld]", xKDimValue, weight1kDimValue);
 
     bool isGlu = (static_cast<uint32_t>(ffnParams.activationType) >= static_cast<uint32_t>(ActiveType::GEGLU));
     if (isGlu) {
@@ -363,23 +352,20 @@ static aclnnStatus CheckFmapWeightShape(const FFNParams &ffnParams)
     }
     // check n1=k2, n2=k1
     CHECK_COND(weight1kDimValue == weight2NDimValue, ACLNN_ERR_PARAM_INVALID,
-               "weight1 KDimValue[%ld] is not equal to weight2 NDimValue[%ld]", weight1kDimValue, weight2NDimValue);
+        "weight1 KDimValue[%ld] is not equal to weight2 NDimValue[%ld]", weight1kDimValue, weight2NDimValue);
     CHECK_COND(weight1NDimValue == weight2kDimValue, ACLNN_ERR_PARAM_INVALID,
-               "weight1 NDimValue[%ld] is not equal to weight2 KDimValue[%ld]", weight1NDimValue, weight2kDimValue);
+        "weight1 NDimValue[%ld] is not equal to weight2 KDimValue[%ld]", weight1NDimValue, weight2kDimValue);
     if (hasExperts) {
         int64_t expertsNum = ffnParams.expertTokens->GetViewShape().GetDim(0);
         CHECK_COND(ffnParams.weight1->GetViewShape().GetDim(0) == expertsNum, ACLNN_ERR_PARAM_INVALID,
-                   "weight1 length should be %ld, but got %ld", expertsNum,
-                   ffnParams.weight1->GetViewShape().GetDim(0));
+            "weight1 length should be %ld, but got %ld", expertsNum, ffnParams.weight1->GetViewShape().GetDim(0));
         CHECK_COND(ffnParams.weight2->GetViewShape().GetDim(0) == expertsNum, ACLNN_ERR_PARAM_INVALID,
-                   "weight2 length should be %ld, but got %ld", expertsNum,
-                   ffnParams.weight2->GetViewShape().GetDim(0));
+            "weight2 length should be %ld, but got %ld", expertsNum, ffnParams.weight2->GetViewShape().GetDim(0));
     }
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus IsAntiQuantEmpty(const FFNParams &ffnParams)
-{
+static aclnnStatus IsAntiQuantEmpty(const FFNParams &ffnParams) {
     CHECK_RET(ffnParams.antiquantScale1 == nullptr, ACLNN_ERR_PARAM_INVALID);
     CHECK_RET(ffnParams.antiquantScale2 == nullptr, ACLNN_ERR_PARAM_INVALID);
     CHECK_RET(ffnParams.antiquantOffset1 == nullptr, ACLNN_ERR_PARAM_INVALID);
@@ -387,8 +373,7 @@ static aclnnStatus IsAntiQuantEmpty(const FFNParams &ffnParams)
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus IsQuantEmpty(const FFNParams &ffnParams)
-{
+static aclnnStatus IsQuantEmpty(const FFNParams &ffnParams) {
     CHECK_RET(ffnParams.scale == nullptr, ACLNN_ERR_PARAM_INVALID);
     CHECK_RET(ffnParams.offset == nullptr, ACLNN_ERR_PARAM_INVALID);
     CHECK_RET(ffnParams.deqScale1 == nullptr, ACLNN_ERR_PARAM_INVALID);
@@ -396,8 +381,7 @@ static aclnnStatus IsQuantEmpty(const FFNParams &ffnParams)
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus CheckBiasDtype(const FFNParams &ffnParams, const DtypeCheck &biasSupportList)
-{
+static aclnnStatus CheckBiasDtype(const FFNParams &ffnParams, const DtypeCheck &biasSupportList) {
     if (ffnParams.bias1 != nullptr) {
         OP_CHECK_DTYPE_NOT_SUPPORT(ffnParams.bias1, biasSupportList, return ACLNN_ERR_PARAM_INVALID);
     }
@@ -407,12 +391,11 @@ static aclnnStatus CheckBiasDtype(const FFNParams &ffnParams, const DtypeCheck &
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus CheckQuantScaleAndOffset(const FFNParams &ffnParams, bool hasExperts, size_t weightNDimIdx)
-{
+static aclnnStatus CheckQuantScaleAndOffset(const FFNParams &ffnParams, bool hasExperts, size_t weightNDimIdx) {
     // 校验scale是否smooth 和 有无专家时scale和offset参数的维度数量和维度大小是否正确
     auto scaleDimNum = ffnParams.scale->GetViewShape().GetDimNum();
     CHECK_COND(scaleDimNum >= DIM_NUM_ONE, ACLNN_ERR_PARAM_INVALID,
-               "scale dim num should be at least 1 in quant scenario, but currently is %zu", scaleDimNum);
+        "scale dim num should be at least 1 in quant scenario, but currently is %zu", scaleDimNum);
     int64_t weight1N1 = ffnParams.weight1->GetViewShape().GetDim(weightNDimIdx);
     int64_t scaleLengthDim0 = ffnParams.scale->GetViewShape().GetDim(0);
     DataType deqScaleDtype = ffnParams.deqScale1->GetDataType();
@@ -421,54 +404,51 @@ static aclnnStatus CheckQuantScaleAndOffset(const FFNParams &ffnParams, bool has
     if (hasExperts) {
         requiredLength = ffnParams.expertTokens->GetViewShape().GetDim(0);
         CHECK_COND(scaleDimNum == DIM_NUM_TWO || scaleDimNum == DIM_NUM_ONE, ACLNN_ERR_PARAM_INVALID,
-                   "scale dim num should be 1 or 2 in quant scenario, but currently is %zu", scaleDimNum);
+            "scale dim num should be 1 or 2 in quant scenario, but currently is %zu", scaleDimNum);
         CHECK_COND(scaleLengthDim0 == requiredLength, ACLNN_ERR_PARAM_INVALID,
-                   "scale length should be %ld, but scale length is %ld", requiredLength, scaleLengthDim0);
+            "scale length should be %ld, but scale length is %ld", requiredLength, scaleLengthDim0);
         if (scaleDimNum == DIM_NUM_TWO) {
             int64_t scaleLengthDim1 = ffnParams.scale->GetViewShape().GetDim(1);
             CHECK_COND(scaleLengthDim1 == weight1N1, ACLNN_ERR_PARAM_INVALID,
-                       "scale length should be %ld, but scale length is %ld", weight1N1, scaleLengthDim1);
+                "scale length should be %ld, but scale length is %ld", weight1N1, scaleLengthDim1);
             CHECK_COND(deqScaleDtype == DataType::DT_UINT64 || deqScaleDtype == DataType::DT_BF16 ||
-                           deqScaleDtype == DataType::DT_INT64,
-                       ACLNN_ERR_PARAM_INVALID,
-                       "In per-channel mode, deqScaleDtype should be UINT64 or INT64 for output dtype is FLOAT16, "
-                       "BFLOAT16 for output dtype is BFLOAT16, others are not supported.");
+                    deqScaleDtype == DataType::DT_INT64,
+                ACLNN_ERR_PARAM_INVALID,
+                "In per-channel mode, deqScaleDtype should be UINT64 or INT64 for output dtype is FLOAT16, "
+                "BFLOAT16 for output dtype is BFLOAT16, others are not supported.");
         }
     } else {
         CHECK_COND(scaleDimNum == 1 && (scaleLengthDim0 == 1 || scaleLengthDim0 == weight1N1), ACLNN_ERR_PARAM_INVALID,
-                   "scale dimNum should be 1 and dimValue should be equal to n1 or 1 when no experts, but currently "
-                   "dimNum is %zu, dimValue is %ld",
-                   scaleDimNum, scaleLengthDim0);
+            "scale dimNum should be 1 and dimValue should be equal to n1 or 1 when no experts, but currently "
+            "dimNum is %zu, dimValue is %ld",
+            scaleDimNum, scaleLengthDim0);
         if (scaleLengthDim0 == weight1N1 && weight1N1 != 1) { // 1 represents the last dimension of weight1
             CHECK_COND(deqScaleDtype == DataType::DT_UINT64 || deqScaleDtype == DataType::DT_BF16 ||
-                           deqScaleDtype == DataType::DT_INT64,
-                       ACLNN_ERR_PARAM_INVALID,
-                       "In per-channel mode, deqScaleDtype should be UINT64 or INT64 for output dtype is FLOAT16, "
-                       "BFLOAT16 for output dtype is BFLOAT16, others are not supported.");
+                    deqScaleDtype == DataType::DT_INT64,
+                ACLNN_ERR_PARAM_INVALID,
+                "In per-channel mode, deqScaleDtype should be UINT64 or INT64 for output dtype is FLOAT16, "
+                "BFLOAT16 for output dtype is BFLOAT16, others are not supported.");
         }
     }
     int64_t offsetLength = ffnParams.offset->GetViewShape().GetDim(0);
     CHECK_COND(offsetLength == requiredLength, ACLNN_ERR_PARAM_INVALID,
-               "offset length should be %ld, but offset length is %ld", requiredLength, offsetLength);
+        "offset length should be %ld, but offset length is %ld", requiredLength, offsetLength);
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus CheckQuantDimNumAndShape(const FFNParams &ffnParams)
-{
+static aclnnStatus CheckQuantDimNumAndShape(const FFNParams &ffnParams) {
     // check deqScale dim num
     bool hasExperts = (ffnParams.expertTokens != nullptr);
     size_t dequantParamSize = hasExperts ? DIM_NUM_TWO : DIM_NUM_ONE;
     auto dequantScale1DimNum = ffnParams.deqScale1->GetViewShape().GetDimNum();
     auto dequantScale2DimNum = ffnParams.deqScale2->GetViewShape().GetDimNum();
     CHECK_COND(dequantScale1DimNum == dequantParamSize, ACLNN_ERR_PARAM_INVALID,
-               "deqScale1 DimNum should be (2: has experts, 1: no experts), but deqScale1 DimNum is %zu",
-               dequantScale1DimNum);
+        "deqScale1 DimNum should be (2: has experts, 1: no experts), but deqScale1 DimNum is %zu", dequantScale1DimNum);
     CHECK_COND(dequantScale2DimNum == dequantParamSize, ACLNN_ERR_PARAM_INVALID,
-               "deqScale2 DimNum should be (2: has experts, 1: no experts), but deqScale2 DimNum is %zu",
-               dequantScale2DimNum);
+        "deqScale2 DimNum should be (2: has experts, 1: no experts), but deqScale2 DimNum is %zu", dequantScale2DimNum);
     auto offsetDimNum = ffnParams.offset->GetViewShape().GetDimNum();
     CHECK_COND(offsetDimNum == 1, ACLNN_ERR_PARAM_INVALID, "offset DimNum should be 1, but offset DimNum is %zu",
-               offsetDimNum);
+        offsetDimNum);
     // check deqScale last dim is equal to the corresponding weight
     size_t weightSize = hasExperts ? DIM_NUM_THREE : DIM_NUM_TWO;
     size_t weightNDimIdx = weightSize - 1;
@@ -478,30 +458,27 @@ static aclnnStatus CheckQuantDimNumAndShape(const FFNParams &ffnParams)
     int64_t dequantScale1NDimValue = ffnParams.deqScale1->GetViewShape().GetDim(dequantParamNDimIdx);
     int64_t dequantScale2NDimValue = ffnParams.deqScale2->GetViewShape().GetDim(dequantParamNDimIdx);
     CHECK_COND(dequantScale1NDimValue == weight1NDimValue, ACLNN_ERR_PARAM_INVALID,
-               "deqScale1 last dim should be %ld, but deqScale1 last dim is %ld", weight1NDimValue,
-               dequantScale1NDimValue);
+        "deqScale1 last dim should be %ld, but deqScale1 last dim is %ld", weight1NDimValue, dequantScale1NDimValue);
     CHECK_COND(dequantScale2NDimValue == weight2NDimValue, ACLNN_ERR_PARAM_INVALID,
-               "deqScale2 last dim should be %ld, but deqScale2 last dim is %ld", weight2NDimValue,
-               dequantScale2NDimValue);
+        "deqScale2 last dim should be %ld, but deqScale2 last dim is %ld", weight2NDimValue, dequantScale2NDimValue);
     CHECK_COND(CheckQuantScaleAndOffset(ffnParams, hasExperts, weightNDimIdx) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-               "Detected quant scale and offset params dim num or shape or dtype is not right!");
+        "Detected quant scale and offset params dim num or shape or dtype is not right!");
 
     if (hasExperts) {
         int64_t dequantScale1EDimValue = ffnParams.deqScale1->GetViewShape().GetDim(0);
         int64_t dequantScale2EDimValue = ffnParams.deqScale2->GetViewShape().GetDim(0);
         int64_t expertTokensLength = ffnParams.expertTokens->GetViewShape().GetDim(0);
         CHECK_COND(dequantScale1EDimValue == expertTokensLength, ACLNN_ERR_PARAM_INVALID,
-                   "deqScale1 first dim should be %ld, but deqScale1 first dim is %ld", expertTokensLength,
-                   dequantScale1EDimValue);
+            "deqScale1 first dim should be %ld, but deqScale1 first dim is %ld", expertTokensLength,
+            dequantScale1EDimValue);
         CHECK_COND(dequantScale2EDimValue == expertTokensLength, ACLNN_ERR_PARAM_INVALID,
-                   "deqScale2 first dim should be %ld, but deqScale2 first dim is %ld", expertTokensLength,
-                   dequantScale2EDimValue);
+            "deqScale2 first dim should be %ld, but deqScale2 first dim is %ld", expertTokensLength,
+            dequantScale2EDimValue);
     }
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus CheckQuant(const FFNParams &ffnParams)
-{
+static aclnnStatus CheckQuant(const FFNParams &ffnParams) {
     // check quant params is not nullptr
     OP_CHECK_NULL(ffnParams.scale, return ACLNN_ERR_PARAM_INVALID);
     OP_CHECK_NULL(ffnParams.offset, return ACLNN_ERR_PARAM_INVALID);
@@ -522,55 +499,52 @@ static aclnnStatus CheckQuant(const FFNParams &ffnParams)
     OP_CHECK_DTYPE_NOT_MATCH(ffnParams.offset, op::DataType::DT_FLOAT, return ACLNN_ERR_PARAM_INVALID);
 
     CHECK_COND(IsAntiQuantEmpty(ffnParams) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-               "Detected quant input, but antiquant inputs is not empty!");
+        "Detected quant input, but antiquant inputs is not empty!");
     CHECK_COND(CheckQuantDimNumAndShape(ffnParams) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-               "Detected quant params dim num or shape or dtype is not right!");
+        "Detected quant params dim num or shape or dtype is not right!");
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus CheckHighPrecisionBF16(const FFNParams &ffnParams)
-{
+static aclnnStatus CheckHighPrecisionBF16(const FFNParams &ffnParams) {
     OP_CHECK_DTYPE_NOT_SAME(ffnParams.weight1, ffnParams.weight2, return ACLNN_ERR_PARAM_INVALID);
     CHECK_COND(IsQuantEmpty(ffnParams) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-               "Detected high precision, but quant inputs is not empty!");
+        "Detected high precision, but quant inputs is not empty!");
     CHECK_COND(IsAntiQuantEmpty(ffnParams) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-               "Detected high precision, but antiquant inputs is not empty!");
+        "Detected high precision, but antiquant inputs is not empty!");
     if (GetCurrentPlatformInfo().GetSocVersion() == SocVersion::ASCEND950) {
         // arch35 fused gelu：bias 与 linear 对齐，支持 bf16 / float32
         CHECK_COND(CheckBiasDtype(ffnParams, {DataType::DT_FLOAT, DataType::DT_BF16}) == ACLNN_SUCCESS,
-                   ACLNN_ERR_PARAM_INVALID, "Detected high precision, bias dtype is not right!");
+            ACLNN_ERR_PARAM_INVALID, "Detected high precision, bias dtype is not right!");
     } else {
         CHECK_COND(CheckBiasDtype(ffnParams, {DataType::DT_FLOAT}) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-                   "Detected high precision, bias dtype is not right!");
+            "Detected high precision, bias dtype is not right!");
     }
     CHECK_COND(ffnParams.activationType != ActiveType::GEGLU, ACLNN_ERR_PARAM_INVALID,
-               "Detected high precision, GEGLU is not supported!");
+        "Detected high precision, GEGLU is not supported!");
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus CheckHighPrecisionFP16(const FFNParams &ffnParams)
-{
+static aclnnStatus CheckHighPrecisionFP16(const FFNParams &ffnParams) {
     OP_CHECK_DTYPE_NOT_MATCH(ffnParams.weight1, op::DataType::DT_FLOAT16, return ACLNN_ERR_PARAM_INVALID);
     OP_CHECK_DTYPE_NOT_SAME(ffnParams.weight1, ffnParams.weight2, return ACLNN_ERR_PARAM_INVALID);
     CHECK_COND(IsQuantEmpty(ffnParams) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-               "Detected high precision, but quant inputs is not empty!");
+        "Detected high precision, but quant inputs is not empty!");
     CHECK_COND(IsAntiQuantEmpty(ffnParams) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-               "Detected high precision, but antiquant inputs is not empty!");
+        "Detected high precision, but antiquant inputs is not empty!");
     OP_CHECK_DTYPE_NOT_SAME(ffnParams.x, ffnParams.weight1, return ACLNN_ERR_PARAM_INVALID);
     if (GetCurrentPlatformInfo().GetSocVersion() == SocVersion::ASCEND950) {
         CHECK_COND(CheckBiasDtype(ffnParams, {DataType::DT_FLOAT16, DataType::DT_FLOAT}) == ACLNN_SUCCESS,
-                   ACLNN_ERR_PARAM_INVALID, "Detected high precision, bias dtype is not right!");
+            ACLNN_ERR_PARAM_INVALID, "Detected high precision, bias dtype is not right!");
     } else {
         CHECK_COND(CheckBiasDtype(ffnParams, {DataType::DT_FLOAT16}) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-                   "Detected high precision, bias dtype is not right!");
+            "Detected high precision, bias dtype is not right!");
     }
     CHECK_COND(ffnParams.activationType != ActiveType::GEGLU, ACLNN_ERR_PARAM_INVALID,
-               "Detected high precision, GEGLU is not supported!");
+        "Detected high precision, GEGLU is not supported!");
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus CheckAntiQuantDimNum(const FFNParams &ffnParams)
-{
+static aclnnStatus CheckAntiQuantDimNum(const FFNParams &ffnParams) {
     // check dims of antiquant params
     bool hasExperts = (ffnParams.expertTokens != nullptr);
     // per group num = 1
@@ -583,54 +557,50 @@ static aclnnStatus CheckAntiQuantDimNum(const FFNParams &ffnParams)
     auto antiquantOffset2DimNum = ffnParams.antiquantOffset2->GetViewShape().GetDimNum();
 
     CHECK_COND((antiquantScale1DimNum == antiquantParamSize) || (antiquantScale1DimNum == groupAntiquantParamSize),
-               ACLNN_ERR_PARAM_INVALID,
-               "antiquantScale1 DimNum should be (3 or 2: has experts, 2 or 1: no experts), but DimNum is %zu",
-               antiquantScale1DimNum);
+        ACLNN_ERR_PARAM_INVALID,
+        "antiquantScale1 DimNum should be (3 or 2: has experts, 2 or 1: no experts), but DimNum is %zu",
+        antiquantScale1DimNum);
     CHECK_COND(antiquantScale1DimNum == antiquantOffset1DimNum, ACLNN_ERR_PARAM_INVALID,
-               "antiquantOffset1 DimNum should be equal to antiquantScale1, but antiquantOffset1 DimNum is %zu",
-               antiquantOffset1DimNum);
+        "antiquantOffset1 DimNum should be equal to antiquantScale1, but antiquantOffset1 DimNum is %zu",
+        antiquantOffset1DimNum);
     CHECK_COND(antiquantScale1DimNum == antiquantScale2DimNum, ACLNN_ERR_PARAM_INVALID,
-               "antiquantScale2 DimNum should be equal to antiquantScale1, but antiquantScale2 DimNum is %zu",
-               antiquantScale2DimNum);
+        "antiquantScale2 DimNum should be equal to antiquantScale1, but antiquantScale2 DimNum is %zu",
+        antiquantScale2DimNum);
     CHECK_COND(antiquantScale2DimNum == antiquantOffset2DimNum, ACLNN_ERR_PARAM_INVALID,
-               "antiquantOffset2 DimNum should be equal to antiquantScale2, but antiquantOffset2 DimNum is %zu",
-               antiquantOffset2DimNum);
+        "antiquantOffset2 DimNum should be equal to antiquantScale2, but antiquantOffset2 DimNum is %zu",
+        antiquantOffset2DimNum);
     for (size_t i = 0; i < antiquantScale1DimNum; i++) {
         int64_t curScaleShape = ffnParams.antiquantScale1->GetViewShape().GetDim(i);
         int64_t curOffsetShape = ffnParams.antiquantOffset1->GetViewShape().GetDim(i);
         CHECK_COND(curScaleShape == curOffsetShape, ACLNN_ERR_PARAM_INVALID,
-                   "antiquantScale1 shape should be equal to antiquantOffset1 shape, now is %ld vs %ld on dim %zu",
-                   curScaleShape, curOffsetShape, i);
+            "antiquantScale1 shape should be equal to antiquantOffset1 shape, now is %ld vs %ld on dim %zu",
+            curScaleShape, curOffsetShape, i);
     }
     for (size_t i = 0; i < antiquantScale2DimNum; i++) {
         int64_t curScaleShape = ffnParams.antiquantScale2->GetViewShape().GetDim(i);
         int64_t curOffsetShape = ffnParams.antiquantOffset2->GetViewShape().GetDim(i);
         CHECK_COND(curScaleShape == curOffsetShape, ACLNN_ERR_PARAM_INVALID,
-                   "antiquantScale2 shape should be equal to antiquantOffset2 shape, now is %ld vs %ld on dim %zu",
-                   curScaleShape, curOffsetShape, i);
+            "antiquantScale2 shape should be equal to antiquantOffset2 shape, now is %ld vs %ld on dim %zu",
+            curScaleShape, curOffsetShape, i);
     }
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus CheckAntiQuantW4Shape(const FFNParams &ffnParams, const size_t weightNDimIdx)
-{
+static aclnnStatus CheckAntiQuantW4Shape(const FFNParams &ffnParams, const size_t weightNDimIdx) {
     DataType w1Dtype = ffnParams.weight1->GetDataType();
     if (w1Dtype == DataType::DT_INT4) {
         int64_t weight1NDimValue = ffnParams.weight1->GetViewShape().GetDim(weightNDimIdx);
         int64_t weight2NDimValue = ffnParams.weight2->GetViewShape().GetDim(weightNDimIdx);
         CHECK_COND(weight1NDimValue % JUDGE_EVEN == 0, ACLNN_ERR_PARAM_INVALID,
-                   "when w1 is int4, the last dimension of the shape N1 %ld should be an even number!",
-                   weight1NDimValue);
+            "when w1 is int4, the last dimension of the shape N1 %ld should be an even number!", weight1NDimValue);
         CHECK_COND(weight2NDimValue % JUDGE_EVEN == 0, ACLNN_ERR_PARAM_INVALID,
-                   "when w2 is int4, the last dimension of the shape N2 %ld should be an even number!",
-                   weight2NDimValue);
+            "when w2 is int4, the last dimension of the shape N2 %ld should be an even number!", weight2NDimValue);
     }
 
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus CheckAntiQuantShapeE(const FFNParams &ffnParams)
-{
+static aclnnStatus CheckAntiQuantShapeE(const FFNParams &ffnParams) {
     if (ffnParams.expertTokens != nullptr) {
         int64_t antiquantScale1EDimValue = ffnParams.antiquantScale1->GetViewShape().GetDim(0);
         int64_t antiquantOffset1EDimValue = ffnParams.antiquantOffset1->GetViewShape().GetDim(0);
@@ -638,23 +608,22 @@ static aclnnStatus CheckAntiQuantShapeE(const FFNParams &ffnParams)
         int64_t antiquantOffset2EDimValue = ffnParams.antiquantOffset2->GetViewShape().GetDim(0);
         int64_t expertTokensLength = ffnParams.expertTokens->GetViewShape().GetDim(0);
         CHECK_COND(antiquantScale1EDimValue == expertTokensLength, ACLNN_ERR_PARAM_INVALID,
-                   "antiquantScale1 first dim should be %ld, but antiquantScale1 first dim is %ld", expertTokensLength,
-                   antiquantScale1EDimValue);
+            "antiquantScale1 first dim should be %ld, but antiquantScale1 first dim is %ld", expertTokensLength,
+            antiquantScale1EDimValue);
         CHECK_COND(antiquantScale2EDimValue == expertTokensLength, ACLNN_ERR_PARAM_INVALID,
-                   "antiquantScale2 first dim should be %ld, but antiquantScale2 first dim is %ld", expertTokensLength,
-                   antiquantScale2EDimValue);
+            "antiquantScale2 first dim should be %ld, but antiquantScale2 first dim is %ld", expertTokensLength,
+            antiquantScale2EDimValue);
         CHECK_COND(antiquantOffset1EDimValue == expertTokensLength, ACLNN_ERR_PARAM_INVALID,
-                   "antiquantOffset1 first dim should be %ld, but antiquantOffset1 first dim is %ld",
-                   expertTokensLength, antiquantOffset1EDimValue);
+            "antiquantOffset1 first dim should be %ld, but antiquantOffset1 first dim is %ld", expertTokensLength,
+            antiquantOffset1EDimValue);
         CHECK_COND(antiquantOffset2EDimValue == expertTokensLength, ACLNN_ERR_PARAM_INVALID,
-                   "antiquantOffset2 first dim should be %ld, but antiquantOffset2 first dim is %ld",
-                   expertTokensLength, antiquantOffset2EDimValue);
+            "antiquantOffset2 first dim should be %ld, but antiquantOffset2 first dim is %ld", expertTokensLength,
+            antiquantOffset2EDimValue);
     }
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus CheckAntiQuantShape(const FFNParams &ffnParams)
-{
+static aclnnStatus CheckAntiQuantShape(const FFNParams &ffnParams) {
     // check last dim of antiquant params is equal to the corresponding weight
     size_t antiquantParamSize = ffnParams.antiquantScale1->GetViewShape().GetDimNum();
     size_t weightSize = ffnParams.expertTokens != nullptr ? DIM_NUM_THREE : DIM_NUM_TWO;
@@ -667,27 +636,26 @@ static aclnnStatus CheckAntiQuantShape(const FFNParams &ffnParams)
     int64_t antiquantScale2NDimValue = ffnParams.antiquantScale2->GetViewShape().GetDim(antiquantParamNDimIdx);
     int64_t antiquantOffset2NDimValue = ffnParams.antiquantOffset2->GetViewShape().GetDim(antiquantParamNDimIdx);
     CHECK_COND(antiquantScale1NDimValue == weight1NDimValue, ACLNN_ERR_PARAM_INVALID,
-               "antiquantScale1 last dim should be %ld, but antiquantScale1 last dim is %ld", weight1NDimValue,
-               antiquantScale1NDimValue);
+        "antiquantScale1 last dim should be %ld, but antiquantScale1 last dim is %ld", weight1NDimValue,
+        antiquantScale1NDimValue);
     CHECK_COND(antiquantOffset1NDimValue == weight1NDimValue, ACLNN_ERR_PARAM_INVALID,
-               "antiquantOffset1 last dim should be %ld, but antiquantOffset1 last dim is %ld", weight1NDimValue,
-               antiquantOffset1NDimValue);
+        "antiquantOffset1 last dim should be %ld, but antiquantOffset1 last dim is %ld", weight1NDimValue,
+        antiquantOffset1NDimValue);
     CHECK_COND(antiquantScale2NDimValue == weight2NDimValue, ACLNN_ERR_PARAM_INVALID,
-               "antiquantScale2 last dim should be %ld, but antiquantScale2 last dim is %ld", weight2NDimValue,
-               antiquantScale2NDimValue);
+        "antiquantScale2 last dim should be %ld, but antiquantScale2 last dim is %ld", weight2NDimValue,
+        antiquantScale2NDimValue);
     CHECK_COND(antiquantOffset2NDimValue == weight2NDimValue, ACLNN_ERR_PARAM_INVALID,
-               "antiquantOffset2 last dim should be %ld, but antiquantOffset2 last dim is %ld", weight2NDimValue,
-               antiquantOffset2NDimValue);
+        "antiquantOffset2 last dim should be %ld, but antiquantOffset2 last dim is %ld", weight2NDimValue,
+        antiquantOffset2NDimValue);
 
     CHECK_COND(CheckAntiQuantW4Shape(ffnParams, weightNDimIdx) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-               "Detected antiquant w is int4, shape N is not an even number!");
+        "Detected antiquant w is int4, shape N is not an even number!");
     CHECK_COND(CheckAntiQuantShapeE(ffnParams) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-               "Detected antiquant params dim0 and expert_tokens length are not equal");
+        "Detected antiquant params dim0 and expert_tokens length are not equal");
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus CheckAntiQuantPergroup(const FFNParams &ffnParams)
-{
+static aclnnStatus CheckAntiQuantPergroup(const FFNParams &ffnParams) {
     bool hasExperts = (ffnParams.expertTokens != nullptr);
     size_t antiquantParamSize = ffnParams.antiquantScale1->GetViewShape().GetDimNum();
     if ((hasExperts && antiquantParamSize == DIM_NUM_THREE) || (!hasExperts && antiquantParamSize == DIM_NUM_TWO)) {
@@ -701,27 +669,26 @@ static aclnnStatus CheckAntiQuantPergroup(const FFNParams &ffnParams)
         int64_t antiquantScale1GroupValue = ffnParams.antiquantScale1->GetViewShape().GetDim(antiquantParamPergroupIdx);
         int64_t antiquantScale2GroupValue = ffnParams.antiquantScale2->GetViewShape().GetDim(antiquantParamPergroupIdx);
         CHECK_COND(antiquantScale1GroupValue >= 1, ACLNN_ERR_PARAM_INVALID,
-                   "antiquantScale1GroupValue %ld must be greater than or equal to 1.", antiquantScale1GroupValue);
+            "antiquantScale1GroupValue %ld must be greater than or equal to 1.", antiquantScale1GroupValue);
         CHECK_COND(antiquantScale2GroupValue >= 1, ACLNN_ERR_PARAM_INVALID,
-                   "antiquantScale2GroupValue %ld must be greater than or equal to 1.", antiquantScale2GroupValue);
+            "antiquantScale2GroupValue %ld must be greater than or equal to 1.", antiquantScale2GroupValue);
         antiquantScale1GroupValue = antiquantScale1GroupValue > 1 ? antiquantScale1GroupValue : 1;
         antiquantScale2GroupValue = antiquantScale2GroupValue > 1 ? antiquantScale2GroupValue : 1;
         CHECK_COND((weight1KDimValue % antiquantScale1GroupValue) == 0, ACLNN_ERR_PARAM_INVALID,
-                   "weight1KDimValue %ld must be divisible by antiquantScale1GroupValue %ld, with no remainder.",
-                   weight1KDimValue, antiquantScale1GroupValue);
+            "weight1KDimValue %ld must be divisible by antiquantScale1GroupValue %ld, with no remainder.",
+            weight1KDimValue, antiquantScale1GroupValue);
         CHECK_COND((weight2KDimValue % antiquantScale2GroupValue) == 0, ACLNN_ERR_PARAM_INVALID,
-                   "weight2KDimValue %ld must be divisible by antiquantScale2GroupValue %ld, with no remainder.",
-                   weight2KDimValue, antiquantScale2GroupValue);
+            "weight2KDimValue %ld must be divisible by antiquantScale2GroupValue %ld, with no remainder.",
+            weight2KDimValue, antiquantScale2GroupValue);
         CHECK_COND((w1Dtype == DataType::DT_INT4) && (w2Dtype == DataType::DT_INT4), ACLNN_ERR_PARAM_INVALID,
-                   "weight dtype must be INT4.");
+            "weight dtype must be INT4.");
     }
 
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus CheckAntiQuant(const FFNParams &ffnParams, const DtypeCheck &supportList,
-                                  const DtypeCheck &biasSupportList)
-{
+static aclnnStatus CheckAntiQuant(
+    const FFNParams &ffnParams, const DtypeCheck &supportList, const DtypeCheck &biasSupportList) {
     // check antiquant params is not nullptr
     OP_CHECK_NULL(ffnParams.antiquantScale1, return ACLNN_ERR_PARAM_INVALID);
     OP_CHECK_NULL(ffnParams.antiquantScale2, return ACLNN_ERR_PARAM_INVALID);
@@ -733,45 +700,42 @@ static aclnnStatus CheckAntiQuant(const FFNParams &ffnParams, const DtypeCheck &
     OP_CHECK_DTYPE_NOT_SUPPORT(ffnParams.antiquantScale2, supportList, return ACLNN_ERR_PARAM_INVALID);
     OP_CHECK_DTYPE_NOT_SUPPORT(ffnParams.antiquantOffset2, supportList, return ACLNN_ERR_PARAM_INVALID);
     CHECK_COND(IsQuantEmpty(ffnParams) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-               "Detected antiquant input, but quant inputs is not empty!");
+        "Detected antiquant input, but quant inputs is not empty!");
     CHECK_COND(CheckBiasDtype(ffnParams, biasSupportList) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-               "Detected AntiQuant, bias dtype is not right!");
+        "Detected AntiQuant, bias dtype is not right!");
     CHECK_COND(CheckAntiQuantDimNum(ffnParams) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-               "Detected antiquant params dim num is not right!");
+        "Detected antiquant params dim num is not right!");
     CHECK_COND(CheckAntiQuantShape(ffnParams) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-               "Detected antiquant params shape is not right!");
+        "Detected antiquant params shape is not right!");
     CHECK_COND(CheckAntiQuantPergroup(ffnParams) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-               "Detected antiquant params per group num or weight dtype is not right!");
+        "Detected antiquant params per group num or weight dtype is not right!");
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus CheckGlu(const FFNParams &ffnParams)
-{
+static aclnnStatus CheckGlu(const FFNParams &ffnParams) {
     CHECK_RET(CheckDtypeValidForFFNOp(ffnParams.x, ffnParams.weight1, ffnParams.weight2), ACLNN_ERR_PARAM_INVALID);
     CHECK_COND(ffnParams.innerPrecise == HIGH_PERFORMANCE, ACLNN_ERR_PARAM_INVALID,
-               "Detected glu, inner precision is not right!");
+        "Detected glu, inner precision is not right!");
     CHECK_COND(ffnParams.expertTokens == nullptr, ACLNN_ERR_PARAM_INVALID,
-               "Detected glu, expert tokens should be nullptr, but current it is not nullptr!");
+        "Detected glu, expert tokens should be nullptr, but current it is not nullptr!");
     CHECK_COND(CheckBiasDtype(ffnParams, {DataType::DT_FLOAT16}) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-               "Detected glu, bias dtype is not right!");
+        "Detected glu, bias dtype is not right!");
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus CheckHighPerformance(const FFNParams &ffnParams)
-{
+static aclnnStatus CheckHighPerformance(const FFNParams &ffnParams) {
     OP_CHECK_DTYPE_NOT_MATCH(ffnParams.weight1, op::DataType::DT_FLOAT16, return ACLNN_ERR_PARAM_INVALID);
     OP_CHECK_DTYPE_NOT_SAME(ffnParams.weight1, ffnParams.weight2, return ACLNN_ERR_PARAM_INVALID);
     CHECK_COND(IsQuantEmpty(ffnParams) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-               "Detected quant input, but quant inputs is not empty!");
+        "Detected quant input, but quant inputs is not empty!");
     CHECK_COND(IsAntiQuantEmpty(ffnParams) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-               "Detected antiquant input, but quant inputs is not empty!");
+        "Detected antiquant input, but quant inputs is not empty!");
     CHECK_COND(CheckBiasDtype(ffnParams, {DataType::DT_FLOAT16}) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-               "Detected HighPerformance, bias dtype is not right!");
+        "Detected HighPerformance, bias dtype is not right!");
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus CheckOptionalParams(FFNParams &ffnParams)
-{
+static aclnnStatus CheckOptionalParams(FFNParams &ffnParams) {
     DataType xDtype = ffnParams.x->GetDataType();
     DataType w1Dtype = ffnParams.weight1->GetDataType();
 
@@ -792,7 +756,7 @@ static aclnnStatus CheckOptionalParams(FFNParams &ffnParams)
         OP_CHECK_DTYPE_NOT_MATCH(ffnParams.y, op::DataType::DT_BF16, return ACLNN_ERR_PARAM_INVALID);
         if (w1Dtype == DataType::DT_BF16) {
             CHECK_COND(ffnParams.innerPrecise == HIGH_PRECISION, ACLNN_ERR_PARAM_INVALID,
-                       "FFN bfloat16 is only support high precision now!");
+                "FFN bfloat16 is only support high precision now!");
             return CheckHighPrecisionBF16(ffnParams); // HIGH_PRECISION_BF16
         } else if (w1Dtype == DataType::DT_INT8 || w1Dtype == DataType::DT_INT4) {
             return CheckAntiQuant(ffnParams, {DataType::DT_BF16}, {DataType::DT_FLOAT}); // ANTIQUANT_BF16_W8+W4
@@ -805,7 +769,7 @@ static aclnnStatus CheckOptionalParams(FFNParams &ffnParams)
     if (xDtype == DataType::DT_INT8) {
         OP_CHECK_DTYPE_NOT_MATCH(ffnParams.weight1, op::DataType::DT_INT8, return ACLNN_ERR_PARAM_INVALID);
         CHECK_COND(CheckBiasDtype(ffnParams, {DataType::DT_INT32}) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID,
-                   "Detected QUANT, bias dtype is not right!");
+            "Detected QUANT, bias dtype is not right!");
         if (yDtype == DataType::DT_BF16 || yDtype == DataType::DT_FLOAT16) {
             return CheckQuant(ffnParams); // QUANT
         } else {
@@ -826,40 +790,36 @@ static aclnnStatus CheckOptionalParams(FFNParams &ffnParams)
     return CheckHighPerformance(ffnParams); // HIGH_PERFORMANCE, expertTokens!=nullptr
 }
 
-static aclnnStatus CheckFormat(const FFNParams &ffnParams)
-{
+static aclnnStatus CheckFormat(const FFNParams &ffnParams) {
     bool is310P = GetCurrentPlatformInfo().GetSocVersion() == SocVersion::ASCEND310P;
     op::Format xFormat = ffnParams.x->GetStorageFormat();
     op::Format weight1Format = ffnParams.weight1->GetStorageFormat();
     op::Format weight2Format = ffnParams.weight2->GetStorageFormat();
     op::Format yFormat = ffnParams.y->GetStorageFormat();
     bool isXFormatValid = xFormat < Format::FORMAT_END &&
-                          (!op::IsPrivateFormat(xFormat) || (is310P && xFormat == Format::FORMAT_FRACTAL_NZ));
-    CHECK_COND(isXFormatValid, ACLNN_ERR_PARAM_INVALID, "format of x %s is invalid.",
-               op::ToString(xFormat).GetString());
+        (!op::IsPrivateFormat(xFormat) || (is310P && xFormat == Format::FORMAT_FRACTAL_NZ));
+    CHECK_COND(
+        isXFormatValid, ACLNN_ERR_PARAM_INVALID, "format of x %s is invalid.", op::ToString(xFormat).GetString());
 
-    bool isWeight1FormatValid =
-        weight1Format < Format::FORMAT_END &&
+    bool isWeight1FormatValid = weight1Format < Format::FORMAT_END &&
         (!op::IsPrivateFormat(weight1Format) || (is310P && weight1Format == Format::FORMAT_FRACTAL_NZ));
     CHECK_COND(isWeight1FormatValid, ACLNN_ERR_PARAM_INVALID, "format of weight1 %s is invalid.",
-               op::ToString(weight1Format).GetString());
+        op::ToString(weight1Format).GetString());
 
-    bool isWeight2FormatValid =
-        weight2Format < Format::FORMAT_END &&
+    bool isWeight2FormatValid = weight2Format < Format::FORMAT_END &&
         (!op::IsPrivateFormat(weight2Format) || (is310P && weight2Format == Format::FORMAT_FRACTAL_NZ));
     CHECK_COND(isWeight2FormatValid, ACLNN_ERR_PARAM_INVALID, "format of weight2 %s is invalid.",
-               op::ToString(weight2Format).GetString());
+        op::ToString(weight2Format).GetString());
 
     bool isYFormatValid = yFormat < Format::FORMAT_END &&
-                          (!op::IsPrivateFormat(yFormat) || (is310P && yFormat == Format::FORMAT_FRACTAL_NZ));
-    CHECK_COND(isYFormatValid, ACLNN_ERR_PARAM_INVALID, "format of y %s is invalid.",
-               op::ToString(yFormat).GetString());
+        (!op::IsPrivateFormat(yFormat) || (is310P && yFormat == Format::FORMAT_FRACTAL_NZ));
+    CHECK_COND(
+        isYFormatValid, ACLNN_ERR_PARAM_INVALID, "format of y %s is invalid.", op::ToString(yFormat).GetString());
 
     return ACLNN_SUCCESS;
 }
 
-inline static aclnnStatus CheckParam(FFNParams &ffnParams)
-{
+inline static aclnnStatus CheckParam(FFNParams &ffnParams) {
     CHECK_COND(CheckFormat(ffnParams) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID, "invalid format.");
     CHECK_RET(CheckY(ffnParams), ACLNN_ERR_PARAM_INVALID);
     CHECK_RET(CheckFmapWeightShape(ffnParams) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID);
@@ -867,15 +827,15 @@ inline static aclnnStatus CheckParam(FFNParams &ffnParams)
     if (GetCurrentPlatformInfo().GetSocVersion() == SocVersion::ASCEND310P) {
         auto xDimNum = ffnParams.x->GetViewShape().GetDimNum();
         CHECK_COND(xDimNum == DIM_LIMIT_LOWER, ACLNN_ERR_PARAM_INVALID,
-                   "FFN only supports x dim 2 on ASCEND310P, but x dim is %zu", xDimNum);
+            "FFN only supports x dim 2 on ASCEND310P, but x dim is %zu", xDimNum);
         CHECK_COND(ffnParams.innerPrecise == HIGH_PERFORMANCE, ACLNN_ERR_PARAM_INVALID,
-                   "FFN is only support high performance now!");
+            "FFN is only support high performance now!");
         CHECK_COND(ffnParams.activationType <= ActiveType::GELU, ACLNN_ERR_PARAM_INVALID,
-                   "now activation types supported by ffn are fastgelu, gelu, relu, silu, please check activation.");
+            "now activation types supported by ffn are fastgelu, gelu, relu, silu, please check activation.");
         OP_CHECK_DTYPE_NOT_MATCH(ffnParams.x, op::DataType::DT_FLOAT16, return ACLNN_ERR_PARAM_INVALID);
         OP_CHECK_DTYPE_NOT_MATCH(ffnParams.y, op::DataType::DT_FLOAT16, return ACLNN_ERR_PARAM_INVALID);
         CHECK_COND(ffnParams.expertTokens == nullptr, ACLNN_ERR_PARAM_INVALID,
-                   "FFN only supports no expert cases on ASCEND310P.");
+            "FFN only supports no expert cases on ASCEND310P.");
         CHECK_RET(CheckHighPerformance(ffnParams) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_INVALID);
     } else {
         CHECK_RET(ffnParams.activationType != ActiveType::INVALID_TYPE, ACLNN_ERR_PARAM_INVALID);
@@ -886,8 +846,7 @@ inline static aclnnStatus CheckParam(FFNParams &ffnParams)
 }
 
 static aclnnStatus InputsContiguousAndTransFormat(const aclTensor *tensor, const aclTensor *&reformatedTensor,
-                                                  const std::string &tensorName, aclOpExecutor *executor)
-{
+    const std::string &tensorName, aclOpExecutor *executor) {
     if (tensor == nullptr) {
         return ACLNN_SUCCESS;
     }
@@ -910,17 +869,15 @@ static aclnnStatus InputsContiguousAndTransFormat(const aclTensor *tensor, const
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus OutputransFormat(const FFNParams &ffnParams, const aclTensor *tensor,
-                                    const aclTensor *&reformatedTensor, aclOpExecutor *executor)
-{
+static aclnnStatus OutputransFormat(
+    const FFNParams &ffnParams, const aclTensor *tensor, const aclTensor *&reformatedTensor, aclOpExecutor *executor) {
     op::Format requiredFormat = ffnParams.y->GetStorageFormat();
     reformatedTensor = l0op::TransData(tensor, requiredFormat, 1, executor);
     CHECK_COND(reformatedTensor != nullptr, ACLNN_ERR_INNER_NULLPTR, "y TransData failed.");
     return ACLNN_SUCCESS;
 }
 
-static int64_t GetBatchSizeX(const aclTensor *x)
-{
+static int64_t GetBatchSizeX(const aclTensor *x) {
     if (x == nullptr || x->GetViewShape().GetDimNum() == 0) {
         return 1;
     }
@@ -935,8 +892,7 @@ static int64_t GetBatchSizeX(const aclTensor *x)
     return bs;
 }
 
-static aclnnStatus CheckExpertTokens(FFNParams &ffnParams)
-{
+static aclnnStatus CheckExpertTokens(FFNParams &ffnParams) {
     size_t numExperts = ffnParams.expertTokensArr->Size();
     int64_t bs = GetBatchSizeX(ffnParams.x);
     int64_t totalNumExpertTokens;
@@ -946,10 +902,9 @@ static aclnnStatus CheckExpertTokens(FFNParams &ffnParams)
         for (size_t i = 0; i < numExperts; i++) {
             int64_t tokensOffset = (*ffnParams.expertTokensArr)[i];
             CHECK_COND(tokensOffset >= 0, ACLNN_ERR_PARAM_INVALID,
-                       "Expert tokens index should not be smaller than zero, but %ld is found.", tokensOffset);
+                "Expert tokens index should not be smaller than zero, but %ld is found.", tokensOffset);
             int64_t tokens = tokensOffset - prevTokensOffset;
-            CHECK_COND(
-                tokens >= 0, ACLNN_ERR_PARAM_INVALID,
+            CHECK_COND(tokens >= 0, ACLNN_ERR_PARAM_INVALID,
                 "Expert tokens indices should not be decremental, but two consecutive numbers %ld and %ld are found.",
                 prevTokensOffset, tokensOffset);
             prevTokensOffset = tokensOffset;
@@ -960,20 +915,18 @@ static aclnnStatus CheckExpertTokens(FFNParams &ffnParams)
         for (size_t i = 0; i < numExperts; i++) {
             int64_t tokens = (*ffnParams.expertTokensArr)[i];
             CHECK_COND(tokens >= 0, ACLNN_ERR_PARAM_INVALID,
-                       "Expert tokens should not be smaller than zero, but %ld is found.", tokens);
+                "Expert tokens should not be smaller than zero, but %ld is found.", tokens);
             totalNumExpertTokens += tokens;
         }
     }
-    CHECK_COND(
-        totalNumExpertTokens == bs, ACLNN_ERR_PARAM_INVALID,
+    CHECK_COND(totalNumExpertTokens == bs, ACLNN_ERR_PARAM_INVALID,
         "Total number of expert tokens should be equal to the product of all x dimensions excluding the last one. "
         "But they are %ld and %ld respectively.",
         totalNumExpertTokens, bs);
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus ConvertExpertTokensAndCheckParams(FFNParams &ffnParams, aclOpExecutor *executor)
-{
+static aclnnStatus ConvertExpertTokensAndCheckParams(FFNParams &ffnParams, aclOpExecutor *executor) {
     if (ffnParams.expertTokens != nullptr && ffnParams.expertTokens->GetViewShape().GetDim(0) == 0) {
         ffnParams.expertTokens = nullptr;
     }
@@ -995,12 +948,11 @@ static aclnnStatus ConvertExpertTokensAndCheckParams(FFNParams &ffnParams, aclOp
 #define FFN_CHECK_AND_CONVERT(param, param_name, conti_var) \
     const aclTensor *conti_var = nullptr; \
     CHECK_COND(InputsContiguousAndTransFormat(ffnParams.param, conti_var, #param_name, uniqueExecutor.get()) == \
-                   ACLNN_SUCCESS, \
-               ACLNN_ERR_PARAM_INVALID, "Convert " #param_name " to contiguous tensor failed.")
+            ACLNN_SUCCESS, \
+        ACLNN_ERR_PARAM_INVALID, "Convert " #param_name " to contiguous tensor failed.")
 
-static aclnnStatus GetFFNResultByL0Api(FFNParams &ffnParams, const char *activation, uint64_t *workspaceSize,
-                                       aclOpExecutor **executor)
-{
+static aclnnStatus GetFFNResultByL0Api(
+    FFNParams &ffnParams, const char *activation, uint64_t *workspaceSize, aclOpExecutor **executor) {
     // create OpExecutor
     auto uniqueExecutor = CREATE_EXECUTOR();
     CHECK_RET(uniqueExecutor.get() != nullptr, ACLNN_ERR_INNER_CREATE_EXECUTOR);
@@ -1048,9 +1000,9 @@ static aclnnStatus GetFFNResultByL0Api(FFNParams &ffnParams, const char *activat
     // call l0 interface
     DataType yDtype = ffnParams.y->GetDataType();
     auto ffnResult = l0op::EagleFfn(reformatedX, reformatedWeight1, reformatedWeight2, contiExpertTokens, contiBias1,
-                               contiBias2, contiQuantScale, contiOffset, contiDeqScale1, contiDeqScale2,
-                               contiAntiScale1, contiAntiScale2, contiAntiOffset1, contiAntiOffset2, activation,
-                               ffnParams.innerPrecise, yDtype, ffnParams.tokensIndexFlag, uniqueExecutor.get());
+        contiBias2, contiQuantScale, contiOffset, contiDeqScale1, contiDeqScale2, contiAntiScale1, contiAntiScale2,
+        contiAntiOffset1, contiAntiOffset2, activation, ffnParams.innerPrecise, yDtype, ffnParams.tokensIndexFlag,
+        uniqueExecutor.get());
     CHECK_RET(ffnResult != nullptr, ACLNN_ERR_INNER_NULLPTR);
     const aclTensor *reformatedFFNResult = nullptr;
     ret = OutputransFormat(ffnParams, ffnResult, reformatedFFNResult, uniqueExecutor.get());
@@ -1066,8 +1018,7 @@ static aclnnStatus GetFFNResultByL0Api(FFNParams &ffnParams, const char *activat
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus TransDataTypeDeqscale(FFNParams &ffnParams)
-{
+static aclnnStatus TransDataTypeDeqscale(FFNParams &ffnParams) {
     auto deqScale1 = const_cast<aclTensor *>(ffnParams.deqScale1);
     auto deqScale2 = const_cast<aclTensor *>(ffnParams.deqScale2);
     DataType yDtype = ffnParams.y->GetDataType();
@@ -1092,56 +1043,36 @@ static aclnnStatus TransDataTypeDeqscale(FFNParams &ffnParams)
 }
 
 aclnnStatus aclnnEagleFfnGetWorkspaceSize(const aclTensor *x, const aclTensor *weight1, const aclTensor *weight2,
-                                     const aclIntArray *expertTokens, const aclTensor *bias1, const aclTensor *bias2,
-                                     const aclTensor *scale, const aclTensor *offset, const aclTensor *deqScale1,
-                                     const aclTensor *deqScale2, const aclTensor *antiquantScale1,
-                                     const aclTensor *antiquantScale2, const aclTensor *antiquantOffset1,
-                                     const aclTensor *antiquantOffset2, const char *activation, int64_t innerPrecise,
-                                     const aclTensor *y, uint64_t *workspaceSize, aclOpExecutor **executor)
-{
+    const aclIntArray *expertTokens, const aclTensor *bias1, const aclTensor *bias2, const aclTensor *scale,
+    const aclTensor *offset, const aclTensor *deqScale1, const aclTensor *deqScale2, const aclTensor *antiquantScale1,
+    const aclTensor *antiquantScale2, const aclTensor *antiquantOffset1, const aclTensor *antiquantOffset2,
+    const char *activation, int64_t innerPrecise, const aclTensor *y, uint64_t *workspaceSize,
+    aclOpExecutor **executor) {
     CHECK_COND(GetCurrentPlatformInfo().GetSocVersion() != SocVersion::ASCEND310P, ACLNN_ERR_PARAM_INVALID,
-               "aclnnEagleFfnGetWorkspaceSize and aclnnEagleFfn are not supported on Ascend310P Soc. Please use "
-               "aclnnEagleFfnV2GetWorkspaceSize and aclnnEagleFfnV2!");
+        "aclnnEagleFfnGetWorkspaceSize and aclnnEagleFfn are not supported on Ascend310P Soc. Please use "
+        "aclnnEagleFfnV2GetWorkspaceSize and aclnnEagleFfnV2!");
     CHECK_COND(activation != nullptr, ACLNN_ERR_PARAM_NULLPTR, "activation must not be nullptr.");
     ActiveType activationType = GetActiveType(activation);
     CHECK_COND(activationType != ActiveType::INVALID_TYPE, ACLNN_ERR_PARAM_INVALID,
-               "the activation type %s is not supported by ffn operator, please select right activation according to "
-               "the document",
-               activation);
+        "the activation type %s is not supported by ffn operator, please select right activation according to "
+        "the document",
+        activation);
     CHECK_COND(CheckNotNull(x, weight1, weight2, y) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_NULLPTR,
-               "one of required inputs for aclnnEagleFfnGetWorkspaceSize is nullptr.");
-    FFNParams ffnParams{x,
-                        weight1,
-                        weight2,
-                        expertTokens,
-                        nullptr,
-                        bias1,
-                        bias2,
-                        scale,
-                        offset,
-                        deqScale1,
-                        deqScale2,
-                        antiquantScale1,
-                        antiquantScale2,
-                        antiquantOffset1,
-                        antiquantOffset2,
-                        activationType,
-                        innerPrecise,
-                        false,
-                        y};
+        "one of required inputs for aclnnEagleFfnGetWorkspaceSize is nullptr.");
+    FFNParams ffnParams{x, weight1, weight2, expertTokens, nullptr, bias1, bias2, scale, offset, deqScale1, deqScale2,
+        antiquantScale1, antiquantScale2, antiquantOffset1, antiquantOffset2, activationType, innerPrecise, false, y};
     aclnnStatus ret = TransDataTypeDeqscale(ffnParams);
     CHECK_RET(ret == ACLNN_SUCCESS, ret);
     L2_DFX_PHASE_1(aclnnEagleFfn,
-                   DFX_IN(ffnParams.x, ffnParams.weight1, ffnParams.weight2, expertTokens, ffnParams.bias1,
-                          ffnParams.bias2, ffnParams.scale, ffnParams.offset, ffnParams.deqScale1, ffnParams.deqScale2,
-                          ffnParams.antiquantScale1, ffnParams.antiquantScale2, ffnParams.antiquantOffset1,
-                          ffnParams.antiquantOffset2, activation, ffnParams.innerPrecise, -1, false),
-                   DFX_OUT(ffnParams.y));
+        DFX_IN(ffnParams.x, ffnParams.weight1, ffnParams.weight2, expertTokens, ffnParams.bias1, ffnParams.bias2,
+            ffnParams.scale, ffnParams.offset, ffnParams.deqScale1, ffnParams.deqScale2, ffnParams.antiquantScale1,
+            ffnParams.antiquantScale2, ffnParams.antiquantOffset1, ffnParams.antiquantOffset2, activation,
+            ffnParams.innerPrecise, -1, false),
+        DFX_OUT(ffnParams.y));
     return GetFFNResultByL0Api(ffnParams, activation, workspaceSize, executor);
 }
 
-aclnnStatus aclnnEagleFfn(void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, aclrtStream stream)
-{
+aclnnStatus aclnnEagleFfn(void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, aclrtStream stream) {
     L2_DFX_PHASE_2(aclnnEagleFfn);
     auto ret = CommonOpExecutorRun(workspace, workspaceSize, executor, stream);
     if (ret != ACLNN_SUCCESS) {
@@ -1152,54 +1083,34 @@ aclnnStatus aclnnEagleFfn(void *workspace, uint64_t workspaceSize, aclOpExecutor
 }
 
 aclnnStatus aclnnEagleFfnV2GetWorkspaceSize(const aclTensor *x, const aclTensor *weight1, const aclTensor *weight2,
-                                       const aclIntArray *expertTokens, const aclTensor *bias1, const aclTensor *bias2,
-                                       const aclTensor *scale, const aclTensor *offset, const aclTensor *deqScale1,
-                                       const aclTensor *deqScale2, const aclTensor *antiquantScale1,
-                                       const aclTensor *antiquantScale2, const aclTensor *antiquantOffset1,
-                                       const aclTensor *antiquantOffset2, const char *activation, int64_t innerPrecise,
-                                       bool tokensIndexFlag, const aclTensor *y, uint64_t *workspaceSize,
-                                       aclOpExecutor **executor)
-{
+    const aclIntArray *expertTokens, const aclTensor *bias1, const aclTensor *bias2, const aclTensor *scale,
+    const aclTensor *offset, const aclTensor *deqScale1, const aclTensor *deqScale2, const aclTensor *antiquantScale1,
+    const aclTensor *antiquantScale2, const aclTensor *antiquantOffset1, const aclTensor *antiquantOffset2,
+    const char *activation, int64_t innerPrecise, bool tokensIndexFlag, const aclTensor *y, uint64_t *workspaceSize,
+    aclOpExecutor **executor) {
     CHECK_COND(activation != nullptr, ACLNN_ERR_PARAM_NULLPTR, "activation must not be nullptr.");
     ActiveType activationType = GetActiveType(activation);
     CHECK_COND(activationType != ActiveType::INVALID_TYPE, ACLNN_ERR_PARAM_INVALID,
-               "the activation type %s is not supported by ffn operator, please select right activation according to "
-               "the document",
-               activation);
+        "the activation type %s is not supported by ffn operator, please select right activation according to "
+        "the document",
+        activation);
     CHECK_COND(CheckNotNull(x, weight1, weight2, y) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_NULLPTR,
-               "one of required inputs for aclnnEagleFfnV2GetWorkspaceSize is nullptr.");
-    FFNParams ffnParams{x,
-                        weight1,
-                        weight2,
-                        expertTokens,
-                        nullptr,
-                        bias1,
-                        bias2,
-                        scale,
-                        offset,
-                        deqScale1,
-                        deqScale2,
-                        antiquantScale1,
-                        antiquantScale2,
-                        antiquantOffset1,
-                        antiquantOffset2,
-                        activationType,
-                        innerPrecise,
-                        tokensIndexFlag,
-                        y};
+        "one of required inputs for aclnnEagleFfnV2GetWorkspaceSize is nullptr.");
+    FFNParams ffnParams{x, weight1, weight2, expertTokens, nullptr, bias1, bias2, scale, offset, deqScale1, deqScale2,
+        antiquantScale1, antiquantScale2, antiquantOffset1, antiquantOffset2, activationType, innerPrecise,
+        tokensIndexFlag, y};
     aclnnStatus ret = TransDataTypeDeqscale(ffnParams);
     CHECK_RET(ret == ACLNN_SUCCESS, ret);
     L2_DFX_PHASE_1(aclnnEagleFfnV2,
-                   DFX_IN(ffnParams.x, ffnParams.weight1, ffnParams.weight2, expertTokens, ffnParams.bias1,
-                          ffnParams.bias2, ffnParams.scale, ffnParams.offset, ffnParams.deqScale1, ffnParams.deqScale2,
-                          ffnParams.antiquantScale1, ffnParams.antiquantScale2, ffnParams.antiquantOffset1,
-                          ffnParams.antiquantOffset2, activation, ffnParams.innerPrecise, -1, tokensIndexFlag),
-                   DFX_OUT(ffnParams.y));
+        DFX_IN(ffnParams.x, ffnParams.weight1, ffnParams.weight2, expertTokens, ffnParams.bias1, ffnParams.bias2,
+            ffnParams.scale, ffnParams.offset, ffnParams.deqScale1, ffnParams.deqScale2, ffnParams.antiquantScale1,
+            ffnParams.antiquantScale2, ffnParams.antiquantOffset1, ffnParams.antiquantOffset2, activation,
+            ffnParams.innerPrecise, -1, tokensIndexFlag),
+        DFX_OUT(ffnParams.y));
     return GetFFNResultByL0Api(ffnParams, activation, workspaceSize, executor);
 }
 
-aclnnStatus aclnnEagleFfnV2(void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, aclrtStream stream)
-{
+aclnnStatus aclnnEagleFfnV2(void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, aclrtStream stream) {
     L2_DFX_PHASE_2(aclnnEagleFfnV2);
     auto ret = CommonOpExecutorRun(workspace, workspaceSize, executor, stream);
     if (ret != ACLNN_SUCCESS) {
@@ -1209,54 +1120,36 @@ aclnnStatus aclnnEagleFfnV2(void *workspace, uint64_t workspaceSize, aclOpExecut
     return ACLNN_SUCCESS;
 }
 
-aclnnStatus aclnnEagleFfnV3GetWorkspaceSize(
-    const aclTensor *x, const aclTensor *weight1, const aclTensor *weight2, const aclTensor *expertTokensOptional,
-    const aclTensor *bias1Optional, const aclTensor *bias2Optional, const aclTensor *scaleOptional,
-    const aclTensor *offsetOptional, const aclTensor *deqScale1Optional, const aclTensor *deqScale2Optional,
-    const aclTensor *antiquantScale1Optional, const aclTensor *antiquantScale2Optional,
-    const aclTensor *antiquantOffset1Optional, const aclTensor *antiquantOffset2Optional, const char *activation,
-    int64_t innerPrecise, bool tokensIndexFlag, const aclTensor *y, uint64_t *workspaceSize, aclOpExecutor **executor)
-{
+aclnnStatus aclnnEagleFfnV3GetWorkspaceSize(const aclTensor *x, const aclTensor *weight1, const aclTensor *weight2,
+    const aclTensor *expertTokensOptional, const aclTensor *bias1Optional, const aclTensor *bias2Optional,
+    const aclTensor *scaleOptional, const aclTensor *offsetOptional, const aclTensor *deqScale1Optional,
+    const aclTensor *deqScale2Optional, const aclTensor *antiquantScale1Optional,
+    const aclTensor *antiquantScale2Optional, const aclTensor *antiquantOffset1Optional,
+    const aclTensor *antiquantOffset2Optional, const char *activation, int64_t innerPrecise, bool tokensIndexFlag,
+    const aclTensor *y, uint64_t *workspaceSize, aclOpExecutor **executor) {
     CHECK_COND(activation != nullptr, ACLNN_ERR_PARAM_NULLPTR, "activation must not be nullptr.");
     ActiveType activationType = GetActiveType(activation);
     CHECK_COND(activationType != ActiveType::INVALID_TYPE, ACLNN_ERR_PARAM_INVALID,
-               "the activation type %s is not supported by ffn operator, please select right activation according to "
-               "the document",
-               activation);
+        "the activation type %s is not supported by ffn operator, please select right activation according to "
+        "the document",
+        activation);
     CHECK_COND(CheckNotNull(x, weight1, weight2, y) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_NULLPTR,
-               "one of required inputs for aclnnEagleFfnV3GetWorkspaceSize is nullptr.");
-    FFNParams ffnParams{x,
-                        weight1,
-                        weight2,
-                        nullptr,
-                        expertTokensOptional,
-                        bias1Optional,
-                        bias2Optional,
-                        scaleOptional,
-                        offsetOptional,
-                        deqScale1Optional,
-                        deqScale2Optional,
-                        antiquantScale1Optional,
-                        antiquantScale2Optional,
-                        antiquantOffset1Optional,
-                        antiquantOffset2Optional,
-                        activationType,
-                        innerPrecise,
-                        tokensIndexFlag,
-                        y};
+        "one of required inputs for aclnnEagleFfnV3GetWorkspaceSize is nullptr.");
+    FFNParams ffnParams{x, weight1, weight2, nullptr, expertTokensOptional, bias1Optional, bias2Optional, scaleOptional,
+        offsetOptional, deqScale1Optional, deqScale2Optional, antiquantScale1Optional, antiquantScale2Optional,
+        antiquantOffset1Optional, antiquantOffset2Optional, activationType, innerPrecise, tokensIndexFlag, y};
     aclnnStatus ret = TransDataTypeDeqscale(ffnParams);
     CHECK_RET(ret == ACLNN_SUCCESS, ret);
     L2_DFX_PHASE_1(aclnnEagleFfnV3,
-                   DFX_IN(ffnParams.x, ffnParams.weight1, ffnParams.weight2, expertTokensOptional, ffnParams.bias1,
-                          ffnParams.bias2, ffnParams.scale, ffnParams.offset, ffnParams.deqScale1, ffnParams.deqScale2,
-                          ffnParams.antiquantScale1, ffnParams.antiquantScale2, ffnParams.antiquantOffset1,
-                          ffnParams.antiquantOffset2, activation, ffnParams.innerPrecise, -1, tokensIndexFlag),
-                   DFX_OUT(ffnParams.y));
+        DFX_IN(ffnParams.x, ffnParams.weight1, ffnParams.weight2, expertTokensOptional, ffnParams.bias1,
+            ffnParams.bias2, ffnParams.scale, ffnParams.offset, ffnParams.deqScale1, ffnParams.deqScale2,
+            ffnParams.antiquantScale1, ffnParams.antiquantScale2, ffnParams.antiquantOffset1,
+            ffnParams.antiquantOffset2, activation, ffnParams.innerPrecise, -1, tokensIndexFlag),
+        DFX_OUT(ffnParams.y));
     return GetFFNResultByL0Api(ffnParams, activation, workspaceSize, executor);
 }
 
-aclnnStatus aclnnEagleFfnV3(void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, aclrtStream stream)
-{
+aclnnStatus aclnnEagleFfnV3(void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, aclrtStream stream) {
     L2_DFX_PHASE_2(aclnnEagleFfnV3);
     auto ret = CommonOpExecutorRun(workspace, workspaceSize, executor, stream);
     if (ret != ACLNN_SUCCESS) {

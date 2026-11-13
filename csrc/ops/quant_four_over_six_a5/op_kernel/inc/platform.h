@@ -10,6 +10,15 @@
  * See the Mulan PSL v2 for more details.
  */
 
+/**
+ * Copyright (c) 2025 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
 
 /*!
  * \file platform.h
@@ -34,8 +43,7 @@ namespace platform {
 
 #define MID_THREAD_NUM 1024
 
-__aicore__ inline constexpr bool IsDataCopyPadSupport()
-{
+__aicore__ inline constexpr bool IsDataCopyPadSupport() {
 #if __CCE_AICORE__ == 220
     return true;
 #else
@@ -46,16 +54,12 @@ __aicore__ inline constexpr bool IsDataCopyPadSupport()
 /**
  * Get the block size of unified buffer in bytes
  */
-__aicore__ inline constexpr uint32_t GetUbBlockSize()
-{
-    return 32U;
-}
+__aicore__ inline constexpr uint32_t GetUbBlockSize() { return 32U; }
 
 /**
  * Get the size of vector registers in bytes
  */
-__aicore__ inline constexpr uint32_t GetVRegSize()
-{
+__aicore__ inline constexpr uint32_t GetVRegSize() {
 #if __CCE_AICORE__ == 310
     return AscendC::VECTOR_REG_WIDTH;
 #else
@@ -66,9 +70,7 @@ __aicore__ inline constexpr uint32_t GetVRegSize()
 /**
  * Check whether the type is supported by atomic add for simd
  */
-template<typename T>
-__aicore__ inline constexpr bool IsSupportAtomicAddTypeSIMD()
-{
+template <typename T> __aicore__ inline constexpr bool IsSupportAtomicAddTypeSIMD() {
 #if __CCE_AICORE__ == 310
     return ops::IsSame<T, float>::value || ops::IsSame<T, half>::value || ops::IsSame<T, int16_t>::value ||
         ops::IsSame<T, int32_t>::value || ops::IsSame<T, int8_t>::value || ops::IsSame<T, bfloat16_t>::value;
@@ -80,11 +82,8 @@ __aicore__ inline constexpr bool IsSupportAtomicAddTypeSIMD()
 } // namespace platform
 
 namespace PlatformSocInfo {
-__aicore__ inline constexpr bool IsDataCopyPadSupport()
-{
-    return platform::IsDataCopyPadSupport();
-}
+__aicore__ inline constexpr bool IsDataCopyPadSupport() { return platform::IsDataCopyPadSupport(); }
 
 }
 
-#endif  // OPS_BUILT_IN_OP_ASCENDC_PLATFORM_INFO_H_
+#endif // OPS_BUILT_IN_OP_ASCENDC_PLATFORM_INFO_H_

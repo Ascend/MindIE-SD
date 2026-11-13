@@ -8,17 +8,28 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef LAYOUT_VECTOR_HPP
 #define LAYOUT_VECTOR_HPP
 
 #include "../../attn_infra/base_defs.hpp"
 #include "../../attn_infra/coord.hpp"
 
-namespace NpuArch::layout 
-{
+namespace NpuArch::layout {
 
 struct VectorLayout {
-public:
+  public:
     /// Logical rank of tensor
     static constexpr int RANK = 1;
 
@@ -37,7 +48,7 @@ public:
     /// Logical coordinate
     using TensorCoord = Coord<RANK, Index>;
 
-public:
+  public:
     // Methods
 
     HOST_DEVICE
@@ -46,83 +57,50 @@ public:
     HOST_DEVICE
     VectorLayout(Shape shape, Stride stride) : shape_(shape), stride_(stride) {}
 
-    template <class Element>
-    HOST_DEVICE
-    static VectorLayout MakeLayoutInUb(TensorCoord const &tileShape)
-    {
+    template <class Element> HOST_DEVICE static VectorLayout MakeLayoutInUb(TensorCoord const &tileShape) {
         return VectorLayout{RoundUp<BYTE_PER_BLK / sizeof(Element)>(tileShape[0])};
     }
 
     HOST_DEVICE
-    LongIndex GetOffset(TensorCoord const &coord) const
-    {
-        return stride_[0] * coord[0];
-    }
+    LongIndex GetOffset(TensorCoord const &coord) const { return stride_[0] * coord[0]; }
 
     /// Returns the layout of a tile_common.
     HOST_DEVICE
-    VectorLayout GetTileLayout(TensorCoord const &tileShape) const
-    {
-        return VectorLayout(tileShape, stride());
-    }
+    VectorLayout GetTileLayout(TensorCoord const &tileShape) const { return VectorLayout(tileShape, stride()); }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    Shape shape() const
-    {
-        return shape_;
-    }
+    Shape shape() const { return shape_; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    Shape &shape()
-    {
-        return shape_;
-    }
+    Shape &shape() { return shape_; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    typename Shape::Index shape(int idx) const
-    {
-        return shape_[idx];
-    }
+    typename Shape::Index shape(int idx) const { return shape_[idx]; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    typename Shape::Index &shape(int idx)
-    {
-        return shape_[idx];
-    }
+    typename Shape::Index &shape(int idx) { return shape_[idx]; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    Stride stride() const
-    {
-        return stride_;
-    }
+    Stride stride() const { return stride_; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    Stride &stride()
-    {
-        return stride_;
-    }
+    Stride &stride() { return stride_; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    typename Stride::Index stride(int idx) const
-    {
-        return stride_[idx];
-    }
+    typename Stride::Index stride(int idx) const { return stride_[idx]; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    typename Stride::Index &stride(int idx)
-    {
-        return stride_[idx];
-    }
+    typename Stride::Index &stride(int idx) { return stride_[idx]; }
 
-private:
+  private:
     /// Stride data member
     Shape shape_;
     Stride stride_;
@@ -130,4 +108,4 @@ private:
 
 } // namespace NpuArch::layout
 
-#endif  // LAYOUT_VECTOR_HPP
+#endif // LAYOUT_VECTOR_HPP

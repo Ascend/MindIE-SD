@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef ALIGNMENT_HPP
 #define ALIGNMENT_HPP
 
@@ -16,18 +28,12 @@
 #include "../../attn_infra/detail/macros.hpp"
 #include "../../tla/numeric/integral_constant.hpp"
 
-template <uint32_t ALIGN, typename T>
-HOST_DEVICE
-constexpr T RoundDown(const T val)
-{
+template <uint32_t ALIGN, typename T> HOST_DEVICE constexpr T RoundDown(const T val) {
     static_assert(ALIGN != 0U, "ALIGN must not be 0");
     return val / ALIGN * ALIGN;
 }
 
-template <class T, class U>
-HOST_DEVICE
-constexpr auto RoundDown(T const &val, U const &align)
-{
+template <class T, class U> HOST_DEVICE constexpr auto RoundDown(T const &val, U const &align) {
     if constexpr (tla::is_static<T>::value && tla::is_static<U>::value) { // Int, Int
         constexpr uint32_t res = T::value / U::value * U::value;
         return tla::Int<res>{};
@@ -40,10 +46,7 @@ constexpr auto RoundDown(T const &val, U const &align)
     }
 }
 
-template <uint32_t ALIGN, typename T = uint32_t>
-HOST_DEVICE
-constexpr T RoundUp(const T val)
-{
+template <uint32_t ALIGN, typename T = uint32_t> HOST_DEVICE constexpr T RoundUp(const T val) {
     static_assert(ALIGN != 0U, "ALIGN must not be 0");
     T align = ALIGN;
     if (val + align - 1 < val) {
@@ -52,10 +55,7 @@ constexpr T RoundUp(const T val)
     return (val + align - 1) / align * align;
 }
 
-template <class T, class U>
-HOST_DEVICE
-constexpr auto RoundUp(T const &val, U const &align)
-{
+template <class T, class U> HOST_DEVICE constexpr auto RoundUp(T const &val, U const &align) {
     if constexpr (tla::is_static<T>::value && tla::is_static<U>::value) { // Int, Int
         constexpr uint32_t res = (T::value + U::value - 1) / U::value * U::value;
         return tla::Int<res>{};
@@ -68,10 +68,7 @@ constexpr auto RoundUp(T const &val, U const &align)
     }
 }
 
-template <uint32_t DIVISOR, typename T = uint32_t>
-HOST_DEVICE
-constexpr T CeilDiv(const T dividend)
-{
+template <uint32_t DIVISOR, typename T = uint32_t> HOST_DEVICE constexpr T CeilDiv(const T dividend) {
     static_assert(DIVISOR != 0U, "DIVISOR must not be 0");
     T divisor = DIVISOR;
     if (dividend + divisor - 1 < dividend) {
@@ -80,20 +77,14 @@ constexpr T CeilDiv(const T dividend)
     return (dividend + divisor - 1) / divisor;
 }
 
-template <class T>
-HOST_DEVICE
-constexpr T CeilDiv(const T dividend, const T divisor)
-{
+template <class T> HOST_DEVICE constexpr T CeilDiv(const T dividend, const T divisor) {
     if (divisor == 0 || dividend + divisor - 1 < dividend) {
         return std::numeric_limits<T>::max();
     }
     return (dividend + divisor - 1) / divisor;
 }
 
-template <class T, class U>
-HOST_DEVICE
-constexpr auto CeilDiv(T const &dividend, U const &divisor)
-{
+template <class T, class U> HOST_DEVICE constexpr auto CeilDiv(T const &dividend, U const &divisor) {
     if constexpr (tla::is_static<T>::value && tla::is_static<U>::value) { // Int, Int
         constexpr uint32_t res = (T::value + U::value - 1) / U::value;
         return tla::Int<res>{};
@@ -106,9 +97,7 @@ constexpr auto CeilDiv(T const &dividend, U const &divisor)
     }
 }
 
-template <class T, class U>
-HOST_DEVICE
-constexpr auto Max(T const &a, U const &b) {
+template <class T, class U> HOST_DEVICE constexpr auto Max(T const &a, U const &b) {
     if (a > b) {
         return a;
     } else {
@@ -116,9 +105,7 @@ constexpr auto Max(T const &a, U const &b) {
     }
 }
 
-template <class T, class U>
-HOST_DEVICE
-constexpr auto Min(T const &a, U const &b) {
+template <class T, class U> HOST_DEVICE constexpr auto Min(T const &a, U const &b) {
     if (a < b) {
         return a;
     } else {
@@ -126,4 +113,4 @@ constexpr auto Min(T const &a, U const &b) {
     }
 }
 
-#endif  // ALIGNMENT_HPP
+#endif // ALIGNMENT_HPP

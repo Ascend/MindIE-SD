@@ -30,6 +30,7 @@ Issues = "https://gitcode.com/Ascend/MindIE-SD/issues"
 
 [tool.setuptools]
 include-package-data = true
+license-files = ["LICENSE.md", "THIRD_PARTY_LICENSES.txt"]
 
 [tool.setuptools.dynamic]
 version = { attr = "version.__version__" }

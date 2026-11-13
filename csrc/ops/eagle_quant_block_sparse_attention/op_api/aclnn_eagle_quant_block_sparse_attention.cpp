@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #include "aclnn_eagle_quant_block_sparse_attention.h"
 
 #include "eagle_quant_block_sparse_attention.h"
@@ -33,27 +45,21 @@ namespace {
 
 static constexpr uint64_t LSE_OUT = 1;
 
-static bool CheckDataType(const aclTensor *query,
-                          const aclTensor *key,
-                          const aclTensor *value)
-{
+static bool CheckDataType(const aclTensor *query, const aclTensor *key, const aclTensor *value) {
     const DataType qDtype = query->GetDataType();
     const DataType kDtype = key->GetDataType();
     const DataType vDtype = value->GetDataType();
 
-
     static const std::unordered_map<DataType, std::vector<DataType>> validKvType = {
-        {DataType::DT_FLOAT16, {DataType::DT_FLOAT16}},
-        {DataType::DT_BF16, {DataType::DT_BF16}},
-        {DataType::DT_INT8, {DataType::DT_INT8, DataType::DT_FLOAT8_E4M3FN}}
-    };
+        {DataType::DT_FLOAT16, {DataType::DT_FLOAT16}}, {DataType::DT_BF16, {DataType::DT_BF16}},
+        {DataType::DT_INT8, {DataType::DT_INT8, DataType::DT_FLOAT8_E4M3FN}}};
 
     auto iter = validKvType.find(qDtype);
     if (iter == validKvType.end()) {
         OP_LOGE(ACLNN_ERR_PARAM_INVALID, "Unsupported query datatype %d.", static_cast<int>(qDtype));
         return false;
     }
-    
+
     if (std::find(iter->second.begin(), iter->second.end(), kDtype) == iter->second.end() ||
         std::find(iter->second.begin(), iter->second.end(), vDtype) == iter->second.end()) {
         OP_LOGE(ACLNN_ERR_PARAM_INVALID, "Key/Value datatype mismatch with query.");
@@ -63,19 +69,14 @@ static bool CheckDataType(const aclTensor *query,
     return true;
 }
 
-
-static aclnnStatus CheckMandatoryTensors(const aclTensor *query,
-                                         const aclTensor *key,
-                                         const aclTensor *value)
-{
+static aclnnStatus CheckMandatoryTensors(const aclTensor *query, const aclTensor *key, const aclTensor *value) {
     CHECK_RET(query != nullptr, ACLNN_ERR_PARAM_NULLPTR);
     CHECK_RET(key != nullptr, ACLNN_ERR_PARAM_NULLPTR);
     CHECK_RET(value != nullptr, ACLNN_ERR_PARAM_NULLPTR);
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus ParseblockShapeOptional(const aclIntArray *blockShapeOptional)
-{
+static aclnnStatus ParseblockShapeOptional(const aclIntArray *blockShapeOptional) {
     if (blockShapeOptional == nullptr) {
         OP_LOGE(ACLNN_ERR_PARAM_NULLPTR, "blockShapeOptional is null.");
         return ACLNN_ERR_PARAM_NULLPTR;
@@ -94,22 +95,17 @@ static aclnnStatus ParseblockShapeOptional(const aclIntArray *blockShapeOptional
     }
 
     if (data[0] <= 0 || data[1] <= 0) {
-        OP_LOGE(ACLNN_ERR_PARAM_INVALID, "blockShapeOptional values must be positive, got [%ld, %ld].", data[0], data[1]);
+        OP_LOGE(
+            ACLNN_ERR_PARAM_INVALID, "blockShapeOptional values must be positive, got [%ld, %ld].", data[0], data[1]);
         return ACLNN_ERR_PARAM_INVALID;
     }
 
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus ValidateParams(const aclTensor *query,
-                                  const aclTensor *key,
-                                  const aclTensor *value,
-                                  char *qInputLayout,
-                                  char *kvInputLayout,
-                                  const aclIntArray *blockShapeOptional)
-{
-    CHECK_RET(CheckMandatoryTensors(query, key, value) == ACLNN_SUCCESS,
-              ACLNN_ERR_PARAM_NULLPTR);
+static aclnnStatus ValidateParams(const aclTensor *query, const aclTensor *key, const aclTensor *value,
+    char *qInputLayout, char *kvInputLayout, const aclIntArray *blockShapeOptional) {
+    CHECK_RET(CheckMandatoryTensors(query, key, value) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_NULLPTR);
 
     if (!CheckDataType(query, key, value)) {
         return ACLNN_ERR_PARAM_INVALID;
@@ -121,43 +117,37 @@ static aclnnStatus ValidateParams(const aclTensor *query,
     }
     std::string qLayout(qInputLayout);
     std::string kvLayout(kvInputLayout);
-    
+
     // 验证Q layout
     if (qLayout != "TND" && qLayout != "BNSD") {
         OP_LOGE(ACLNN_ERR_PARAM_INVALID, "qInputLayout only supports TND or BNSD, got %s.", qLayout.c_str());
         return ACLNN_ERR_PARAM_INVALID;
     }
-    
+
     // 验证KV layout
     if (kvLayout != "TND" && kvLayout != "BNSD") {
         OP_LOGE(ACLNN_ERR_PARAM_INVALID, "kvInputLayout only supports TND or BNSD, got %s.", kvLayout.c_str());
         return ACLNN_ERR_PARAM_INVALID;
     }
-    
+
     // 验证Q和KV格式一致性：如果其中一个是BNSD，另一个也必须是BNSD
     bool qIsBNSD = (qLayout == "BNSD");
     bool kvIsBNSD = (kvLayout == "BNSD");
     if (qIsBNSD != kvIsBNSD) {
-        OP_LOGE(ACLNN_ERR_PARAM_INVALID, 
-                "Q and KV layouts must match: if one is BNSD, the other must also be BNSD. "
-                "Q layout: %s, KV layout: %s", qLayout.c_str(), kvLayout.c_str());
+        OP_LOGE(ACLNN_ERR_PARAM_INVALID,
+            "Q and KV layouts must match: if one is BNSD, the other must also be BNSD. "
+            "Q layout: %s, KV layout: %s",
+            qLayout.c_str(), kvLayout.c_str());
         return ACLNN_ERR_PARAM_INVALID;
     }
 
     return ParseblockShapeOptional(blockShapeOptional);
 }
 
-static aclnnStatus MakeContiguous(const aclTensor *&query,
-                                  const aclTensor *&key,
-                                  const aclTensor *&value,
-                                  const aclTensor *&blockSparseMaskOptional,
-                                  const aclTensor *&attenMaskOptional,
-                                  const aclTensor *&blockTableOptional,
-                                  const aclTensor *&queryScaleOptional,
-                                  const aclTensor *&keyScaleOptional,
-                                  const aclTensor *&valueScaleOptional,
-                                  aclOpExecutor *executor)
-{
+static aclnnStatus MakeContiguous(const aclTensor *&query, const aclTensor *&key, const aclTensor *&value,
+    const aclTensor *&blockSparseMaskOptional, const aclTensor *&attenMaskOptional,
+    const aclTensor *&blockTableOptional, const aclTensor *&queryScaleOptional, const aclTensor *&keyScaleOptional,
+    const aclTensor *&valueScaleOptional, aclOpExecutor *executor) {
     query = l0op::Contiguous(query, executor);
     CHECK_RET(query != nullptr, ACLNN_ERR_PARAM_NULLPTR);
 
@@ -167,17 +157,16 @@ static aclnnStatus MakeContiguous(const aclTensor *&query,
     value = l0op::Contiguous(value, executor);
     CHECK_RET(value != nullptr, ACLNN_ERR_PARAM_NULLPTR);
     //新增blockSparseMaskOptional非空校验且必须为四维
-    
-    if (blockSparseMaskOptional != nullptr) {  
-        blockSparseMaskOptional = l0op::Contiguous(blockSparseMaskOptional, executor);  
-        CHECK_RET(blockSparseMaskOptional != nullptr, ACLNN_ERR_INNER_NULLPTR); 
+
+    if (blockSparseMaskOptional != nullptr) {
+        blockSparseMaskOptional = l0op::Contiguous(blockSparseMaskOptional, executor);
+        CHECK_RET(blockSparseMaskOptional != nullptr, ACLNN_ERR_INNER_NULLPTR);
         if (blockSparseMaskOptional->GetStorageShape().GetDimNum() != 4) {
-        OP_LOGE(ACLNN_ERR_PARAM_INVALID, 
-                "blockSparseMask must be 4D tensor");
-        return ACLNN_ERR_PARAM_INVALID;
+            OP_LOGE(ACLNN_ERR_PARAM_INVALID, "blockSparseMask must be 4D tensor");
+            return ACLNN_ERR_PARAM_INVALID;
         }
-       //CHECK_RET(blockSparseMaskOptional->GetStorageShape().GetDim() == 4, "blockSparseMask must be 4D tensor");
-    } 
+        //CHECK_RET(blockSparseMaskOptional->GetStorageShape().GetDim() == 4, "blockSparseMask must be 4D tensor");
+    }
 
     if (attenMaskOptional != nullptr) {
         attenMaskOptional = l0op::Contiguous(attenMaskOptional, executor);
@@ -207,61 +196,33 @@ static aclnnStatus MakeContiguous(const aclTensor *&query,
     return ACLNN_SUCCESS;
 }
 
-static aclnnStatus ValidateAdditionalParams(int64_t innerPrecise,
-                                            const aclTensor *attentionOut,
-                                            uint64_t *workspaceSize,
-                                            aclOpExecutor **executor)
-{
+static aclnnStatus ValidateAdditionalParams(
+    int64_t innerPrecise, const aclTensor *attentionOut, uint64_t *workspaceSize, aclOpExecutor **executor) {
     if (innerPrecise != 0 && innerPrecise != 1 && innerPrecise != 4) {
-        OP_LOGE(ACLNN_ERR_PARAM_INVALID, "innerPrecise must be 0 or 1 or 4, got %ld.",
-                innerPrecise);
+        OP_LOGE(ACLNN_ERR_PARAM_INVALID, "innerPrecise must be 0 or 1 or 4, got %ld.", innerPrecise);
         return ACLNN_ERR_PARAM_INVALID;
     }
-    
+
     CHECK_RET(attentionOut != nullptr, ACLNN_ERR_PARAM_NULLPTR);
     CHECK_RET(workspaceSize != nullptr, ACLNN_ERR_PARAM_NULLPTR);
     CHECK_RET(executor != nullptr, ACLNN_ERR_PARAM_NULLPTR);
-    
+
     return ACLNN_SUCCESS;
 }
 
-static string ConvertLayoutString(char *layoutStr)
-{
-    return op::ToString(layoutStr).GetString();
-}
+static string ConvertLayoutString(char *layoutStr) { return op::ToString(layoutStr).GetString(); }
 
 } // namespace
 
 __attribute__((visibility("default"))) aclnnStatus aclnnEagleQuantBlockSparseAttentionGetWorkspaceSize(
-    const aclTensor *query,
-    const aclTensor *key,
-    const aclTensor *value,
-    const aclTensor *blockSparseMask,
-    const aclTensor *attenMaskOptional,
-    const aclIntArray *blockShape,
-    const aclIntArray *actualSeqLengthsOptional,
-    const aclIntArray *actualSeqLengthsKvOptional,
-    const aclTensor *blockTableOptional,
-    const aclTensor *queryScaleOptional,
-    const aclTensor *keyScaleOptional,
-    const aclTensor *valueScaleOptional,
-    char *qInputLayout,
-    char *kvInputLayout,
-    int64_t numKeyValueHeads,
-    int64_t maskType,
-    double scaleValue,
-    int64_t innerPrecise,
-    int64_t blockSize,
-    int64_t preTokens,
-    int64_t nextTokens,
-    int64_t softmaxLseFlag,
-    aclTensor *attentionOut,
-    aclTensor *softmaxLseOptional,
-    uint64_t *workspaceSize,
-    aclOpExecutor **executor)
-{
-    aclnnStatus ret = ValidateParams(query, key, value,
-                                     qInputLayout, kvInputLayout, blockShape);
+    const aclTensor *query, const aclTensor *key, const aclTensor *value, const aclTensor *blockSparseMask,
+    const aclTensor *attenMaskOptional, const aclIntArray *blockShape, const aclIntArray *actualSeqLengthsOptional,
+    const aclIntArray *actualSeqLengthsKvOptional, const aclTensor *blockTableOptional,
+    const aclTensor *queryScaleOptional, const aclTensor *keyScaleOptional, const aclTensor *valueScaleOptional,
+    char *qInputLayout, char *kvInputLayout, int64_t numKeyValueHeads, int64_t maskType, double scaleValue,
+    int64_t innerPrecise, int64_t blockSize, int64_t preTokens, int64_t nextTokens, int64_t softmaxLseFlag,
+    aclTensor *attentionOut, aclTensor *softmaxLseOptional, uint64_t *workspaceSize, aclOpExecutor **executor) {
+    aclnnStatus ret = ValidateParams(query, key, value, qInputLayout, kvInputLayout, blockShape);
     if (ret != ACLNN_SUCCESS) {
         return ret;
     }
@@ -272,33 +233,30 @@ __attribute__((visibility("default"))) aclnnStatus aclnnEagleQuantBlockSparseAtt
     }
     //去掉了idx ,idxnums
     L2_DFX_PHASE_1(aclnnEagleQuantBlockSparseAttention,
-                   DFX_IN(query, key, value, blockSparseMask, attenMaskOptional, blockShape, actualSeqLengthsOptional,
-                          queryScaleOptional, keyScaleOptional, valueScaleOptional,
-                          actualSeqLengthsKvOptional, blockTableOptional, qInputLayout, qInputLayout, numKeyValueHeads,
-                          maskType, scaleValue, innerPrecise, blockSize, preTokens, nextTokens, softmaxLseFlag),
-                   DFX_OUT(attentionOut, softmaxLseOptional));
+        DFX_IN(query, key, value, blockSparseMask, attenMaskOptional, blockShape, actualSeqLengthsOptional,
+            queryScaleOptional, keyScaleOptional, valueScaleOptional, actualSeqLengthsKvOptional, blockTableOptional,
+            qInputLayout, qInputLayout, numKeyValueHeads, maskType, scaleValue, innerPrecise, blockSize, preTokens,
+            nextTokens, softmaxLseFlag),
+        DFX_OUT(attentionOut, softmaxLseOptional));
 
     auto uniqueExecutor = CREATE_EXECUTOR();
     CHECK_RET(uniqueExecutor.get() != nullptr, ACLNN_ERR_INNER_NULLPTR);
     auto *executorImpl = uniqueExecutor.get();
     //新增blockSparseMaskOptional参数
-    ret = MakeContiguous(query, key, value, blockSparseMask, attenMaskOptional, blockTableOptional, 
-                         queryScaleOptional, keyScaleOptional, valueScaleOptional,
-                         executorImpl);
+    ret = MakeContiguous(query, key, value, blockSparseMask, attenMaskOptional, blockTableOptional, queryScaleOptional,
+        keyScaleOptional, valueScaleOptional, executorImpl);
     if (ret != ACLNN_SUCCESS) {
         return ret;
     }
-    
+
     string qInputLayoutStr = ConvertLayoutString(qInputLayout);
     string kvInputLayoutStr = ConvertLayoutString(kvInputLayout);
     //新增blockSparseMaskOptional参数
-    auto outputs = l0op::EagleQuantBlockSparseAttention(query, key, value,
-                                             blockSparseMask, attenMaskOptional, blockShape, actualSeqLengthsOptional, 
-                                             actualSeqLengthsKvOptional, blockTableOptional,
-                                             queryScaleOptional, keyScaleOptional, valueScaleOptional,
-                                             qInputLayoutStr.c_str(), kvInputLayoutStr.c_str(), numKeyValueHeads,
-                                             maskType, scaleValue, innerPrecise, blockSize, preTokens, nextTokens, softmaxLseFlag, executorImpl,
-                                             attentionOut->GetDataType());
+    auto outputs = l0op::EagleQuantBlockSparseAttention(query, key, value, blockSparseMask, attenMaskOptional,
+        blockShape, actualSeqLengthsOptional, actualSeqLengthsKvOptional, blockTableOptional, queryScaleOptional,
+        keyScaleOptional, valueScaleOptional, qInputLayoutStr.c_str(), kvInputLayoutStr.c_str(), numKeyValueHeads,
+        maskType, scaleValue, innerPrecise, blockSize, preTokens, nextTokens, softmaxLseFlag, executorImpl,
+        attentionOut->GetDataType());
     if (outputs[0] == nullptr || outputs[1] == nullptr) {
         OP_LOGE(ACLNN_ERR_INNER_NULLPTR, "EagleQuantBlockSparseAttention returned nullptr outputs.");
         return ACLNN_ERR_INNER_NULLPTR;
@@ -317,11 +275,7 @@ __attribute__((visibility("default"))) aclnnStatus aclnnEagleQuantBlockSparseAtt
 }
 
 __attribute__((visibility("default"))) aclnnStatus aclnnEagleQuantBlockSparseAttention(
-    void *workspace,
-    uint64_t workspaceSize,
-    aclOpExecutor *executor,
-    aclrtStream stream)
-{
+    void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, aclrtStream stream) {
     L2_DFX_PHASE_2(aclnnEagleQuantBlockSparseAttention);
     return CommonOpExecutorRun(workspace, workspaceSize, executor, stream);
 }
@@ -329,4 +283,3 @@ __attribute__((visibility("default"))) aclnnStatus aclnnEagleQuantBlockSparseAtt
 #ifdef __cplusplus
 }
 #endif
-

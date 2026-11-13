@@ -10,6 +10,16 @@
  * See the Mulan PSL v2 for more details.
  */
 
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
 /*!
  * \file flash_attention_score_block_cube_gqa_fullquant.h
  * \brief
@@ -112,8 +122,7 @@ class FABlockCubeGqaFullquant {
         IsSameType<INPUT_T, hifloat8_t>::value;
     static constexpr bool isMlaFullQuant = isFp8 && hasRope;
     static constexpr bool isV512Perblock =
-        enableC8V16 && isInfer && s2BaseSize == 512 &&
-        IsSameType<INPUT_T, fp8_e4m3fn_t>::value && !hasRope;
+        enableC8V16 && isInfer && s2BaseSize == 512 && IsSameType<INPUT_T, fp8_e4m3fn_t>::value && !hasRope;
     static constexpr bool useDn = IsDn(((IsSameType<INPUT_T, float>::value) || isFp8),
         ((isFp8 && s2BaseSize == 256) || isV512Perblock), pseMode, hasAtten, hasDrop, s1BaseSize == 64, dTemplateType,
         hasRope, enableKVPrefix, isInfer, IsSameType<INPUT_T, hifloat8_t>::value);
@@ -1147,8 +1156,8 @@ __aicore__ inline void FABlockCubeGqaFullquant<TEMPLATE_ARGS>::IterateBmm1Dn(
         int64_t kS2BlockCnt = CeilDivision(constInfo.s2Size, 256);
         int64_t deScaleQOffset = runInfo.boIdx * constInfo.n2G * s1BlockCnt +
             runInfo.n2oIdx * constInfo.gSize * s1BlockCnt + runInfo.goIdx * s1BlockCnt + runInfo.s1oIdx;
-        int64_t deScaleKBaseOffset = runInfo.boIdx * constInfo.n2Size * kS2BlockCnt +
-            runInfo.n2oIdx * kS2BlockCnt + (runInfo.s2StartIdx >> 8) + runInfo.s2LoopCount * 2;
+        int64_t deScaleKBaseOffset = runInfo.boIdx * constInfo.n2Size * kS2BlockCnt + runInfo.n2oIdx * kS2BlockCnt +
+            (runInfo.s2StartIdx >> 8) + runInfo.s2LoopCount * 2;
         float deScaleQValue = this->deScaleQGm.GetValue(deScaleQOffset);
         uint32_t scoreS2Round = (runInfo.s2RealSize + 15) >> 4 << 4;
         uint32_t firstHalfS1RealSize =
@@ -1242,8 +1251,8 @@ __aicore__ inline void FABlockCubeGqaFullquant<TEMPLATE_ARGS>::IterateBmm1Dn(
         int64_t s2BlockCnt = CeilDivision(constInfo.s2Size, 256);
         int64_t deScaleQOffset = runInfo.boIdx * constInfo.n2G * s1BlockCnt +
             runInfo.n2oIdx * constInfo.gSize * s1BlockCnt + runInfo.goIdx * s1BlockCnt + runInfo.s1oIdx;
-        runInfo.deScaleKvOffset = runInfo.boIdx * constInfo.n2Size * s2BlockCnt +
-            runInfo.n2oIdx * s2BlockCnt + (runInfo.s2StartIdx >> 8) + runInfo.s2LoopCount;
+        runInfo.deScaleKvOffset = runInfo.boIdx * constInfo.n2Size * s2BlockCnt + runInfo.n2oIdx * s2BlockCnt +
+            (runInfo.s2StartIdx >> 8) + runInfo.s2LoopCount;
         float deScaleQValue = this->deScaleQGm.GetValue(deScaleQOffset);
         float deScaleKValue = this->deScaleKGm.GetValue(runInfo.deScaleKvOffset);
         float fixpipeScale = constInfo.scaleValue * deScaleQValue * deScaleKValue;
@@ -1271,12 +1280,12 @@ __aicore__ inline void FABlockCubeGqaFullquant<TEMPLATE_ARGS>::IterateBmm1Dn(
             uint32_t subBlock1L0COffset = (firstHalfS1RealSize >> 4) * fixpipeParams.srcStride * 16;
             fixpipeParams.params.ndNum = qNdNum;
             fixpipeParams.subBlockId = 1;
-            Fixpipe<SCORE_T, T, PFA_CFG_ROW_MAJOR_UB>(outputBuf.template GetTensor<SCORE_T>(),
-                mm1ResL0C.GetTensor<T>()[subBlock1L0COffset], fixpipeParams);
+            Fixpipe<SCORE_T, T, PFA_CFG_ROW_MAJOR_UB>(
+                outputBuf.template GetTensor<SCORE_T>(), mm1ResL0C.GetTensor<T>()[subBlock1L0COffset], fixpipeParams);
         }
     } else {
         fixpipeParams.nSize = (runInfo.s1RealSize + 31) >> 5
-            << 5; // L0C上的bmm1结果矩阵N方向的size大小; 同mmadParams.n; 为什么要8个元素对齐(32B对齐) // 128
+                << 5; // L0C上的bmm1结果矩阵N方向的size大小; 同mmadParams.n; 为什么要8个元素对齐(32B对齐) // 128
         if constexpr (useDn && isFp8) {
             fixpipeParams.dstStride = 64;
         } else {
@@ -1287,8 +1296,7 @@ __aicore__ inline void FABlockCubeGqaFullquant<TEMPLATE_ARGS>::IterateBmm1Dn(
         fixpipeParams.params.srcNdStride = 0;
         fixpipeParams.params.dstNdStride = 0;
         fixpipeParams.dualDstCtl = 2; // 双目标模式，按N维度拆分，M * N / 2写入每个UB
-        Fixpipe<T, T, PFA_CFG_ROW_MAJOR_UB>(
-            outputBuf.template GetTensor<T>(), mm1ResL0C.GetTensor<T>(), fixpipeParams);
+        Fixpipe<T, T, PFA_CFG_ROW_MAJOR_UB>(outputBuf.template GetTensor<T>(), mm1ResL0C.GetTensor<T>(), fixpipeParams);
     }
     mm1ResL0C.Set<HardEvent::FIX_M>(); // 释放L0C
     outputBuf.SetCrossCore();

@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef BSA_BLOCK_MMAD_PV_HPP
 #define BSA_BLOCK_MMAD_PV_HPP
 
@@ -26,28 +38,11 @@
 namespace NpuArch::Gemm::Block {
 ////////////////////////////////////////////////////////////////////
 
-template <
-    bool PAGED_CACHE_FLAG_,
-    bool ENABLE_UNIT_FLAG_,
-    class L1TileShape_,
-    class L0TileShape_,
-    class AType_,
-    class BType_,
-    class CType_,
-    class BiasType_,
-    class TileCopy_,
-    class TileMmad_>
-struct BlockMmad<
-    MmadAtlasA2SFAIPV<PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_>,
-    L1TileShape_,
-    L0TileShape_,
-    AType_,
-    BType_,
-    CType_,
-    BiasType_,
-    TileCopy_,
-    TileMmad_> {
-public:
+template <bool PAGED_CACHE_FLAG_, bool ENABLE_UNIT_FLAG_, class L1TileShape_, class L0TileShape_, class AType_,
+    class BType_, class CType_, class BiasType_, class TileCopy_, class TileMmad_>
+struct BlockMmad<MmadAtlasA2SFAIPV<PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_>, L1TileShape_, L0TileShape_, AType_, BType_,
+    CType_, BiasType_, TileCopy_, TileMmad_> {
+  public:
     // Type Aliases
     using DispatchPolicy = MmadAtlasA2SFAIPV<PAGED_CACHE_FLAG_, ENABLE_UNIT_FLAG_>;
     using ArchTag = typename DispatchPolicy::ArchTag;
@@ -94,16 +89,13 @@ public:
 #if BSA_ENABLE_V_DOUBLE_BUFFER
     static_assert(STAGES == 2, "PV streaming requires two L1 stages");
     static_assert(L1TileShape::K > 0, "PV L1 K tile must be greater than zero");
-    static_assert(L1TileShape::K % L0TileShape::K == 0,
-                  "PV L1 K tile must be an integer multiple of the L0 K tile");
-    static_assert(L1TileShape::K <= 256,
-                  "PV L1 K tile above 256 exceeds the L1 budget of the current double-buffer layout");
+    static_assert(L1TileShape::K % L0TileShape::K == 0, "PV L1 K tile must be an integer multiple of the L0 K tile");
+    static_assert(
+        L1TileShape::K <= 256, "PV L1 K tile above 256 exceeds the L1 budget of the current double-buffer layout");
 #endif
 
     /// Construct
-    __aicore__ inline
-    BlockMmad(Arch::Resource<ArchTag> &resource, uint32_t l1BufAddrStart = 0)
-    {
+    __aicore__ inline BlockMmad(Arch::Resource<ArchTag> &resource, uint32_t l1BufAddrStart = 0) {
         // Allocate L1 memory space
 #if !BSA_ENABLE_V_DOUBLE_BUFFER
         l1BTensor = resource.l1Buf.template GetBufferByByte<ElementB>(l1BufAddrStart + L1A_SIZE * 2);
@@ -111,8 +103,8 @@ public:
         for (uint32_t i = 0; i < STAGES; i++) {
             l1ATensor[i] = resource.l1Buf.template GetBufferByByte<ElementA>(l1BufAddrStart + L1A_SIZE * i);
 #if BSA_ENABLE_V_DOUBLE_BUFFER
-            l1BTensor[i] = resource.l1Buf.template GetBufferByByte<ElementB>(
-                l1BufAddrStart + L1A_SIZE * STAGES + L1B_SIZE * i);
+            l1BTensor[i] =
+                resource.l1Buf.template GetBufferByByte<ElementB>(l1BufAddrStart + L1A_SIZE * STAGES + L1B_SIZE * i);
 #endif
             l0ATensor[i] = resource.l0ABuf.template GetBufferByByte<ElementA>(L0A_PINGPONG_BUF_SIZE * i);
             l0BTensor[i] = resource.l0BBuf.template GetBufferByByte<ElementB>(L0B_PINGPONG_BUF_SIZE * i);
@@ -121,26 +113,12 @@ public:
     }
 
     /// Destructor
-    __aicore__ inline
-    ~BlockMmad() {}
+    __aicore__ inline ~BlockMmad() {}
 
 #if BSA_ENABLE_V_DOUBLE_BUFFER
-    __aicore__ inline
-    void loadVTile(AscendC::GlobalTensor<ElementB> gB,
-                   AscendC::GlobalTensor<int32_t> gSelectIdx,
-                   LayoutB layoutB,
-                   uint32_t bufferIdx,
-                   uint32_t kTileOffset,
-                   uint32_t kActual,
-                   uint32_t nIdx,
-                   uint32_t blockSize,
-                   uint32_t kvSeqlen,
-                   uint32_t strideKV,
-                   uint32_t y,
-                   uint32_t selectNum,
-                   uint32_t kvYBlockNum,
-                   uint32_t embed)
-    {
+    __aicore__ inline void loadVTile(AscendC::GlobalTensor<ElementB> gB, AscendC::GlobalTensor<int32_t> gSelectIdx,
+        LayoutB layoutB, uint32_t bufferIdx, uint32_t kTileOffset, uint32_t kActual, uint32_t nIdx, uint32_t blockSize,
+        uint32_t kvSeqlen, uint32_t strideKV, uint32_t y, uint32_t selectNum, uint32_t kvYBlockNum, uint32_t embed) {
         uint32_t vEventId = V_EVENT_ID_BASE + bufferIdx;
         AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(vEventId);
 
@@ -150,13 +128,14 @@ public:
         uint32_t currentSelectYIdx = stackOffset / y; //落在第几个 selectIdx
         uint32_t currentYoffset = stackOffset % y; //块内偏移
         uint32_t currentYIdx = gSelectIdx.GetValue(currentSelectYIdx); // 逻辑块 -> 物理KV块
-        uint32_t offsetInKV = currentYIdx * y + currentYoffset;  //物理KV张量内的行号
+        uint32_t offsetInKV = currentYIdx * y + currentYoffset; //物理KV张量内的行号
 
         while (processSize < kActual && currentSelectYIdx < selectNum && currentYIdx < kvYBlockNum &&
-               offsetInKV < kvSeqlen) {
+            offsetInKV < kvSeqlen) {
             uint32_t yActual =
-                (currentSelectYIdx == selectNum - 1 && currentYIdx == kvYBlockNum - 1 && kvSeqlen % y != 0) ?
-                    (kvSeqlen - y * currentYIdx) : y;
+                (currentSelectYIdx == selectNum - 1 && currentYIdx == kvYBlockNum - 1 && kvSeqlen % y != 0)
+                ? (kvSeqlen - y * currentYIdx)
+                : y;
             uint32_t remainingInYBlock = yActual - currentYoffset;
             uint32_t actualYSize = min(kActual - processSize, remainingInYBlock);
             if (actualYSize == 0) {
@@ -185,15 +164,8 @@ public:
         AscendC::SetFlag<AscendC::HardEvent::MTE2_MTE1>(vEventId);
     }
 
-    __aicore__ inline
-    void loadPTile(AscendC::GlobalTensor<ElementA> gA,
-                   LayoutA layoutA,
-                   uint32_t bufferIdx,
-                   uint32_t mTileOffset,
-                   uint32_t kTileOffset,
-                   uint32_t mActual,
-                   uint32_t kActual)
-    {
+    __aicore__ inline void loadPTile(AscendC::GlobalTensor<ElementA> gA, LayoutA layoutA, uint32_t bufferIdx,
+        uint32_t mTileOffset, uint32_t kTileOffset, uint32_t mActual, uint32_t kActual) {
         AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(bufferIdx);
         MatrixCoord gmATileCoord{mTileOffset, kTileOffset};
         auto gmTileA = gA[layoutA.GetOffset(gmATileCoord)];
@@ -203,10 +175,8 @@ public:
         AscendC::SetFlag<AscendC::HardEvent::MTE2_MTE1>(bufferIdx);
     }
 #else
-    __aicore__ inline
-    void getBlockShape(
-        GemmCoord &actualShape, uint32_t &nowNIdx, uint32_t &nLoop, uint32_t &stackSeqTile, uint32_t &blockSize)
-    {
+    __aicore__ inline void getBlockShape(
+        GemmCoord &actualShape, uint32_t &nowNIdx, uint32_t &nLoop, uint32_t &stackSeqTile, uint32_t &blockSize) {
         uint32_t nSplitSize = blockSize;
         if (nowNIdx == nLoop - 1) {
             nSplitSize = stackSeqTile - nowNIdx * blockSize;
@@ -215,17 +185,12 @@ public:
     }
 #endif
 
-    __aicore__ inline
-    void operator()(AscendC::GlobalTensor<ElementA> gA,
-                    AscendC::GlobalTensor<ElementB> gB,
-                    AscendC::GlobalTensor<ElementC> gC,
-                    AscendC::GlobalTensor<int32_t> gBlockTable,
-                    AscendC::GlobalTensor<int32_t> gSelectIdx,
-                    LayoutA layoutA, LayoutB layoutB, LayoutC layoutC,GemmCoord actualOriShape,
-                    uint32_t &nIdx, uint32_t &nLoop, uint32_t &blockSize, uint32_t kvSeqlen, uint32_t strideKV,
-                    uint32_t blockStackNum, Arch::CrossCoreFlag softmaxFlag, 
-                    uint32_t &y, uint32_t &selectNum, uint32_t &kvYBlockNum)
-    {
+    __aicore__ inline void operator()(AscendC::GlobalTensor<ElementA> gA, AscendC::GlobalTensor<ElementB> gB,
+        AscendC::GlobalTensor<ElementC> gC, AscendC::GlobalTensor<int32_t> gBlockTable,
+        AscendC::GlobalTensor<int32_t> gSelectIdx, LayoutA layoutA, LayoutB layoutB, LayoutC layoutC,
+        GemmCoord actualOriShape, uint32_t &nIdx, uint32_t &nLoop, uint32_t &blockSize, uint32_t kvSeqlen,
+        uint32_t strideKV, uint32_t blockStackNum, Arch::CrossCoreFlag softmaxFlag, uint32_t &y, uint32_t &selectNum,
+        uint32_t &kvYBlockNum) {
         uint32_t rowNum = actualOriShape[0];
         uint32_t embed = actualOriShape[1];
         uint32_t stackSeqTile = actualOriShape[2];
@@ -234,8 +199,8 @@ public:
         uint32_t firstKActual = min(stackSeqTile, L1TileShape::K);
 
         // V0 can be loaded while the vector core is still producing P.
-        loadVTile(gB, gSelectIdx, layoutB, 0, 0, firstKActual, nIdx, blockSize, kvSeqlen, strideKV,
-                  y, selectNum, kvYBlockNum, embed);
+        loadVTile(gB, gSelectIdx, layoutB, 0, 0, firstKActual, nIdx, blockSize, kvSeqlen, strideKV, y, selectNum,
+            kvYBlockNum, embed);
 
         Arch::CrossCoreWaitFlag(softmaxFlag);
 
@@ -247,8 +212,8 @@ public:
 
             // The regular A2 kernel supplies at most one M tile. Keep the generic loop correct if that changes.
             if (mL1Idx > 0) {
-                loadVTile(gB, gSelectIdx, layoutB, 0, 0, firstKActual, nIdx, blockSize, kvSeqlen, strideKV,
-                          y, selectNum, kvYBlockNum, embed);
+                loadVTile(gB, gSelectIdx, layoutB, 0, 0, firstKActual, nIdx, blockSize, kvSeqlen, strideKV, y,
+                    selectNum, kvYBlockNum, embed);
             }
             loadPTile(gA, layoutA, 0, mL1Idx * L1TileShape::M, 0, mL1Actual, firstKActual);
 
@@ -261,12 +226,10 @@ public:
                     uint32_t nextKIdx = kL1Idx + 1;
                     uint32_t nextBuffer = nextKIdx % STAGES;
                     uint32_t nextKOffset = nextKIdx * L1TileShape::K;
-                    uint32_t nextKActual =
-                        (nextKIdx < kL1Loop - 1) ? L1TileShape::K : (stackSeqTile - nextKOffset);
-                    loadVTile(gB, gSelectIdx, layoutB, nextBuffer, nextKOffset, nextKActual, nIdx, blockSize,
-                              kvSeqlen, strideKV, y, selectNum, kvYBlockNum, embed);
-                    loadPTile(gA, layoutA, nextBuffer, mL1Idx * L1TileShape::M, nextKOffset,
-                              mL1Actual, nextKActual);
+                    uint32_t nextKActual = (nextKIdx < kL1Loop - 1) ? L1TileShape::K : (stackSeqTile - nextKOffset);
+                    loadVTile(gB, gSelectIdx, layoutB, nextBuffer, nextKOffset, nextKActual, nIdx, blockSize, kvSeqlen,
+                        strideKV, y, selectNum, kvYBlockNum, embed);
+                    loadPTile(gA, layoutA, nextBuffer, mL1Idx * L1TileShape::M, nextKOffset, mL1Actual, nextKActual);
                 }
 
                 LayoutAInL1 layoutAInL1 = LayoutAInL1::template MakeLayout<ElementA>(mL1Actual, kL1Actual);
@@ -306,13 +269,8 @@ public:
                     AscendC::SetFlag<AscendC::HardEvent::MTE1_M>(EVENT_ID0);
                     AscendC::WaitFlag<AscendC::HardEvent::MTE1_M>(EVENT_ID0);
                     bool initMmad = kL1Idx == 0 && kL0Idx == 0;
-                    tileMmad(l0CTensor[l0CPingPongFlag],
-                        l0ATensor[l0ABPingPongFlag],
-                        l0BTensor[l0ABPingPongFlag],
-                        mRound,
-                        embed,
-                        kL0Actual,
-                        initMmad);
+                    tileMmad(l0CTensor[l0CPingPongFlag], l0ATensor[l0ABPingPongFlag], l0BTensor[l0ABPingPongFlag],
+                        mRound, embed, kL0Actual, initMmad);
                     AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(l0ABPingPongFlag);
                     AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(l0ABPingPongFlag + 2);
                     l0ABPingPongFlag = 1 - l0ABPingPongFlag;
@@ -338,7 +296,7 @@ public:
         for (uint32_t blockStackIdx = 0; blockStackIdx < nL1Loop; ++blockStackIdx) {
             uint32_t nowNIdx = nIdx + blockStackIdx;
             getBlockShape(actualShape, blockStackIdx, nL1Loop, stackSeqTile, blockSize);
-            uint32_t kActual = actualShape.k(); 
+            uint32_t kActual = actualShape.k();
             uint32_t nActual = actualShape.n();
 
             uint32_t processSize = 0;
@@ -348,9 +306,12 @@ public:
             uint32_t currentYIdx = gSelectIdx.GetValue(currentSelectYIdx);
             uint32_t offsetInKV = currentYIdx * y + currentYoffset;
 
-            while (processSize < kActual && currentSelectYIdx < selectNum && currentYIdx < kvYBlockNum && offsetInKV < kvSeqlen) {
-                uint32_t yAcutal = (currentSelectYIdx == selectNum - 1 && currentYIdx == kvYBlockNum - 1 && kvSeqlen % y != 0) ? 
-                                    (kvSeqlen - y * currentYIdx) : y;
+            while (processSize < kActual && currentSelectYIdx < selectNum && currentYIdx < kvYBlockNum &&
+                offsetInKV < kvSeqlen) {
+                uint32_t yAcutal =
+                    (currentSelectYIdx == selectNum - 1 && currentYIdx == kvYBlockNum - 1 && kvSeqlen % y != 0)
+                    ? (kvSeqlen - y * currentYIdx)
+                    : y;
                 uint32_t remainingInYBlock = yAcutal - currentYoffset;
                 uint32_t remainingInNBlock = kActual - processSize;
 
@@ -362,9 +323,9 @@ public:
                 auto layoutBTile = layoutB.GetTileLayout(MakeCoord(actualYSize, nActual));
                 MatrixCoord l1BTileCoord{blockStackIdx * blockSize + processSize, 0};
                 auto l1BTile = l1BTensor[layoutBInL1.GetOffset(l1BTileCoord)];
-           
+
                 copyGmToL1B(l1BTile, gB[offsetInKV * strideKV], layoutBInL1, layoutBTile);
-                
+
                 processSize += actualYSize;
                 currentYoffset += actualYSize;
                 offsetInKV += actualYSize;
@@ -432,13 +393,8 @@ public:
                     AscendC::SetFlag<AscendC::HardEvent::MTE1_M>(EVENT_ID0);
                     AscendC::WaitFlag<AscendC::HardEvent::MTE1_M>(EVENT_ID0);
                     bool initMmad = kL1Idx == 0 && kL0Idx == 0;
-                    tileMmad(l0CTensor[l0CPingPongFlag],
-                        l0ATensor[l0ABPingPongFlag],
-                        l0BTensor[l0ABPingPongFlag],
-                        mRound,
-                        embed,
-                        kL0Actual,
-                        initMmad);
+                    tileMmad(l0CTensor[l0CPingPongFlag], l0ATensor[l0ABPingPongFlag], l0BTensor[l0ABPingPongFlag],
+                        mRound, embed, kL0Actual, initMmad);
                     AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(l0ABPingPongFlag);
                     AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(l0ABPingPongFlag + 2);
                     l0ABPingPongFlag = 1 - l0ABPingPongFlag;
@@ -458,7 +414,7 @@ public:
 #endif
     }
 
-protected:
+  protected:
     /// Data members
     AscendC::LocalTensor<ElementA> l1ATensor[STAGES];
 #if BSA_ENABLE_V_DOUBLE_BUFFER
@@ -486,7 +442,6 @@ protected:
 
 ////////////////////////////////////////////////////////////////////
 
-}  // namespace NpuArch::Gemm::Block
+} // namespace NpuArch::Gemm::Block
 
-#endif  // GEMM_BLOCK_MMAD_SFAI_PV_HPP
-
+#endif // GEMM_BLOCK_MMAD_SFAI_PV_HPP

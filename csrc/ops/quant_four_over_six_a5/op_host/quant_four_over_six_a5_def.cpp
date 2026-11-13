@@ -10,6 +10,15 @@
  * See the Mulan PSL v2 for more details.
  */
 
+/**
+ * Copyright (c) 2025 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
 
 /*!
  * \file quant_four_over_six_a5_def.cpp
@@ -27,9 +36,8 @@ static constexpr int32_t DEFAULT_SCALE_ALG = 2;
 static constexpr float DEFAULT_DST_TYPE_MAX = 4.0;
 static constexpr uint32_t ATTR_VERSION = 2;
 class QuantFourOverSixA5 : public OpDef {
-public:
-    explicit QuantFourOverSixA5(const char* name) : OpDef(name)
-    {
+  public:
+    explicit QuantFourOverSixA5(const char *name) : OpDef(name) {
         // T9b: 仅保留 46 自适应组合（bf16 -> FLOAT4_E2M1, E8M0 mxscale）；其余 7 组合
         // （fp16 输入、e1m2/fp8 输出）已随非 46 路径清理删除。
         this->Input("x")

@@ -1,6 +1,19 @@
 /*
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
+
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /**
  * Copyright (c) 2025 Huawei Technologies Co., Ltd.
  * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
@@ -25,8 +38,7 @@ using namespace AscendC;
 using namespace MicroAPI;
 
 template <typename T>
-__simd_vf__ void inline init_indexs_and_duplicate_vf(__ubuf__ uint8_t *index_nd2xz, __ubuf__ T *dup_dest)
-{
+__simd_vf__ void inline init_indexs_and_duplicate_vf(__ubuf__ uint8_t *index_nd2xz, __ubuf__ T *dup_dest) {
     // Index
     RegTensor<uint8_t> index_reg, index_reg_1, index_reg_2;
     MaskReg mask_32 = CreateMask<int8_t, MaskPattern::VL32>();
@@ -51,9 +63,8 @@ __simd_vf__ void inline init_indexs_and_duplicate_vf(__ubuf__ uint8_t *index_nd2
 }
 
 template <typename T>
-__aicore__ inline void InitIndexesAndDuplicateCallVF(LocalTensor<uint8_t> &nd2nzIndexes,
-                                                     const LocalTensor<T> &localGlobalMaxUB)
-{
+__aicore__ inline void InitIndexesAndDuplicateCallVF(
+    LocalTensor<uint8_t> &nd2nzIndexes, const LocalTensor<T> &localGlobalMaxUB) {
     __ubuf__ uint8_t *index_nd2xz = (__ubuf__ uint8_t *)nd2nzIndexes.GetPhyAddr();
 
     __ubuf__ T *local_global_max_buf = (__ubuf__ T *)localGlobalMaxUB.GetPhyAddr();

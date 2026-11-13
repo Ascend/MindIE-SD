@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #include <graph/utils/type_utils.h>
 #include <register/op_impl_registry.h>
 #include "log/log.h"
@@ -49,47 +61,46 @@ static constexpr uint32_t LSE_DIM_D = 1;
 
 static constexpr int32_t UNKNOWN_DIMS = -2;
 
-static ge::graphStatus InferShapeEagleQuantBlockSparseAttention(gert::InferShapeContext *context)
-{
+static ge::graphStatus InferShapeEagleQuantBlockSparseAttention(gert::InferShapeContext *context) {
     if (context == nullptr) {
         OP_LOGE("EagleQuantBlockSparseAttention", "context is nullptr!");
         return ge::GRAPH_FAILED;
     }
-    
+
     OP_LOGD(context->GetNodeName(), "Enter EagleQuantBlockSparseAttention InferShape impl.");
-    
+
     // 获取Query shape
     const gert::Shape *queryShape = context->GetInputShape(QUERY_INDEX);
     OP_CHECK_NULL_WITH_CONTEXT(context, queryShape);
-    
+
     // 获取Key shape
     const gert::Shape *keyShape = context->GetInputShape(KEY_INDEX);
     OP_CHECK_NULL_WITH_CONTEXT(context, keyShape);
-    
+
     // 获取Value shape
     const gert::Shape *valueShape = context->GetInputShape(VALUE_INDEX);
     OP_CHECK_NULL_WITH_CONTEXT(context, valueShape);
-    
+
     // 获取输出shape
     gert::Shape *attentionOutShape = context->GetOutputShape(ATTENTION_OUT_INDEX);
     OP_CHECK_NULL_WITH_CONTEXT(context, attentionOutShape);
-    
+
     gert::Shape *softmaxLseShape = context->GetOutputShape(SOFTMAX_LSE_INDEX);
     OP_CHECK_NULL_WITH_CONTEXT(context, softmaxLseShape);
-    
+
     // 获取属性
     auto attrs = context->GetAttrs();
     OP_CHECK_NULL_WITH_CONTEXT(context, attrs);
-    
+
     const char *qInputLayoutPtr = attrs->GetAttrPointer<char>(ATTR_Q_INPUT_LAYOUT_INDEX);
     OP_CHECK_NULL_WITH_CONTEXT(context, qInputLayoutPtr);
-    
+
     const char *kvInputLayoutPtr = attrs->GetAttrPointer<char>(ATTR_KV_INPUT_LAYOUT_INDEX);
     OP_CHECK_NULL_WITH_CONTEXT(context, kvInputLayoutPtr);
-    
+
     const int64_t *numKvHeadsPtr = attrs->GetInt(ATTR_NUM_KV_HEADS_INDEX);
     OP_CHECK_NULL_WITH_CONTEXT(context, numKvHeadsPtr);
-    
+
     // UNKNOWN DIM处理
     if ((queryShape->GetDimNum() == 1 && queryShape->GetDim(0) == UNKNOWN_DIMS) ||
         (keyShape->GetDimNum() == 1 && keyShape->GetDim(0) == UNKNOWN_DIMS) ||
@@ -100,14 +111,14 @@ static ge::graphStatus InferShapeEagleQuantBlockSparseAttention(gert::InferShape
         (*softmaxLseShape)[0] = UNKNOWN_DIMS;
         return ge::GRAPH_SUCCESS;
     }
-    
+
     // 设置AttentionOut shape (与Query shape相同)
     *attentionOutShape = *queryShape;
-    
+
     // 验证Q layout和KV layout
     std::string qLayout(qInputLayoutPtr);
     std::string kvLayout(kvInputLayoutPtr);
-    
+
     // 验证Q layout (只支持TND和BNSD)
     if (qLayout == "TND") {
         if (queryShape->GetDimNum() != DIM_TND) {
@@ -123,34 +134,35 @@ static ge::graphStatus InferShapeEagleQuantBlockSparseAttention(gert::InferShape
         OP_LOGE(context->GetNodeName(), "Unsupported Q layout: %s. Only TND and BNSD are supported.", qInputLayoutPtr);
         return ge::GRAPH_FAILED;
     }
-    
+
     // 验证Q和KV格式一致性：如果其中一个是BNSD，另一个也必须是BNSD
     bool isQBNSD = (qLayout == "BNSD");
     bool isKvBNSD = (kvLayout == "BNSD");
-    
+
     if (isQBNSD != isKvBNSD) {
-        OP_LOGE(context->GetNodeName(), 
-                "Q and KV layouts must match: if one is BNSD, the other must also be BNSD. "
-                "Q layout: %s, KV layout: %s", qLayout.c_str(), kvLayout.c_str());
+        OP_LOGE(context->GetNodeName(),
+            "Q and KV layouts must match: if one is BNSD, the other must also be BNSD. "
+            "Q layout: %s, KV layout: %s",
+            qLayout.c_str(), kvLayout.c_str());
         return ge::GRAPH_FAILED;
     }
-    
+
     // 验证KV layout
     if (kvLayout == "TND") {
         if (keyShape->GetDimNum() != DIM_TND || valueShape->GetDimNum() != DIM_TND) {
             OP_LOGE(context->GetNodeName(), "Layout TND, KV dims must be 3!");
             return ge::GRAPH_FAILED;
         }
-        
+
         // TND格式: [T, N, D]
         int64_t kvN = keyShape->GetDim(TND_DIM_N);
         int64_t kvD = keyShape->GetDim(TND_DIM_D);
-        
+
         if (*numKvHeadsPtr != 0 && kvN != *numKvHeadsPtr) {
             OP_LOGE(context->GetNodeName(), "KV heads mismatch in TND format: %ld != %ld", kvN, *numKvHeadsPtr);
             return ge::GRAPH_FAILED;
         }
-        
+
         if (valueShape->GetDim(TND_DIM_D) != kvD) {
             OP_LOGE(context->GetNodeName(), "K and V head dimension mismatch in TND format");
             return ge::GRAPH_FAILED;
@@ -160,17 +172,17 @@ static ge::graphStatus InferShapeEagleQuantBlockSparseAttention(gert::InferShape
             OP_LOGE(context->GetNodeName(), "Layout BNSD, KV dims must be 4!");
             return ge::GRAPH_FAILED;
         }
-        
+
         // BNSD格式: [B, N, S, D]
         int64_t kvB = keyShape->GetDim(BNSD_DIM_B);
         int64_t kvN = keyShape->GetDim(BNSD_DIM_N);
         int64_t kvD = keyShape->GetDim(BNSD_DIM_D);
-        
+
         if (*numKvHeadsPtr != 0 && kvN != *numKvHeadsPtr) {
             OP_LOGE(context->GetNodeName(), "KV heads mismatch in BNSD format: %ld != %ld", kvN, *numKvHeadsPtr);
             return ge::GRAPH_FAILED;
         }
-        
+
         if (valueShape->GetDim(BNSD_DIM_D) != kvD) {
             OP_LOGE(context->GetNodeName(), "K and V head dimension mismatch in BNSD format");
             return ge::GRAPH_FAILED;
@@ -179,7 +191,7 @@ static ge::graphStatus InferShapeEagleQuantBlockSparseAttention(gert::InferShape
         OP_LOGE(context->GetNodeName(), "Unsupported KV layout: %s. Only TND format is supported.", kvInputLayoutPtr);
         return ge::GRAPH_FAILED;
     }
-    
+
     // 设置SoftmaxLse shape (如果需要)
     // SoftmaxLse shape通常是 [batch, num_heads, q_seqlen, 1] 或类似维度
     if (qLayout == "TND") {
@@ -199,13 +211,12 @@ static ge::graphStatus InferShapeEagleQuantBlockSparseAttention(gert::InferShape
         OP_LOGE(context->GetNodeName(), "Unexpected Q layout in softmaxLse shape calculation: %s", qInputLayoutPtr);
         return ge::GRAPH_FAILED;
     }
-    
+
     OP_LOGD(context->GetNodeName(), "EagleQuantBlockSparseAttention InferShape success.");
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus InferDataTypeEagleQuantBlockSparseAttention(gert::InferDataTypeContext *context)
-{
+ge::graphStatus InferDataTypeEagleQuantBlockSparseAttention(gert::InferDataTypeContext *context) {
     if (context == nullptr) {
         return ge::GRAPH_FAILED;
     }
@@ -220,5 +231,4 @@ IMPL_OP_INFERSHAPE(EagleQuantBlockSparseAttention)
     .InferShape(InferShapeEagleQuantBlockSparseAttention)
     .InferDataType(InferDataTypeEagleQuantBlockSparseAttention);
 
-}  // namespace ops
-
+} // namespace ops

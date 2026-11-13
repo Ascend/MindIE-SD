@@ -10,6 +10,15 @@
  * See the Mulan PSL v2 for more details.
  */
 
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
 
 /* !
  * \file quant_four_over_six_a5_tilingdata.h
@@ -31,15 +40,15 @@ struct QuantFourOverSixA5TailAxisTilingData {
     int64_t blockSize{0};
     int64_t totalCoreNum{0};
     int64_t usedCoreNum{0};
-    int64_t rowTileNum{0};        // row 方向上的切核数
-    int64_t colTileNum{0};        // col 方向上的切核数
-    int64_t rowNum{0};            // 合轴之后 -2 轴大小
-    int64_t colNum{0};            // 合轴之后 -1 轴大小
+    int64_t rowTileNum{0}; // row 方向上的切核数
+    int64_t colTileNum{0}; // col 方向上的切核数
+    int64_t rowNum{0}; // 合轴之后 -2 轴大小
+    int64_t colNum{0}; // 合轴之后 -1 轴大小
     int64_t colNormalBlockNum{0}; // 列方向头核处理的块数 (1 x 256)
-    int64_t colTailLen{0};        // 列方向尾块长度
+    int64_t colTailLen{0}; // 列方向尾块长度
     int64_t rowNormalBlockNum{0}; // 行方向头核处理的块数 (1 行)
-    int64_t rowTailLen{0};        // 行方向尾块长度
-    int64_t maxUbBlockNum{0};     // UB最大能放下的处理块数 (1 x 32) (8 的倍数)
+    int64_t rowTailLen{0}; // 行方向尾块长度
+    int64_t maxUbBlockNum{0}; // UB最大能放下的处理块数 (1 x 32) (8 的倍数)
     float dstTypeMax{0.0f};
     float invDstTypeMax{0.0f};
 };

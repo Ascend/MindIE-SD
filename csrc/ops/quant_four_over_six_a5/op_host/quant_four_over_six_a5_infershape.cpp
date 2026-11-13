@@ -10,6 +10,15 @@
  * See the Mulan PSL v2 for more details.
  */
 
+/**
+ * Copyright (c) 2025 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
 
 /*!
  * \file quant_four_over_six_a5_infershape.cpp
@@ -28,17 +37,14 @@
 // 此处以 gert::Shape 原生语义内联等价实现（参考 eagle_quant_block_sparse_attention）。
 namespace {
 constexpr int64_t UNKNOWN_DIM_VALUE_Q = -2;
-inline bool IsUnknownRankShapeQ(const gert::Shape &s)
-{
+inline bool IsUnknownRankShapeQ(const gert::Shape &s) {
     return s.GetDimNum() == 1 && s.GetDim(0) == UNKNOWN_DIM_VALUE_Q;
 }
-inline void SetUnknownRankShapeQ(gert::Shape &s)
-{
+inline void SetUnknownRankShapeQ(gert::Shape &s) {
     s.SetDimNum(0);
     s.AppendDim(UNKNOWN_DIM_VALUE_Q);
 }
-template <typename T> inline bool IsFloatEqualQ(T a, T b)
-{
+template <typename T> inline bool IsFloatEqualQ(T a, T b) {
     if (std::isnan(a) || std::isnan(b)) {
         return false;
     }
@@ -48,7 +54,7 @@ template <typename T> inline bool IsFloatEqualQ(T a, T b)
     return a == b;
 }
 template <typename T> inline T CeilDivQ(T a, T b) { return (a + b - 1) / b; }
-}  // namespace
+} // namespace
 
 using namespace ge;
 namespace ops {
@@ -70,25 +76,22 @@ constexpr int32_t BLOCK_SIZE_46 = 32;
 constexpr int32_t SCALE_ALG_46 = 2;
 constexpr float DST_TYPE_MAX_46 = 4.0f;
 // T9b: 仅保留 46 自适应路径——y 仅 FLOAT4_E2M1（41/36/35 已随清理删除）
-static const std::initializer_list<ge::DataType> Y_SUPPORT_DTYPE_SET = {
-    ge::DT_FLOAT4_E2M1};
+static const std::initializer_list<ge::DataType> Y_SUPPORT_DTYPE_SET = {ge::DT_FLOAT4_E2M1};
 
-graphStatus InferShapeForQuantFourOverSixA5(gert::InferShapeContext* context)
-{
+graphStatus InferShapeForQuantFourOverSixA5(gert::InferShapeContext *context) {
     OP_LOGD(context->GetNodeName(), "Begin to do InferShapeForQuantFourOverSixA5");
-    const gert::Shape* xShape = context->GetInputShape(0);
+    const gert::Shape *xShape = context->GetInputShape(0);
     OP_CHECK_NULL_WITH_CONTEXT(context, xShape);
 
-    gert::Shape* yShape = context->GetOutputShape(0);
+    gert::Shape *yShape = context->GetOutputShape(0);
     OP_CHECK_NULL_WITH_CONTEXT(context, yShape);
 
-    gert::Shape* scaleShape = context->GetOutputShape(1);
+    gert::Shape *scaleShape = context->GetOutputShape(1);
     OP_CHECK_NULL_WITH_CONTEXT(context, scaleShape);
 
-    OP_CHECK_IF(
-        xShape->GetDimNum() < 1 || xShape->GetDimNum() > MAX_DIM_NUM,
-        OP_LOGE_FOR_INVALID_SHAPEDIM_WITH_REASON(context->GetNodeName(), "x",
-            std::to_string(xShape->GetDimNum()), "The shape dim of x must be within the range [1, 7]"),
+    OP_CHECK_IF(xShape->GetDimNum() < 1 || xShape->GetDimNum() > MAX_DIM_NUM,
+        OP_LOGE_FOR_INVALID_SHAPEDIM_WITH_REASON(context->GetNodeName(), "x", std::to_string(xShape->GetDimNum()),
+            "The shape dim of x must be within the range [1, 7]"),
         return ge::GRAPH_FAILED);
 
     if (IsUnknownRankShapeQ(*xShape)) {
@@ -102,70 +105,57 @@ graphStatus InferShapeForQuantFourOverSixA5(gert::InferShapeContext* context)
 
     auto attrsPtr = context->GetAttrs();
     OP_CHECK_NULL_WITH_CONTEXT(context, attrsPtr);
-    const int32_t* axis = attrsPtr->GetAttrPointer<int32_t>(INDEX_ATTR_AXIS);
+    const int32_t *axis = attrsPtr->GetAttrPointer<int32_t>(INDEX_ATTR_AXIS);
     OP_CHECK_NULL_WITH_CONTEXT(context, axis);
-    const int32_t* blockSize = attrsPtr->GetAttrPointer<int32_t>(INDEX_ATTR_BLOCK_SIZE);
+    const int32_t *blockSize = attrsPtr->GetAttrPointer<int32_t>(INDEX_ATTR_BLOCK_SIZE);
     OP_CHECK_NULL_WITH_CONTEXT(context, blockSize);
 
     // ===== T9c: 46 组合守卫（aclnn/GE 直调路径补齐，语义与 plugin/tiling 侧一致）=====
-    const char* roundMode = attrsPtr->GetAttrPointer<char>(INDEX_ATTR_ROUND_MODE);
+    const char *roundMode = attrsPtr->GetAttrPointer<char>(INDEX_ATTR_ROUND_MODE);
     OP_CHECK_NULL_WITH_CONTEXT(context, roundMode);
-    const int32_t* scaleAlg = attrsPtr->GetAttrPointer<int32_t>(INDEX_ATTR_SCALE_ALG);
+    const int32_t *scaleAlg = attrsPtr->GetAttrPointer<int32_t>(INDEX_ATTR_SCALE_ALG);
     OP_CHECK_NULL_WITH_CONTEXT(context, scaleAlg);
-    const float* dstTypeMax = attrsPtr->GetAttrPointer<float>(INDEX_ATTR_DST_TYPE_MAX);
+    const float *dstTypeMax = attrsPtr->GetAttrPointer<float>(INDEX_ATTR_DST_TYPE_MAX);
     OP_CHECK_NULL_WITH_CONTEXT(context, dstTypeMax);
 
     // B4: axis 范围（归一后须落在 [0, rank) 内，防越界访问）
     int64_t dim = (*axis >= 0) ? static_cast<int64_t>(*axis)
                                : static_cast<int64_t>(*axis) + static_cast<int64_t>(xShape->GetDimNum());
-    OP_CHECK_IF(
-        dim < 0 || dim >= static_cast<int64_t>(xShape->GetDimNum()),
-        OP_LOGE_FOR_INVALID_VALUE_WITH_REASON(context->GetNodeName(), "axis",
-            std::to_string(*axis),
+    OP_CHECK_IF(dim < 0 || dim >= static_cast<int64_t>(xShape->GetDimNum()),
+        OP_LOGE_FOR_INVALID_VALUE_WITH_REASON(context->GetNodeName(), "axis", std::to_string(*axis),
             "The value of axis must be within the range [-" + std::to_string(xShape->GetDimNum()) + ", " +
                 std::to_string(xShape->GetDimNum() - 1) + "]"),
         return ge::GRAPH_FAILED);
     // B3: 46 自适应仅尾轴（kernel 仅在尾轴模板实现）
-    OP_CHECK_IF(
-        dim != static_cast<int64_t>(xShape->GetDimNum()) - 1,
-        OP_LOGE_FOR_INVALID_VALUE_WITH_REASON(context->GetNodeName(), "axis",
-            std::to_string(*axis),
+    OP_CHECK_IF(dim != static_cast<int64_t>(xShape->GetDimNum()) - 1,
+        OP_LOGE_FOR_INVALID_VALUE_WITH_REASON(context->GetNodeName(), "axis", std::to_string(*axis),
             "dst_type_max=4 (4/6 adaptive) is only supported on the tail axis"),
         return ge::GRAPH_FAILED);
     // B5: 硬性条件——量化轴（尾轴）长度必须 32 对齐（kernel 无 tail block 处理）
     if (xShape->GetDim(dim) != UNKNOWN_DIM_VALUE_) {
-        OP_CHECK_IF(
-            xShape->GetDim(dim) % BLOCK_SIZE_46 != 0,
-            OP_LOGE_FOR_INVALID_VALUE_WITH_REASON(context->GetNodeName(), "axis",
-                std::to_string(*axis),
+        OP_CHECK_IF(xShape->GetDim(dim) % BLOCK_SIZE_46 != 0,
+            OP_LOGE_FOR_INVALID_VALUE_WITH_REASON(context->GetNodeName(), "axis", std::to_string(*axis),
                 "The axis dim must be 32-aligned (4/6 adaptive is block-aligned only)"),
             return ge::GRAPH_FAILED);
     }
     // B1: 46 自适应仅 blocksize=32
-    OP_CHECK_IF(
-        *blockSize != BLOCK_SIZE_46,
-        OP_LOGE_FOR_INVALID_VALUE_WITH_REASON(context->GetNodeName(), "blocksize",
-            std::to_string(*blockSize),
+    OP_CHECK_IF(*blockSize != BLOCK_SIZE_46,
+        OP_LOGE_FOR_INVALID_VALUE_WITH_REASON(context->GetNodeName(), "blocksize", std::to_string(*blockSize),
             "dst_type_max=4 (4/6 adaptive) is only supported with blocksize=32"),
         return ge::GRAPH_FAILED);
     // B3: scale_alg 必须为 2
-    OP_CHECK_IF(
-        *scaleAlg != SCALE_ALG_46,
-        OP_LOGE_FOR_INVALID_VALUE_WITH_REASON(context->GetNodeName(), "scale_alg",
-            std::to_string(*scaleAlg),
+    OP_CHECK_IF(*scaleAlg != SCALE_ALG_46,
+        OP_LOGE_FOR_INVALID_VALUE_WITH_REASON(context->GetNodeName(), "scale_alg", std::to_string(*scaleAlg),
             "dst_type_max=4 (4/6 adaptive) only supports scale_alg=2"),
         return ge::GRAPH_FAILED);
     // B3: dst_type_max 必须为 4.0（46 自适应触发值；0/6/7 等非自适应路径已随清理删除）
-    OP_CHECK_IF(
-        !IsFloatEqualQ(*dstTypeMax, DST_TYPE_MAX_46),
-        OP_LOGE_FOR_INVALID_VALUE_WITH_REASON(context->GetNodeName(), "dst_type_max",
-            std::to_string(*dstTypeMax),
+    OP_CHECK_IF(!IsFloatEqualQ(*dstTypeMax, DST_TYPE_MAX_46),
+        OP_LOGE_FOR_INVALID_VALUE_WITH_REASON(context->GetNodeName(), "dst_type_max", std::to_string(*dstTypeMax),
             "dst_type_max must be 4.0 (4/6 adaptive is the only remaining path)"),
         return ge::GRAPH_FAILED);
     // B2: round_mode 白名单 {rint, round, floor}（kernel tilingKey=12 支持三种）
     std::string roundModeStr = roundMode;
-    OP_CHECK_IF(
-        roundModeStr != "rint" && roundModeStr != "round" && roundModeStr != "floor",
+    OP_CHECK_IF(roundModeStr != "rint" && roundModeStr != "round" && roundModeStr != "floor",
         OP_LOGE_FOR_INVALID_VALUE_WITH_REASON(context->GetNodeName(), "round_mode", roundModeStr,
             "The value of round_mode must be one of [rint, round, floor]"),
         return ge::GRAPH_FAILED);
@@ -183,25 +173,23 @@ graphStatus InferShapeForQuantFourOverSixA5(gert::InferShapeContext* context)
     scaleShape->SetDim(dim, dimSize);
     scaleShape->AppendDim(ALIGN_NUM);
 
-    OP_LOGD(
-        context->GetNodeName(), "x shape is : %s, mxscale shape is %s.", Shape2String(*xShape).c_str(),
+    OP_LOGD(context->GetNodeName(), "x shape is : %s, mxscale shape is %s.", Shape2String(*xShape).c_str(),
         Shape2String(*scaleShape).c_str());
     OP_LOGD(context->GetNodeName(), "End to do InferShapeForQuantFourOverSixA5");
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus InferDataTypeForQuantFourOverSixA5(gert::InferDataTypeContext* context)
-{
+ge::graphStatus InferDataTypeForQuantFourOverSixA5(gert::InferDataTypeContext *context) {
     OP_LOGD(context->GetNodeName(), "Begin to do InferDataTypeForQuantFourOverSixA5");
     auto attrsPtr = context->GetAttrs();
     OP_CHECK_NULL_WITH_CONTEXT(context, attrsPtr);
-    const int32_t* dstDtype = attrsPtr->GetAttrPointer<int32_t>(INDEX_ATTR_DST_TYPE);
+    const int32_t *dstDtype = attrsPtr->GetAttrPointer<int32_t>(INDEX_ATTR_DST_TYPE);
     OP_CHECK_NULL_WITH_CONTEXT(context, dstDtype);
     ge::DataType outDtype = static_cast<ge::DataType>(*dstDtype);
     OP_CHECK_IF(
         std::find(Y_SUPPORT_DTYPE_SET.begin(), Y_SUPPORT_DTYPE_SET.end(), outDtype) == Y_SUPPORT_DTYPE_SET.end(),
-        OP_LOGE_FOR_INVALID_DTYPE(context->GetNodeName(), "dst_type",
-            ge::TypeUtils::DataTypeToSerialString(outDtype), "DT_FLOAT4_E2M1"),
+        OP_LOGE_FOR_INVALID_DTYPE(
+            context->GetNodeName(), "dst_type", ge::TypeUtils::DataTypeToSerialString(outDtype), "DT_FLOAT4_E2M1"),
         return ge::GRAPH_FAILED);
     context->SetOutputDataType(0, outDtype);
     context->SetOutputDataType(1, ge::DT_FLOAT8_E8M0);

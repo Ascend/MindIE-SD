@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef BSA_EPILOGUE_TILE_COPY_HPP
 #define BSA_EPILOGUE_TILE_COPY_HPP
 
@@ -20,27 +32,22 @@
 #include "../../../attn_infra/epilogue/tile_common/copy_ub_to_gm_tla.hpp"
 #include "../../../tla/tensor_bsa.hpp"
 
-namespace NpuArch::Epilogue::Tile 
-{
+namespace NpuArch::Epilogue::Tile {
 
 template <
     /// Tag indicating architecture
-    class ArchTag,
-    class... Args
->
+    class ArchTag, class... Args>
 struct TileCopy {
     static_assert(DEPENDENT_FALSE<ArchTag>, "Unsupported tile_common copy, can not find the specialization.");
 };
 
-template <
-    class ArchTag,
+template <class ArchTag,
     /// GemmType for C matrix operand
     class CType,
     /// GemmType for X matrix operand
     class XType,
     /// GemmType for D matrix operand
-    class DType
->
+    class DType>
 struct TileCopy<ArchTag, CType, XType, DType> {
     using ElementC = typename CType::Element;
     using ElementX = typename XType::Element;
@@ -51,13 +58,7 @@ struct TileCopy<ArchTag, CType, XType, DType> {
     using CopyUbToGmD = CopyUb2Gm<ArchTag, DType>;
 };
 
-template <
-    class ArchTag,
-    class CType,
-    class XType,
-    class YType,
-    class DType
->
+template <class ArchTag, class CType, class XType, class YType, class DType>
 struct TileCopy<ArchTag, CType, XType, YType, DType> {
     using ElementC = typename CType::Element;
     using ElementX = typename XType::Element;
@@ -70,14 +71,7 @@ struct TileCopy<ArchTag, CType, XType, YType, DType> {
     using CopyUbToGmD = CopyUb2Gm<ArchTag, DType>;
 };
 
-template <
-    class ArchTag,
-    class CType,
-    class XType,
-    class YType,
-    class DType
->
-struct TileCopyBf16 {
+template <class ArchTag, class CType, class XType, class YType, class DType> struct TileCopyBf16 {
     using ElementC = typename CType::Element;
     using ElementX = bfloat16_t;
     using ElementY = bfloat16_t;
@@ -89,13 +83,7 @@ struct TileCopyBf16 {
     using CopyUbToGmD = CopyUb2Gm<ArchTag, Gemm::GemmType<bfloat16_t, typename DType::Layout>>;
 };
 
-template <
-    class ArchTag,
-    class CType,
-    class ScaleType,
-    class PerTokenScaleType,
-    class DType
->
+template <class ArchTag, class CType, class ScaleType, class PerTokenScaleType, class DType>
 struct TileCopyPerTokenDequant {
     using ElementC = typename CType::Element;
     using ElementScale = typename ScaleType::Element;
@@ -108,23 +96,19 @@ struct TileCopyPerTokenDequant {
     using CopyUbToGmD = CopyUb2Gm<ArchTag, DType>;
 };
 
-template <
-    class ArchTag,
-    class ElementO_,
-    class LayoutTagO_,
-    class LayoutTagOTmp_
-> 
-struct TileCopyRescaleO{
+template <class ArchTag, class ElementO_, class LayoutTagO_, class LayoutTagOTmp_> struct TileCopyRescaleO {
     using ElementO = ElementO_;
     using LayoutTagO = LayoutTagO_;
     using LayoutTagOTmp = LayoutTagOTmp_;
     using LayoutO = detail::TagToLayout_t<ElementO, LayoutTagO>;
-    
-    using TensorUbO = tla::Tensor<AscendC::LocalTensor<ElementO>, LayoutO, tla::Coord<tla::_0, tla::_0>, AscendC::TPosition::VECCALC>;
-    using TensorGmO = tla::Tensor<AscendC::GlobalTensor<ElementO>, LayoutO, tla::Coord<tla::_0, tla::_0>, AscendC::TPosition::GM>;
+
+    using TensorUbO =
+        tla::Tensor<AscendC::LocalTensor<ElementO>, LayoutO, tla::Coord<tla::_0, tla::_0>, AscendC::TPosition::VECCALC>;
+    using TensorGmO =
+        tla::Tensor<AscendC::GlobalTensor<ElementO>, LayoutO, tla::Coord<tla::_0, tla::_0>, AscendC::TPosition::GM>;
 
     using CopyUbToGmO = Tile::CopyUb2GmTla<ArchTag, TensorUbO, TensorGmO>;
 };
 }
 
-#endif  // EPILOGUE_TILE_TILE_COPY_HPP
+#endif // EPILOGUE_TILE_TILE_COPY_HPP

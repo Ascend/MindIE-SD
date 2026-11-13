@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /*!
  * \file eagle_ffn_apt.cpp
  * \brief A5 (ascend950, arch35) kernel entry for FFN operator.
@@ -28,8 +40,7 @@ const uint64_t BLOCK_SIZE = 16;
 
 namespace {
 
-__aicore__ inline MatMulV3BasicTilingData MakeFfnMMTiling(const FFNTilingData *ffn, bool isUp)
-{
+__aicore__ inline MatMulV3BasicTilingData MakeFfnMMTiling(const FFNTilingData *ffn, bool isUp) {
     MatMulV3BasicTilingData t;
     if (isUp) {
         t.usedCoreNum = ffn->upUsedCoreNum;
@@ -83,124 +94,95 @@ __aicore__ inline MatMulV3BasicTilingData MakeFfnMMTiling(const FFNTilingData *f
 }
 
 template <typename T, typename BiasT, bool TransB>
-__aicore__ inline void RunFfnFusedGeluUp(GM_ADDR x, GM_ADDR weight1, GM_ADDR bias1, GM_ADDR hidden,
-                                         const MatMulV3BasicTilingData &up)
-{
+__aicore__ inline void RunFfnFusedGeluUp(
+    GM_ADDR x, GM_ADDR weight1, GM_ADDR bias1, GM_ADDR hidden, const MatMulV3BasicTilingData &up) {
     using namespace AscendC;
     if constexpr (TransB) {
         // linear 权重布局 [N, K]（out, in）：kernel 内 transB
-        MatmulV3Advanced::MatMulGeluMixWithoutQueActKernel<
-            T, T, T, BiasT,
-            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::ColumnMajor, Cmct::Gemm::layout::RowMajor,
-            MatmulV3Advanced::OP_TYPE_GELU_ERF>(x, weight1, bias1, hidden, up);
+        MatmulV3Advanced::MatMulGeluMixWithoutQueActKernel<T, T, T, BiasT, Cmct::Gemm::layout::RowMajor,
+            Cmct::Gemm::layout::ColumnMajor, Cmct::Gemm::layout::RowMajor, MatmulV3Advanced::OP_TYPE_GELU_ERF>(
+            x, weight1, bias1, hidden, up);
     } else {
         // canonical 权重布局 [K, N]
-        MatmulV3Advanced::MatMulGeluMixWithoutQueActKernel<
-            T, T, T, BiasT,
-            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::RowMajor,
-            MatmulV3Advanced::OP_TYPE_GELU_ERF>(x, weight1, bias1, hidden, up);
+        MatmulV3Advanced::MatMulGeluMixWithoutQueActKernel<T, T, T, BiasT, Cmct::Gemm::layout::RowMajor,
+            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::RowMajor, MatmulV3Advanced::OP_TYPE_GELU_ERF>(
+            x, weight1, bias1, hidden, up);
     }
 }
 
 template <typename T, typename BiasT, bool TransB>
-__aicore__ inline void RunFfnFusedSiluUp(GM_ADDR x, GM_ADDR weight1, GM_ADDR bias1, GM_ADDR hidden,
-                                         const MatMulV3BasicTilingData &up)
-{
+__aicore__ inline void RunFfnFusedSiluUp(
+    GM_ADDR x, GM_ADDR weight1, GM_ADDR bias1, GM_ADDR hidden, const MatMulV3BasicTilingData &up) {
     using namespace AscendC;
     if constexpr (TransB) {
         // linear 权重布局 [N, K]（out, in）：kernel 内 transB
-        MatmulV3Advanced::MatMulSiluMixWithoutQueActKernel<
-            T, T, T, BiasT,
-            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::ColumnMajor, Cmct::Gemm::layout::RowMajor>(
-            x, weight1, bias1, hidden, up);
+        MatmulV3Advanced::MatMulSiluMixWithoutQueActKernel<T, T, T, BiasT, Cmct::Gemm::layout::RowMajor,
+            Cmct::Gemm::layout::ColumnMajor, Cmct::Gemm::layout::RowMajor>(x, weight1, bias1, hidden, up);
     } else {
         // canonical 权重布局 [K, N]
-        MatmulV3Advanced::MatMulSiluMixWithoutQueActKernel<
-            T, T, T, BiasT,
-            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::RowMajor>(
-            x, weight1, bias1, hidden, up);
+        MatmulV3Advanced::MatMulSiluMixWithoutQueActKernel<T, T, T, BiasT, Cmct::Gemm::layout::RowMajor,
+            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::RowMajor>(x, weight1, bias1, hidden, up);
     }
 }
 
 // swiglu 前级：gate 半块 matmul + bias，输出 fp32（供 up 半块 epilogue 读取）
 template <typename T, typename BiasT, bool TransB>
-__aicore__ inline void RunFfnRawGateUp(GM_ADDR x, GM_ADDR weight1, GM_ADDR bias1, GM_ADDR gate,
-                                       const MatMulV3BasicTilingData &up)
-{
+__aicore__ inline void RunFfnRawGateUp(
+    GM_ADDR x, GM_ADDR weight1, GM_ADDR bias1, GM_ADDR gate, const MatMulV3BasicTilingData &up) {
     using namespace AscendC;
     if constexpr (TransB) {
-        MatmulV3Advanced::MatMulRawMixWithoutQueActKernel<
-            T, T, float, BiasT,
-            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::ColumnMajor, Cmct::Gemm::layout::RowMajor>(
-            x, weight1, bias1, gate, up);
+        MatmulV3Advanced::MatMulRawMixWithoutQueActKernel<T, T, float, BiasT, Cmct::Gemm::layout::RowMajor,
+            Cmct::Gemm::layout::ColumnMajor, Cmct::Gemm::layout::RowMajor>(x, weight1, bias1, gate, up);
     } else {
-        MatmulV3Advanced::MatMulRawMixWithoutQueActKernel<
-            T, T, float, BiasT,
-            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::RowMajor>(
-            x, weight1, bias1, gate, up);
+        MatmulV3Advanced::MatMulRawMixWithoutQueActKernel<T, T, float, BiasT, Cmct::Gemm::layout::RowMajor,
+            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::RowMajor>(x, weight1, bias1, gate, up);
     }
 }
 
 // swiglu 后级：up 半块 matmul + bias，AIV epilogue 读 gate(fp32) 算 silu(gate)*up 并写 hidden(bf16)
 template <typename T, typename BiasT, bool TransB>
-__aicore__ inline void RunFfnSwigluUp(GM_ADDR x, GM_ADDR weight1, GM_ADDR bias1, GM_ADDR gate, GM_ADDR hidden,
-                                      const MatMulV3BasicTilingData &up)
-{
+__aicore__ inline void RunFfnSwigluUp(
+    GM_ADDR x, GM_ADDR weight1, GM_ADDR bias1, GM_ADDR gate, GM_ADDR hidden, const MatMulV3BasicTilingData &up) {
     using namespace AscendC;
     if constexpr (TransB) {
-        MatmulV3Advanced::MatMulSwigluMixWithoutQueActKernel<
-            T, T, T, BiasT,
-            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::ColumnMajor, Cmct::Gemm::layout::RowMajor>(
-            x, weight1, bias1, gate, hidden, up);
+        MatmulV3Advanced::MatMulSwigluMixWithoutQueActKernel<T, T, T, BiasT, Cmct::Gemm::layout::RowMajor,
+            Cmct::Gemm::layout::ColumnMajor, Cmct::Gemm::layout::RowMajor>(x, weight1, bias1, gate, hidden, up);
     } else {
-        MatmulV3Advanced::MatMulSwigluMixWithoutQueActKernel<
-            T, T, T, BiasT,
-            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::RowMajor>(
-            x, weight1, bias1, gate, hidden, up);
+        MatmulV3Advanced::MatMulSwigluMixWithoutQueActKernel<T, T, T, BiasT, Cmct::Gemm::layout::RowMajor,
+            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::RowMajor>(x, weight1, bias1, gate, hidden, up);
     }
 }
 
 // swiglu 单 matmul：一次 up matmul（N=2H），epilogue 内 silu(gate)*up -> hidden
 template <typename T, typename BiasT, bool TransB>
-__aicore__ inline void RunFfnSwigluSingleUp(GM_ADDR x, GM_ADDR weight1, GM_ADDR bias1, GM_ADDR hidden,
-                                            const MatMulV3BasicTilingData &up)
-{
+__aicore__ inline void RunFfnSwigluSingleUp(
+    GM_ADDR x, GM_ADDR weight1, GM_ADDR bias1, GM_ADDR hidden, const MatMulV3BasicTilingData &up) {
     using namespace AscendC;
     if constexpr (TransB) {
-        MatmulV3Advanced::MatMulSwigluSingleMixWithoutQueActKernel<
-            T, T, T, BiasT,
-            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::ColumnMajor, Cmct::Gemm::layout::RowMajor>(
-            x, weight1, bias1, hidden, up);
+        MatmulV3Advanced::MatMulSwigluSingleMixWithoutQueActKernel<T, T, T, BiasT, Cmct::Gemm::layout::RowMajor,
+            Cmct::Gemm::layout::ColumnMajor, Cmct::Gemm::layout::RowMajor>(x, weight1, bias1, hidden, up);
     } else {
         static_assert(TransB, "swiglu single only supports transB (linear [N,K] weight)");
     }
 }
 
 template <typename T, typename BiasT, bool TransB, uint64_t FULL_LOAD_MODE = 0>
-__aicore__ inline void RunFfnDownMM(GM_ADDR hidden, GM_ADDR weight2, GM_ADDR bias2, GM_ADDR y,
-                                    const MatMulV3BasicTilingData &down)
-{
+__aicore__ inline void RunFfnDownMM(
+    GM_ADDR hidden, GM_ADDR weight2, GM_ADDR bias2, GM_ADDR y, const MatMulV3BasicTilingData &down) {
     using namespace AscendC;
     if constexpr (TransB) {
-        MatmulV3Advanced::MatMulActKernel<
-            T, T, T, BiasT,
-            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::ColumnMajor, Cmct::Gemm::layout::RowMajor,
-            FULL_LOAD_MODE>(
-            hidden, weight2, bias2, y, nullptr, down, 1);
+        MatmulV3Advanced::MatMulActKernel<T, T, T, BiasT, Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::ColumnMajor,
+            Cmct::Gemm::layout::RowMajor, FULL_LOAD_MODE>(hidden, weight2, bias2, y, nullptr, down, 1);
     } else {
-        MatmulV3Advanced::MatMulActKernel<
-            T, T, T, BiasT,
-            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::RowMajor,
-            FULL_LOAD_MODE>(
-            hidden, weight2, bias2, y, nullptr, down, 1);
+        MatmulV3Advanced::MatMulActKernel<T, T, T, BiasT, Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::RowMajor,
+            Cmct::Gemm::layout::RowMajor, FULL_LOAD_MODE>(hidden, weight2, bias2, y, nullptr, down, 1);
     }
 }
 
 // down L1 全载
 template <typename T, typename BiasT, bool TransB>
-__aicore__ inline void RunFfnDownMMFullLoad(GM_ADDR hidden, GM_ADDR weight2, GM_ADDR bias2, GM_ADDR y,
-                                            const MatMulV3BasicTilingData &down)
-{
+__aicore__ inline void RunFfnDownMMFullLoad(
+    GM_ADDR hidden, GM_ADDR weight2, GM_ADDR bias2, GM_ADDR y, const MatMulV3BasicTilingData &down) {
     if (down.fullLoad == 1) {
         RunFfnDownMM<T, BiasT, TransB, 1>(hidden, weight2, bias2, y, down);
     } else if (down.fullLoad == 2) {
@@ -212,20 +194,17 @@ __aicore__ inline void RunFfnDownMMFullLoad(GM_ADDR hidden, GM_ADDR weight2, GM_
 
 // StreamK split-K
 template <typename T, typename BiasT, bool TransB>
-__aicore__ inline void RunFfnDownStreamK(GM_ADDR hidden, GM_ADDR weight2, GM_ADDR bias2, GM_ADDR y, GM_ADDR ws,
-                                         const MatMulV3BasicTilingData &down)
-{
+__aicore__ inline void RunFfnDownStreamK(
+    GM_ADDR hidden, GM_ADDR weight2, GM_ADDR bias2, GM_ADDR y, GM_ADDR ws, const MatMulV3BasicTilingData &down) {
     using namespace AscendC;
     if constexpr (TransB) {
-        MatMulStreamKActKernel<
-            T, T, T, BiasT,
-            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::ColumnMajor, Cmct::Gemm::layout::RowMajor,
-            Cmct::Gemm::MatMulL0C2Out::ON_THE_FLY>(hidden, weight2, bias2, y, ws, down, 1);
+        MatMulStreamKActKernel<T, T, T, BiasT, Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::ColumnMajor,
+            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::MatMulL0C2Out::ON_THE_FLY>(
+            hidden, weight2, bias2, y, ws, down, 1);
     } else {
-        MatMulStreamKActKernel<
-            T, T, T, BiasT,
-            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::RowMajor,
-            Cmct::Gemm::MatMulL0C2Out::ON_THE_FLY>(hidden, weight2, bias2, y, ws, down, 1);
+        MatMulStreamKActKernel<T, T, T, BiasT, Cmct::Gemm::layout::RowMajor, Cmct::Gemm::layout::RowMajor,
+            Cmct::Gemm::layout::RowMajor, Cmct::Gemm::MatMulL0C2Out::ON_THE_FLY>(
+            hidden, weight2, bias2, y, ws, down, 1);
     }
 }
 
@@ -233,13 +212,10 @@ __aicore__ inline void RunFfnDownStreamK(GM_ADDR hidden, GM_ADDR weight2, GM_ADD
 
 template <typename T, typename BiasT, uint8_t ACT, uint8_t MODE>
 __aicore__ inline void FfnArch35KernelImpl(__gm__ uint8_t *x, __gm__ uint8_t *weight1, __gm__ uint8_t *weight2,
-                                           __gm__ uint8_t *expertTokens, __gm__ uint8_t *bias1, __gm__ uint8_t *bias2,
-                                           __gm__ uint8_t *scale, __gm__ uint8_t *offset, __gm__ uint8_t *deqScale1,
-                                           __gm__ uint8_t *deqScale2, __gm__ uint8_t *antiquant_scale1,
-                                           __gm__ uint8_t *antiquant_scale2, __gm__ uint8_t *antiquant_offset1,
-                                           __gm__ uint8_t *antiquant_offset2, __gm__ uint8_t *y,
-                                           __gm__ uint8_t *workSpace, __gm__ uint8_t *tiling)
-{
+    __gm__ uint8_t *expertTokens, __gm__ uint8_t *bias1, __gm__ uint8_t *bias2, __gm__ uint8_t *scale,
+    __gm__ uint8_t *offset, __gm__ uint8_t *deqScale1, __gm__ uint8_t *deqScale2, __gm__ uint8_t *antiquant_scale1,
+    __gm__ uint8_t *antiquant_scale2, __gm__ uint8_t *antiquant_offset1, __gm__ uint8_t *antiquant_offset2,
+    __gm__ uint8_t *y, __gm__ uint8_t *workSpace, __gm__ uint8_t *tiling) {
     using namespace AscendC;
     GET_TILING_DATA(tiling_data, tiling);
     const FFNTilingData *__restrict ffn_tiling_data = &tiling_data;
@@ -263,24 +239,22 @@ __aicore__ inline void FfnArch35KernelImpl(__gm__ uint8_t *x, __gm__ uint8_t *we
         }
         if (ffn_tiling_data->swigluSingle != 0) {
             // 单 matmul：一次 up(N=2H)，B 装载交错 gate/up，epilogue 内 silu(gate)*up -> hidden
-            RunFfnSwigluSingleUp<T, BiasT, true>(x, weight1, hasBias ? bias1 : nullptr,
-                                                  reinterpret_cast<__gm__ uint8_t *>(hidden), up);
+            RunFfnSwigluSingleUp<T, BiasT, true>(
+                x, weight1, hasBias ? bias1 : nullptr, reinterpret_cast<__gm__ uint8_t *>(hidden), up);
         } else {
             // 阶段1a：gate（左半 [H,K]）-> fp32 gate
-            RunFfnRawGateUp<T, BiasT, true>(x, weight1, hasBias ? bias1 : nullptr,
-                                             reinterpret_cast<__gm__ uint8_t *>(gate), up);
+            RunFfnRawGateUp<T, BiasT, true>(
+                x, weight1, hasBias ? bias1 : nullptr, reinterpret_cast<__gm__ uint8_t *>(gate), up);
             SyncAll<false>();
             // 阶段1b：up（右半 [H,K]），epilogue 内 silu(gate)*up -> hidden
-            RunFfnSwigluUp<T, BiasT, true>(x, weight1 + w1HalfBytes,
-                                            hasBias ? (bias1 + b1HalfBytes) : nullptr,
-                                            reinterpret_cast<__gm__ uint8_t *>(gate),
-                                            reinterpret_cast<__gm__ uint8_t *>(hidden), up);
+            RunFfnSwigluUp<T, BiasT, true>(x, weight1 + w1HalfBytes, hasBias ? (bias1 + b1HalfBytes) : nullptr,
+                reinterpret_cast<__gm__ uint8_t *>(gate), reinterpret_cast<__gm__ uint8_t *>(hidden), up);
         }
         SyncAll<false>();
         // 阶段2：AIC 执行 down matmul + bias2 -> y
         if ASCEND_IS_AIC {
-            RunFfnDownMMFullLoad<T, BiasT, true>(reinterpret_cast<__gm__ uint8_t *>(hidden), weight2,
-                                                  hasBias ? bias2 : nullptr, y, down);
+            RunFfnDownMMFullLoad<T, BiasT, true>(
+                reinterpret_cast<__gm__ uint8_t *>(hidden), weight2, hasBias ? bias2 : nullptr, y, down);
             PipeBarrier<PIPE_ALL>();
         }
         return;
@@ -288,34 +262,32 @@ __aicore__ inline void FfnArch35KernelImpl(__gm__ uint8_t *x, __gm__ uint8_t *we
     // 阶段1：up matmul + bias1 + gelu/silu（AIC mmad + AIV epilogue）。
     if (ffn_tiling_data->transB != 0) {
         if constexpr (isSilu) {
-            RunFfnFusedSiluUp<T, BiasT, true>(x, weight1, hasBias ? bias1 : nullptr,
-                                               reinterpret_cast<__gm__ uint8_t *>(hidden), up);
+            RunFfnFusedSiluUp<T, BiasT, true>(
+                x, weight1, hasBias ? bias1 : nullptr, reinterpret_cast<__gm__ uint8_t *>(hidden), up);
         } else {
-            RunFfnFusedGeluUp<T, BiasT, true>(x, weight1, hasBias ? bias1 : nullptr,
-                                               reinterpret_cast<__gm__ uint8_t *>(hidden), up);
+            RunFfnFusedGeluUp<T, BiasT, true>(
+                x, weight1, hasBias ? bias1 : nullptr, reinterpret_cast<__gm__ uint8_t *>(hidden), up);
         }
     } else {
         if constexpr (isSilu) {
-            RunFfnFusedSiluUp<T, BiasT, false>(x, weight1, hasBias ? bias1 : nullptr,
-                                                reinterpret_cast<__gm__ uint8_t *>(hidden), up);
+            RunFfnFusedSiluUp<T, BiasT, false>(
+                x, weight1, hasBias ? bias1 : nullptr, reinterpret_cast<__gm__ uint8_t *>(hidden), up);
         } else {
-            RunFfnFusedGeluUp<T, BiasT, false>(x, weight1, hasBias ? bias1 : nullptr,
-                                                reinterpret_cast<__gm__ uint8_t *>(hidden), up);
+            RunFfnFusedGeluUp<T, BiasT, false>(
+                x, weight1, hasBias ? bias1 : nullptr, reinterpret_cast<__gm__ uint8_t *>(hidden), up);
         }
     }
     // 阶段2：全核（AIC+AIV）全局屏障
     SyncAll<false>();
     if constexpr (MODE == FFN_TPL_MODE_STREAMK) {
         __gm__ uint8_t *downWs = user1 + ffn_tiling_data->hiddenOffset +
-                                 static_cast<size_t>(ffn_tiling_data->hiddenRows) *
-                                     ffn_tiling_data->hiddenCols * sizeof(uint16_t) +
-                                 128;
+            static_cast<size_t>(ffn_tiling_data->hiddenRows) * ffn_tiling_data->hiddenCols * sizeof(uint16_t) + 128;
         if (ffn_tiling_data->transB != 0) {
-            RunFfnDownStreamK<T, BiasT, true>(reinterpret_cast<__gm__ uint8_t *>(hidden), weight2,
-                                               hasBias ? bias2 : nullptr, y, downWs, down);
+            RunFfnDownStreamK<T, BiasT, true>(
+                reinterpret_cast<__gm__ uint8_t *>(hidden), weight2, hasBias ? bias2 : nullptr, y, downWs, down);
         } else {
-            RunFfnDownStreamK<T, BiasT, false>(reinterpret_cast<__gm__ uint8_t *>(hidden), weight2,
-                                                hasBias ? bias2 : nullptr, y, downWs, down);
+            RunFfnDownStreamK<T, BiasT, false>(
+                reinterpret_cast<__gm__ uint8_t *>(hidden), weight2, hasBias ? bias2 : nullptr, y, downWs, down);
         }
         if ASCEND_IS_AIC {
             PipeBarrier<PIPE_ALL>();
@@ -325,11 +297,11 @@ __aicore__ inline void FfnArch35KernelImpl(__gm__ uint8_t *x, __gm__ uint8_t *we
     if ASCEND_IS_AIC {
         // 阶段3：down matmul + bias2（AIC-only）
         if (ffn_tiling_data->transB != 0) {
-            RunFfnDownMMFullLoad<T, BiasT, true>(reinterpret_cast<__gm__ uint8_t *>(hidden), weight2,
-                                                  hasBias ? bias2 : nullptr, y, down);
+            RunFfnDownMMFullLoad<T, BiasT, true>(
+                reinterpret_cast<__gm__ uint8_t *>(hidden), weight2, hasBias ? bias2 : nullptr, y, down);
         } else {
-            RunFfnDownMMFullLoad<T, BiasT, false>(reinterpret_cast<__gm__ uint8_t *>(hidden), weight2,
-                                                   hasBias ? bias2 : nullptr, y, down);
+            RunFfnDownMMFullLoad<T, BiasT, false>(
+                reinterpret_cast<__gm__ uint8_t *>(hidden), weight2, hasBias ? bias2 : nullptr, y, down);
         }
         PipeBarrier<PIPE_ALL>();
     }
@@ -338,13 +310,10 @@ __aicore__ inline void FfnArch35KernelImpl(__gm__ uint8_t *x, __gm__ uint8_t *we
 // arch35 fused 入口：TilingKey 模板化。
 template <uint8_t DTYPE, uint8_t ACT, uint8_t MODE>
 __global__ __aicore__ void eagle_ffn(__gm__ uint8_t *x, __gm__ uint8_t *weight1, __gm__ uint8_t *weight2,
-                               __gm__ uint8_t *expertTokens, __gm__ uint8_t *bias1, __gm__ uint8_t *bias2,
-                               __gm__ uint8_t *scale, __gm__ uint8_t *offset, __gm__ uint8_t *deqScale1,
-                               __gm__ uint8_t *deqScale2, __gm__ uint8_t *antiquant_scale1,
-                               __gm__ uint8_t *antiquant_scale2, __gm__ uint8_t *antiquant_offset1,
-                               __gm__ uint8_t *antiquant_offset2, __gm__ uint8_t *y,
-                               __gm__ uint8_t *workSpace, __gm__ uint8_t *tiling)
-{
+    __gm__ uint8_t *expertTokens, __gm__ uint8_t *bias1, __gm__ uint8_t *bias2, __gm__ uint8_t *scale,
+    __gm__ uint8_t *offset, __gm__ uint8_t *deqScale1, __gm__ uint8_t *deqScale2, __gm__ uint8_t *antiquant_scale1,
+    __gm__ uint8_t *antiquant_scale2, __gm__ uint8_t *antiquant_offset1, __gm__ uint8_t *antiquant_offset2,
+    __gm__ uint8_t *y, __gm__ uint8_t *workSpace, __gm__ uint8_t *tiling) {
     InitSocState();
     KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_MIX_AIC_1_2);
     using T = std::conditional_t<DTYPE == FFN_TPL_DTYPE_BF16, bfloat16_t, half>;
@@ -352,25 +321,21 @@ __global__ __aicore__ void eagle_ffn(__gm__ uint8_t *x, __gm__ uint8_t *weight1,
     const bool biasFp16 = (reinterpret_cast<__gm__ const FFNTilingData *>(tiling)->biasIsFp16 != 0);
     if constexpr (DTYPE == FFN_TPL_DTYPE_FP16) {
         if (biasFp16) {
-            FfnArch35KernelImpl<half, half, ACT, MODE>(x, weight1, weight2, expertTokens, bias1, bias2, scale,
-                                                       offset, deqScale1, deqScale2, antiquant_scale1,
-                                                       antiquant_scale2, antiquant_offset1, antiquant_offset2, y,
-                                                       workSpace, tiling);
+            FfnArch35KernelImpl<half, half, ACT, MODE>(x, weight1, weight2, expertTokens, bias1, bias2, scale, offset,
+                deqScale1, deqScale2, antiquant_scale1, antiquant_scale2, antiquant_offset1, antiquant_offset2, y,
+                workSpace, tiling);
         } else {
-            FfnArch35KernelImpl<half, float, ACT, MODE>(x, weight1, weight2, expertTokens, bias1, bias2, scale,
-                                                        offset, deqScale1, deqScale2, antiquant_scale1,
-                                                        antiquant_scale2, antiquant_offset1, antiquant_offset2, y,
-                                                        workSpace, tiling);
+            FfnArch35KernelImpl<half, float, ACT, MODE>(x, weight1, weight2, expertTokens, bias1, bias2, scale, offset,
+                deqScale1, deqScale2, antiquant_scale1, antiquant_scale2, antiquant_offset1, antiquant_offset2, y,
+                workSpace, tiling);
         }
     } else if (biasBf16) {
         FfnArch35KernelImpl<bfloat16_t, bfloat16_t, ACT, MODE>(x, weight1, weight2, expertTokens, bias1, bias2, scale,
-                                                               offset, deqScale1, deqScale2, antiquant_scale1,
-                                                               antiquant_scale2, antiquant_offset1,
-                                                               antiquant_offset2, y, workSpace, tiling);
+            offset, deqScale1, deqScale2, antiquant_scale1, antiquant_scale2, antiquant_offset1, antiquant_offset2, y,
+            workSpace, tiling);
     } else {
         FfnArch35KernelImpl<bfloat16_t, float, ACT, MODE>(x, weight1, weight2, expertTokens, bias1, bias2, scale,
-                                                          offset, deqScale1, deqScale2, antiquant_scale1,
-                                                          antiquant_scale2, antiquant_offset1, antiquant_offset2, y,
-                                                          workSpace, tiling);
+            offset, deqScale1, deqScale2, antiquant_scale1, antiquant_scale2, antiquant_offset1, antiquant_offset2, y,
+            workSpace, tiling);
     }
 }

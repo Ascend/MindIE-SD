@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /*!
  * \file ffn_layout.h
  * \brief FFN 权重布局识别
@@ -21,14 +33,12 @@
 namespace ffnlayout {
 
 enum class FfnLayout {
-    LINEAR,    // w1 [H,K] / swiglu [2H,K]，w2 [N,H]（PyTorch Linear）
+    LINEAR, // w1 [H,K] / swiglu [2H,K]，w2 [N,H]（PyTorch Linear）
     CANONICAL, // w1 [K,H] / swiglu [K,2H]，w2 [H,N]
-    INVALID    // w1 与 xK 完全不匹配
+    INVALID // w1 与 xK 完全不匹配
 };
 
-inline FfnLayout FfnDetectLayout(int64_t w1d0, int64_t w1d1, int64_t w2d0, int64_t w2d1,
-                                 int64_t xK, bool isSwiglu)
-{
+inline FfnLayout FfnDetectLayout(int64_t w1d0, int64_t w1d1, int64_t w2d0, int64_t w2d1, int64_t xK, bool isSwiglu) {
     const int64_t hiddenW = isSwiglu ? w1d0 / 2 : w1d0;
     const int64_t hiddenW2 = isSwiglu ? w1d1 / 2 : w1d1;
     if (w1d1 == xK && w1d0 != xK) {

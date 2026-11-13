@@ -10,6 +10,15 @@
  * See the Mulan PSL v2 for more details.
  */
 
+/**
+ * Copyright (c) 2026-2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
 
 /*!
  * \file quant_four_over_six_a5.cpp
@@ -31,8 +40,7 @@ using namespace QuantFourOverSixA5;
 
 namespace {
 template <typename TX, typename TY>
-__aicore__ inline void RunTailAxisBlock32Path(GM_ADDR x, GM_ADDR y, GM_ADDR mxScale, GM_ADDR tiling)
-{
+__aicore__ inline void RunTailAxisBlock32Path(GM_ADDR x, GM_ADDR y, GM_ADDR mxScale, GM_ADDR tiling) {
     GET_TILING_DATA_WITH_STRUCT(QuantFourOverSixA5TailAxisTilingData, tilingData, tiling);
     // 46 自适应（bf16 -> fp4x2_e2m1, scale_alg=2, dst_type_max=4.0）
     QuantFourOverSixA5::QuantFourOverSixA5TailAxis<TX, TY, 2> op;
@@ -42,8 +50,7 @@ __aicore__ inline void RunTailAxisBlock32Path(GM_ADDR x, GM_ADDR y, GM_ADDR mxSc
 } // namespace
 
 extern "C" __global__ __aicore__ void quant_four_over_six_a5(
-    GM_ADDR x, GM_ADDR y, GM_ADDR mxScale, GM_ADDR workspace, GM_ADDR tiling)
-{
+    GM_ADDR x, GM_ADDR y, GM_ADDR mxScale, GM_ADDR workspace, GM_ADDR tiling) {
     if (workspace == nullptr) {
         return;
     }

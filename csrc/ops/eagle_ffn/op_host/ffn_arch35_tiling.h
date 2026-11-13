@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /*!
  * \file ffn_arch35_tiling.h
  * \brief FFN arch35 (ascend950) fused 路径的 tiling：布局识别 + 融合 tiling 计算。
@@ -26,16 +38,7 @@
 
 namespace optiling {
 
-enum class ActiveType {
-    FASTGELU = 0,
-    RELU,
-    SILU,
-    GELU,
-    GEGLU,
-    SWIGLU,
-    REGLU,
-    INVALID_TYPE
-};
+enum class ActiveType { FASTGELU = 0, RELU, SILU, GELU, GEGLU, SWIGLU, REGLU, INVALID_TYPE };
 
 constexpr size_t FFN_ATTR_INDEX_ACTIVATION = 0;
 constexpr size_t FFN_ATTR_INDEX_INNER_PRECISE = 1;
@@ -73,18 +76,14 @@ struct FFNArch35TilingParams {
 };
 
 class FFNArch35Tiling {
-public:
+  public:
     // canonical/linear 布局识别
     // 返回 false 表示 w1 形状与 xK 完全不匹配。
-    static bool DetectLayout(const gert::TilingContext *context,
-                             const gert::StorageShape *weight1Shape,
-                             const gert::StorageShape *weight2Shape,
-                             int64_t xK, bool isSwiglu, bool &isLinear);
+    static bool DetectLayout(const gert::TilingContext *context, const gert::StorageShape *weight1Shape,
+        const gert::StorageShape *weight2Shape, int64_t xK, bool isSwiglu, bool &isLinear);
 
-    static ge::graphStatus Tiling(gert::TilingContext *context,
-                                  const FFNCompileInfo *compileInfoPtr,
-                                  FFNTilingData &tilingData,
-                                  const FFNArch35TilingParams &params);
+    static ge::graphStatus Tiling(gert::TilingContext *context, const FFNCompileInfo *compileInfoPtr,
+        FFNTilingData &tilingData, const FFNArch35TilingParams &params);
 };
 
 } // namespace optiling

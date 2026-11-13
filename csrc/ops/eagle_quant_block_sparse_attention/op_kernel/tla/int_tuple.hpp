@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef TLA_INT_TUPLE_HPP
 #define TLA_INT_TUPLE_HPP
 
@@ -20,82 +32,55 @@ namespace tla {
 
 namespace detail {
 
-template <class T, class F, int... I>
-HOST_DEVICE constexpr
-auto apply(T&& t, F&& f, seq<I...>)
-{
-    return f(get<I>(static_cast<T&&>(t))...);
+template <class T, class F, int... I> HOST_DEVICE constexpr auto apply(T &&t, F &&f, seq<I...>) {
+    return f(get<I>(static_cast<T &&>(t))...);
 }
 
-template <class T, class F, class G, int... I>
-HOST_DEVICE constexpr
-auto tapply(T&& t, F&& f, G&& g, seq<I...>)
-{
-    return g(f(get<I>(static_cast<T&&>(t)))...);
+template <class T, class F, class G, int... I> HOST_DEVICE constexpr auto tapply(T &&t, F &&f, G &&g, seq<I...>) {
+    return g(f(get<I>(static_cast<T &&>(t)))...);
 }
 
 template <class T0, class T1, class F, class G, int... I>
-HOST_DEVICE constexpr
-auto tapply(T0&& t0, T1&& t1, F&& f, G&& g, seq<I...>)
-{
-    return g(f(get<I>(static_cast<T0&&>(t0)),
-               get<I>(static_cast<T1&&>(t1)))...);
+HOST_DEVICE constexpr auto tapply(T0 &&t0, T1 &&t1, F &&f, G &&g, seq<I...>) {
+    return g(f(get<I>(static_cast<T0 &&>(t0)), get<I>(static_cast<T1 &&>(t1)))...);
 }
 
 } // end namespace detail
 
-template <class T, class F>
-HOST_DEVICE constexpr
-auto apply(T&& t, F&& f)
-{
-    return detail::apply(static_cast<T&&>(t), f, tuple_seq<T>{});
+template <class T, class F> HOST_DEVICE constexpr auto apply(T &&t, F &&f) {
+    return detail::apply(static_cast<T &&>(t), f, tuple_seq<T>{});
 }
 
-template <class T, class F, class G>
-HOST_DEVICE constexpr
-auto transform_apply(T&& t, F&& f, G&& g)
-{
+template <class T, class F, class G> HOST_DEVICE constexpr auto transform_apply(T &&t, F &&f, G &&g) {
     if constexpr (is_tuple<remove_cvref_t<T>>::value) {
-        return detail::tapply(static_cast<T&&>(t), f, g, tuple_seq<T>{});
+        return detail::tapply(static_cast<T &&>(t), f, g, tuple_seq<T>{});
     } else {
-        return g(f(static_cast<T&&>(t)));
+        return g(f(static_cast<T &&>(t)));
     }
 }
 
 template <class T0, class T1, class F, class G>
-HOST_DEVICE constexpr
-auto transform_apply(T0&& t0, T1&& t1, F&& f, G&& g)
-{
+HOST_DEVICE constexpr auto transform_apply(T0 &&t0, T1 &&t1, F &&f, G &&g) {
     if constexpr (is_tuple<remove_cvref_t<T0>>::value) {
-        return detail::tapply(static_cast<T0&&>(t0), static_cast<T1&&>(t1), f, g, tuple_seq<T0>{});
+        return detail::tapply(static_cast<T0 &&>(t0), static_cast<T1 &&>(t1), f, g, tuple_seq<T0>{});
     } else {
-        return g(f(static_cast<T0&&>(t0), static_cast<T1&&>(t1)));
+        return g(f(static_cast<T0 &&>(t0), static_cast<T1 &&>(t1)));
     }
 }
 
-template <class T, class F>
-HOST_DEVICE constexpr
-void for_each(T&& t, F&& f)
-{
-  if constexpr (is_tuple<remove_cvref_t<T>>::value) {
-    return detail::apply(t, [&](auto&&... a) { (f(static_cast<decltype(a)&&>(a)), ...); }, tuple_seq<T>{});
-  } else {
-    return f(static_cast<T&&>(t));
-  }
+template <class T, class F> HOST_DEVICE constexpr void for_each(T &&t, F &&f) {
+    if constexpr (is_tuple<remove_cvref_t<T>>::value) {
+        return detail::apply(t, [&](auto &&...a) { (f(static_cast<decltype(a) &&>(a)), ...); }, tuple_seq<T>{});
+    } else {
+        return f(static_cast<T &&>(t));
+    }
 }
 
 struct UnpackedMakeTuple {
-    template <class... T>
-    HOST_DEVICE constexpr
-    auto operator()(T const&... a) const {
-        return tla::MakeTuple(a...);
-    }
+    template <class... T> HOST_DEVICE constexpr auto operator()(T const &...a) const { return tla::MakeTuple(a...); }
 };
 
-template <class T0, class T1, class F>
-HOST_DEVICE constexpr
-auto transform(T0 const& t0, T1 const& t1, F&& f)
-{
+template <class T0, class T1, class F> HOST_DEVICE constexpr auto transform(T0 const &t0, T1 const &t1, F &&f) {
     if constexpr (is_tuple<T0>::value) {
         static_assert(tuple_size<T0>::value == tuple_size<T1>::value, "Mismatched tuple_size");
         return detail::tapply(t0, t1, f, UnpackedMakeTuple{}, tuple_seq<T0>{});
@@ -104,39 +89,24 @@ auto transform(T0 const& t0, T1 const& t1, F&& f)
     }
 }
 
-template <size_t I, class T,
-          TLA_REQUIRES(tla::is_integral<tla::remove_cvref_t<T>>::value)>
-HOST_DEVICE constexpr
-decltype(auto) get(T&& t) noexcept
-{
+template <size_t I, class T, TLA_REQUIRES(tla::is_integral<tla::remove_cvref_t<T>>::value)>
+HOST_DEVICE constexpr decltype(auto) get(T &&t) noexcept {
     static_assert(I == 0, "Index out of range");
-    return static_cast<T&&>(t);
+    return static_cast<T &&>(t);
 }
 
-template <size_t I0, size_t I1, size_t... Is, class T>
-HOST_DEVICE constexpr
-decltype(auto) get(T&& t) noexcept
-{
-    return get<I1, Is...>(get<I0>(static_cast<T&&>(t)));
+template <size_t I0, size_t I1, size_t... Is, class T> HOST_DEVICE constexpr decltype(auto) get(T &&t) noexcept {
+    return get<I1, Is...>(get<I0>(static_cast<T &&>(t)));
 }
 
 // max
-template <class T0, class... Ts>
-HOST_DEVICE constexpr
-auto max(T0 const& t0, Ts const&... ts);
+template <class T0, class... Ts> HOST_DEVICE constexpr auto max(T0 const &t0, Ts const &...ts);
 
 struct UnpackedMax {
-    template <class... T>
-    HOST_DEVICE constexpr
-    auto operator()(T const&... v) const {
-        return tla::max(v...);
-    }
+    template <class... T> HOST_DEVICE constexpr auto operator()(T const &...v) const { return tla::max(v...); }
 };
 
-template <class T0, class... Ts>
-HOST_DEVICE constexpr
-auto max(T0 const& t0, Ts const&... ts)
-{
+template <class T0, class... Ts> HOST_DEVICE constexpr auto max(T0 const &t0, Ts const &...ts) {
     if constexpr (is_tuple<T0>::value) {
         return tla::max(tla::apply(t0, UnpackedMax{}), ts...);
     } else if constexpr (sizeof...(Ts) == 0) {
@@ -147,10 +117,7 @@ auto max(T0 const& t0, Ts const&... ts)
 }
 
 // rank
-template <int... Is, class Tuple>
-HOST_DEVICE constexpr
-auto rank(Tuple const& t)
-{
+template <int... Is, class Tuple> HOST_DEVICE constexpr auto rank(Tuple const &t) {
     if constexpr (sizeof...(Is) == 0) {
         if constexpr (is_tuple<Tuple>::value) {
             return Int<tuple_size<Tuple>::value>{};
@@ -162,29 +129,18 @@ auto rank(Tuple const& t)
     }
 }
 
-template <class Tuple>
-using rank_t = decltype(rank(std::declval<Tuple>()));
+template <class Tuple> using rank_t = decltype(rank(std::declval<Tuple>()));
 
-template <class Tuple>
-constexpr auto rank_v = rank_t<Tuple>::value;
+template <class Tuple> constexpr auto rank_v = rank_t<Tuple>::value;
 
 // depth
-template <int... Is, class Tuple>
-HOST_DEVICE constexpr
-auto depth(Tuple const& t);
+template <int... Is, class Tuple> HOST_DEVICE constexpr auto depth(Tuple const &t);
 
 struct UnpackedDepth {
-    template <class... T>
-    HOST_DEVICE constexpr
-    auto operator()(T const&... v) const {
-        return tla::max(depth(v)...);
-    }
+    template <class... T> HOST_DEVICE constexpr auto operator()(T const &...v) const { return tla::max(depth(v)...); }
 };
 
-template <int... Is, class Tuple>
-HOST_DEVICE constexpr
-auto depth(Tuple const& t)
-{
+template <int... Is, class Tuple> HOST_DEVICE constexpr auto depth(Tuple const &t) {
     if constexpr (sizeof...(Is) == 0) {
         if constexpr (is_tuple<Tuple>::value) {
             return Int<1>{} + tla::apply(t, UnpackedDepth{});
@@ -196,26 +152,17 @@ auto depth(Tuple const& t)
     }
 }
 
-template <class Tuple>
-using depth_t = decltype(depth(std::declval<Tuple>()));
+template <class Tuple> using depth_t = decltype(depth(std::declval<Tuple>()));
 
-template <class Tuple>
-constexpr auto depth_v = depth_t<Tuple>::value;
+template <class Tuple> constexpr auto depth_v = depth_t<Tuple>::value;
 
 struct MultipliesUnaryLfold {
-    template <class... T>
-    HOST_DEVICE constexpr
-    auto operator()(T const&... v) const {
-        return (... * v);
-    }
+    template <class... T> HOST_DEVICE constexpr auto operator()(T const &...v) const { return (... * v); }
 };
 
 // Implementation of product as a function object
 struct Product {
-    template <class IntTuple>
-    HOST_DEVICE constexpr
-    auto operator()(IntTuple const& a) const
-    {
+    template <class IntTuple> HOST_DEVICE constexpr auto operator()(IntTuple const &a) const {
         if constexpr (is_tuple<IntTuple>::value) {
             if constexpr (tuple_size<IntTuple>::value == 0) {
                 return Int<1>{};
@@ -230,36 +177,27 @@ struct Product {
 
 namespace detail {
 
-template <size_t N, typename Sequence>
-struct MakeZeroTupleImpl;
+template <size_t N, typename Sequence> struct MakeZeroTupleImpl;
 
-template <size_t N, size_t... Is>
-struct MakeZeroTupleImpl<N, tla::index_sequence<Is...>> {
-    using type = tla::tuple<tla::Int<Is*0>...>;
+template <size_t N, size_t... Is> struct MakeZeroTupleImpl<N, tla::index_sequence<Is...>> {
+    using type = tla::tuple<tla::Int<Is * 0>...>;
 };
 
-template <size_t N>
-using MakeZeroTuple = typename MakeZeroTupleImpl<N, tla::make_index_sequence<N>>::type;
+template <size_t N> using MakeZeroTuple = typename MakeZeroTupleImpl<N, tla::make_index_sequence<N>>::type;
 
 } // end namespace detail
 
 // Add
-template <class IntTupleA, class IntTupleB>
-HOST_DEVICE constexpr
-auto Add(IntTupleA const& a, IntTupleB const& b);
+template <class IntTupleA, class IntTupleB> HOST_DEVICE constexpr auto Add(IntTupleA const &a, IntTupleB const &b);
 
 struct UnpackedAdd {
     template <class IntTupleA, class IntTupleB>
-    HOST_DEVICE constexpr
-    auto operator()(IntTupleA const& x, IntTupleB const& y) const {
+    HOST_DEVICE constexpr auto operator()(IntTupleA const &x, IntTupleB const &y) const {
         return Add(x, y);
     }
 };
 
-template <class IntTupleA, class IntTupleB>
-HOST_DEVICE constexpr
-auto Add(IntTupleA const& a, IntTupleB const& b)
-{
+template <class IntTupleA, class IntTupleB> HOST_DEVICE constexpr auto Add(IntTupleA const &a, IntTupleB const &b) {
     if constexpr (is_tuple<IntTupleA>::value && is_tuple<IntTupleB>::value) {
         static_assert(tuple_size<IntTupleA>::value == tuple_size<IntTupleB>::value, "Mismatched ranks");
         return transform(a, b, UnpackedAdd{});

@@ -8,12 +8,24 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef TLA_TENSOR_HPP
 #define TLA_TENSOR_HPP
 
 #include "../attn_infra/arch/arch.hpp"
-#include "../tla/layout.hpp"                     // tla::Shape
-#include "../tla/numeric/integral_constant.hpp"  // tla::is_integral
+#include "../tla/layout.hpp" // tla::Shape
+#include "../tla/numeric/integral_constant.hpp" // tla::is_integral
 #include "../tla/int_tuple.hpp"
 
 namespace tla {
@@ -21,90 +33,54 @@ namespace tla {
 // Tensor
 //
 
-template <class BuiltinTensor, class Layout_, class Coord_, AscendC::TPosition Position>
-struct Tensor {
+template <class BuiltinTensor, class Layout_, class Coord_, AscendC::TPosition Position> struct Tensor {
     using Element = typename BuiltinTensor::PrimType;
     using Layout = Layout_;
     using Coord = Coord_;
     static constexpr AscendC::TPosition position = Position;
 
-    HOST_DEVICE constexpr
-    Tensor() {}
+    HOST_DEVICE constexpr Tensor() {}
 
-    HOST_DEVICE constexpr
-    Tensor(BuiltinTensor const& builtinTensor, Layout const& layout, Coord const& coord = {})
+    HOST_DEVICE constexpr Tensor(BuiltinTensor const &builtinTensor, Layout const &layout, Coord const &coord = {})
         : rep_(builtinTensor, layout, coord) {}
 
     //
     // Accessors
     //
 
-    static constexpr int rank  = Layout::rank;
+    static constexpr int rank = Layout::rank;
 
-    HOST_DEVICE constexpr
-    decltype(auto) tensor() const
-    {
-        return *this;
-    }
+    HOST_DEVICE constexpr decltype(auto) tensor() const { return *this; }
 
-    HOST_DEVICE constexpr
-    decltype(auto) data() const
-    {
-        return get<0>(rep_);
-    }
+    HOST_DEVICE constexpr decltype(auto) data() const { return get<0>(rep_); }
 
-    HOST_DEVICE constexpr
-    decltype(auto) data()
-    {
-        return get<0>(rep_);
-    }
+    HOST_DEVICE constexpr decltype(auto) data() { return get<0>(rep_); }
 
-    HOST_DEVICE constexpr
-    decltype(auto) layout() const
-    {
-        return get<1>(rep_);
-    }
+    HOST_DEVICE constexpr decltype(auto) layout() const { return get<1>(rep_); }
 
-    HOST_DEVICE constexpr
-    decltype(auto) coord() const
-    {
-        return get<2>(rep_);
-    }
+    HOST_DEVICE constexpr decltype(auto) coord() const { return get<2>(rep_); }
 
-    HOST_DEVICE constexpr
-    decltype(auto) shape() const
-    {
-        return layout().shape();
-    }
+    HOST_DEVICE constexpr decltype(auto) shape() const { return layout().shape(); }
 
-    HOST_DEVICE constexpr
-    decltype(auto) stride() const
-    {
-        return layout().stride();
-    }
+    HOST_DEVICE constexpr decltype(auto) stride() const { return layout().stride(); }
 
     tla::tuple<BuiltinTensor, Layout, Coord> rep_;
 };
 
 template <class BuiltinTensor, class Layout, class PositionType>
-HOST_DEVICE constexpr
-auto MakeTensor(BuiltinTensor const& builtinTensor, Layout const& layout, PositionType)
-{
+HOST_DEVICE constexpr auto MakeTensor(BuiltinTensor const &builtinTensor, Layout const &layout, PositionType) {
     using Coord = detail::MakeZeroTuple<Layout::rank>;
     return Tensor<BuiltinTensor, Layout, Coord, PositionType::value>(builtinTensor, layout);
 }
 
 template <class BuiltinTensor, class Layout, class Coord, class PositionType>
-HOST_DEVICE constexpr
-auto MakeTensor(BuiltinTensor const& builtinTensor, Layout const& layout, Coord const& coord, PositionType)
-{
+HOST_DEVICE constexpr auto MakeTensor(
+    BuiltinTensor const &builtinTensor, Layout const &layout, Coord const &coord, PositionType) {
     return Tensor<BuiltinTensor, Layout, Coord, PositionType::value>(builtinTensor, layout, coord);
 }
 
 template <class Tensor, class Coord, class Shape>
-__aicore__ inline constexpr
-auto GetTile(Tensor const& tensor, Coord const& coord, Shape const& shape)
-{
+__aicore__ inline constexpr auto GetTile(Tensor const &tensor, Coord const &coord, Shape const &shape) {
     auto layout = tensor.layout();
     auto builtinTensor = tensor.data();
     auto layoutNew = MakeLayoutTile(layout, shape);

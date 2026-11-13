@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /*!
  * \file ffn_infershape.cpp
  * \brief
@@ -22,8 +34,7 @@
 using namespace ge;
 namespace ops {
 
-static ge::graphStatus InferShapeFFN(gert::InferShapeContext *context)
-{
+static ge::graphStatus InferShapeFFN(gert::InferShapeContext *context) {
     // 布局识别需要激活类型（swiglu 的隐藏宽是 w1 边长的一半）
     bool isSwiglu = false;
     const auto *attrs = context->GetAttrs();
@@ -32,8 +43,7 @@ static ge::graphStatus InferShapeFFN(gert::InferShapeContext *context)
         if (act != nullptr) {
             constexpr char swigluName[] = "swiglu";
             size_t i = 0;
-            while (i < sizeof(swigluName) - 1 &&
-                   tolower(static_cast<unsigned char>(act[i])) == swigluName[i]) {
+            while (i < sizeof(swigluName) - 1 && tolower(static_cast<unsigned char>(act[i])) == swigluName[i]) {
                 ++i;
             }
             isSwiglu = (i == sizeof(swigluName) - 1) && (act[i] == '\0');
@@ -62,16 +72,15 @@ static ge::graphStatus InferShapeFFN(gert::InferShapeContext *context)
         int64_t w2d1 = weight2_shape->GetDim(w2DimNum - 1);
         // 布局识别走公共规则（ffn_layout.h）；INVALID/全方阵按 linear 计算，
         // 非法组合由 aclnn/tiling 层拦截报错。
-        const bool isLinear = ffnlayout::FfnDetectLayout(w1d0, w1d1, w2d0, w2d1, xK, isSwiglu) ==
-                              ffnlayout::FfnLayout::LINEAR;
+        const bool isLinear =
+            ffnlayout::FfnDetectLayout(w1d0, w1d1, w2d0, w2d1, xK, isSwiglu) == ffnlayout::FfnLayout::LINEAR;
         int64_t n = isLinear ? w2d0 : w2d1;
         out_shape->SetDim(xDimNum - 1, n);
     }
     return ge::GRAPH_SUCCESS;
 }
 
-static ge::graphStatus InferDataTypeFFN(gert::InferDataTypeContext *context)
-{
+static ge::graphStatus InferDataTypeFFN(gert::InferDataTypeContext *context) {
     auto input_x_dtype = context->GetInputDataType(0);
     if (input_x_dtype == ge::DT_INT8) {
         auto attrs = context->GetAttrs();

@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef TLA_NUMERIC_MATH_HPP
 #define TLA_NUMERIC_MATH_HPP
 
@@ -20,30 +32,18 @@ namespace tla {
 // Common Operations
 //
 
-template <class T, class U,
-          TLA_REQUIRES(std::is_arithmetic<T>::value &&
-                         std::is_arithmetic<U>::value)>
-HOST_DEVICE constexpr
-auto
-max(T const& t, U const& u) {
+template <class T, class U, TLA_REQUIRES(std::is_arithmetic<T>::value &&std::is_arithmetic<U>::value)>
+HOST_DEVICE constexpr auto max(T const &t, U const &u) {
     return t < u ? u : t;
 }
 
-template <class T, class U,
-          TLA_REQUIRES(std::is_arithmetic<T>::value &&
-                         std::is_arithmetic<U>::value)>
-HOST_DEVICE constexpr
-auto
-min(T const& t, U const& u) {
+template <class T, class U, TLA_REQUIRES(std::is_arithmetic<T>::value &&std::is_arithmetic<U>::value)>
+HOST_DEVICE constexpr auto min(T const &t, U const &u) {
     return t < u ? t : u;
 }
 
-template <class T, class U,
-          TLA_REQUIRES(std::is_arithmetic<T>::value &&
-                         std::is_arithmetic<U>::value)>
-HOST_DEVICE constexpr
-auto
-add(T const& t, U const& u) {
+template <class T, class U, TLA_REQUIRES(std::is_arithmetic<T>::value &&std::is_arithmetic<U>::value)>
+HOST_DEVICE constexpr auto add(T const &t, U const &u) {
     return t + u;
 }
 

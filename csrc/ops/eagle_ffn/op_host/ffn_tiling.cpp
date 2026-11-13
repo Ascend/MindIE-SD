@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /*!
  * \file ffn_tiling.cpp
  * \brief
@@ -37,7 +49,6 @@ constexpr int64_t SIMT_UB_SIZE_BYTE = 40960;
 using namespace ge;
 using namespace AscendC;
 
-
 namespace optiling {
 
 constexpr uint64_t ONE_MATMUL = 2 * 1000;
@@ -55,14 +66,18 @@ constexpr uint32_t QUANT_SMOOTH_KEY = 14;
 constexpr uint32_t QUANT_STEPN_KEY = 2002;
 
 class ActiveMap {
-public:
+  public:
     const char *activeName;
     ActiveType activeType;
 };
 
 constexpr class ActiveMap ACTIVE_MAP[] = {
-    {"fastgelu", ActiveType::FASTGELU}, {"relu", ActiveType::RELU},   {"silu", ActiveType::SILU},
-    {"gelu", ActiveType::GELU},         {"geglu", ActiveType::GEGLU}, {"swiglu", ActiveType::SWIGLU},
+    {"fastgelu", ActiveType::FASTGELU},
+    {"relu", ActiveType::RELU},
+    {"silu", ActiveType::SILU},
+    {"gelu", ActiveType::GELU},
+    {"geglu", ActiveType::GEGLU},
+    {"swiglu", ActiveType::SWIGLU},
     {"reglu", ActiveType::REGLU},
 };
 
@@ -146,28 +161,24 @@ constexpr int32_t HIGH_PRECISION = 0;
 constexpr int32_t HIGH_PERFORMANCE = 1;
 constexpr uint32_t MAX_EXPERT_PARALLELISM = 10;
 
-inline static uint32_t SixteenAlign(uint32_t a)
-{
+inline static uint32_t SixteenAlign(uint32_t a) {
     // 16 align down
     return a & INVERSE_FIFTEEN;
 }
 
-inline static uint32_t SixteenAlignUp(uint32_t a)
-{
+inline static uint32_t SixteenAlignUp(uint32_t a) {
     // 16 align up
     return (a + FIFTEEN) & INVERSE_FIFTEEN;
 }
 
-inline static uint32_t Ceil(uint32_t a, uint32_t b)
-{
+inline static uint32_t Ceil(uint32_t a, uint32_t b) {
     if (b == 0) {
         return a;
     }
     return (a + b - 1) / b;
 }
 
-static bool IsPrivateFormat(ge::Format format)
-{
+static bool IsPrivateFormat(ge::Format format) {
     if (format == ge::FORMAT_NC1HWC0 || format == ge::FORMAT_FRACTAL_Z || format == ge::FORMAT_NDC1HWC0 ||
         format == ge::FORMAT_FRACTAL_Z_3D || format == ge::FORMAT_FRACTAL_NZ || format == ge::FORMAT_NC1HWC0_C04) {
         return true;
@@ -176,11 +187,11 @@ static bool IsPrivateFormat(ge::Format format)
 }
 
 class FFNTiling {
-public:
+  public:
     FFNTilingData tilingData;
     ge::graphStatus RunFusionKernelTiling(gert::TilingContext *context);
 
-protected:
+  protected:
     void Init();
     ge::graphStatus FFNParamsCheck(gert::TilingContext *context);
     ge::graphStatus DataTypeCheck(gert::TilingContext *context);
@@ -188,54 +199,52 @@ protected:
     ge::graphStatus FFNSingleCoreTiling(const gert::TilingContext *context, uint64_t ubSize);
     matmul_tiling::PlatformInfo MmGetPlatInfo(const FFNCompileInfo *compileInfoPtr) const;
     ge::graphStatus FFNApiMM1Tiling(const gert::TilingContext *context, const matmul_tiling::PlatformInfo &platInfo,
-                                    matmul_tiling::DataType matmulDtype);
+        matmul_tiling::DataType matmulDtype);
     void FFNApiMM2CalBaseMN(uint32_t &mm2BaseN, uint32_t &baseM, const matmul_tiling::PlatformInfo &platInfo);
     ge::graphStatus FFNApiMM2Tiling(const gert::TilingContext *context, const matmul_tiling::PlatformInfo &platInfo,
-                                    matmul_tiling::DataType matmulDtype);
+        matmul_tiling::DataType matmulDtype);
     ge::graphStatus FFNApiTiling(const gert::TilingContext *context, const matmul_tiling::PlatformInfo &platInfo,
-                                 matmul_tiling::DataType matmulDtype);
+        matmul_tiling::DataType matmulDtype);
     ge::graphStatus FFNSetTilingKey(gert::TilingContext *context, uint64_t &key);
     ge::graphStatus FFNSetTilingData(gert::TilingContext *context);
     ge::graphStatus CalMM1ValidUbBytes(int64_t &mm1VaildUbBytes) const;
     ge::graphStatus CalMM1BaseM(const gert::TilingContext *context, const uint32_t baseN, const uint64_t l0CSize,
-                                const int64_t mm1VaildUbBytes, uint32_t &baseM);
-    ge::graphStatus CalMMTilingBaseMNBasicBlock(const uint64_t basicBlkOperTimes, const uint32_t n, uint32_t &baseM,
-                                                uint32_t &baseN) const;
+        const int64_t mm1VaildUbBytes, uint32_t &baseM);
+    ge::graphStatus CalMMTilingBaseMNBasicBlock(
+        const uint64_t basicBlkOperTimes, const uint32_t n, uint32_t &baseM, uint32_t &baseN) const;
     ge::graphStatus CalMM1TilingBaseMNBasicBlock(const gert::TilingContext *context, const uint64_t l0CSize,
-                                                 const int64_t mm1VaildUbBytes, uint64_t basicBlkOperTimes,
-                                                 uint32_t &baseN);
-    ge::graphStatus CalMM1TilingBaseMNKBasicBlock(const gert::TilingContext *context,
-                                                  const matmul_tiling::PlatformInfo &platInfo);
-    ge::graphStatus CalMM2TilingBaseMNKBasicBlock(const gert::TilingContext *context,
-                                                  const matmul_tiling::PlatformInfo &platInfo);
-    ge::graphStatus CalMM1TilingBaseMNK(const gert::TilingContext *context,
-                                        const matmul_tiling::PlatformInfo &platInfo);
+        const int64_t mm1VaildUbBytes, uint64_t basicBlkOperTimes, uint32_t &baseN);
+    ge::graphStatus CalMM1TilingBaseMNKBasicBlock(
+        const gert::TilingContext *context, const matmul_tiling::PlatformInfo &platInfo);
+    ge::graphStatus CalMM2TilingBaseMNKBasicBlock(
+        const gert::TilingContext *context, const matmul_tiling::PlatformInfo &platInfo);
+    ge::graphStatus CalMM1TilingBaseMNK(
+        const gert::TilingContext *context, const matmul_tiling::PlatformInfo &platInfo);
     ge::graphStatus CalMM2TilingBaseMNK(const matmul_tiling::PlatformInfo &platInfo);
 
-    void SetBiasInfo(const gert::TilingContext *context, matmul_tiling::MatmulApiTiling &mm,
-                     const uint32_t &irIndex) const;
+    void SetBiasInfo(
+        const gert::TilingContext *context, matmul_tiling::MatmulApiTiling &mm, const uint32_t &irIndex) const;
     void FFNCalMMStep(const uint32_t baseM, const uint32_t baseN, const uint32_t baseK, TCubeTiling &mmTilingData);
     ge::graphStatus FFNSetMM1Tiling(const gert::TilingContext *context, const matmul_tiling::PlatformInfo &platInfo,
-                                    matmul_tiling::DataType matmulDtype);
+        matmul_tiling::DataType matmulDtype);
     ge::graphStatus FFNSetMM2Tiling(const gert::TilingContext *context, const matmul_tiling::PlatformInfo &platInfo,
-                                    matmul_tiling::DataType matmulDtype);
+        matmul_tiling::DataType matmulDtype);
     ge::graphStatus FFNSetUbDivideBlk();
     ge::graphStatus FFNCalUbSize(uint32_t baseN, uint32_t divideBlkNum, uint32_t ioBlkNum, uint32_t &baseM);
     inline ge::graphStatus N1EqualZeroWithBias2(uint64_t ubSize);
     ge::graphStatus TilingCalcAndSetting(const gert::TilingContext *context,
-                                         const matmul_tiling::PlatformInfo &platInfo,
-                                         matmul_tiling::DataType matmulDtype);
-    ge::graphStatus FFNGlu(gert::TilingContext *context, uint64_t ubSize, uint64_t l1Size, uint64_t l0CSize,
-                           uint32_t aivNum);
+        const matmul_tiling::PlatformInfo &platInfo, matmul_tiling::DataType matmulDtype);
+    ge::graphStatus FFNGlu(
+        gert::TilingContext *context, uint64_t ubSize, uint64_t l1Size, uint64_t l0CSize, uint32_t aivNum);
     ge::graphStatus FFNGluParamsCheck(const gert::TilingContext *context) const;
     ge::graphStatus SetMMTilingType(const gert::TilingContext *context, bool isMM1, matmul_tiling::DataType matmulDtype,
-                                    matmul_tiling::MatmulApiTiling &mm) const;
+        matmul_tiling::MatmulApiTiling &mm) const;
     ge::graphStatus FFNGluCalMM1Tiling(uint64_t ubSize, uint64_t l0CSize);
     ge::graphStatus FFNGluSetMM1Tiling(gert::TilingContext *context, uint64_t l1Size, uint64_t l0CSize,
-                                       matmul_tiling::DataType matmulDtype, uint32_t aivNum);
+        matmul_tiling::DataType matmulDtype, uint32_t aivNum);
     ge::graphStatus FFNGluCalMM2Tiling(uint64_t l0CSize);
-    ge::graphStatus FFNGluSetMM2Tiling(gert::TilingContext *context, uint64_t l1Size, uint64_t l0CSize,
-                                       matmul_tiling::DataType matmulDtype);
+    ge::graphStatus FFNGluSetMM2Tiling(
+        gert::TilingContext *context, uint64_t l1Size, uint64_t l0CSize, matmul_tiling::DataType matmulDtype);
     ge::graphStatus FFNGetScaleGroupNum(const gert::TilingContext *context, const gert::Tensor *tokensArrTensor);
     void CheckMSD();
     void UpdateMaxTokens();
@@ -248,14 +257,13 @@ protected:
     uint64_t SelectTilingKey() const;
 
     ge::graphStatus CheckAndGetBasicInfo(gert::TilingContext *context, const FFNCompileInfo *compileInfoPtr);
-    ge::graphStatus TilingWithDifferentKN(gert::TilingContext *context, const FFNCompileInfo *compileInfoPtr,
-                                          const uint32_t aicNum);
+    ge::graphStatus TilingWithDifferentKN(
+        gert::TilingContext *context, const FFNCompileInfo *compileInfoPtr, const uint32_t aicNum);
     void SetTilingBaseParams(gert::TilingContext *context, const FFNCompileInfo *compileInfoPtr, const uint32_t aicNum);
 
     void UpdateMM2BaseNByCoreTiling(uint32_t baseM, uint32_t &mm2BaseN);
 
-    inline uint32_t GetSmallElementsNum(int32_t baseM) const
-    {
+    inline uint32_t GetSmallElementsNum(int32_t baseM) const {
         if (static_cast<int32_t>(bs) <= baseM) {
             // If bs it not larger than baseM, it is sure that the number of tokens of each expert is not larger than
             // baseM
@@ -267,7 +275,7 @@ protected:
 
     bool GetTokensIndexFlag(const gert::TilingContext *context) const;
 
-private:
+  private:
     uint32_t bs;
     uint32_t k1;
     uint32_t n1;
@@ -295,7 +303,7 @@ private:
     ge::DataType biasDataType;
     ge::DataType outputDtype;
     ge::DataType deqscaleDtype;
-    uint32_t maxTokens;         // When expert tokens are unknown, it equals bs
+    uint32_t maxTokens; // When expert tokens are unknown, it equals bs
     uint32_t maxTokensCheckOpt; // max tokens for checking optimization branch
     int32_t innerPrecise;
     matmul_tiling::CubeFormat wFormat = matmul_tiling::CubeFormat::ND;
@@ -321,8 +329,7 @@ private:
     void PrintMatMulTiling(const char *opName, TCubeTiling &matmulTiling) const;
 };
 
-void FFNTiling::Init()
-{
+void FFNTiling::Init() {
     isPerGroup = false;
     isSmooth = false;
     isQuantBf16 = false;
@@ -336,8 +343,7 @@ void FFNTiling::Init()
 }
 
 // Update baseN of mm2 according to kernel tiling logic, in order to boost performance
-void FFNTiling::UpdateMM2BaseNByCoreTiling(uint32_t baseM, uint32_t &mm2BaseN)
-{
+void FFNTiling::UpdateMM2BaseNByCoreTiling(uint32_t baseM, uint32_t &mm2BaseN) {
     // Step1: determine how many AI cubes are available for each shape
     uint32_t aicNum = tilingData.ffnBaseParams.get_coreNum();
     uint32_t count = GetSmallElementsNum(tilingData.mm1TilingData.get_baseM());
@@ -359,8 +365,7 @@ void FFNTiling::UpdateMM2BaseNByCoreTiling(uint32_t baseM, uint32_t &mm2BaseN)
     }
 }
 
-ActiveType FFNTiling::GetActiveType(const gert::TilingContext *context, const char *activeType) const
-{
+ActiveType FFNTiling::GetActiveType(const gert::TilingContext *context, const char *activeType) const {
     for (const ActiveMap &item : ACTIVE_MAP) {
         size_t len = strlen(item.activeName);
         bool isValidActiveType = strlen(activeType) == len;
@@ -382,8 +387,7 @@ ActiveType FFNTiling::GetActiveType(const gert::TilingContext *context, const ch
     return ActiveType::INVALID_TYPE;
 }
 
-ge::graphStatus FFNTiling::GetBs(const gert::TilingContext *context, const gert::StorageShape *xShape)
-{
+ge::graphStatus FFNTiling::GetBs(const gert::TilingContext *context, const gert::StorageShape *xShape) {
     int64_t tempBs;
     if (is310P) {
         tempBs = xShape->GetStorageShape().GetDim(1) * xShape->GetStorageShape().GetDim(DIMS_2);
@@ -395,18 +399,17 @@ ge::graphStatus FFNTiling::GetBs(const gert::TilingContext *context, const gert:
         }
     }
     OP_CHECK_IF(xDataTypeSize == 0, OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "get x dtype size is 0"),
-               return ge::GRAPH_FAILED);
+        return ge::GRAPH_FAILED);
     int32_t numInOneBlk = BLOCK_SIZE_FFN / xDataTypeSize;
     int32_t maxBs = INT_MAX / numInOneBlk * numInOneBlk;
     OP_CHECK_IF(tempBs > maxBs,
-               OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "32Byte-aligned M dim cannot be greater than INT32_MAX"),
-               return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "32Byte-aligned M dim cannot be greater than INT32_MAX"),
+        return ge::GRAPH_FAILED);
     bs = static_cast<uint64_t>(tempBs);
     return ge::GRAPH_SUCCESS;
 }
 
-void FFNTiling::UpdateMaxTokens()
-{
+void FFNTiling::UpdateMaxTokens() {
     // When expert tokens are unknown,
     // maxTokens is set as 'bs', which is the maximum possible number of tokens for a single expert,
     // maxTokensCheckOpt is set as the mean value of number of tokens
@@ -414,44 +417,41 @@ void FFNTiling::UpdateMaxTokens()
     maxTokensCheckOpt = expertNum <= 1 ? bs : (bs + expertNum - 1) / expertNum;
 }
 
-void FFNTiling::CheckMSD()
-{
+void FFNTiling::CheckMSD() {
     uint64_t bestMaxTokenMsd =
         static_cast<uint64_t>(static_cast<float>(n1) / static_cast<float>(TYPICAL1_N1) * TINY_TOKEN_BOUND);
     bool isMsdN1K1 =
         (n1 % BEST_BASEN_MSD == 0) && n1 > MSD_N_THRESHOLD && (k1 % BEST_BASEN_MSD == 0) && k1 > MSD_K_THRESHOLD;
     isMsdCase = isMsdN1K1 && (xDataType == ge::DT_BF16 || xDataType == ge::DT_FLOAT16) && weight1Dtype == ge::DT_INT8 &&
-                maxTokensCheckOpt <= bestMaxTokenMsd && bs <= 512; // 512: max M value in msd-scenario
+        maxTokensCheckOpt <= bestMaxTokenMsd && bs <= 512; // 512: max M value in msd-scenario
 }
 
 ge::graphStatus FFNTiling::TilingCalcAndSetting(const gert::TilingContext *context,
-                                                const matmul_tiling::PlatformInfo &platInfo,
-                                                matmul_tiling::DataType matmulDtype)
-{
+    const matmul_tiling::PlatformInfo &platInfo, matmul_tiling::DataType matmulDtype) {
     if (is310P) {
         OP_CHECK_IF(CalMM1TilingBaseMNKBasicBlock(context, platInfo) != ge::GRAPH_SUCCESS,
-                   OP_LOGW(context, "Calculate mm1 baseMNK failed!"), return ge::GRAPH_FAILED);
+            OP_LOGW(context, "Calculate mm1 baseMNK failed!"), return ge::GRAPH_FAILED);
         OP_CHECK_IF(CalMM2TilingBaseMNKBasicBlock(context, platInfo) != ge::GRAPH_SUCCESS,
-                   OP_LOGW(context, "Calculate mm2 baseMNK failed!"), return ge::GRAPH_FAILED);
+            OP_LOGW(context, "Calculate mm2 baseMNK failed!"), return ge::GRAPH_FAILED);
     } else {
         OP_CHECK_IF(CalMM1TilingBaseMNK(context, platInfo) != ge::GRAPH_SUCCESS,
-                   OP_LOGW(context, "Calculate mm1 baseMNK failed!"), return ge::GRAPH_FAILED);
+            OP_LOGW(context, "Calculate mm1 baseMNK failed!"), return ge::GRAPH_FAILED);
         OP_CHECK_IF(CalMM2TilingBaseMNK(platInfo) != ge::GRAPH_SUCCESS,
-                   OP_LOGW(context, "Calculate mm2 baseMNK failed!"), return ge::GRAPH_FAILED);
+            OP_LOGW(context, "Calculate mm2 baseMNK failed!"), return ge::GRAPH_FAILED);
     }
 
     OP_CHECK_IF(FFNSetMM1Tiling(context, platInfo, matmulDtype) != ge::GRAPH_SUCCESS,
-               OP_LOGW(context, "Set mm1 tiling failed!"), return ge::GRAPH_FAILED);
+        OP_LOGW(context, "Set mm1 tiling failed!"), return ge::GRAPH_FAILED);
     OP_CHECK_IF(FFNSetMM2Tiling(context, platInfo, matmulDtype) != ge::GRAPH_SUCCESS,
-               OP_LOGW(context, "Set mm2 tiling failed!"), return ge::GRAPH_FAILED);
+        OP_LOGW(context, "Set mm2 tiling failed!"), return ge::GRAPH_FAILED);
 
     OP_LOGI(context, "Calc tiling success!");
     isTilingDataValid = true;
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::FFNGetScaleGroupNum(const gert::TilingContext *context, const gert::Tensor *tokensArrTensor)
-{
+ge::graphStatus FFNTiling::FFNGetScaleGroupNum(
+    const gert::TilingContext *context, const gert::Tensor *tokensArrTensor) {
     uint32_t scale1GroupNum = 1;
     uint32_t scale2GroupNum = 1;
     isPerGroup = false;
@@ -474,8 +474,7 @@ ge::graphStatus FFNTiling::FFNGetScaleGroupNum(const gert::TilingContext *contex
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::FFNGetQuantScale(const gert::TilingContext *context, const gert::Tensor *tokensArrTensor)
-{
+ge::graphStatus FFNTiling::FFNGetQuantScale(const gert::TilingContext *context, const gert::Tensor *tokensArrTensor) {
     if (context->GetOptionalInputTensor(SCALE_INDEX)) {
         const gert::StorageShape *quantScaleShape = context->GetOptionalInputShape(SCALE_INDEX);
         if (quantScaleShape != nullptr) {
@@ -493,8 +492,7 @@ ge::graphStatus FFNTiling::FFNGetQuantScale(const gert::TilingContext *context, 
     return ge::GRAPH_SUCCESS;
 }
 
-bool FFNTiling::GetTokensIndexFlag(const gert::TilingContext *context) const
-{
+bool FFNTiling::GetTokensIndexFlag(const gert::TilingContext *context) const {
     const gert::RuntimeAttrs *attrs = context->GetAttrs();
     if (attrs == nullptr) {
         return false;
@@ -508,16 +506,16 @@ bool FFNTiling::GetTokensIndexFlag(const gert::TilingContext *context) const
     return *tokensIndexFlagPtr;
 }
 
-ge::graphStatus FFNTiling::GetInputShape(const gert::TilingContext *context)
-{
+ge::graphStatus FFNTiling::GetInputShape(const gert::TilingContext *context) {
     const gert::StorageShape *xShape = context->GetInputShape(X_INDEX);
-    OP_CHECK_IF(xShape == nullptr, OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "xShape is nullptr"), return ge::GRAPH_FAILED);
+    OP_CHECK_IF(xShape == nullptr, OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "xShape is nullptr"),
+        return ge::GRAPH_FAILED);
     const gert::StorageShape *weight1Shape = context->GetInputShape(WEIGHT1_INDEX);
     OP_CHECK_IF(weight1Shape == nullptr, OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "weight1Shape is nullptr"),
-               return ge::GRAPH_FAILED);
+        return ge::GRAPH_FAILED);
     const gert::StorageShape *weight2Shape = context->GetInputShape(WEIGHT2_INDEX);
     OP_CHECK_IF(weight2Shape == nullptr, OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "weight2Shape is nullptr"),
-               return ge::GRAPH_FAILED);
+        return ge::GRAPH_FAILED);
 
     bool isTokensIndex = GetTokensIndexFlag(context);
     uint32_t tokensIndexFlag = static_cast<uint32_t>(isTokensIndex);
@@ -525,7 +523,7 @@ ge::graphStatus FFNTiling::GetInputShape(const gert::TilingContext *context)
 
     // high-dimension input fuses m-axis
     OP_CHECK_IF(GetBs(context, xShape) != ge::GRAPH_SUCCESS,
-               OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "Get M dim value failed"), return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "Get M dim value failed"), return ge::GRAPH_FAILED);
     k1 = xShape->GetStorageShape().GetDim(xShape->GetStorageShape().GetDimNum() - 1);
     auto tokensArrTensor = context->GetOptionalInputTensor(TOKENS_ARR_INDEX);
     if (tokensArrTensor) {
@@ -534,10 +532,8 @@ ge::graphStatus FFNTiling::GetInputShape(const gert::TilingContext *context)
         n2 = weight2Shape->GetStorageShape().GetDim(2); // 2: the index of N in weight(E, K, N)
         expertNum = weight1Shape->GetStorageShape().GetDim(0);
         int64_t tokenNum = tokensArrTensor->GetShapeSize();
-        OP_CHECK_IF(
-            expertNum != tokenNum || tokenNum > MAX_EXPERT_NUM || expertNum == 0,
-            OPS_REPORT_VECTOR_INNER_ERR(
-                context->GetNodeName(),
+        OP_CHECK_IF(expertNum != tokenNum || tokenNum > MAX_EXPERT_NUM || expertNum == 0,
+            OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(),
                 "Invalid input expert_tokens. ExpertNum in expert_tokens %ld not equal to expertNum %u in weight, "
                 "or expertNum %u is larger than max value: %u or equal to 0",
                 tokenNum, expertNum, expertNum, MAX_EXPERT_NUM),
@@ -556,8 +552,8 @@ ge::graphStatus FFNTiling::GetInputShape(const gert::TilingContext *context)
             bool isLinearW = false;
             const bool isSwigluAct =
                 tilingData.ffnBaseParams.get_activeType() == static_cast<uint32_t>(ActiveType::SWIGLU);
-            if (!FFNArch35Tiling::DetectLayout(context, weight1Shape, weight2Shape,
-                                               static_cast<int64_t>(k1), isSwigluAct, isLinearW)) {
+            if (!FFNArch35Tiling::DetectLayout(
+                    context, weight1Shape, weight2Shape, static_cast<int64_t>(k1), isSwigluAct, isLinearW)) {
                 return ge::GRAPH_FAILED;
             }
             if (isLinearW) {
@@ -580,8 +576,7 @@ ge::graphStatus FFNTiling::GetInputShape(const gert::TilingContext *context)
     return ge::GRAPH_SUCCESS;
 }
 
-matmul_tiling::PlatformInfo FFNTiling::MmGetPlatInfo(const FFNCompileInfo *compileInfoPtr) const
-{
+matmul_tiling::PlatformInfo FFNTiling::MmGetPlatInfo(const FFNCompileInfo *compileInfoPtr) const {
     matmul_tiling::PlatformInfo platInfo;
     platInfo.socVersion = compileInfoPtr->socVersion;
     platInfo.ubSize = compileInfoPtr->ubSize;
@@ -593,42 +588,38 @@ matmul_tiling::PlatformInfo FFNTiling::MmGetPlatInfo(const FFNCompileInfo *compi
     return platInfo;
 }
 
-ge::graphStatus FFNTiling::CheckAndGetBasicInfo(gert::TilingContext *context, const FFNCompileInfo *compileInfoPtr)
-{
+ge::graphStatus FFNTiling::CheckAndGetBasicInfo(gert::TilingContext *context, const FFNCompileInfo *compileInfoPtr) {
     const uint32_t coreNum = compileInfoPtr->coreNum;
     is310P = compileInfoPtr->socVersion == platform_ascendc::SocVersion::ASCEND310P;
     isAscend950 = compileInfoPtr->socVersion == platform_ascendc::SocVersion::ASCEND950;
     isRegbase = compileInfoPtr->isRegbase;
 
-    OP_CHECK_IF(
-        (coreNum == 0 || compileInfoPtr->ubSize == 0 || compileInfoPtr->l1Size == 0 || compileInfoPtr->l0CSize == 0 ||
-         compileInfoPtr->l0ASize == 0 || compileInfoPtr->l0BSize == 0),
-        OPS_REPORT_VECTOR_INNER_ERR(
-            context->GetNodeName(),
+    OP_CHECK_IF((coreNum == 0 || compileInfoPtr->ubSize == 0 || compileInfoPtr->l1Size == 0 ||
+                    compileInfoPtr->l0CSize == 0 || compileInfoPtr->l0ASize == 0 || compileInfoPtr->l0BSize == 0),
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(),
             "platform info is invalid, coreNum=%u, ubSize=%lu, l1Size=%lu, l0CSize=%lu, l0ASize=%lu, l0BSize=%lu",
             coreNum, compileInfoPtr->ubSize, compileInfoPtr->l1Size, compileInfoPtr->l0CSize, compileInfoPtr->l0ASize,
             compileInfoPtr->l0BSize),
         return ge::GRAPH_FAILED);
-    OP_CHECK_IF(FFNParamsCheck(context) != ge::GRAPH_SUCCESS, OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "params is invalid"),
-               return ge::GRAPH_FAILED);
+    OP_CHECK_IF(FFNParamsCheck(context) != ge::GRAPH_SUCCESS,
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "params is invalid"), return ge::GRAPH_FAILED);
     OP_CHECK_IF(GetInputShape(context) != ge::GRAPH_SUCCESS,
-               OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "get input shape failed"), return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "get input shape failed"), return ge::GRAPH_FAILED);
 
     ubSize_ = compileInfoPtr->ubSize - ((expertNum * sizeof(int64_t) + ALIGN32) & ~ALIGN32);
 
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::TilingWithDifferentKN(gert::TilingContext *context, const FFNCompileInfo *compileInfoPtr,
-                                                 const uint32_t aicNum)
-{
+ge::graphStatus FFNTiling::TilingWithDifferentKN(
+    gert::TilingContext *context, const FFNCompileInfo *compileInfoPtr, const uint32_t aicNum) {
     matmul_tiling::PlatformInfo mmPlatInfo = MmGetPlatInfo(compileInfoPtr);
     ge::graphStatus tilingStatus = ge::GRAPH_FAILED;
 
     // n1 can be divided to 20 cores at least, BEST_BASEN for each, and the second matrix cannot load to L1 fully
     // In this scenario, tiling might be computed in performance branch
     bool whetherN1K1Satisfy = k1 > BEST_L1_PART2 / ((BEST_BASEN / CONSTANT_TWO) * xDataTypeSize) &&
-                              n1 > BEST_BASEN * aicNum / (CONSTANT_TWO * CONSTANT_TWO);
+        n1 > BEST_BASEN * aicNum / (CONSTANT_TWO * CONSTANT_TWO);
     // cases in 310P will  also be in performance branch
     if ((n1 != 0 && k1 == n2 && n1 == SixteenAlign(n1) && whetherN1K1Satisfy) || is310P) {
         tilingStatus = TilingCalcAndSetting(context, mmPlatInfo, static_cast<matmul_tiling::DataType>(xDataType));
@@ -637,19 +628,19 @@ ge::graphStatus FFNTiling::TilingWithDifferentKN(gert::TilingContext *context, c
     if (tilingStatus != ge::GRAPH_SUCCESS) {
         FFNSingleCoreTiling(context, ubSize_);
         if (n1 != 0) {
-            OP_CHECK_IF(FFNApiTiling(context, mmPlatInfo, static_cast<matmul_tiling::DataType>(xDataType)) !=
-                           ge::GRAPH_SUCCESS,
-                       OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "run matmul tiling failed"), return ge::GRAPH_FAILED);
+            OP_CHECK_IF(
+                FFNApiTiling(context, mmPlatInfo, static_cast<matmul_tiling::DataType>(xDataType)) != ge::GRAPH_SUCCESS,
+                OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "run matmul tiling failed"),
+                return ge::GRAPH_FAILED);
         }
     }
     return ge::GRAPH_SUCCESS;
 }
 
-void FFNTiling::SetTilingBaseParams(gert::TilingContext *context, const FFNCompileInfo *compileInfoPtr,
-                                    const uint32_t aicNum)
-{
+void FFNTiling::SetTilingBaseParams(
+    gert::TilingContext *context, const FFNCompileInfo *compileInfoPtr, const uint32_t aicNum) {
     context->SetBlockDim(compileInfoPtr->blockDim);
-    context->SetScheduleMode(1);  // 1: batchmode
+    context->SetScheduleMode(1); // 1: batchmode
     tilingData.ffnBaseParams.set_totalTokens(bs);
     tilingData.ffnBaseParams.set_k1(k1);
     tilingData.ffnBaseParams.set_n1(n1);
@@ -659,18 +650,18 @@ void FFNTiling::SetTilingBaseParams(gert::TilingContext *context, const FFNCompi
     tilingData.ffnBaseParams.set_dataTypeSize(xDataTypeSize);
 }
 
-ge::graphStatus FFNTiling::RunFusionKernelTiling(gert::TilingContext *context)
-{
+ge::graphStatus FFNTiling::RunFusionKernelTiling(gert::TilingContext *context) {
     Init();
     const FFNCompileInfo *compileInfoPtr = reinterpret_cast<const FFNCompileInfo *>(context->GetCompileInfo());
-    OP_CHECK_IF(compileInfoPtr == nullptr, OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "compileInfoPtr is null"),
-               return ge::GRAPH_FAILED);
+    OP_CHECK_IF(compileInfoPtr == nullptr,
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "compileInfoPtr is null"), return ge::GRAPH_FAILED);
 
     const uint32_t aicNum = compileInfoPtr->aicCoreNum;
     const uint32_t aivNum = compileInfoPtr->aivCoreNum;
 
     OP_CHECK_IF(CheckAndGetBasicInfo(context, compileInfoPtr) != ge::GRAPH_SUCCESS,
-               OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "run CheckAndGetBasicInfo failed"), return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "run CheckAndGetBasicInfo failed"),
+        return ge::GRAPH_FAILED);
     UpdateMaxTokens();
     CheckMSD();
 
@@ -700,16 +691,16 @@ ge::graphStatus FFNTiling::RunFusionKernelTiling(gert::TilingContext *context)
             return ge::GRAPH_SUCCESS;
         }
         OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(),
-                                    "FFN on ascend950 only supports the arch35 fused path "
-                                    "(bf16/fp16, gelu/silu/swiglu, single expert, "
-                                    "bias1/bias2 both present or both absent)");
+            "FFN on ascend950 only supports the arch35 fused path "
+            "(bf16/fp16, gelu/silu/swiglu, single expert, "
+            "bias1/bias2 both present or both absent)");
         return ge::GRAPH_FAILED;
     }
 
     if (n1 != 0 && tilingData.ffnBaseParams.get_activeType() >= static_cast<uint32_t>(ActiveType::GEGLU)) {
         OP_CHECK_IF(FFNGlu(context, compileInfoPtr->ubSize, compileInfoPtr->l1Size, compileInfoPtr->l0CSize, aivNum) !=
-                       ge::GRAPH_SUCCESS,
-                   OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "run FFNGlu failed"), return ge::GRAPH_FAILED);
+                ge::GRAPH_SUCCESS,
+            OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "run FFNGlu failed"), return ge::GRAPH_FAILED);
         PrintFFNTiling(context, true);
         return ge::GRAPH_SUCCESS;
     }
@@ -717,7 +708,8 @@ ge::graphStatus FFNTiling::RunFusionKernelTiling(gert::TilingContext *context)
     FFNGetQuantScale(context, tokensArrTensor); // get quant isSmooth info
 
     OP_CHECK_IF(TilingWithDifferentKN(context, compileInfoPtr, aicNum) != ge::GRAPH_SUCCESS,
-               OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "run TilingWithDifferentKN failed"), return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "run TilingWithDifferentKN failed"),
+        return ge::GRAPH_FAILED);
 
     tilingData.ffnBaseParams.set_maxTokens(maxTokens);
     tilingData.mm1TilingData.set_usedCoreNum(aicNum);
@@ -725,13 +717,12 @@ ge::graphStatus FFNTiling::RunFusionKernelTiling(gert::TilingContext *context)
 
     FFNGetScaleGroupNum(context, tokensArrTensor);
     OP_CHECK_IF(FFNSetTilingData(context) != ge::GRAPH_SUCCESS,
-               OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "FFNSetTilingData failed"), return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "FFNSetTilingData failed"), return ge::GRAPH_FAILED);
     OP_LOGI(context, "RunFusionKernelTiling end");
     return ge::GRAPH_SUCCESS;
 }
 
-void FFNTiling::PrintMatMulTiling(const char *opName, TCubeTiling &matmulTiling) const
-{
+void FFNTiling::PrintMatMulTiling(const char *opName, TCubeTiling &matmulTiling) const {
     std::stringstream ss;
     ss << "usedCoreNum " << matmulTiling.get_usedCoreNum() << " M " << matmulTiling.get_M() << " N "
        << matmulTiling.get_N() << " Ka " << matmulTiling.get_Ka() << " Kb " << matmulTiling.get_Kb() << " singleCoreM "
@@ -749,8 +740,7 @@ void FFNTiling::PrintMatMulTiling(const char *opName, TCubeTiling &matmulTiling)
     OP_LOGI(opName, "matmul tiling: %s", ss.str().c_str());
 }
 
-void FFNTiling::PrintFFNTiling(const gert::TilingContext *context, bool debugLevel)
-{
+void FFNTiling::PrintFFNTiling(const gert::TilingContext *context, bool debugLevel) {
     if (debugLevel) {
         return;
     }
@@ -776,8 +766,7 @@ void FFNTiling::PrintFFNTiling(const gert::TilingContext *context, bool debugLev
     OP_LOGD(context->GetNodeName(), "ffnSingleCoreParams: %s", ss1.str().c_str());
 }
 
-void FFNTiling::PrintCriticalInfo(gert::TilingContext *context)
-{
+void FFNTiling::PrintCriticalInfo(gert::TilingContext *context) {
     std::stringstream ss;
     ss << "maxTokens  " << maxTokens << "; expertTokens [";
     if (expertNum == 1) {
@@ -814,20 +803,20 @@ void FFNTiling::PrintCriticalInfo(gert::TilingContext *context)
  *  Notice: E/bias may or may not be. The output shape is equal to x's.
  * @return ge::STATUS.
  */
-ge::graphStatus FFNTiling::FFNParamsCheck(gert::TilingContext *context)
-{
+ge::graphStatus FFNTiling::FFNParamsCheck(gert::TilingContext *context) {
     const gert::RuntimeAttrs *attrs = context->GetAttrs();
     OP_CHECK_NULL_WITH_CONTEXT(context, attrs);
     const char *activeType = attrs->GetAttrPointer<char>(FFN_ATTR_INDEX_ACTIVATION);
     OP_CHECK_NULL_WITH_CONTEXT(context, activeType);
     ActiveType activationType = GetActiveType(context, activeType);
     OP_CHECK_IF(activationType == ActiveType::INVALID_TYPE,
-               OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "activeType does not match any of the preset types"),
-               return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "activeType does not match any of the preset types"),
+        return ge::GRAPH_FAILED);
     tilingData.ffnBaseParams.set_activeType(static_cast<uint32_t>(activationType));
 
     OP_CHECK_IF(DataTypeCheck(context) != ge::GRAPH_SUCCESS || FormatCheck(context) != ge::GRAPH_SUCCESS,
-               OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "the data type and format is invalid."), return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "the data type and format is invalid."),
+        return ge::GRAPH_FAILED);
     weightDataTypeSize = GetSizeByDataType(weight1Dtype);
     innerPrecise = HIGH_PRECISION;
     const int64_t *innerPrecisePtr = attrs->GetAttrPointer<int64_t>(FFN_ATTR_INDEX_INNER_PRECISE);
@@ -837,17 +826,18 @@ ge::graphStatus FFNTiling::FFNParamsCheck(gert::TilingContext *context)
     OP_LOGI(context, "Inner_precise is %d.", innerPrecise);
 
     OP_CHECK_IF(innerPrecise != HIGH_PRECISION && innerPrecise != HIGH_PERFORMANCE,
-               OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "Invalid innerPrecise. Attr inner_precise only support 0/1."),
-               return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(
+            context->GetNodeName(), "Invalid innerPrecise. Attr inner_precise only support 0/1."),
+        return ge::GRAPH_FAILED);
 
     OP_CHECK_IF(innerPrecise != HIGH_PERFORMANCE && activationType == ActiveType::GEGLU,
-               OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "Invalid innerPrecise. GEGLU only support high performance."),
-               return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(
+            context->GetNodeName(), "Invalid innerPrecise. GEGLU only support high performance."),
+        return ge::GRAPH_FAILED);
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::FFNSetUbDivideBlk()
-{
+ge::graphStatus FFNTiling::FFNSetUbDivideBlk() {
     ubBlockAlign = UB_PER_BLOCK_ALIGN;
     if (xDataType == ge::DT_FLOAT16 && (weight1Dtype == ge::DT_INT8 || weight1Dtype == ge::DT_INT4)) {
         ubDivideBlkNum = UB_ANTIQUANT_BLOCK_NUM_FP16;
@@ -886,8 +876,7 @@ ge::graphStatus FFNTiling::FFNSetUbDivideBlk()
     return ge::GRAPH_FAILED;
 }
 
-ge::graphStatus FFNTiling::FFNCalUbSize(uint32_t baseN, uint32_t divideBlkNum, uint32_t ioBlkNum, uint32_t &baseM)
-{
+ge::graphStatus FFNTiling::FFNCalUbSize(uint32_t baseN, uint32_t divideBlkNum, uint32_t ioBlkNum, uint32_t &baseM) {
     if (divideBlkNum == 0 || baseN == 0 || ubBlockAlign == 0) {
         return ge::GRAPH_FAILED;
     }
@@ -898,7 +887,7 @@ ge::graphStatus FFNTiling::FFNCalUbSize(uint32_t baseN, uint32_t divideBlkNum, u
     if (ubCalSize == 0 || ubRestBytes == 0) {
         return ge::GRAPH_FAILED;
     }
-    baseM = ubCalSize / baseN;   // activate function baseM
+    baseM = ubCalSize / baseN; // activate function baseM
     baseM = SixteenAlign(baseM);
     tilingData.ffnSingleCoreParams.set_ubCalSize(ubCalSize);
     if (isMsdCase) {
@@ -909,8 +898,7 @@ ge::graphStatus FFNTiling::FFNCalUbSize(uint32_t baseN, uint32_t divideBlkNum, u
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::CalMM1ValidUbBytes(int64_t &mm1VaildUbBytes) const
-{
+ge::graphStatus FFNTiling::CalMM1ValidUbBytes(int64_t &mm1VaildUbBytes) const {
     if (innerPrecise == HIGH_PRECISION) {
         mm1VaildUbBytes = ubSize_ / UB_DIVIDE_NUM_HIGH_PRECISION;
     }
@@ -927,13 +915,12 @@ ge::graphStatus FFNTiling::CalMM1ValidUbBytes(int64_t &mm1VaildUbBytes) const
 }
 
 ge::graphStatus FFNTiling::CalMM1BaseM(const gert::TilingContext *context, const uint32_t baseN, const uint64_t l0CSize,
-                                       const int64_t mm1VaildUbBytes, uint32_t &baseM)
-{
+    const int64_t mm1VaildUbBytes, uint32_t &baseM) {
     if (baseN == 0) {
         return ge::GRAPH_FAILED;
     }
     OP_CHECK_IF(FFNCalUbSize(baseN, ubDivideBlkNum, ubIoBlkNum, baseM) != ge::GRAPH_SUCCESS,
-               OP_LOGW(context, "calculate ub failed."), return ge::GRAPH_FAILED);
+        OP_LOGW(context, "calculate ub failed."), return ge::GRAPH_FAILED);
 
     uint32_t maxBaseM = std::min<uint32_t>(SixteenAlign(maxTokens), MAX_BASEM);
     baseM = std::min<uint32_t>(mm1VaildUbBytes / baseN, baseM);
@@ -949,9 +936,7 @@ ge::graphStatus FFNTiling::CalMM1BaseM(const gert::TilingContext *context, const
 }
 
 ge::graphStatus FFNTiling::CalMM1TilingBaseMNBasicBlock(const gert::TilingContext *context, const uint64_t l0CSize,
-                                                        const int64_t mm1VaildUbBytes, uint64_t basicBlkOperTimes,
-                                                        uint32_t &baseN)
-{
+    const int64_t mm1VaildUbBytes, uint64_t basicBlkOperTimes, uint32_t &baseN) {
     uint32_t coreNum = tilingData.ffnBaseParams.get_coreNum();
     uint32_t nCal = n1 - 1;
     uint32_t mCal = maxTokens - 1;
@@ -959,7 +944,7 @@ ge::graphStatus FFNTiling::CalMM1TilingBaseMNBasicBlock(const gert::TilingContex
     float lastRatio = 0.f;
     for (uint32_t tmpBaseN = baseN; tmpBaseN >= SMALL_TOKEN_BOUND; tmpBaseN -= TINY_TOKEN_BOUND) {
         OP_CHECK_IF(CalMM1BaseM(context, tmpBaseN, l0CSize, mm1VaildUbBytes, baseM) != ge::GRAPH_SUCCESS,
-                   OP_LOGW(context, "calculate mm1 baseM failed."), return ge::GRAPH_FAILED);
+            OP_LOGW(context, "calculate mm1 baseM failed."), return ge::GRAPH_FAILED);
         uint32_t blockDimN = Ceil(n1, tmpBaseN);
         uint64_t curBasicBlkOperTimes = Ceil(Ceil(maxTokens, baseM) * blockDimN, coreNum) * coreNum;
         if (curBasicBlkOperTimes < basicBlkOperTimes) {
@@ -985,9 +970,8 @@ ge::graphStatus FFNTiling::CalMM1TilingBaseMNBasicBlock(const gert::TilingContex
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::CalMMTilingBaseMNBasicBlock(const uint64_t basicBlkOperTimes, const uint32_t n,
-                                                       uint32_t &baseM, uint32_t &baseN) const
-{
+ge::graphStatus FFNTiling::CalMMTilingBaseMNBasicBlock(
+    const uint64_t basicBlkOperTimes, const uint32_t n, uint32_t &baseM, uint32_t &baseN) const {
     bool isRecomputed = false; // variable indicates whether baseM/baseN is recomputed
     uint32_t blockDimM = Ceil(maxTokens, baseM);
     uint32_t blockDimN = Ceil(n, baseN);
@@ -1029,17 +1013,16 @@ ge::graphStatus FFNTiling::CalMMTilingBaseMNBasicBlock(const uint64_t basicBlkOp
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::CalMM1TilingBaseMNKBasicBlock(const gert::TilingContext *context,
-                                                         const matmul_tiling::PlatformInfo &platInfo)
-{
+ge::graphStatus FFNTiling::CalMM1TilingBaseMNKBasicBlock(
+    const gert::TilingContext *context, const matmul_tiling::PlatformInfo &platInfo) {
     int64_t mm1VaildUbBytes = ubSize_ / (UB_DIVIDE_NUM * xDataTypeSize);
     uint32_t coreNum = tilingData.ffnBaseParams.get_coreNum();
     uint32_t baseN = std::min<uint32_t>(SixteenAlign(n1), BEST_BASEN);
 
-    OP_CHECK_IF(FFNSetUbDivideBlk() != ge::GRAPH_SUCCESS,
-               OP_LOGW(context, "set ub device block failed."), return ge::GRAPH_FAILED);
+    OP_CHECK_IF(FFNSetUbDivideBlk() != ge::GRAPH_SUCCESS, OP_LOGW(context, "set ub device block failed."),
+        return ge::GRAPH_FAILED);
     OP_CHECK_IF(CalMM1BaseM(context, baseN, platInfo.l0CSize, mm1VaildUbBytes, baseM1_) != ge::GRAPH_SUCCESS,
-               OP_LOGW(context, "calculate mm1 baseM failed."), return ge::GRAPH_FAILED);
+        OP_LOGW(context, "calculate mm1 baseM failed."), return ge::GRAPH_FAILED);
     uint32_t blockDimM = Ceil(maxTokens, baseM1_);
     uint64_t blockDim = blockDimM * Ceil(n1, baseN);
     uint64_t basicBlkOperTimes = Ceil(blockDim, coreNum) * coreNum;
@@ -1051,13 +1034,13 @@ ge::graphStatus FFNTiling::CalMM1TilingBaseMNKBasicBlock(const gert::TilingConte
             baseM1_ = Ceil(maxTokens, basicBlkOperTimes);
             baseM1_ = SixteenAlignUp(baseM1_);
         } else {
-            OP_CHECK_IF(CalMM1TilingBaseMNBasicBlock(context, platInfo.l0CSize, mm1VaildUbBytes, basicBlkOperTimes,
-                                                    baseN) != ge::GRAPH_SUCCESS,
-                       OP_LOGW(context, "mm1 calculate baseMN failed."), return ge::GRAPH_FAILED);
+            OP_CHECK_IF(CalMM1TilingBaseMNBasicBlock(
+                            context, platInfo.l0CSize, mm1VaildUbBytes, basicBlkOperTimes, baseN) != ge::GRAPH_SUCCESS,
+                OP_LOGW(context, "mm1 calculate baseMN failed."), return ge::GRAPH_FAILED);
         }
     } else {
         OP_CHECK_IF(CalMMTilingBaseMNBasicBlock(basicBlkOperTimes, n1, baseM1_, baseN) != ge::GRAPH_SUCCESS,
-                   OP_LOGW(context, "mm1 calculate baseMN failed."), return ge::GRAPH_FAILED);
+            OP_LOGW(context, "mm1 calculate baseMN failed."), return ge::GRAPH_FAILED);
     }
 
     // calculate baseK in considering l0B double buffer, so divide 2
@@ -1075,9 +1058,8 @@ ge::graphStatus FFNTiling::CalMM1TilingBaseMNKBasicBlock(const gert::TilingConte
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::CalMM1TilingBaseMNK(const gert::TilingContext *context,
-                                               const matmul_tiling::PlatformInfo &platInfo)
-{
+ge::graphStatus FFNTiling::CalMM1TilingBaseMNK(
+    const gert::TilingContext *context, const matmul_tiling::PlatformInfo &platInfo) {
     int64_t mm1VaildUbBytes = ubSize_ / UB_DIVIDE_NUM;
     CalMM1ValidUbBytes(mm1VaildUbBytes);
     uint32_t baseN = MATMUL_MIN_SHAPE;
@@ -1110,7 +1092,7 @@ ge::graphStatus FFNTiling::CalMM1TilingBaseMNK(const gert::TilingContext *contex
     uint32_t baseM = mm1VaildUbBytes / (baseN * xDataTypeSize);
     if (FFNSetUbDivideBlk() == ge::GRAPH_SUCCESS) {
         OP_CHECK_IF(FFNCalUbSize(baseN, ubDivideBlkNum, ubIoBlkNum, baseM) != ge::GRAPH_SUCCESS,
-                   OP_LOGW(context, "calculate ub failed."), return ge::GRAPH_FAILED);
+            OP_LOGW(context, "calculate ub failed."), return ge::GRAPH_FAILED);
     }
     baseM = SixteenAlign(baseM);
     if (baseM == 0) {
@@ -1132,9 +1114,8 @@ ge::graphStatus FFNTiling::CalMM1TilingBaseMNK(const gert::TilingContext *contex
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::CalMM2TilingBaseMNKBasicBlock(const gert::TilingContext *context,
-                                                         const matmul_tiling::PlatformInfo &platInfo)
-{
+ge::graphStatus FFNTiling::CalMM2TilingBaseMNKBasicBlock(
+    const gert::TilingContext *context, const matmul_tiling::PlatformInfo &platInfo) {
     uint32_t coreNum = tilingData.ffnBaseParams.get_coreNum();
     uint32_t baseN = std::min<uint32_t>(SixteenAlign(n2), BEST_BASEN);
 
@@ -1143,7 +1124,7 @@ ge::graphStatus FFNTiling::CalMM2TilingBaseMNKBasicBlock(const gert::TilingConte
     uint64_t blockDim = Ceil(maxTokens, baseM) * Ceil(n2, baseN);
     uint64_t basicBlkOperTimes = Ceil(blockDim, coreNum) * coreNum;
     OP_CHECK_IF(CalMMTilingBaseMNBasicBlock(basicBlkOperTimes, n2, baseM, baseN) != ge::GRAPH_SUCCESS,
-               OP_LOGW(context, "mm2 calculate baseMN failed."), return ge::GRAPH_FAILED);
+        OP_LOGW(context, "mm2 calculate baseMN failed."), return ge::GRAPH_FAILED);
 
     // calculate baseK in considering l0B double buffer, so divide 2
     baseK2_ = (platInfo.l0BSize / CONSTANT_TWO) / (baseN * xDataTypeSize);
@@ -1158,8 +1139,7 @@ ge::graphStatus FFNTiling::CalMM2TilingBaseMNKBasicBlock(const gert::TilingConte
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::CalMM2TilingBaseMNK(const matmul_tiling::PlatformInfo &platInfo)
-{
+ge::graphStatus FFNTiling::CalMM2TilingBaseMNK(const matmul_tiling::PlatformInfo &platInfo) {
     uint32_t baseN = MATMUL_MIN_SHAPE;
     if (isMsdCase) {
         baseN = BEST_BASEN_MSD;
@@ -1193,22 +1173,20 @@ ge::graphStatus FFNTiling::CalMM2TilingBaseMNK(const matmul_tiling::PlatformInfo
     return ge::GRAPH_SUCCESS;
 }
 
-void FFNTiling::SetBiasInfo(const gert::TilingContext *context, matmul_tiling::MatmulApiTiling &mm,
-                            const uint32_t &irIndex) const
-{
+void FFNTiling::SetBiasInfo(
+    const gert::TilingContext *context, matmul_tiling::MatmulApiTiling &mm, const uint32_t &irIndex) const {
     auto bias = context->GetOptionalInputDesc(irIndex);
     if (bias == nullptr) {
         mm.SetBias(false);
     } else {
         mm.SetBias(true);
         mm.SetBiasType(matmul_tiling::TPosition::GM, matmul_tiling::CubeFormat::ND,
-                       static_cast<matmul_tiling::DataType>(bias->GetDataType()));
+            static_cast<matmul_tiling::DataType>(bias->GetDataType()));
     }
 }
 
-void FFNTiling::FFNCalMMStep(const uint32_t baseM, const uint32_t baseN, const uint32_t baseK,
-                             TCubeTiling &mmTilingData)
-{
+void FFNTiling::FFNCalMMStep(
+    const uint32_t baseM, const uint32_t baseN, const uint32_t baseK, TCubeTiling &mmTilingData) {
     // whether enable double buffer in L1B
     bool divTwo = (maxTokens <= SMALL_TOKEN_BOUND && expertNum > 1);
     uint32_t bestL1Part1 = BEST_L1_PART1;
@@ -1253,21 +1231,19 @@ void FFNTiling::FFNCalMMStep(const uint32_t baseM, const uint32_t baseN, const u
 }
 
 ge::graphStatus FFNTiling::FFNSetMM1Tiling(const gert::TilingContext *context,
-                                           const matmul_tiling::PlatformInfo &platInfo,
-                                           matmul_tiling::DataType matmulDtype)
-{
+    const matmul_tiling::PlatformInfo &platInfo, matmul_tiling::DataType matmulDtype) {
     matmul_tiling::MatmulApiTiling mm1(platInfo);
     uint32_t baseN1 = tilingData.ffnSingleCoreParams.get_baseN1();
 
     mm1.SetBType(matmul_tiling::TPosition::GM, wFormat, matmulDtype, false);
     if (is310P) {
         mm1.SetAType(matmul_tiling::TPosition::GM, matmul_tiling::CubeFormat::NZ, matmulDtype, false);
-        mm1.SetCType(matmul_tiling::TPosition::VECCALC, matmul_tiling::CubeFormat::NZ,
-                     matmul_tiling::DataType::DT_FLOAT16);
+        mm1.SetCType(
+            matmul_tiling::TPosition::VECCALC, matmul_tiling::CubeFormat::NZ, matmul_tiling::DataType::DT_FLOAT16);
     } else {
         mm1.SetAType(matmul_tiling::TPosition::GM, matmul_tiling::CubeFormat::ND, matmulDtype, false);
         mm1.SetCType(matmul_tiling::TPosition::VECCALC, matmul_tiling::CubeFormat::ND_ALIGN,
-                     matmul_tiling::DataType::DT_FLOAT16);
+            matmul_tiling::DataType::DT_FLOAT16);
     }
     SetBiasInfo(context, mm1, BIAS1_INDEX);
 
@@ -1293,9 +1269,7 @@ ge::graphStatus FFNTiling::FFNSetMM1Tiling(const gert::TilingContext *context,
 }
 
 ge::graphStatus FFNTiling::FFNSetMM2Tiling(const gert::TilingContext *context,
-                                           const matmul_tiling::PlatformInfo &platInfo,
-                                           matmul_tiling::DataType matmulDtype)
-{
+    const matmul_tiling::PlatformInfo &platInfo, matmul_tiling::DataType matmulDtype) {
     matmul_tiling::MatmulApiTiling mm2(platInfo);
     uint32_t baseM2 = mm2BaseM;
     uint32_t baseN2 = tilingData.ffnSingleCoreParams.get_baseN2();
@@ -1325,20 +1299,19 @@ ge::graphStatus FFNTiling::FFNSetMM2Tiling(const gert::TilingContext *context,
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::FFNGlu(gert::TilingContext *context, uint64_t ubSize, uint64_t l1Size, uint64_t l0CSize,
-                                  uint32_t aivNum)
-{
+ge::graphStatus FFNTiling::FFNGlu(
+    gert::TilingContext *context, uint64_t ubSize, uint64_t l1Size, uint64_t l0CSize, uint32_t aivNum) {
     OP_CHECK_IF(FFNGluParamsCheck(context) != ge::GRAPH_SUCCESS,
-               OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "FFN Glu param is invalid"), return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "FFN Glu param is invalid"), return ge::GRAPH_FAILED);
 
     FFNGluCalMM1Tiling(ubSize, l0CSize);
     OP_CHECK_IF(FFNGluSetMM1Tiling(context, l1Size, l0CSize, static_cast<matmul_tiling::DataType>(xDataType), aivNum) !=
-                   ge::GRAPH_SUCCESS,
-               OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "FFN Glu set mm1 tiling failed"), return ge::GRAPH_FAILED);
+            ge::GRAPH_SUCCESS,
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "FFN Glu set mm1 tiling failed"), return ge::GRAPH_FAILED);
     FFNGluCalMM2Tiling(l0CSize);
     OP_CHECK_IF(FFNGluSetMM2Tiling(context, l1Size, l0CSize, static_cast<matmul_tiling::DataType>(xDataType)) !=
-                   ge::GRAPH_SUCCESS,
-               OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "FFN Glu set mm2 tiling failed"), return ge::GRAPH_FAILED);
+            ge::GRAPH_SUCCESS,
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "FFN Glu set mm2 tiling failed"), return ge::GRAPH_FAILED);
 
     context->SetTilingKey(2); // 2: for glu template
     size_t *workspaces = context->GetWorkspaceSizes(1);
@@ -1349,53 +1322,51 @@ ge::graphStatus FFNTiling::FFNGlu(gert::TilingContext *context, uint64_t ubSize,
     workspaces[0] = workspace1Size + workspace2Size + SYS_WORKSPACE_SIZE;
     // Check tiling data size not greater than capacity
     OP_CHECK_IF(tilingData.GetDataSize() > context->GetRawTilingData()->GetCapacity(),
-               OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "actual tiling data size %zu > context tiling data size %zu",
-                                           tilingData.GetDataSize(), context->GetRawTilingData()->GetCapacity()),
-               return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(),
+            "actual tiling data size %zu > context tiling data size %zu", tilingData.GetDataSize(),
+            context->GetRawTilingData()->GetCapacity()),
+        return ge::GRAPH_FAILED);
     tilingData.SaveToBuffer(context->GetRawTilingData()->GetData(), context->GetRawTilingData()->GetCapacity());
     context->GetRawTilingData()->SetDataSize(tilingData.GetDataSize());
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::FFNGluParamsCheck(const gert::TilingContext *context) const
-{
+ge::graphStatus FFNTiling::FFNGluParamsCheck(const gert::TilingContext *context) const {
     // n1 should be a even number
     OP_CHECK_IF((n1 % 2 != 0),
-               OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "the glu activation function only supports n1 is even"),
-               return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "the glu activation function only supports n1 is even"),
+        return ge::GRAPH_FAILED);
 
     OP_CHECK_IF((xDataType != ge::DT_FLOAT16),
-               OPS_REPORT_VECTOR_INNER_ERR(
-                   context->GetNodeName(), "the glu activation function only supports the data type is float16, the dtype is %s",
-                   TypeUtils::DataTypeToSerialString(xDataType).c_str()),
-               return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(),
+            "the glu activation function only supports the data type is float16, the dtype is %s",
+            TypeUtils::DataTypeToSerialString(xDataType).c_str()),
+        return ge::GRAPH_FAILED);
     // only supported in no-expert scenario
     bool hasExperts = context->GetOptionalInputTensor(TOKENS_ARR_INDEX) != nullptr;
-    OP_CHECK_IF(
-        hasExperts,
-        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "the glu activation function only supports the scene without experts"),
+    OP_CHECK_IF(hasExperts,
+        OPS_REPORT_VECTOR_INNER_ERR(
+            context->GetNodeName(), "the glu activation function only supports the scene without experts"),
         return ge::GRAPH_FAILED);
     // k2 should be equal to n1/2
     const gert::StorageShape *weight2Shape = context->GetInputShape(WEIGHT2_INDEX);
     size_t kIndex = hasExperts ? 1 : 0;
     auto k2 = weight2Shape->GetStorageShape().GetDim(kIndex);
     OP_CHECK_IF((n1 / 2 != k2),
-               OPS_REPORT_VECTOR_INNER_ERR(
-                   context->GetNodeName(), "the glu activation function only supports k2(%ld) is equal to n1(%u) / 2", k2, n1),
-               return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(
+            context->GetNodeName(), "the glu activation function only supports k2(%ld) is equal to n1(%u) / 2", k2, n1),
+        return ge::GRAPH_FAILED);
     return ge::GRAPH_SUCCESS;
 }
 
 ge::graphStatus FFNTiling::SetMMTilingType(const gert::TilingContext *context, bool isMM1,
-                                           matmul_tiling::DataType matmulDtype,
-                                           matmul_tiling::MatmulApiTiling &mm) const
-{
+    matmul_tiling::DataType matmulDtype, matmul_tiling::MatmulApiTiling &mm) const {
     mm.SetAType(matmul_tiling::TPosition::GM, matmul_tiling::CubeFormat::ND, matmulDtype, false);
     mm.SetBType(matmul_tiling::TPosition::GM, wFormat, matmulDtype, false);
     uint32_t biasIndex;
     if (isMM1) {
-        mm.SetCType(matmul_tiling::TPosition::VECCALC, matmul_tiling::CubeFormat::ND,
-                    matmul_tiling::DataType::DT_FLOAT16);
+        mm.SetCType(
+            matmul_tiling::TPosition::VECCALC, matmul_tiling::CubeFormat::ND, matmul_tiling::DataType::DT_FLOAT16);
         biasIndex = BIAS1_INDEX;
     } else {
         mm.SetCType(matmul_tiling::TPosition::GM, matmul_tiling::CubeFormat::ND, matmul_tiling::DataType::DT_FLOAT16);
@@ -1407,13 +1378,12 @@ ge::graphStatus FFNTiling::SetMMTilingType(const gert::TilingContext *context, b
     } else {
         mm.SetBias(true);
         mm.SetBiasType(matmul_tiling::TPosition::GM, matmul_tiling::CubeFormat::ND,
-                       static_cast<matmul_tiling::DataType>(bias->GetDataType()));
+            static_cast<matmul_tiling::DataType>(bias->GetDataType()));
     }
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::FFNGluCalMM1Tiling(uint64_t ubSize, uint64_t l0CSize)
-{
+ge::graphStatus FFNTiling::FFNGluCalMM1Tiling(uint64_t ubSize, uint64_t l0CSize) {
     int64_t mm1VaildUbBytes = ubSize / GLU_UB_DIVIDE_NUM_FP16;
     uint32_t tempN1 = n1 / 2; // 2: n1 dim should divide 2
 
@@ -1458,8 +1428,7 @@ ge::graphStatus FFNTiling::FFNGluCalMM1Tiling(uint64_t ubSize, uint64_t l0CSize)
 }
 
 ge::graphStatus FFNTiling::FFNGluSetMM1Tiling(gert::TilingContext *context, uint64_t l1Size, uint64_t l0CSize,
-                                              matmul_tiling::DataType matmulDtype, uint32_t aivNum)
-{
+    matmul_tiling::DataType matmulDtype, uint32_t aivNum) {
     matmul_tiling::MatmulApiTiling mm1;
     SetMMTilingType(context, true, matmulDtype, mm1);
 
@@ -1496,8 +1465,7 @@ ge::graphStatus FFNTiling::FFNGluSetMM1Tiling(gert::TilingContext *context, uint
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::FFNGluCalMM2Tiling(uint64_t l0CSize)
-{
+ge::graphStatus FFNTiling::FFNGluCalMM2Tiling(uint64_t l0CSize) {
     baseN2_ = GLU_BASEN;
     while (n2 < baseN2_) {
         baseN2_ = baseN2_ >> 1;
@@ -1537,9 +1505,8 @@ ge::graphStatus FFNTiling::FFNGluCalMM2Tiling(uint64_t l0CSize)
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::FFNGluSetMM2Tiling(gert::TilingContext *context, uint64_t l1Size, uint64_t l0CSize,
-                                              matmul_tiling::DataType matmulDtype)
-{
+ge::graphStatus FFNTiling::FFNGluSetMM2Tiling(
+    gert::TilingContext *context, uint64_t l1Size, uint64_t l0CSize, matmul_tiling::DataType matmulDtype) {
     matmul_tiling::MatmulApiTiling mm2;
     SetMMTilingType(context, false, matmulDtype, mm2);
     auto k2 = tilingData.ffnBaseParams.get_n1() / 2; // k2 = n1 / 2
@@ -1557,8 +1524,7 @@ ge::graphStatus FFNTiling::FFNGluSetMM2Tiling(gert::TilingContext *context, uint
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::DataTypeCheck(gert::TilingContext *context)
-{
+ge::graphStatus FFNTiling::DataTypeCheck(gert::TilingContext *context) {
     auto x = context->GetInputDesc(X_INDEX);
     auto weight1 = context->GetInputDesc(WEIGHT1_INDEX);
     auto weight2 = context->GetInputDesc(WEIGHT2_INDEX);
@@ -1574,19 +1540,20 @@ ge::graphStatus FFNTiling::DataTypeCheck(gert::TilingContext *context)
     auto weight2Dtype = weight2->GetDataType();
     outputDtype = output->GetDataType();
     OP_CHECK_IF((weight1Dtype != weight2Dtype ||
-                (xDataType != weight1Dtype && weight1Dtype != ge::DT_INT8 && weight1Dtype != ge::DT_INT4)),
-               OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "weight1 and weight2 data type are not same."),
-               return ge::GRAPH_FAILED);
+                    (xDataType != weight1Dtype && weight1Dtype != ge::DT_INT8 && weight1Dtype != ge::DT_INT4)),
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "weight1 and weight2 data type are not same."),
+        return ge::GRAPH_FAILED);
     OP_CHECK_IF((xDataType != ge::DT_FLOAT16 && xDataType != ge::DT_INT8 && xDataType != ge::DT_BF16),
-               OPS_REPORT_VECTOR_INNER_ERR(
-                   context->GetNodeName(), "x, weight1 and weight2 data type only support float16/int8/bfloat16/int4, the dtype is %s",
-                   TypeUtils::DataTypeToSerialString(xDataType).c_str()),
-               return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(),
+            "x, weight1 and weight2 data type only support float16/int8/bfloat16/int4, the dtype is %s",
+            TypeUtils::DataTypeToSerialString(xDataType).c_str()),
+        return ge::GRAPH_FAILED);
     xDataTypeSize = GetSizeByDataType(xDataType);
     OP_CHECK_IF((outputDtype != ge::DT_FLOAT16 && outputDtype != ge::DT_BF16),
-               OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "output data type only support float16/bfloat16, the dtype is %s",
-                                           TypeUtils::DataTypeToSerialString(outputDtype).c_str()),
-               return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(),
+            "output data type only support float16/bfloat16, the dtype is %s",
+            TypeUtils::DataTypeToSerialString(outputDtype).c_str()),
+        return ge::GRAPH_FAILED);
 
     minBaseNShape = MATMUL_MIN_SHAPE;
     if (xDataType == ge::DT_INT8) {
@@ -1599,8 +1566,7 @@ ge::graphStatus FFNTiling::DataTypeCheck(gert::TilingContext *context)
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::FormatCheck(const gert::TilingContext *context)
-{
+ge::graphStatus FFNTiling::FormatCheck(const gert::TilingContext *context) {
     auto x = context->GetInputDesc(X_INDEX);
     auto weight1 = context->GetInputDesc(WEIGHT1_INDEX);
     auto weight2 = context->GetInputDesc(WEIGHT2_INDEX);
@@ -1609,21 +1575,21 @@ ge::graphStatus FFNTiling::FormatCheck(const gert::TilingContext *context)
     ge::Format weight1Format = static_cast<ge::Format>(ge::GetPrimaryFormat(weight1->GetStorageFormat()));
     ge::Format weight2Format = static_cast<ge::Format>(ge::GetPrimaryFormat(weight2->GetStorageFormat()));
     ge::Format outputFormat = static_cast<ge::Format>(ge::GetPrimaryFormat(output->GetStorageFormat()));
-    OP_CHECK_IF(
-        (weight1Format != weight2Format || inputFormat != outputFormat),
-        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "InputFormat, weight1Format, weight2Format and outputFormat are not same"),
+    OP_CHECK_IF((weight1Format != weight2Format || inputFormat != outputFormat),
+        OPS_REPORT_VECTOR_INNER_ERR(
+            context->GetNodeName(), "InputFormat, weight1Format, weight2Format and outputFormat are not same"),
         return ge::GRAPH_FAILED);
     if (is310P) {
         OP_CHECK_IF(inputFormat != ge::FORMAT_FRACTAL_NZ,
-                   OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(),
-                                               "inputFormat and outputFormat only support NZ, the format is %s",
-                                               TypeUtils::FormatToSerialString(inputFormat).c_str()),
-                   return ge::GRAPH_FAILED);
+            OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(),
+                "inputFormat and outputFormat only support NZ, the format is %s",
+                TypeUtils::FormatToSerialString(inputFormat).c_str()),
+            return ge::GRAPH_FAILED);
     } else {
         OP_CHECK_IF(IsPrivateFormat(inputFormat),
-                   OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "Current inputFormat is %s, which is not supported",
-                                               TypeUtils::FormatToSerialString(inputFormat).c_str()),
-                   return ge::GRAPH_FAILED);
+            OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "Current inputFormat is %s, which is not supported",
+                TypeUtils::FormatToSerialString(inputFormat).c_str()),
+            return ge::GRAPH_FAILED);
     }
     wFormat = weight1Format == ge::FORMAT_FRACTAL_NZ ? matmul_tiling::CubeFormat::NZ : matmul_tiling::CubeFormat::ND;
     xFormat = inputFormat == ge::FORMAT_FRACTAL_NZ ? matmul_tiling::CubeFormat::NZ : matmul_tiling::CubeFormat::ND;
@@ -1631,8 +1597,7 @@ ge::graphStatus FFNTiling::FormatCheck(const gert::TilingContext *context)
     return ge::GRAPH_SUCCESS;
 }
 
-inline ge::graphStatus FFNTiling::N1EqualZeroWithBias2(uint64_t ubSize)
-{
+inline ge::graphStatus FFNTiling::N1EqualZeroWithBias2(uint64_t ubSize) {
     int64_t mm1VaildUbBytes = ubSize / UB_DIVIDE_NUM_N1_ZERO;
     uint32_t baseN = mm1VaildUbBytes / 2;
     if (n2 < baseN) {
@@ -1646,8 +1611,7 @@ inline ge::graphStatus FFNTiling::N1EqualZeroWithBias2(uint64_t ubSize)
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::FFNSingleCoreTiling(const gert::TilingContext *context, uint64_t ubSize)
-{
+ge::graphStatus FFNTiling::FFNSingleCoreTiling(const gert::TilingContext *context, uint64_t ubSize) {
     if (n1 == 0) {
         auto bias2 = context->GetOptionalInputDesc(BIAS2_INDEX);
         if (bias2 != NULL) {
@@ -1683,7 +1647,8 @@ ge::graphStatus FFNTiling::FFNSingleCoreTiling(const gert::TilingContext *contex
     uint32_t baseM = MAX_BASE_BLOCK / baseN;
     if (FFNSetUbDivideBlk() == ge::GRAPH_SUCCESS) {
         OP_CHECK_IF(FFNCalUbSize(baseN, ubDivideBlkNum, ubIoBlkNum, baseM) != ge::GRAPH_SUCCESS,
-                   OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "antiquant calculate ub failed."), return ge::GRAPH_FAILED);
+            OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "antiquant calculate ub failed."),
+            return ge::GRAPH_FAILED);
     }
     while (baseM > maxBaseM || maxTokens < baseM) {
         baseM = baseM >> 1;
@@ -1699,18 +1664,16 @@ ge::graphStatus FFNTiling::FFNSingleCoreTiling(const gert::TilingContext *contex
 }
 
 ge::graphStatus FFNTiling::FFNApiMM1Tiling(const gert::TilingContext *context,
-                                           const matmul_tiling::PlatformInfo &platInfo,
-                                           matmul_tiling::DataType matmulDtype)
-{
+    const matmul_tiling::PlatformInfo &platInfo, matmul_tiling::DataType matmulDtype) {
     matmul_tiling::MatmulApiTiling mm1(platInfo);
     mm1.SetAType(matmul_tiling::TPosition::GM, xFormat, matmulDtype, false);
     mm1.SetBType(matmul_tiling::TPosition::GM, wFormat, matmulDtype, false);
     if (is310P) {
-        mm1.SetCType(matmul_tiling::TPosition::VECCALC, matmul_tiling::CubeFormat::NZ,
-                     matmul_tiling::DataType::DT_FLOAT16);
+        mm1.SetCType(
+            matmul_tiling::TPosition::VECCALC, matmul_tiling::CubeFormat::NZ, matmul_tiling::DataType::DT_FLOAT16);
     } else {
         mm1.SetCType(matmul_tiling::TPosition::VECCALC, matmul_tiling::CubeFormat::ND_ALIGN,
-                     matmul_tiling::DataType::DT_FLOAT16);
+            matmul_tiling::DataType::DT_FLOAT16);
     }
     auto bias1 = context->GetOptionalInputDesc(BIAS1_INDEX);
     if (bias1 == nullptr) {
@@ -1718,7 +1681,7 @@ ge::graphStatus FFNTiling::FFNApiMM1Tiling(const gert::TilingContext *context,
     } else {
         mm1.SetBias(true);
         mm1.SetBiasType(matmul_tiling::TPosition::GM, matmul_tiling::CubeFormat::ND,
-                        static_cast<matmul_tiling::DataType>(bias1->GetDataType()));
+            static_cast<matmul_tiling::DataType>(bias1->GetDataType()));
     }
     uint32_t mm1BaseM = std::min<uint32_t>(MAX_BASEM, tilingData.ffnSingleCoreParams.get_baseM1());
     mm1.SetOrgShape(maxTokens, n1, k1);
@@ -1740,8 +1703,7 @@ ge::graphStatus FFNTiling::FFNApiMM1Tiling(const gert::TilingContext *context,
     return ge::GRAPH_SUCCESS;
 }
 
-void FFNTiling::FFNApiMM2CalBaseMN(uint32_t &mm2BaseN, uint32_t &baseM, const matmul_tiling::PlatformInfo &platInfo)
-{
+void FFNTiling::FFNApiMM2CalBaseMN(uint32_t &mm2BaseN, uint32_t &baseM, const matmul_tiling::PlatformInfo &platInfo) {
     while (n2 < mm2BaseN) {
         mm2BaseN = mm2BaseN >> 1;
     }
@@ -1768,9 +1730,7 @@ void FFNTiling::FFNApiMM2CalBaseMN(uint32_t &mm2BaseN, uint32_t &baseM, const ma
 }
 
 ge::graphStatus FFNTiling::FFNApiMM2Tiling(const gert::TilingContext *context,
-                                           const matmul_tiling::PlatformInfo &platInfo,
-                                           matmul_tiling::DataType matmulDtype)
-{
+    const matmul_tiling::PlatformInfo &platInfo, matmul_tiling::DataType matmulDtype) {
     matmul_tiling::MatmulApiTiling mm2(platInfo);
     mm2.SetAType(matmul_tiling::TPosition::GM, xFormat, matmulDtype, false);
     mm2.SetBType(matmul_tiling::TPosition::GM, wFormat, matmulDtype, false);
@@ -1785,7 +1745,7 @@ ge::graphStatus FFNTiling::FFNApiMM2Tiling(const gert::TilingContext *context,
     } else {
         mm2.SetBias(true);
         mm2.SetBiasType(matmul_tiling::TPosition::GM, matmul_tiling::CubeFormat::ND,
-                        static_cast<matmul_tiling::DataType>(bias2->GetDataType()));
+            static_cast<matmul_tiling::DataType>(bias2->GetDataType()));
     }
     uint32_t mm2BaseN = BEST_BASEN;
     uint32_t baseM = MATMUL_MIN_SHAPE;
@@ -1806,8 +1766,7 @@ ge::graphStatus FFNTiling::FFNApiMM2Tiling(const gert::TilingContext *context,
 }
 
 ge::graphStatus FFNTiling::FFNApiTiling(const gert::TilingContext *context, const matmul_tiling::PlatformInfo &platInfo,
-                                        matmul_tiling::DataType matmulDtype)
-{
+    matmul_tiling::DataType matmulDtype) {
     if (FFNApiMM1Tiling(context, platInfo, matmulDtype) != ge::GRAPH_SUCCESS) {
         return ge::GRAPH_FAILED;
     }
@@ -1818,8 +1777,7 @@ ge::graphStatus FFNTiling::FFNApiTiling(const gert::TilingContext *context, cons
     return ge::GRAPH_SUCCESS;
 }
 
-void FFNTiling::CalMM2Single(uint32_t baseM2, uint32_t baseN2)
-{
+void FFNTiling::CalMM2Single(uint32_t baseM2, uint32_t baseN2) {
     uint32_t align = std::max(BLOCK_SIZE_FFN / xDataTypeSize, baseN2) - 1;
     singleM2 = (maxTokens + CALC_MM2_SINGLE_CORE_NUM - 1) / CALC_MM2_SINGLE_CORE_NUM;
     if (singleM2 < baseM2) {
@@ -1851,8 +1809,7 @@ void FFNTiling::CalMM2Single(uint32_t baseM2, uint32_t baseN2)
     return;
 }
 
-void FFNTiling::AdjustMM2MNLoops(const uint32_t align, uint32_t &m2Loops, uint32_t &n2Loops)
-{
+void FFNTiling::AdjustMM2MNLoops(const uint32_t align, uint32_t &m2Loops, uint32_t &n2Loops) {
     if (m2Loops < CALC_MM2_SINGLE_CORE_NUM) {
         uint32_t maxMLoops = 0;
         uint32_t maxNLoops = 0;
@@ -1898,8 +1855,7 @@ void FFNTiling::AdjustMM2MNLoops(const uint32_t align, uint32_t &m2Loops, uint32
     }
 }
 
-uint64_t FFNTiling::SelectQuantTilingKey() const
-{
+uint64_t FFNTiling::SelectQuantTilingKey() const {
     if (isSmooth) {
         return QUANT_SMOOTH_KEY;
     }
@@ -1912,8 +1868,7 @@ uint64_t FFNTiling::SelectQuantTilingKey() const
     return QUANT_KEY;
 }
 
-uint64_t FFNTiling::SelectTilingKey() const
-{
+uint64_t FFNTiling::SelectTilingKey() const {
     if (xDataType == ge::DT_INT8 && weight1Dtype == ge::DT_INT8) {
         return SelectQuantTilingKey();
     }
@@ -1942,8 +1897,7 @@ uint64_t FFNTiling::SelectTilingKey() const
     return HIGH_PERFORMANCE_KEY;
 }
 
-ge::graphStatus FFNTiling::FFNSetTilingKey(gert::TilingContext *context, uint64_t &key)
-{
+ge::graphStatus FFNTiling::FFNSetTilingKey(gert::TilingContext *context, uint64_t &key) {
     if (is310P) {
         return ge::GRAPH_SUCCESS;
     }
@@ -1966,8 +1920,7 @@ ge::graphStatus FFNTiling::FFNSetTilingKey(gert::TilingContext *context, uint64_
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus FFNTiling::FFNSetTilingData(gert::TilingContext *context)
-{
+ge::graphStatus FFNTiling::FFNSetTilingData(gert::TilingContext *context) {
     uint64_t key = SelectTilingKey();
     FFNSetTilingKey(context, key);
     size_t *workspaces = context->GetWorkspaceSizes(1);
@@ -1984,8 +1937,8 @@ ge::graphStatus FFNTiling::FFNSetTilingData(gert::TilingContext *context)
     if (is310P) {
         workspace1Size = 0;
     } else if (key == HIGH_PRECISION_KEY || key == HIGH_PRECISION_BF16_KEY || isQuantBf16 ||
-               (xDataType == ge::DT_BF16 &&
-                (key == ANTI_QUANT_KEY || key == ANTI_QUANT_PERGROUP_KEY || key == ANTI_QUANT_MSD_KEY))) {
+        (xDataType == ge::DT_BF16 &&
+            (key == ANTI_QUANT_KEY || key == ANTI_QUANT_PERGROUP_KEY || key == ANTI_QUANT_MSD_KEY))) {
         workspace1Size = uint64_t(workspace1Tokens) * n1 * sizeof(float);
     } else {
         workspace1Size = uint64_t(workspace1Tokens) * n1 * HALF_DATA_SIZE;
@@ -2019,15 +1972,13 @@ ge::graphStatus FFNTiling::FFNSetTilingData(gert::TilingContext *context)
     return ge::GRAPH_SUCCESS;
 }
 
-ASCENDC_EXTERN_C ge::graphStatus TilingFFN(gert::TilingContext *context)
-{
+ASCENDC_EXTERN_C ge::graphStatus TilingFFN(gert::TilingContext *context) {
     FFNTiling FFN_tiling;
     auto ret = FFN_tiling.RunFusionKernelTiling(context);
     return ret;
 }
 
-ASCENDC_EXTERN_C ge::graphStatus TilingPrepareForFFN(gert::TilingParseContext *context)
-{
+ASCENDC_EXTERN_C ge::graphStatus TilingPrepareForFFN(gert::TilingParseContext *context) {
     fe::PlatFormInfos *platformInfoPtr = context->GetPlatformInfo();
     OP_CHECK_NULL_WITH_CONTEXT(context, platformInfoPtr);
     auto compileInfoPtr = context->GetCompiledInfo<FFNCompileInfo>();
@@ -2038,8 +1989,8 @@ ASCENDC_EXTERN_C ge::graphStatus TilingPrepareForFFN(gert::TilingParseContext *c
     compileInfoPtr->aivCoreNum = ascendcPlatform.GetCoreNumAiv();
     compileInfoPtr->aicCoreNum = ascendcPlatform.GetCoreNumAic();
     compileInfoPtr->socVersion = ascendcPlatform.GetSocVersion();
-    compileInfoPtr->blockDim = ascendcPlatform.CalcTschBlockDim(compileInfoPtr->coreNum, compileInfoPtr->aicCoreNum,
-                                                                compileInfoPtr->aivCoreNum);
+    compileInfoPtr->blockDim = ascendcPlatform.CalcTschBlockDim(
+        compileInfoPtr->coreNum, compileInfoPtr->aicCoreNum, compileInfoPtr->aivCoreNum);
     compileInfoPtr->sysWorkspaceSize = ascendcPlatform.GetLibApiWorkSpaceSize();
     ascendcPlatform.GetCoreMemSize(platform_ascendc::CoreMemType::UB, compileInfoPtr->ubSize);
     if (Ops::Transformer::OpTiling::IsRegbaseSocVersion(context)) {

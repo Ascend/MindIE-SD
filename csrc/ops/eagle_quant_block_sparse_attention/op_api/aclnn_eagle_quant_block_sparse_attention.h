@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef ACLNN_EAGLE_QUANT_BLOCK_SPARSE_ATTENTION_H_
 #define ACLNN_EAGLE_QUANT_BLOCK_SPARSE_ATTENTION_H_
 
@@ -18,42 +30,20 @@ extern "C" {
 #endif
 
 __attribute__((visibility("default"))) aclnnStatus aclnnEagleQuantBlockSparseAttentionGetWorkspaceSize(
-    const aclTensor *query,
-    const aclTensor *key,
-    const aclTensor *value,
-    const aclTensor *blockSparseMaskOptional,
-    const aclTensor *attenMaskOptional,
-    const aclIntArray *blockShapeOptional,
-    const aclIntArray *actualSeqLengthsOptional,
-    const aclIntArray *actualSeqLengthsKvOptional,
-    const aclTensor *blockTableOptional,
-    const aclTensor *queryScaleOptional,
-    const aclTensor *keyScaleOptional,
-    const aclTensor *valueSclaleOptional,
-    char *qInputLayout,
-    char *kvInputLayout,
-    int64_t numKeyValueHeads,
-    int64_t maskType,
-    double scaleValue,
-    int64_t innerPrecise,
-    int64_t blockSize,
-    int64_t preTokens,
-    int64_t nextTokens,
-    int64_t softmaxLseFlag,
-    aclTensor *attentionOut,
-    aclTensor *softmaxLseOptional,
-    uint64_t *workspaceSize,
+    const aclTensor *query, const aclTensor *key, const aclTensor *value, const aclTensor *blockSparseMaskOptional,
+    const aclTensor *attenMaskOptional, const aclIntArray *blockShapeOptional,
+    const aclIntArray *actualSeqLengthsOptional, const aclIntArray *actualSeqLengthsKvOptional,
+    const aclTensor *blockTableOptional, const aclTensor *queryScaleOptional, const aclTensor *keyScaleOptional,
+    const aclTensor *valueSclaleOptional, char *qInputLayout, char *kvInputLayout, int64_t numKeyValueHeads,
+    int64_t maskType, double scaleValue, int64_t innerPrecise, int64_t blockSize, int64_t preTokens, int64_t nextTokens,
+    int64_t softmaxLseFlag, aclTensor *attentionOut, aclTensor *softmaxLseOptional, uint64_t *workspaceSize,
     aclOpExecutor **executor);
 
 __attribute__((visibility("default"))) aclnnStatus aclnnEagleQuantBlockSparseAttention(
-    void *workspace,
-    uint64_t workspaceSize,
-    aclOpExecutor *executor,
-    aclrtStream stream);
+    void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, aclrtStream stream);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif  // ACLNN_EAGLE_QUANT_BLOCK_SPARSE_ATTENTION_H_
-
+#endif // ACLNN_EAGLE_QUANT_BLOCK_SPARSE_ATTENTION_H_

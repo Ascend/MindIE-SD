@@ -1,6 +1,19 @@
 /*
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
+
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /**
  * Copyright (c) 2025 Huawei Technologies Co., Ltd.
  * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
@@ -26,10 +39,9 @@ using namespace AscendC;
 using namespace MicroAPI;
 
 template <MXQuantMode MX_QUANT_MODE = MXQuantMode::OCP, bool clear_gmax, typename T, typename T2, uint16_t QsBase = 128>
-__simd_vf__ inline void softmax_with_group_max_align_qs128_kvs32_multi_vf(
-    __ubuf__ T2 *p_dest, __ubuf__ T *s, __ubuf__ T *local_group_max, __ubuf__ T *global_max,
-    __ubuf__ uint8_t *indexes_ub, const T NEG_LOG2_CX, uint16_t KvsBaseAlign32, uint16_t KvsBaseAlign64)
-{
+__simd_vf__ inline void softmax_with_group_max_align_qs128_kvs32_multi_vf(__ubuf__ T2 *p_dest, __ubuf__ T *s,
+    __ubuf__ T *local_group_max, __ubuf__ T *global_max, __ubuf__ uint8_t *indexes_ub, const T NEG_LOG2_CX,
+    uint16_t KvsBaseAlign32, uint16_t KvsBaseAlign64) {
     // ====================== 寄存器定义 ======================
     RegTensor<half> src_c0, src_c1, src_c2, src_c3;
     RegTensor<half> src_n0, src_n1, src_n2, src_n3;
@@ -144,20 +156,20 @@ __simd_vf__ inline void softmax_with_group_max_align_qs128_kvs32_multi_vf(
 
             // 数据合并
             Or((RegTensor<uint8_t> &)quant_0, (RegTensor<uint8_t> &)quant_0, (RegTensor<uint8_t> &)quant_1,
-               preg_all_8bit);
+                preg_all_8bit);
             Or((RegTensor<uint8_t> &)quant_2, (RegTensor<uint8_t> &)quant_2, (RegTensor<uint8_t> &)quant_3,
-               preg_all_8bit);
+                preg_all_8bit);
             Or((RegTensor<uint8_t> &)quant_0, (RegTensor<uint8_t> &)quant_0, (RegTensor<uint8_t> &)quant_2,
-               preg_all_8bit);
+                preg_all_8bit);
             Gather((RegTensor<uint8_t> &)quant_0, (RegTensor<uint8_t> &)quant_0, idx_nd2nz);
 
             // 写入内存（偶数块：无+128偏移）
             StoreAlign(((__ubuf__ uint8_t *&)p_dest) + i * 2048 + j * 256, (RegTensor<uint8_t> &)quant_0,
-                       preg_vl128 // 低128字节掩码
+                preg_vl128 // 低128字节掩码
             );
 
             StoreAlign(((__ubuf__ uint8_t *&)p_dest) + i * 2048 + j * 256 + 16256, (RegTensor<uint8_t> &)quant_0,
-                       preg_vl128_not // 高128字节掩码
+                preg_vl128_not // 高128字节掩码
             );
         }
 
@@ -205,20 +217,20 @@ __simd_vf__ inline void softmax_with_group_max_align_qs128_kvs32_multi_vf(
 
             // 数据合并
             Or((RegTensor<uint8_t> &)quant_0, (RegTensor<uint8_t> &)quant_0, (RegTensor<uint8_t> &)quant_1,
-               preg_all_8bit);
+                preg_all_8bit);
             Or((RegTensor<uint8_t> &)quant_2, (RegTensor<uint8_t> &)quant_2, (RegTensor<uint8_t> &)quant_3,
-               preg_all_8bit);
+                preg_all_8bit);
             Or((RegTensor<uint8_t> &)quant_0, (RegTensor<uint8_t> &)quant_0, (RegTensor<uint8_t> &)quant_2,
-               preg_all_8bit);
+                preg_all_8bit);
             Gather((RegTensor<uint8_t> &)quant_0, (RegTensor<uint8_t> &)quant_0, idx_nd2nz);
 
             // 奇数块：低128字节写入（基础地址 +128 偏移）
-            StoreAlign(((__ubuf__ uint8_t *&)p_dest) + i * 2048 + j * 256 + 128, (RegTensor<uint8_t> &)quant_0,
-                       preg_vl128);
+            StoreAlign(
+                ((__ubuf__ uint8_t *&)p_dest) + i * 2048 + j * 256 + 128, (RegTensor<uint8_t> &)quant_0, preg_vl128);
 
             // 奇数块：高128字节写入（远端地址）
             StoreAlign(((__ubuf__ uint8_t *&)p_dest) + i * 2048 + j * 256 + 16384, (RegTensor<uint8_t> &)quant_0,
-                       preg_vl128_not);
+                preg_vl128_not);
         }
 
         // ====================== 全局/局部最大值更新 ======================
@@ -236,8 +248,8 @@ __simd_vf__ inline void softmax_with_group_max_align_qs128_kvs32_multi_vf(
         Max(group_gmax, group_gmax, next_group_max, preg_valid_max);
 
         // 存储下一块最大值到 ulmax (i+1)*128 偏移
-        StoreAlign<T, MicroAPI::StoreDist::DIST_NORM_B16>(local_group_max + ((i + 1) * QsBase), next_group_max,
-                                                          preg_valid_max);
+        StoreAlign<T, MicroAPI::StoreDist::DIST_NORM_B16>(
+            local_group_max + ((i + 1) * QsBase), next_group_max, preg_valid_max);
 
         // 更新当前块最大值，用于下一次循环
         if constexpr (MX_QUANT_MODE == MXQuantMode::OCP) {
@@ -254,11 +266,9 @@ __simd_vf__ inline void softmax_with_group_max_align_qs128_kvs32_multi_vf(
 }
 
 template <MXQuantMode MX_QUANT_MODE = MXQuantMode::OCP, bool clear_gmax, typename T, typename T2, uint16_t QsBase = 128>
-__aicore__ inline void SoftmaxWithGroupMaxAlignQs128Kvs32MultiCallVF(
-    const LocalTensor<T2> &dstTensor, const LocalTensor<T> &srcTensor, const LocalTensor<T> &localGroupMax,
-    const LocalTensor<T> &globalMax, const LocalTensor<uint8_t> &indexesBuf, const T NEG_LOG2_CX,
-    uint16_t KvsBaseAlign32, uint16_t KvsBaseAlign64)
-{
+__aicore__ inline void SoftmaxWithGroupMaxAlignQs128Kvs32MultiCallVF(const LocalTensor<T2> &dstTensor,
+    const LocalTensor<T> &srcTensor, const LocalTensor<T> &localGroupMax, const LocalTensor<T> &globalMax,
+    const LocalTensor<uint8_t> &indexesBuf, const T NEG_LOG2_CX, uint16_t KvsBaseAlign32, uint16_t KvsBaseAlign64) {
     __ubuf__ T2 *p_dest = (__ubuf__ T2 *)dstTensor.GetPhyAddr();
     __ubuf__ T *s_ub = (__ubuf__ T *)srcTensor.GetPhyAddr();
     __ubuf__ T *local_group_max = (__ubuf__ T *)localGroupMax.GetPhyAddr();

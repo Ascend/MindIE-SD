@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /*!
  * \file gemm_coord.hpp
  * \brief
@@ -27,8 +39,7 @@ template <
     /// Columns of matrix product
     uint32_t N_ = 1,
     /// Inner dimension of matrix product
-    uint32_t K_ = 1
->
+    uint32_t K_ = 1>
 struct GemmShape {
     static constexpr uint32_t M = M_;
     static constexpr uint32_t N = N_;
@@ -43,28 +54,16 @@ struct GemmShape {
 
     /// Returns a Coord object
     HOST_DEVICE
-    static Coord<3> ToCoord()
-    {
-        return MakeCoord(M, N, K);
-    }
+    static Coord<3> ToCoord() { return MakeCoord(M, N, K); }
 
     HOST_DEVICE
-    static Coord<2> ToCoordMN()
-    {
-        return MakeCoord(M, N);
-    }
+    static Coord<2> ToCoordMN() { return MakeCoord(M, N); }
 
     HOST_DEVICE
-    static Coord<2> ToCoordMK()
-    {
-        return MakeCoord(M, K);
-    }
+    static Coord<2> ToCoordMK() { return MakeCoord(M, K); }
 
     HOST_DEVICE
-    static Coord<2> ToCoordKN()
-    {
-        return MakeCoord(K, N);
-    }
+    static Coord<2> ToCoordKN() { return MakeCoord(K, N); }
 };
 
 /// GemmCoord is a structure derived from Coord<3> that specifies a location within the
@@ -99,65 +98,38 @@ struct GemmCoord : public Coord<3, uint32_t> {
 
     /// Returns the Gemm M coordinate
     HOST_DEVICE
-    Index const &m() const
-    {
-        return this->At(M_INDEX);
-    }
+    Index const &m() const { return this->At(M_INDEX); }
 
     /// Returns reference to the Gemm M coordinate
     HOST_DEVICE
-    Index &m()
-    {
-        return this->At(M_INDEX);
-    }
+    Index &m() { return this->At(M_INDEX); }
 
     /// Returns the Gemm N coordinate
     HOST_DEVICE
-    Index const &n() const
-    {
-        return this->At(N_INDEX);
-    }
+    Index const &n() const { return this->At(N_INDEX); }
 
     /// Returns reference to the Gemm N coordinate
     HOST_DEVICE
-    Index &n()
-    {
-        return this->At(N_INDEX);
-    }
+    Index &n() { return this->At(N_INDEX); }
 
     /// Returns the Gemm K coordinate
     HOST_DEVICE
-    Index const &k() const
-    {
-        return this->At(K_INDEX);
-    }
+    Index const &k() const { return this->At(K_INDEX); }
 
     /// Returns reference to the Gemm K coordinate
     HOST_DEVICE
-    Index &k()
-    {
-        return this->At(K_INDEX);
-    }
+    Index &k() { return this->At(K_INDEX); }
 
     HOST_DEVICE
-    auto GetCoordMN() const
-    {
-        return this->GetCoordByAxis<M_INDEX, N_INDEX>();
-    }
+    auto GetCoordMN() const { return this->GetCoordByAxis<M_INDEX, N_INDEX>(); }
 
     HOST_DEVICE
-    auto GetCoordMK() const
-    {
-        return this->GetCoordByAxis<M_INDEX, K_INDEX>();
-    }
+    auto GetCoordMK() const { return this->GetCoordByAxis<M_INDEX, K_INDEX>(); }
 
     HOST_DEVICE
-    auto GetCoordKN() const
-    {
-        return this->GetCoordByAxis<K_INDEX, N_INDEX>();
-    }
+    auto GetCoordKN() const { return this->GetCoordByAxis<K_INDEX, N_INDEX>(); }
 };
 
 } // namespace NpuArch
 
-#endif  // GEMM_COORD_HPP
+#endif // GEMM_COORD_HPP

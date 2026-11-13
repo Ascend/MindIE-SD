@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef DETAIL_TAG_TO_LAYOUT_HPP
 #define DETAIL_TAG_TO_LAYOUT_HPP
 
@@ -19,28 +31,23 @@
 namespace NpuArch::detail {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // For each NpuArch::layout, provides its corresponding tla layout types
-template <class Element, class LayoutTag>
-struct TagToLayout {
+template <class Element, class LayoutTag> struct TagToLayout {
     using type = LayoutTag;
 };
 
-template <class Element>
-struct TagToLayout<Element, layout::RowMajor> {
+template <class Element> struct TagToLayout<Element, layout::RowMajor> {
     using type = tla::Layout<tla::Shape<uint32_t, uint32_t>, tla::Stride<int64_t, tla::Int<1>>>;
 };
 
-template <class Element>
-struct TagToLayout<Element, layout::ColumnMajor> {
+template <class Element> struct TagToLayout<Element, layout::ColumnMajor> {
     using type = tla::Layout<tla::Shape<uint32_t, uint32_t>, tla::Stride<tla::Int<1>, int64_t>>;
 };
 
-template <class Element>
-struct TagToLayout<Element, layout::VectorLayout> {
+template <class Element> struct TagToLayout<Element, layout::VectorLayout> {
     using type = tla::Layout<tla::Shape<uint32_t>, tla::Stride<tla::Int<1>>>;
 };
 
-template <class Element>
-struct TagToLayout<Element, layout::zN> {
+template <class Element> struct TagToLayout<Element, layout::zN> {
     static constexpr uint32_t ELE_NUM_PER_C0 = BYTE_PER_C0 / sizeof(Element);
     static constexpr uint32_t ELE_NUM_PER_FRACTAL = BYTE_PER_FRACTAL / sizeof(Element);
     using type = tla::Layout<
@@ -49,8 +56,7 @@ struct TagToLayout<Element, layout::zN> {
             tla::Stride<tla::Int<1>, int64_t>>>;
 };
 
-template <class Element>
-struct TagToLayout<Element, layout::zZ> {
+template <class Element> struct TagToLayout<Element, layout::zZ> {
     static constexpr uint32_t ELE_NUM_PER_C0 = BYTE_PER_C0 / sizeof(Element);
     static constexpr uint32_t ELE_NUM_PER_FRACTAL = BYTE_PER_FRACTAL / sizeof(Element);
     using type = tla::Layout<
@@ -59,8 +65,7 @@ struct TagToLayout<Element, layout::zZ> {
             tla::Stride<tla::Int<1>, tla::Int<ELE_NUM_PER_FRACTAL>>>>;
 };
 
-template <class Element>
-struct TagToLayout<Element, layout::nZ> {
+template <class Element> struct TagToLayout<Element, layout::nZ> {
     static constexpr uint32_t ELE_NUM_PER_C0 = BYTE_PER_C0 / sizeof(Element);
     static constexpr uint32_t ELE_NUM_PER_FRACTAL = BYTE_PER_FRACTAL / sizeof(Element);
     using type = tla::Layout<
@@ -69,8 +74,7 @@ struct TagToLayout<Element, layout::nZ> {
             tla::Stride<tla::Int<ELE_NUM_PER_C0>, tla::Int<ELE_NUM_PER_FRACTAL>>>>;
 };
 
-template <>
-struct TagToLayout<AscendC::fp8_e8m0_t, layout::zZ> {
+template <> struct TagToLayout<AscendC::fp8_e8m0_t, layout::zZ> {
     static constexpr uint32_t ELE_NUM_PER_C0 = 2;
     static constexpr uint32_t ELE_NUM_PER_FRACTAL = 32;
     using type = tla::Layout<
@@ -79,8 +83,7 @@ struct TagToLayout<AscendC::fp8_e8m0_t, layout::zZ> {
             tla::Stride<tla::Int<1>, tla::Int<ELE_NUM_PER_FRACTAL>>>>;
 };
 
-template <>
-struct TagToLayout<AscendC::fp8_e8m0_t, layout::nN> {
+template <> struct TagToLayout<AscendC::fp8_e8m0_t, layout::nN> {
     static constexpr uint32_t ELE_NUM_PER_C0 = 2;
     static constexpr uint32_t ELE_NUM_PER_FRACTAL = 32;
     using type = tla::Layout<
@@ -90,8 +93,7 @@ struct TagToLayout<AscendC::fp8_e8m0_t, layout::nN> {
 };
 
 // Convenience aliases
-template <class Element, class LayoutTag>
-using TagToLayout_t = typename TagToLayout<Element, LayoutTag>::type;
+template <class Element, class LayoutTag> using TagToLayout_t = typename TagToLayout<Element, LayoutTag>::type;
 
 constexpr uint32_t ELE_NUM_PER_FRACTAL_L0C = 256;
 using LayoutL0C = tla::Layout<

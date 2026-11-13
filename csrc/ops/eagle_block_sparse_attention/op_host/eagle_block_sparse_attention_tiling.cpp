@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #include "eagle_block_sparse_attention_tiling.h"
 #include <algorithm>
 #include <cmath>
@@ -110,7 +122,8 @@ constexpr uint32_t SOLO_BUF = 1;
 constexpr uint32_t DUO_BUF = 2;
 constexpr uint32_t TRIO_BUF = 3;
 
-static std::unordered_map<std::string, std::string> inputLayoutMapQ2Kv = {{"TND", "TND"}, {"BNSD", "BNSD"}, {"BSND", "BSND"}};
+static std::unordered_map<std::string, std::string> inputLayoutMapQ2Kv = {
+    {"TND", "TND"}, {"BNSD", "BNSD"}, {"BSND", "BSND"}};
 
 enum QuantMode : int64_t {
     NO_QUANT = 0,
@@ -122,20 +135,12 @@ enum QuantMode : int64_t {
 // 判断是否为 mxfp4 量化(OCP 或 CX)
 static bool IsMxfp4Quant(int64_t qm) { return qm == MXFP4_OCP_QUANT || qm == MXFP4_CX_QUANT; }
 
-static std::string DataTypeToString(ge::DataType dataType)
-{
+static std::string DataTypeToString(ge::DataType dataType) {
     static const ::unordered_map<ge::DataType, std::string> DataTypeToStringMap = {
-        {ge::DT_FLOAT8_E4M3FN, "ge::DT_FLOAT8_E4M3FN"},
-        {ge::DT_FLOAT8_E8M0, "ge::DT_FLOAT8_E8M0"},
-        {ge::DT_FLOAT4_E2M1, "ge::DT_FLOAT4_E2M1"},
-        {ge::DT_BF16, "ge::DT_BF16"},
-        {ge::DT_FLOAT16, "ge::DT_FLOAT16"},
-        {ge::DT_FLOAT, "ge::DT_FLOAT"},
-        {ge::DT_INT8, "ge::DT_INT8"},
-        {ge::DT_INT16, "ge::DT_INT16"},
-        {ge::DT_INT32, "ge::DT_INT32"},
-        {ge::DT_INT64, "ge::DT_INT64"},
-        {ge::DT_BOOL, "ge::DT_BOOL"},
+        {ge::DT_FLOAT8_E4M3FN, "ge::DT_FLOAT8_E4M3FN"}, {ge::DT_FLOAT8_E8M0, "ge::DT_FLOAT8_E8M0"},
+        {ge::DT_FLOAT4_E2M1, "ge::DT_FLOAT4_E2M1"}, {ge::DT_BF16, "ge::DT_BF16"}, {ge::DT_FLOAT16, "ge::DT_FLOAT16"},
+        {ge::DT_FLOAT, "ge::DT_FLOAT"}, {ge::DT_INT8, "ge::DT_INT8"}, {ge::DT_INT16, "ge::DT_INT16"},
+        {ge::DT_INT32, "ge::DT_INT32"}, {ge::DT_INT64, "ge::DT_INT64"}, {ge::DT_BOOL, "ge::DT_BOOL"},
         {ge::DT_DOUBLE, "ge::DT_DOUBLE"}};
 
     const auto it = DataTypeToStringMap.find(dataType);
@@ -146,16 +151,14 @@ static std::string DataTypeToString(ge::DataType dataType)
     return "UNDEFINED";
 }
 
-static inline uint32_t CeilDiv(uint32_t n1, uint32_t n2)
-{
+static inline uint32_t CeilDiv(uint32_t n1, uint32_t n2) {
     if (n1 == 0) {
         return 0;
     }
     return (n2 != 0) ? ((n1 + n2 - 1) / n2) : n1;
 }
 
-static inline uint32_t GetQBlocks(int32_t qseqlen, int32_t x)
-{
+static inline uint32_t GetQBlocks(int32_t qseqlen, int32_t x) {
     uint32_t qBlocksInX = CeilDiv(x, BASIC_BLOCK_SIZE);
     uint32_t completeXBlocks = x != 0 ? qseqlen / x : qseqlen / BASIC_BLOCK_SIZE;
     uint32_t remainingSeqlen = x != 0 ? qseqlen - completeXBlocks * x : qseqlen % BASIC_BLOCK_SIZE;
@@ -163,14 +166,12 @@ static inline uint32_t GetQBlocks(int32_t qseqlen, int32_t x)
     return qBlocksInX * completeXBlocks + remainingBlocks;
 }
 
-static inline uint32_t GetQNBlockTile()
-{
+static inline uint32_t GetQNBlockTile() {
     uint32_t qNBlockTile = 1;
     return qNBlockTile;
 }
 
-ge::graphStatus EagleBsaTiling::GetNpuInfo(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::GetNpuInfo(gert::TilingContext *bsaContext) {
     auto ascendcPlatform = platform_ascendc::PlatformAscendC(bsaContext->GetPlatformInfo());
 
     ascendcPlatform.GetCoreMemSize(platform_ascendc::CoreMemType::UB, ubSize_);
@@ -181,8 +182,7 @@ ge::graphStatus EagleBsaTiling::GetNpuInfo(gert::TilingContext *bsaContext)
     return ge::GRAPH_SUCCESS;
 }
 
-static ge::graphStatus CheckFormat(ge::Format format)
-{
+static ge::graphStatus CheckFormat(ge::Format format) {
     if (format != ge::FORMAT_ND && format != ge::FORMAT_NCL && format != ge::FORMAT_NCHW &&
         format != ge::FORMAT_NCDHW) {
         return ge::GRAPH_FAILED;
@@ -190,41 +190,40 @@ static ge::graphStatus CheckFormat(ge::Format format)
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::CheckNDFormat(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::CheckNDFormat(gert::TilingContext *bsaContext) {
     auto queryFormat =
         static_cast<ge::Format>(ge::GetPrimaryFormat(bsaContext->GetInputDesc(QUERY_INDEX)->GetStorageFormat()));
     OP_CHECK_IF(CheckFormat(queryFormat) != ge::GRAPH_SUCCESS,
-                OP_LOGE(bsaContext->GetNodeName(), "query check format failed"), return ge::GRAPH_FAILED);
+        OP_LOGE(bsaContext->GetNodeName(), "query check format failed"), return ge::GRAPH_FAILED);
     auto keyFormat =
         static_cast<ge::Format>(ge::GetPrimaryFormat(bsaContext->GetInputDesc(KEY_INDEX)->GetStorageFormat()));
     OP_CHECK_IF(CheckFormat(keyFormat) != ge::GRAPH_SUCCESS,
-                OP_LOGE(bsaContext->GetNodeName(), "key check format failed"), return ge::GRAPH_FAILED);
+        OP_LOGE(bsaContext->GetNodeName(), "key check format failed"), return ge::GRAPH_FAILED);
     auto valueFormat =
         static_cast<ge::Format>(ge::GetPrimaryFormat(bsaContext->GetInputDesc(VALUE_INDEX)->GetStorageFormat()));
     OP_CHECK_IF(CheckFormat(valueFormat) != ge::GRAPH_SUCCESS,
-                OP_LOGE(bsaContext->GetNodeName(), "value check format failed"), return ge::GRAPH_FAILED);
+        OP_LOGE(bsaContext->GetNodeName(), "value check format failed"), return ge::GRAPH_FAILED);
 
     const auto *blockSparseMaskTensor = bsaContext->GetOptionalInputTensor(BLOCK_SPARSE_MASK_INDEX);
     if (blockSparseMaskTensor != nullptr) {
         auto blockSparseMaskFormat =
             static_cast<ge::Format>(ge::GetPrimaryFormat(blockSparseMaskTensor->GetStorageFormat()));
         OP_CHECK_IF(CheckFormat(blockSparseMaskFormat) != ge::GRAPH_SUCCESS,
-                    OP_LOGE(bsaContext->GetNodeName(), "blockSparseMask check format failed"), return ge::GRAPH_FAILED);
+            OP_LOGE(bsaContext->GetNodeName(), "blockSparseMask check format failed"), return ge::GRAPH_FAILED);
     }
 
     const auto *attenMaskTensor = bsaContext->GetOptionalInputTensor(ATTEN_MASK_INDEX);
     if (attenMaskTensor != nullptr) {
         auto attenMaskFormat = static_cast<ge::Format>(ge::GetPrimaryFormat(attenMaskTensor->GetStorageFormat()));
         OP_CHECK_IF(CheckFormat(attenMaskFormat) != ge::GRAPH_SUCCESS,
-                    OP_LOGE(bsaContext->GetNodeName(), "attenMask check format failed"), return ge::GRAPH_FAILED);
+            OP_LOGE(bsaContext->GetNodeName(), "attenMask check format failed"), return ge::GRAPH_FAILED);
     }
 
     const auto *blockTableTensor = bsaContext->GetOptionalInputTensor(BLOCK_TABLE_INDEX);
     if (blockTableTensor != nullptr) {
         auto blockTableFormat = static_cast<ge::Format>(ge::GetPrimaryFormat(blockTableTensor->GetStorageFormat()));
         OP_CHECK_IF(CheckFormat(blockTableFormat) != ge::GRAPH_SUCCESS,
-                    OP_LOGE(bsaContext->GetNodeName(), "blockTable check format failed"), return ge::GRAPH_FAILED);
+            OP_LOGE(bsaContext->GetNodeName(), "blockTable check format failed"), return ge::GRAPH_FAILED);
     }
 
     const auto *qDequantScaleTensor = bsaContext->GetOptionalInputTensor(Q_DEQUANT_SCALE_INDEX);
@@ -232,32 +231,31 @@ ge::graphStatus EagleBsaTiling::CheckNDFormat(gert::TilingContext *bsaContext)
         auto qDequantScaleFormat =
             static_cast<ge::Format>(ge::GetPrimaryFormat(qDequantScaleTensor->GetStorageFormat()));
         OP_CHECK_IF(CheckFormat(qDequantScaleFormat) != ge::GRAPH_SUCCESS,
-                    OP_LOGE(bsaContext->GetNodeName(), "qDequantScale check format failed"), return ge::GRAPH_FAILED);
+            OP_LOGE(bsaContext->GetNodeName(), "qDequantScale check format failed"), return ge::GRAPH_FAILED);
     }
     const auto *kDequantScaleTensor = bsaContext->GetOptionalInputTensor(K_DEQUANT_SCALE_INDEX);
     if (kDequantScaleTensor != nullptr) {
         auto kDequantScaleFormat =
             static_cast<ge::Format>(ge::GetPrimaryFormat(kDequantScaleTensor->GetStorageFormat()));
         OP_CHECK_IF(CheckFormat(kDequantScaleFormat) != ge::GRAPH_SUCCESS,
-                    OP_LOGE(bsaContext->GetNodeName(), "kDequantScale check format failed"), return ge::GRAPH_FAILED);
+            OP_LOGE(bsaContext->GetNodeName(), "kDequantScale check format failed"), return ge::GRAPH_FAILED);
     }
     const auto *vDequantScaleTensor = bsaContext->GetOptionalInputTensor(V_DEQUANT_SCALE_INDEX);
     if (vDequantScaleTensor != nullptr) {
         auto vDequantScaleFormat =
             static_cast<ge::Format>(ge::GetPrimaryFormat(vDequantScaleTensor->GetStorageFormat()));
         OP_CHECK_IF(CheckFormat(vDequantScaleFormat) != ge::GRAPH_SUCCESS,
-                    OP_LOGE(bsaContext->GetNodeName(), "vDequantScale check format failed"), return ge::GRAPH_FAILED);
+            OP_LOGE(bsaContext->GetNodeName(), "vDequantScale check format failed"), return ge::GRAPH_FAILED);
     }
 
     auto attentionOutFormat = static_cast<ge::Format>(
         ge::GetPrimaryFormat(bsaContext->GetOutputDesc(ATTENTION_OUT_INDEX)->GetStorageFormat()));
     OP_CHECK_IF(CheckFormat(attentionOutFormat) != ge::GRAPH_SUCCESS,
-                OP_LOGE(bsaContext->GetNodeName(), "attentionOut check format failed"), return ge::GRAPH_FAILED);
+        OP_LOGE(bsaContext->GetNodeName(), "attentionOut check format failed"), return ge::GRAPH_FAILED);
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::ValidateTNDSeqlenSum(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::ValidateTNDSeqlenSum(gert::TilingContext *bsaContext) {
     // 只在TND格式时进行校验
     if (qInputLayout_ != BSAQInputLayout::TND_Q || kvCacheLayout_ != BSAKvCacheLayout::TND_KV) {
         return ge::GRAPH_SUCCESS;
@@ -275,24 +273,23 @@ ge::graphStatus EagleBsaTiling::ValidateTNDSeqlenSum(gert::TilingContext *bsaCon
     // 校验qseqlen之和是否等于Q的T
     if (sumQSeqlen != totalTokensT_) {
         OP_LOGE(bsaContext->GetNodeName(),
-                "TND format validation failed: sum of qseqlen across all batches (%ld) != Q T (%ld)", sumQSeqlen,
-                totalTokensT_);
+            "TND format validation failed: sum of qseqlen across all batches (%ld) != Q T (%ld)", sumQSeqlen,
+            totalTokensT_);
         return ge::GRAPH_FAILED;
     }
 
     // 校验kvseqlen之和是否等于KV的T
     if (sumKvSeqlen != totalTokensKv_) {
         OP_LOGE(bsaContext->GetNodeName(),
-                "TND format validation failed: sum of kvseqlen across all batches (%ld) != KV T (%ld)", sumKvSeqlen,
-                totalTokensKv_);
+            "TND format validation failed: sum of kvseqlen across all batches (%ld) != KV T (%ld)", sumKvSeqlen,
+            totalTokensKv_);
         return ge::GRAPH_FAILED;
     }
 
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::GetInputLayout(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::GetInputLayout(gert::TilingContext *bsaContext) {
     auto attrs = bsaContext->GetAttrs();
     OP_CHECK_NULL_WITH_CONTEXT(bsaContext, attrs);
     auto attrLayoutQ = attrs->GetAttrPointer<char>(Q_INPUT_LAYOUT_INDEX);
@@ -328,8 +325,7 @@ ge::graphStatus EagleBsaTiling::GetInputLayout(gert::TilingContext *bsaContext)
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::CheckQKVDtype(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::CheckQKVDtype(gert::TilingContext *bsaContext) {
     auto qInputDesc = bsaContext->GetInputDesc(QUERY_INDEX);
     auto kInputDesc = bsaContext->GetInputDesc(KEY_INDEX);
     auto vInputDesc = bsaContext->GetInputDesc(VALUE_INDEX);
@@ -343,14 +339,15 @@ ge::graphStatus EagleBsaTiling::CheckQKVDtype(gert::TilingContext *bsaContext)
     if (socVer_ == SOC_VER_950_CODE) {
         if (dataType_ != ge::DT_FLOAT16 && dataType_ != ge::DT_BF16 && dataType_ != ge::DT_FLOAT8_E4M3FN &&
             dataType_ != ge::DT_FLOAT4_E2M1) {
-            OP_LOGE(bsaContext->GetNodeName(), "On chip 950, the supported dtype of query/key/value is float16, "
-                                               "bfloat16, float8_e4m3fn or float4_e2m1.");
+            OP_LOGE(bsaContext->GetNodeName(),
+                "On chip 950, the supported dtype of query/key/value is float16, "
+                "bfloat16, float8_e4m3fn or float4_e2m1.");
             return ge::GRAPH_FAILED;
         }
     } else {
         if (dataType_ != ge::DT_FLOAT16 && dataType_ != ge::DT_BF16) {
             OP_LOGE(bsaContext->GetNodeName(),
-                    "On chip 910 & 910_93, the supported dtype of query/key/value is float16 or bfloat16.");
+                "On chip 910 & 910_93, the supported dtype of query/key/value is float16 or bfloat16.");
             return ge::GRAPH_FAILED;
         }
     }
@@ -362,28 +359,27 @@ ge::graphStatus EagleBsaTiling::CheckQKVDtype(gert::TilingContext *bsaContext)
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::CheckQKVDimVal(gert::TilingContext *bsaContext, uint32_t kHeads, uint32_t vHeads,
-                                          uint32_t kHeadDim, uint32_t vHeadDim)
-{
+ge::graphStatus EagleBsaTiling::CheckQKVDimVal(
+    gert::TilingContext *bsaContext, uint32_t kHeads, uint32_t vHeads, uint32_t kHeadDim, uint32_t vHeadDim) {
     if (embeddingSize_ != kHeadDim || embeddingSize_ != vHeadDim) {
         OP_LOGE(bsaContext->GetNodeName(),
-                "Tensor query/key/value must have consistent headDim with each other, "
-                "but got qHeadDim %u, kHeadDim %u, vHeadDim %u.",
-                embeddingSize_, kHeadDim, vHeadDim);
+            "Tensor query/key/value must have consistent headDim with each other, "
+            "but got qHeadDim %u, kHeadDim %u, vHeadDim %u.",
+            embeddingSize_, kHeadDim, vHeadDim);
         return ge::GRAPH_FAILED;
     }
     if (kvHeads_ != kHeads || kvHeads_ != vHeads) {
         OP_LOGE(bsaContext->GetNodeName(),
-                "Tensor key/value must have consistent headNum with each other and attr kvHeads, "
-                "but got kHeads %u, vHeads %u, kvHeads(attr) %u.",
-                kHeads, vHeads, kvHeads_);
+            "Tensor key/value must have consistent headNum with each other and attr kvHeads, "
+            "but got kHeads %u, vHeads %u, kvHeads(attr) %u.",
+            kHeads, vHeads, kvHeads_);
         return ge::GRAPH_FAILED;
     }
     if (numHeads_ % kvHeads_ != 0) {
         OP_LOGE(bsaContext->GetNodeName(),
-                "The query's headNum must be a multiple of the key/value's headNum, but now the query's headNum is %u "
-                "and the key/value's headNum is %u.",
-                numHeads_, kvHeads_);
+            "The query's headNum must be a multiple of the key/value's headNum, but now the query's headNum is %u "
+            "and the key/value's headNum is %u.",
+            numHeads_, kvHeads_);
         return ge::GRAPH_FAILED;
     }
     // temporary regulations of D
@@ -394,8 +390,7 @@ ge::graphStatus EagleBsaTiling::CheckQKVDimVal(gert::TilingContext *bsaContext, 
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::ParseQKVInTND(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::ParseQKVInTND(gert::TilingContext *bsaContext) {
     const auto *queryShape = bsaContext->GetInputShape(QUERY_INDEX);
     const auto *keyShape = bsaContext->GetInputShape(KEY_INDEX);
     const auto *valueShape = bsaContext->GetInputShape(VALUE_INDEX);
@@ -424,8 +419,7 @@ ge::graphStatus EagleBsaTiling::ParseQKVInTND(gert::TilingContext *bsaContext)
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::ParseQKVInBNSD(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::ParseQKVInBNSD(gert::TilingContext *bsaContext) {
     const auto *queryShape = bsaContext->GetInputShape(QUERY_INDEX);
     const auto *keyShape = bsaContext->GetInputShape(KEY_INDEX);
     const auto *valueShape = bsaContext->GetInputShape(VALUE_INDEX);
@@ -452,9 +446,9 @@ ge::graphStatus EagleBsaTiling::ParseQKVInBNSD(gert::TilingContext *bsaContext)
     maxKvSeqlen_ = static_cast<uint32_t>(keyShape->GetStorageShape().GetDim(BNSD_DIM_S));
     if (batch_ != kBatch || batch_ != vBatch) {
         OP_LOGE(bsaContext->GetNodeName(),
-                "Tensor query/key/value must have consistent batch with each other, "
-                "but got qBatch %u, kBatch %u, vBatch %u.",
-                batch_, kBatch, vBatch);
+            "Tensor query/key/value must have consistent batch with each other, "
+            "but got qBatch %u, kBatch %u, vBatch %u.",
+            batch_, kBatch, vBatch);
         return ge::GRAPH_FAILED;
     }
     if (CheckQKVDimVal(bsaContext, kHeads, vHeads, embeddingSizeK, embeddingSizeV) != ge::GRAPH_SUCCESS) {
@@ -464,8 +458,7 @@ ge::graphStatus EagleBsaTiling::ParseQKVInBNSD(gert::TilingContext *bsaContext)
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::ParseQKVInBSND(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::ParseQKVInBSND(gert::TilingContext *bsaContext) {
     const auto *queryShape = bsaContext->GetInputShape(QUERY_INDEX);
     const auto *keyShape = bsaContext->GetInputShape(KEY_INDEX);
     const auto *valueShape = bsaContext->GetInputShape(VALUE_INDEX);
@@ -492,9 +485,9 @@ ge::graphStatus EagleBsaTiling::ParseQKVInBSND(gert::TilingContext *bsaContext)
     maxKvSeqlen_ = static_cast<uint32_t>(keyShape->GetStorageShape().GetDim(BSND_DIM_S));
     if (batch_ != kBatch || batch_ != vBatch) {
         OP_LOGE(bsaContext->GetNodeName(),
-                "Tensor query/key/value must have consistent batch with each other, "
-                "but got qBatch %u, kBatch %u, vBatch %u.",
-                batch_, kBatch, vBatch);
+            "Tensor query/key/value must have consistent batch with each other, "
+            "but got qBatch %u, kBatch %u, vBatch %u.",
+            batch_, kBatch, vBatch);
         return ge::GRAPH_FAILED;
     }
     if (CheckQKVDimVal(bsaContext, kHeads, vHeads, embeddingSizeK, embeddingSizeV) != ge::GRAPH_SUCCESS) {
@@ -504,22 +497,21 @@ ge::graphStatus EagleBsaTiling::ParseQKVInBSND(gert::TilingContext *bsaContext)
     if (IsMxfp4Quant(quantMode_) &&
         (embeddingSize_ != VALID_EMBEDDING_SIZE_64 && embeddingSize_ != VALID_EMBEDDING_SIZE_128)) {
         OP_LOGE(bsaContext->GetNodeName(),
-                "(quantMode:%d)mxfp4 requires embeddingSize to be multiple of 64 or 128, but got %u.", quantMode_,
-                embeddingSize_);
+            "(quantMode:%d)mxfp4 requires embeddingSize to be multiple of 64 or 128, but got %u.", quantMode_,
+            embeddingSize_);
         return ge::GRAPH_FAILED;
     }
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::CheckAttentionOutDtype(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::CheckAttentionOutDtype(gert::TilingContext *bsaContext) {
     if (dataType_ == ge::DT_FLOAT8_E4M3FN) {
         attentionOutDataType_ = bsaContext->GetOutputDesc(ATTENTION_OUT_INDEX)->GetDataType();
         if (attentionOutDataType_ != ge::DT_FLOAT16 && attentionOutDataType_ != ge::DT_BF16) {
             OP_LOGE(bsaContext->GetNodeName(),
-                    "The supported dtype of attentionOut is float16 or bfloat16 when the dtype of query/key/value is "
-                    "all float8_e4m3fn, but now it is %s.",
-                    DataTypeToString(attentionOutDataType_).c_str());
+                "The supported dtype of attentionOut is float16 or bfloat16 when the dtype of query/key/value is "
+                "all float8_e4m3fn, but now it is %s.",
+                DataTypeToString(attentionOutDataType_).c_str());
             return ge::GRAPH_FAILED;
         }
     }
@@ -528,9 +520,9 @@ ge::graphStatus EagleBsaTiling::CheckAttentionOutDtype(gert::TilingContext *bsaC
         attentionOutDataType_ = bsaContext->GetOutputDesc(ATTENTION_OUT_INDEX)->GetDataType();
         if (attentionOutDataType_ != ge::DT_FLOAT16 && attentionOutDataType_ != ge::DT_BF16) {
             OP_LOGE(bsaContext->GetNodeName(),
-                    "The supported dtype of attentionOut is float16 or bfloat16 when the dtype of query/key/value is "
-                    "all float4_e2m1 (mxfp4), but now it is %s.",
-                    DataTypeToString(attentionOutDataType_).c_str());
+                "The supported dtype of attentionOut is float16 or bfloat16 when the dtype of query/key/value is "
+                "all float4_e2m1 (mxfp4), but now it is %s.",
+                DataTypeToString(attentionOutDataType_).c_str());
             return ge::GRAPH_FAILED;
         }
     }
@@ -538,8 +530,7 @@ ge::graphStatus EagleBsaTiling::CheckAttentionOutDtype(gert::TilingContext *bsaC
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::ParseRequiredTensors(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::ParseRequiredTensors(gert::TilingContext *bsaContext) {
     if (CheckQKVDtype(bsaContext) != ge::GRAPH_SUCCESS) {
         return ge::GRAPH_FAILED;
     }
@@ -562,22 +553,21 @@ ge::graphStatus EagleBsaTiling::ParseRequiredTensors(gert::TilingContext *bsaCon
     return ret;
 }
 
-ge::graphStatus EagleBsaTiling::ParseSeqlensInTND(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::ParseSeqlensInTND(gert::TilingContext *bsaContext) {
     const auto *actualSeqLengths = bsaContext->GetOptionalInputTensor(ACTUAL_SEQ_LENGTHS_INDEX);
     const auto *actualSeqLengthsKv = bsaContext->GetOptionalInputTensor(ACTUAL_SEQ_LENGTHS_KV_INDEX);
     if (actualSeqLengths == nullptr || actualSeqLengthsKv == nullptr) {
         OP_LOGE(bsaContext->GetNodeName(),
-                "ActualSeqLengths/actualSeqLengthsKv must be provided when corresponding layout is 'TND'.");
+            "ActualSeqLengths/actualSeqLengthsKv must be provided when corresponding layout is 'TND'.");
         return ge::GRAPH_FAILED;
     }
     batch_ = static_cast<uint32_t>(actualSeqLengths->GetShapeSize());
     auto batchKvS = static_cast<uint32_t>(actualSeqLengthsKv->GetShapeSize());
     if (batch_ != batchKvS) {
         OP_LOGE(bsaContext->GetNodeName(),
-                "ActualSeqLengths & actualSeqLengthsKv must have consistent batch size, "
-                "but got batch in actualSeqLengths: %u, batch in actualSeqLengthsKv: %u",
-                batch_, batchKvS);
+            "ActualSeqLengths & actualSeqLengthsKv must have consistent batch size, "
+            "but got batch in actualSeqLengths: %u, batch in actualSeqLengthsKv: %u",
+            batch_, batchKvS);
         return ge::GRAPH_FAILED;
     }
     qSeqLenList_ = actualSeqLengths->GetData<int64_t>();
@@ -593,8 +583,7 @@ ge::graphStatus EagleBsaTiling::ParseSeqlensInTND(gert::TilingContext *bsaContex
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::ParseSeqlensInNonTND(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::ParseSeqlensInNonTND(gert::TilingContext *bsaContext) {
     const auto *actualSeqLengths = bsaContext->GetOptionalInputTensor(ACTUAL_SEQ_LENGTHS_INDEX);
     const auto *actualSeqLengthsKv = bsaContext->GetOptionalInputTensor(ACTUAL_SEQ_LENGTHS_KV_INDEX);
     if (actualSeqLengths != nullptr && actualSeqLengthsKv != nullptr) {
@@ -602,10 +591,10 @@ ge::graphStatus EagleBsaTiling::ParseSeqlensInNonTND(gert::TilingContext *bsaCon
         uint32_t batchKvS = static_cast<uint32_t>(actualSeqLengthsKv->GetShapeSize());
         if (batch_ != batchKvS || batch_ != batchQS) {
             OP_LOGE(bsaContext->GetNodeName(),
-                    "ActualSeqLengths & actualSeqLengthsKv must have consistent batch size with each other and context,"
-                    "but got batch in actualSeqLengths: %u, batch in actualSeqLengthsKv: %u, "
-                    "batch in context(from query dim0): %u",
-                    batchQS, batchKvS, batch_);
+                "ActualSeqLengths & actualSeqLengthsKv must have consistent batch size with each other and context,"
+                "but got batch in actualSeqLengths: %u, batch in actualSeqLengthsKv: %u, "
+                "batch in context(from query dim0): %u",
+                batchQS, batchKvS, batch_);
             return ge::GRAPH_FAILED;
         }
         qSeqLenList_ = actualSeqLengths->GetData<int64_t>();
@@ -615,16 +604,16 @@ ge::graphStatus EagleBsaTiling::ParseSeqlensInNonTND(gert::TilingContext *bsaCon
         for (uint32_t i = 0; i < batch_; i++) {
             if (qSeqLenList_[i] > maxQSeqlen_) {
                 OP_LOGE(bsaContext->GetNodeName(),
-                        "The actualSeqLength of each batch must be less than or equal to the maxSeqLength. The "
-                        "maxSeqLength is %u, but the value at index %u of the actualSeqLengths is %ld.",
-                        maxQSeqlen_, i, qSeqLenList_[i]);
+                    "The actualSeqLength of each batch must be less than or equal to the maxSeqLength. The "
+                    "maxSeqLength is %u, but the value at index %u of the actualSeqLengths is %ld.",
+                    maxQSeqlen_, i, qSeqLenList_[i]);
                 return ge::GRAPH_FAILED;
             }
             if (kvSeqLenList_[i] > maxKvSeqlen_) {
                 OP_LOGE(bsaContext->GetNodeName(),
-                        "The actualSeqLengthKv of each batch must be less or equal to than the maxSeqLengthKv. The "
-                        "maxSeqLengthKv is %u, but the value at index %u of the actualSeqLengthsKv is %ld.",
-                        maxKvSeqlen_, i, kvSeqLenList_[i]);
+                    "The actualSeqLengthKv of each batch must be less or equal to than the maxSeqLengthKv. The "
+                    "maxSeqLengthKv is %u, but the value at index %u of the actualSeqLengthsKv is %ld.",
+                    maxKvSeqlen_, i, kvSeqLenList_[i]);
                 return ge::GRAPH_FAILED;
             }
         }
@@ -635,14 +624,13 @@ ge::graphStatus EagleBsaTiling::ParseSeqlensInNonTND(gert::TilingContext *bsaCon
         useUniformKvSeqlen_ = true;
     } else {
         OP_LOGE(bsaContext->GetNodeName(),
-                "ActualSeqLengths & actualSeqLengthsKv must be either both provided, or neither provided.");
+            "ActualSeqLengths & actualSeqLengthsKv must be either both provided, or neither provided.");
         return ge::GRAPH_FAILED;
     }
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::ParseSeqlens(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::ParseSeqlens(gert::TilingContext *bsaContext) {
     ge::graphStatus ret = ge::GRAPH_SUCCESS;
     if (qInputLayout_ == BSAQInputLayout::TND_Q) {
         ret = ParseSeqlensInTND(bsaContext);
@@ -652,22 +640,21 @@ ge::graphStatus EagleBsaTiling::ParseSeqlens(gert::TilingContext *bsaContext)
     return ret;
 }
 
-ge::graphStatus EagleBsaTiling::CheckSparsePattern(gert::TilingContext *bsaContext, const int64_t defaultShape)
-{
+ge::graphStatus EagleBsaTiling::CheckSparsePattern(gert::TilingContext *bsaContext, const int64_t defaultShape) {
     const auto *blockSparseMaskShape = bsaContext->GetOptionalInputShape(BLOCK_SPARSE_MASK_INDEX);
     if (blockShapeX_ <= 0 || blockShapeY_ <= 0) {
         OP_LOGE(bsaContext->GetNodeName(),
-                "BlockShape elems must be greater than 0, "
-                "but got elem0: %ld, elem1: %ld.",
-                blockShapeX_, blockShapeY_);
+            "BlockShape elems must be greater than 0, "
+            "but got elem0: %ld, elem1: %ld.",
+            blockShapeX_, blockShapeY_);
         return ge::GRAPH_FAILED;
     }
     // Only blockShapeY requires alignment (A950: 16; A910/A910B: 16). blockShapeX has no align constraint.
     if (blockShapeY_ % defaultShape != 0) {
         OP_LOGE(bsaContext->GetNodeName(),
-                "BlockShape elem1 must be a multiple of %ld, "
-                "but got elem1: %ld.",
-                defaultShape, blockShapeY_);
+            "BlockShape elem1 must be a multiple of %ld, "
+            "but got elem1: %ld.",
+            defaultShape, blockShapeY_);
         return ge::GRAPH_FAILED;
     }
     if (blockSparseMaskShape->GetStorageShape().GetDimNum() != 4) {
@@ -687,18 +674,17 @@ ge::graphStatus EagleBsaTiling::CheckSparsePattern(gert::TilingContext *bsaConte
     if (blockSparseMaskBatch != batch_ || blockSparseMaskNumHeads != numHeads_ ||
         maxQBlockNum_ != expectedMaxQBlockNum || maxKvBlockNum_ != expectedMaxKVBlockNum) {
         OP_LOGE(bsaContext->GetNodeName(),
-                "The shape of blockSparseMask must be consistent with %s. The expected shape is (%u, %u, %u, %u), but "
-                "the current shape is (%u, %u, %u, %u).",
-                shapeDescription.c_str(), batch_, numHeads_, expectedMaxQBlockNum, expectedMaxKVBlockNum,
-                blockSparseMaskBatch, blockSparseMaskNumHeads, maxQBlockNum_, maxKvBlockNum_);
+            "The shape of blockSparseMask must be consistent with %s. The expected shape is (%u, %u, %u, %u), but "
+            "the current shape is (%u, %u, %u, %u).",
+            shapeDescription.c_str(), batch_, numHeads_, expectedMaxQBlockNum, expectedMaxKVBlockNum,
+            blockSparseMaskBatch, blockSparseMaskNumHeads, maxQBlockNum_, maxKvBlockNum_);
         return ge::GRAPH_FAILED;
     }
 
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::ParseSparsePattern(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::ParseSparsePattern(gert::TilingContext *bsaContext) {
     constexpr int64_t MIN_BLOCK_ALIGN = 16;
     constexpr int64_t A2_A3_BLOCK_ALIGN = 16;
     constexpr int64_t DEFAULT_BLOCK_SHAPE = 128;
@@ -729,21 +715,20 @@ ge::graphStatus EagleBsaTiling::ParseSparsePattern(gert::TilingContext *bsaConte
     }
     // V3 新增:mxfp4 要求 blockShapeX 为 64 的倍数
     if (IsMxfp4Quant(quantMode_) && blockShapeX_ % 64 != 0) {
-        OP_LOGE(bsaContext->GetNodeName(), "mxfp4 requires blockShapeX to be multiple of 64, but got %u.",
-                blockShapeX_);
+        OP_LOGE(
+            bsaContext->GetNodeName(), "mxfp4 requires blockShapeX to be multiple of 64, but got %u.", blockShapeX_);
         return ge::GRAPH_FAILED;
     }
     // V3 新增:mxfp4 要求 blockShapeY 为 64 的倍数
     if (IsMxfp4Quant(quantMode_) && blockShapeY_ % 64 != 0) {
-        OP_LOGE(bsaContext->GetNodeName(), "mxfp4 requires blockShapeY to be multiple of 64, but got %u.",
-                blockShapeY_);
+        OP_LOGE(
+            bsaContext->GetNodeName(), "mxfp4 requires blockShapeY to be multiple of 64, but got %u.", blockShapeY_);
         return ge::GRAPH_FAILED;
     }
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::ParseAttenMask(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::ParseAttenMask(gert::TilingContext *bsaContext) {
     const auto *attenMaskTensor = bsaContext->GetOptionalInputTensor(ATTEN_MASK_INDEX);
     if (attenMaskTensor != nullptr) {
         OP_LOGE(bsaContext->GetNodeName(), "AttenMask is NOT YET supported.");
@@ -752,8 +737,7 @@ ge::graphStatus EagleBsaTiling::ParseAttenMask(gert::TilingContext *bsaContext)
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::ParseBlockTable(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::ParseBlockTable(gert::TilingContext *bsaContext) {
     const auto *blockTableTensor = bsaContext->GetOptionalInputTensor(BLOCK_TABLE_INDEX);
     if (blockTableTensor != nullptr) {
         OP_LOGE(bsaContext->GetNodeName(), "Paged cache is NOT YET supported, therefore blockTable should be nullptr.");
@@ -762,36 +746,35 @@ ge::graphStatus EagleBsaTiling::ParseBlockTable(gert::TilingContext *bsaContext)
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::ValidateGenericDequantScale(gert::TilingContext *bsaContext, const int parameterIndex)
-{
+ge::graphStatus EagleBsaTiling::ValidateGenericDequantScale(gert::TilingContext *bsaContext, const int parameterIndex) {
     std::string parameterName;
     switch (parameterIndex) {
-        case Q_DEQUANT_SCALE_INDEX:
-            parameterName = "qDequantScale";
-            break;
-        case K_DEQUANT_SCALE_INDEX:
-            parameterName = "kDequantScale";
-            break;
-        case V_DEQUANT_SCALE_INDEX:
-            parameterName = "vDequantScale";
-            break;
-        default:
-            parameterName = "UNDEFINED";
-            break;
+    case Q_DEQUANT_SCALE_INDEX:
+        parameterName = "qDequantScale";
+        break;
+    case K_DEQUANT_SCALE_INDEX:
+        parameterName = "kDequantScale";
+        break;
+    case V_DEQUANT_SCALE_INDEX:
+        parameterName = "vDequantScale";
+        break;
+    default:
+        parameterName = "UNDEFINED";
+        break;
     }
 
     const auto *dequantScaleTensor = bsaContext->GetOptionalInputTensor(parameterIndex);
     if (quantMode_ == FP8_QUANT) {
         if (dequantScaleTensor == nullptr) {
             OP_LOGE(bsaContext->GetNodeName(), "Parameter %s must not be nullptr when the dtype is float8_e4m3fn.",
-                    parameterName.c_str());
+                parameterName.c_str());
             return ge::GRAPH_FAILED;
         }
 
         auto dequantScaleDType = bsaContext->GetOptionalInputDesc(parameterIndex)->GetDataType();
         if (dequantScaleDType != ge::DT_FLOAT) {
             OP_LOGE(bsaContext->GetNodeName(), "The supported dtype of %s is float32, but now it is %s.",
-                    parameterName.c_str(), DataTypeToString(dequantScaleDType).c_str());
+                parameterName.c_str(), DataTypeToString(dequantScaleDType).c_str());
             return ge::GRAPH_FAILED;
         }
 
@@ -799,7 +782,7 @@ ge::graphStatus EagleBsaTiling::ValidateGenericDequantScale(gert::TilingContext 
         int64_t dequantScaleDimNum = dequantScaleShape->GetStorageShape().GetDimNum();
         if (dequantScaleDimNum != DIM_NUM_4) {
             OP_LOGE(bsaContext->GetNodeName(), "The expected shape dim of %s is 4, but now it is %ld.",
-                    parameterName.c_str(), dequantScaleDimNum);
+                parameterName.c_str(), dequantScaleDimNum);
             return ge::GRAPH_FAILED;
         }
 
@@ -810,17 +793,17 @@ ge::graphStatus EagleBsaTiling::ValidateGenericDequantScale(gert::TilingContext 
 
         uint32_t specificNumHeads = parameterIndex == Q_DEQUANT_SCALE_INDEX ? numHeads_ : kvHeads_;
         uint32_t specificMaxBlockNum = parameterIndex == Q_DEQUANT_SCALE_INDEX ? maxQBlockNum_ : maxKvBlockNum_;
-        std::string shapeDescription = parameterIndex == Q_DEQUANT_SCALE_INDEX ?
-                                           "(totalQToken, numHeads, maxQBlockNum, 1)" :
-                                           "(totalKVToken, numKVHeads, maxKVBlockNum, 1)";
+        std::string shapeDescription = parameterIndex == Q_DEQUANT_SCALE_INDEX
+            ? "(totalQToken, numHeads, maxQBlockNum, 1)"
+            : "(totalKVToken, numKVHeads, maxKVBlockNum, 1)";
 
         if (dequantScaleBatch != batch_ || dequantScaleNumHeads != specificNumHeads ||
             dequantScaleBlockNum != specificMaxBlockNum || dequantScaleLastDim != NUM_1) {
             OP_LOGE(bsaContext->GetNodeName(),
-                    "The shape of %s must be consistent with %s. The expected shape is (%u, %u, %u, %d), but the "
-                    "current shape is (%u, %u, %u, %u).",
-                    parameterName.c_str(), shapeDescription.c_str(), batch_, specificNumHeads, specificMaxBlockNum,
-                    NUM_1, dequantScaleBatch, dequantScaleNumHeads, dequantScaleBlockNum, dequantScaleLastDim);
+                "The shape of %s must be consistent with %s. The expected shape is (%u, %u, %u, %d), but the "
+                "current shape is (%u, %u, %u, %u).",
+                parameterName.c_str(), shapeDescription.c_str(), batch_, specificNumHeads, specificMaxBlockNum, NUM_1,
+                dequantScaleBatch, dequantScaleNumHeads, dequantScaleBlockNum, dequantScaleLastDim);
             return ge::GRAPH_FAILED;
         }
     } else if (IsMxfp4Quant(quantMode_)) {
@@ -828,7 +811,7 @@ ge::graphStatus EagleBsaTiling::ValidateGenericDequantScale(gert::TilingContext 
     } else {
         if (dequantScaleTensor != nullptr) {
             OP_LOGE(bsaContext->GetNodeName(), "Parameter %s must be nullptr when quantMode is 0(NoQuant).",
-                    parameterName.c_str());
+                parameterName.c_str());
             return ge::GRAPH_FAILED;
         }
     }
@@ -840,12 +823,11 @@ ge::graphStatus EagleBsaTiling::ValidateGenericDequantScale(gert::TilingContext 
 //   QScale:  BNSD=[B,N1,S1,D//64,2]  BSND=[B,S1,N1,D//64,2]
 //   KScale:  BNSD=[B,N2,S2,D//64,2]  BSND=[B,S2,N2,D//64,2]
 //   VScale:  BNSD=[B,N2,S2//64,D,2]  BSND=[B,S2//64,N2,D,2]  (S2//64 向上取整)
-ge::graphStatus EagleBsaTiling::ValidateMxfp4DequantScale(gert::TilingContext *bsaContext, const int parameterIndex)
-{
+ge::graphStatus EagleBsaTiling::ValidateMxfp4DequantScale(gert::TilingContext *bsaContext, const int parameterIndex) {
     const auto *scaleShape = bsaContext->GetOptionalInputShape(parameterIndex);
     if (scaleShape == nullptr) {
         OP_LOGE(bsaContext->GetNodeName(), "(quantMode =2/3) mxfp4 dequantScale (index=%d) must not be nullptr.",
-                parameterIndex);
+            parameterIndex);
         return ge::GRAPH_FAILED;
     }
     auto &storageShape = scaleShape->GetStorageShape();
@@ -859,8 +841,8 @@ ge::graphStatus EagleBsaTiling::ValidateMxfp4DequantScale(gert::TilingContext *b
         uint32_t actual = static_cast<uint32_t>(storageShape.GetDim(idx));
         if (actual != expected) {
             OP_LOGE(bsaContext->GetNodeName(),
-                    "(quantMode =2/3) mxfp4 scale dim[%d] mismatch (layout=%s, index=%d): expected %u, got %u.", idx,
-                    layoutName, parameterIndex, expected, actual);
+                "(quantMode =2/3) mxfp4 scale dim[%d] mismatch (layout=%s, index=%d): expected %u, got %u.", idx,
+                layoutName, parameterIndex, expected, actual);
             return false;
         }
         return true;
@@ -872,7 +854,7 @@ ge::graphStatus EagleBsaTiling::ValidateMxfp4DequantScale(gert::TilingContext *b
         //   Tq=totalTokensT_, Tkv=totalTokensKv_, BTkv=btKvTokens_(sum_b CeilDiv(S2_b,64), ParseSeqlensInTND 累加)
         if (storageShape.GetDimNum() != DIM_NUM_4) {
             OP_LOGE(bsaContext->GetNodeName(), "(quantMode =2/3) mxfp4 TND scale must be 4D, got %zuD.",
-                    storageShape.GetDimNum());
+                storageShape.GetDimNum());
             return ge::GRAPH_FAILED;
         }
         uint32_t expDim0, expDim1, expDim2;
@@ -897,8 +879,8 @@ ge::graphStatus EagleBsaTiling::ValidateMxfp4DequantScale(gert::TilingContext *b
 
     // BNSD/BSND: 5D scale shapes (existing)
     if (storageShape.GetDimNum() != DIM_NUM_5) {
-        OP_LOGE(bsaContext->GetNodeName(), "(quantMode =2/3) mxfp4 scale must be 5D, got %zuD.",
-                storageShape.GetDimNum());
+        OP_LOGE(
+            bsaContext->GetNodeName(), "(quantMode =2/3) mxfp4 scale must be 5D, got %zuD.", storageShape.GetDimNum());
         return ge::GRAPH_FAILED;
     }
     uint32_t kvsDiv64 = (maxKvSeqlen_ + NUM_64 - 1) / NUM_64; // CeilDiv(maxKVS, 64); BNSD/BSND uniform 用 max
@@ -926,23 +908,19 @@ ge::graphStatus EagleBsaTiling::ValidateMxfp4DequantScale(gert::TilingContext *b
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::ValidateQDequantScale(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::ValidateQDequantScale(gert::TilingContext *bsaContext) {
     return ValidateGenericDequantScale(bsaContext, Q_DEQUANT_SCALE_INDEX);
 }
 
-ge::graphStatus EagleBsaTiling::ValidateKDequantScale(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::ValidateKDequantScale(gert::TilingContext *bsaContext) {
     return ValidateGenericDequantScale(bsaContext, K_DEQUANT_SCALE_INDEX);
 }
 
-ge::graphStatus EagleBsaTiling::ValidateVDequantScale(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::ValidateVDequantScale(gert::TilingContext *bsaContext) {
     return ValidateGenericDequantScale(bsaContext, V_DEQUANT_SCALE_INDEX);
 }
 
-ge::graphStatus EagleBsaTiling::ParseOptionalTensors(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::ParseOptionalTensors(gert::TilingContext *bsaContext) {
     if (ParseSeqlens(bsaContext) != ge::GRAPH_SUCCESS || ParseSparsePattern(bsaContext) != ge::GRAPH_SUCCESS ||
         ParseAttenMask(bsaContext) != ge::GRAPH_SUCCESS || ParseBlockTable(bsaContext) != ge::GRAPH_SUCCESS) {
         return ge::GRAPH_FAILED;
@@ -959,8 +937,7 @@ ge::graphStatus EagleBsaTiling::ParseOptionalTensors(gert::TilingContext *bsaCon
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::ParseAttrs(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::ParseAttrs(gert::TilingContext *bsaContext) {
     auto attrs = bsaContext->GetAttrs();
     OP_CHECK_NULL_WITH_CONTEXT(bsaContext, attrs);
     if (attrs->GetAttrPointer<uint32_t>(NUM_KEY_VALUE_HEADS_INDEX) == nullptr) {
@@ -991,9 +968,9 @@ ge::graphStatus EagleBsaTiling::ParseAttrs(gert::TilingContext *bsaContext)
     if (socVer_ == SOC_VER_950_CODE) {
         if (innerPrecise_ != EagleBsaInnerCalcPrec::LOW_HIGH_MIXED) {
             OP_LOGE(bsaContext->GetNodeName(),
-                    "On chip 950, only innerPrec = 4 is supported, "
-                    "but got %u.",
-                    innerPrecise_);
+                "On chip 950, only innerPrec = 4 is supported, "
+                "but got %u.",
+                innerPrecise_);
             return ge::GRAPH_FAILED;
         }
     } else {
@@ -1002,15 +979,15 @@ ge::graphStatus EagleBsaTiling::ParseAttrs(gert::TilingContext *bsaContext)
         auto dtypeQ = qInputDesc->GetDataType();
         if (innerPrecise_ != EagleBsaInnerCalcPrec::ALL_HIGH && innerPrecise_ != EagleBsaInnerCalcPrec::ALL_LOW) {
             OP_LOGE(bsaContext->GetNodeName(),
-                    "On chip 910 & 910_93, only innerPrec = 0 or 1 is supported, "
-                    "but got %u.",
-                    innerPrecise_);
+                "On chip 910 & 910_93, only innerPrec = 0 or 1 is supported, "
+                "but got %u.",
+                innerPrecise_);
             return ge::GRAPH_FAILED;
         } else if (innerPrecise_ == EagleBsaInnerCalcPrec::ALL_LOW && dtypeQ == ge::DT_BF16) {
             OP_LOGE(bsaContext->GetNodeName(),
-                    "On chip 910 & 910_93, when query dtype is bfloat16, "
-                    "only innerPrec = 0 is supported, but got %u.",
-                    innerPrecise_);
+                "On chip 910 & 910_93, when query dtype is bfloat16, "
+                "only innerPrec = 0 is supported, but got %u.",
+                innerPrecise_);
             return ge::GRAPH_FAILED;
         }
     }
@@ -1018,18 +995,18 @@ ge::graphStatus EagleBsaTiling::ParseAttrs(gert::TilingContext *bsaContext)
     int64_t blockSize = *attrs->GetAttrPointer<int64_t>(BLOCK_SIZE_INDEX);
     if (blockSize != 0) {
         OP_LOGE(bsaContext->GetNodeName(),
-                "Since paged cache is not yet supported, "
-                "blocksize must be 0, but got %ld.",
-                blockSize);
+            "Since paged cache is not yet supported, "
+            "blocksize must be 0, but got %ld.",
+            blockSize);
         return ge::GRAPH_FAILED;
     }
     int64_t preTokens = *attrs->GetAttrPointer<int64_t>(PRE_TOKENS_INDEX);
     int64_t nextTokens = *attrs->GetAttrPointer<int64_t>(NEXT_TOKENS_INDEX);
     if (preTokens != INF_WINDOW_SIZE_PRE_NEXT || nextTokens != INF_WINDOW_SIZE_PRE_NEXT) {
         OP_LOGE(bsaContext->GetNodeName(),
-                "Since windowed atten mask is not yet supported, "
-                "preTokens & nextTokens must be 2147483647, but got %ld, %ld.",
-                preTokens, nextTokens);
+            "Since windowed atten mask is not yet supported, "
+            "preTokens & nextTokens must be 2147483647, but got %ld, %ld.",
+            preTokens, nextTokens);
         return ge::GRAPH_FAILED;
     }
     auto softmaxLsePtr = attrs->GetAttrPointer<int64_t>(SOFTMAX_LSE_FLAG_INDEX);
@@ -1074,9 +1051,8 @@ ge::graphStatus EagleBsaTiling::ParseAttrs(gert::TilingContext *bsaContext)
     return ge::GRAPH_SUCCESS;
 }
 
-void EagleBsaTiling::CalculateBatchTaskSplit(int64_t qSeqlen, uint32_t groupSize, uint32_t &curTaskNum,
-                                        uint32_t &curQBlockNum)
-{
+void EagleBsaTiling::CalculateBatchTaskSplit(
+    int64_t qSeqlen, uint32_t groupSize, uint32_t &curTaskNum, uint32_t &curQBlockNum) {
     uint32_t curQBlockTile = GetQNBlockTile();
     uint32_t qNBlockNumPerGroup = CeilDiv(groupSize, curQBlockTile);
     uint32_t curQNBlockNum = qNBlockNumPerGroup * kvHeads_;
@@ -1084,8 +1060,7 @@ void EagleBsaTiling::CalculateBatchTaskSplit(int64_t qSeqlen, uint32_t groupSize
     curQBlockNum = CeilDiv(qSeqlen, blockShapeX_) * numHeads_;
 }
 
-uint32_t EagleBsaTiling::GetCurQSTileNum950(int64_t curQSeqlen)
-{
+uint32_t EagleBsaTiling::GetCurQSTileNum950(int64_t curQSeqlen) {
     uint32_t fullXBlockNum = curQSeqlen / blockShapeX_;
     uint32_t tailXBlockSize = curQSeqlen % blockShapeX_;
     uint32_t qSTileNumPerFullXBlock = (blockShapeX_ + qBaseTile_ - 1) / qBaseTile_;
@@ -1094,8 +1069,7 @@ uint32_t EagleBsaTiling::GetCurQSTileNum950(int64_t curQSeqlen)
     return curQSTileNum;
 }
 
-static inline uint32_t GetMaxDiv(uint32_t value, uint32_t maxBound)
-{
+static inline uint32_t GetMaxDiv(uint32_t value, uint32_t maxBound) {
     if (value == 0 || maxBound == 0) {
         return 1;
     }
@@ -1118,8 +1092,7 @@ static inline uint32_t GetMaxDiv(uint32_t value, uint32_t maxBound)
 }
 
 // FP8: pick largest preferred tile that divides blockShapeY (tile <= Y, Y % tile == 0).
-static inline uint32_t CalcFp8KvBaseTile(uint32_t blockShapeY, uint32_t preferredTile)
-{
+static inline uint32_t CalcFp8KvBaseTile(uint32_t blockShapeY, uint32_t preferredTile) {
     if (blockShapeY % preferredTile == 0) {
         return preferredTile;
     }
@@ -1133,10 +1106,10 @@ static inline uint32_t CalcFp8KvBaseTile(uint32_t blockShapeY, uint32_t preferre
     return blockShapeY;
 }
 
-void EagleBsaTiling::CalcBaseTileTilingParams950()
-{
+void EagleBsaTiling::CalcBaseTileTilingParams950() {
     qBaseTile_ = (blockShapeX_ > TILE_SIZE_128) ? TILE_SIZE_128 : static_cast<uint32_t>(blockShapeX_);
-    const bool isMixedPrecision = (innerPrecise_ == EagleBsaInnerCalcPrec::LOW_HIGH_MIXED && embeddingSize_ <= D_SIZE_128);
+    const bool isMixedPrecision =
+        (innerPrecise_ == EagleBsaInnerCalcPrec::LOW_HIGH_MIXED && embeddingSize_ <= D_SIZE_128);
     if (dataType_ == ge::DT_FLOAT8_E4M3FN) {
         const uint32_t preferredTile = isMixedPrecision ? TILE_SIZE_256 : TILE_SIZE_128;
         kvBaseTile_ = CalcFp8KvBaseTile(static_cast<uint32_t>(blockShapeY_), preferredTile);
@@ -1145,8 +1118,7 @@ void EagleBsaTiling::CalcBaseTileTilingParams950()
     }
 }
 
-void EagleBsaTiling::CalcSplitCoreTilingParams950()
-{
+void EagleBsaTiling::CalcSplitCoreTilingParams950() {
     CalcBaseTileTilingParams950();
     for (uint32_t bIdx = 0; bIdx < batch_; bIdx++) {
         int64_t curQSeqlen = useUniformQSeqlen_ ? maxQSeqlen_ : qSeqLenList_[bIdx];
@@ -1166,8 +1138,7 @@ void EagleBsaTiling::CalcSplitCoreTilingParams950()
     preActiveSubCoreNum_ = (totalRowNumBlockMask + avgRowPerSubCore_ - 1) / avgRowPerSubCore_;
 }
 
-ge::graphStatus EagleBsaTiling::CalculateTaskSplit(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::CalculateTaskSplit(gert::TilingContext *bsaContext) {
     // 计算总的Q块数量和最大KV块数量
     totalQBlocks_ = 0;
 
@@ -1210,8 +1181,7 @@ ge::graphStatus EagleBsaTiling::CalculateTaskSplit(gert::TilingContext *bsaConte
     return ge::GRAPH_SUCCESS;
 }
 
-void EagleBsaTiling::CalcWorkspaceTilingParams950(gert::TilingContext *bsaContext)
-{
+void EagleBsaTiling::CalcWorkspaceTilingParams950(gert::TilingContext *bsaContext) {
     selectIdxSize_ =
         static_cast<uint64_t>(batch_) * numHeads_ * xBlockNumAligned_ * yBlockNumAligned_ * sizeof(int32_t);
     selectNumIdxSize_ = static_cast<uint64_t>(batch_) * numHeads_ * xBlockNumAligned_ * sizeof(int32_t);
@@ -1219,15 +1189,14 @@ void EagleBsaTiling::CalcWorkspaceTilingParams950(gert::TilingContext *bsaContex
     bsaContext->GetWorkspaceSizes(1)[0] = workSpaceSize_;
 }
 
-ge::graphStatus EagleBsaTiling::CalculateWorkSpace(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::CalculateWorkSpace(gert::TilingContext *bsaContext) {
     if (blockDim_ == 0) {
         OP_LOGE(bsaContext->GetNodeName(), "blockDim is 0");
         return ge::GRAPH_FAILED;
     }
 
     selectIdxSize_ = CeilDiv(blockShapeX_, 128) * CeilDiv(maxKvBlockNum_, 32) * 32 * sizeof(uint32_t) * batch_ *
-                     numHeads_ * maxQBlockNum_;
+        numHeads_ * maxQBlockNum_;
     selectNumIdxSize_ = CeilDiv(blockShapeX_, 128) * sizeof(uint32_t) * 32 * batch_ * numHeads_ * maxQBlockNum_;
     int32_t syncSize_ = sizeof(uint32_t) * 256;
 
@@ -1237,7 +1206,7 @@ ge::graphStatus EagleBsaTiling::CalculateWorkSpace(gert::TilingContext *bsaConte
     updateSize_ = blockDim_ * WORKSPACE_BLOCK_SIZE_DB * sizeof(float) * NUM3;
 
     workSpaceSize_ = libapiSize_ + mm1OutSize_ + smOnlineOutSize_ + mm2OutSize_ + updateSize_ + selectNumIdxSize_ +
-                     selectIdxSize_ + syncSize_;
+        selectIdxSize_ + syncSize_;
     bsaContext->GetWorkspaceSizes(1)[0] = workSpaceSize_;
     uint32_t totalTaskNumMask = batch_ * numHeads_ * maxQBlockNum_;
     avgRowNumPerSubCore_ = CeilDiv(totalTaskNumMask, blockDim_ * 2);
@@ -1246,8 +1215,7 @@ ge::graphStatus EagleBsaTiling::CalculateWorkSpace(gert::TilingContext *bsaConte
     return ge::GRAPH_SUCCESS;
 }
 
-void EagleBsaTiling::CalcMatmulPhaseL1TileInfo950()
-{
+void EagleBsaTiling::CalcMatmulPhaseL1TileInfo950() {
     uint32_t qBaseTileAligned128 = (qBaseTile_ + TILE_SIZE_128 - 1) / TILE_SIZE_128 * TILE_SIZE_128;
     uint32_t embeddingSizeAligned128 = (embeddingSize_ + TILE_SIZE_128 - 1) / TILE_SIZE_128 * TILE_SIZE_128;
     uint32_t kvBaseTileAligned128 = (kvBaseTile_ + TILE_SIZE_128 - 1) / TILE_SIZE_128 * TILE_SIZE_128;
@@ -1287,8 +1255,7 @@ void EagleBsaTiling::CalcMatmulPhaseL1TileInfo950()
     }
 }
 
-ge::graphStatus EagleBsaTiling::FillTilingData(gert::TilingContext *bsaContext)
-{
+ge::graphStatus EagleBsaTiling::FillTilingData(gert::TilingContext *bsaContext) {
     if (tilingData_ == nullptr) {
         return ge::GRAPH_FAILED;
     }
@@ -1365,8 +1332,7 @@ ge::graphStatus EagleBsaTiling::FillTilingData(gert::TilingContext *bsaContext)
     return ge::GRAPH_SUCCESS;
 }
 
-uint64_t EagleBsaTiling::GenerateTilingKey(gert::TilingContext *bsaContext)
-{
+uint64_t EagleBsaTiling::GenerateTilingKey(gert::TilingContext *bsaContext) {
     /**
      * 64位整数，使用十进制位域表示：
      * AAAABBBBCCCCDDDDEEEE
@@ -1460,8 +1426,8 @@ uint64_t EagleBsaTiling::GenerateTilingKey(gert::TilingContext *bsaContext)
     return tilingKey;
 }
 
-ge::graphStatus EagleBsaTiling::GetBsaTiling(gert::TilingContext *bsaContext, EagleBlockSparseAttentionTilingData &tilingData)
-{
+ge::graphStatus EagleBsaTiling::GetBsaTiling(
+    gert::TilingContext *bsaContext, EagleBlockSparseAttentionTilingData &tilingData) {
     tilingData_ = &tilingData;
     ge::graphStatus ret = GetNpuInfo(bsaContext);
     if (ret != ge::GRAPH_SUCCESS) {
@@ -1513,20 +1479,19 @@ ge::graphStatus EagleBsaTiling::GetBsaTiling(gert::TilingContext *bsaContext, Ea
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus EagleBsaTiling::BsaSetTilingData(gert::TilingContext *context, EagleBlockSparseAttentionTilingData &tilingData)
-{
+ge::graphStatus EagleBsaTiling::BsaSetTilingData(
+    gert::TilingContext *context, EagleBlockSparseAttentionTilingData &tilingData) {
     OP_CHECK_IF(context->GetRawTilingData() == nullptr,
-                OPS_REPORT_VECTOR_INNER_ERR("EagleBlockSparseAttention", "RawTilingData got from GE context is nullptr."),
-                return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR("EagleBlockSparseAttention", "RawTilingData got from GE context is nullptr."),
+        return ge::GRAPH_FAILED);
     tilingData.SaveToBuffer(context->GetRawTilingData()->GetData(), context->GetRawTilingData()->GetCapacity());
     context->GetRawTilingData()->SetDataSize(tilingData.GetDataSize());
     return ge::GRAPH_SUCCESS;
 }
 
-ASCENDC_EXTERN_C ge::graphStatus TilingEagleBlockSparseAttention(gert::TilingContext *context)
-{
+ASCENDC_EXTERN_C ge::graphStatus TilingEagleBlockSparseAttention(gert::TilingContext *context) {
     OP_CHECK_IF(context == nullptr, OPS_REPORT_VECTOR_INNER_ERR("EagleBlockSparseAttention", "Context is nullptr."),
-                return ge::GRAPH_FAILED);
+        return ge::GRAPH_FAILED);
     EagleBlockSparseAttentionTilingData tilingData;
     EagleBsaTiling bsaTiling;
     if (bsaTiling.GetBsaTiling(context, tilingData) == ge::GRAPH_SUCCESS) {
@@ -1538,16 +1503,16 @@ ASCENDC_EXTERN_C ge::graphStatus TilingEagleBlockSparseAttention(gert::TilingCon
     }
 }
 
-ASCENDC_EXTERN_C ge::graphStatus TilingPrepareForEagleBlockSparseAttention(gert::TilingParseContext *context)
-{
+ASCENDC_EXTERN_C ge::graphStatus TilingPrepareForEagleBlockSparseAttention(gert::TilingParseContext *context) {
     (void)context;
     return ge::GRAPH_SUCCESS;
 }
 
 IMPL_OP_OPTILING(EagleBlockSparseAttention)
     .Tiling(TilingEagleBlockSparseAttention)
-    .TilingInputsDataDependency({5, 6, 7},
-                                {gert::TilingPlacement::TILING_ON_HOST, gert::TilingPlacement::TILING_ON_AICPU})
-    .TilingParse<EagleBlockSparseAttentionCompileInfo>(TilingPrepareForEagleBlockSparseAttention); // 向框架注册入口函数;
+    .TilingInputsDataDependency(
+        {5, 6, 7}, {gert::TilingPlacement::TILING_ON_HOST, gert::TilingPlacement::TILING_ON_AICPU})
+    .TilingParse<EagleBlockSparseAttentionCompileInfo>(
+        TilingPrepareForEagleBlockSparseAttention); // 向框架注册入口函数;
 
 } // namespace optiling

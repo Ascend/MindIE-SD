@@ -8,22 +8,30 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef INCLUDE_ARCH_RESOURCE_HPP
 #define INCLUDE_ARCH_RESOURCE_HPP
 
 #include "../../attn_infra/base_defs.hpp"
 #include "../../attn_infra/arch/local_tensor_buffer.hpp"
 
-namespace NpuArch::Arch 
-{
+namespace NpuArch::Arch {
 
-template<class ArchTag>
-struct Resource
-{};
+template <class ArchTag> struct Resource {};
 
-template<>
-struct Resource<Arch::AtlasA5> {
-public:
+template <> struct Resource<Arch::AtlasA5> {
+  public:
     LocalTensorBuffer<Arch::AtlasA5, AscendC::TPosition::A1> l1Buf;
     LocalTensorBuffer<Arch::AtlasA5, AscendC::TPosition::A2> l0ABuf;
     LocalTensorBuffer<Arch::AtlasA5, AscendC::TPosition::B2> l0BBuf;
@@ -32,22 +40,13 @@ public:
     LocalTensorBuffer<Arch::AtlasA5, AscendC::TPosition::VECCALC> ubBuf;
     LocalTensorBuffer<Arch::AtlasA5, AscendC::TPosition::C2PIPE2GM> fpBuf;
 
-    __aicore__ inline
-    Resource()
-    {
-        AscendC::InitSocState();
-    }
+    __aicore__ inline Resource() { AscendC::InitSocState(); }
 
-    __aicore__ inline
-    ~Resource()
-    {
-        AscendC::InitSocState();
-    }
+    __aicore__ inline ~Resource() { AscendC::InitSocState(); }
 };
 
-template<>
-struct Resource<Arch::AtlasA2> {
-public:
+template <> struct Resource<Arch::AtlasA2> {
+  public:
     AscendC::TPipe pipe;
 
     LocalTensorBuffer<Arch::AtlasA2, AscendC::TPosition::A1> l1Buf;
@@ -57,11 +56,7 @@ public:
     LocalTensorBuffer<Arch::AtlasA2, AscendC::TPosition::CO1> l0CBuf;
     LocalTensorBuffer<Arch::AtlasA2, AscendC::TPosition::VECCALC> ubBuf;
 
-    __aicore__ inline
-    Resource()
-    {
-        pipe.Destroy();
-    }
+    __aicore__ inline Resource() { pipe.Destroy(); }
 };
 
 } // namespace NpuArch::Arch

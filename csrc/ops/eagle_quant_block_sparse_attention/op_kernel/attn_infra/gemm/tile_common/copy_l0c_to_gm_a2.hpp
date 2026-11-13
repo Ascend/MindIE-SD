@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef GEMM_TILE_COPY_L0C_TO_GM_A2_HPP
 #define GEMM_TILE_COPY_L0C_TO_GM_A2_HPP
 
@@ -17,30 +29,21 @@
 #include "../../../attn_infra/gemm/gemm_type.hpp"
 namespace NpuArch::Gemm::Tile {
 
-template <
-    class ElementAccumulator_,
-    class ElementDst_,
-    bool ReluEnable_
->
-struct CopyL0CToGm<NpuArch::Arch::AtlasA2,
-                   ElementAccumulator_,
-                   Gemm::GemmType<ElementDst_, layout::RowMajor>,
-                   ScaleGranularity::NO_QUANT,
-                   ReluEnable_>
-{
+template <class ElementAccumulator_, class ElementDst_, bool ReluEnable_>
+struct CopyL0CToGm<NpuArch::Arch::AtlasA2, ElementAccumulator_, Gemm::GemmType<ElementDst_, layout::RowMajor>,
+    ScaleGranularity::NO_QUANT, ReluEnable_> {
     using ArchTag = NpuArch::Arch::AtlasA2;
     using ElementDst = ElementDst_;
     using ElementSrc = ElementAccumulator_;
     using LayoutSrc = NpuArch::layout::zN;
     using LayoutDst = NpuArch::layout::RowMajor;
-    static constexpr auto quantPre = CopyL0CToDstQuantMode<ArchTag, ElementSrc, ElementDst,
-        ScaleGranularity::NO_QUANT>::VALUE;
+    static constexpr auto quantPre =
+        CopyL0CToDstQuantMode<ArchTag, ElementSrc, ElementDst, ScaleGranularity::NO_QUANT>::VALUE;
     static constexpr auto reluEn = ReluEnable_;
 
-    __aicore__ inline
-    void operator()(AscendC::GlobalTensor<ElementDst> const &dst, AscendC::LocalTensor<ElementSrc> const &src,
-        LayoutDst const &dstLayout, LayoutSrc const &srcLayout, uint8_t unitFlag = 0)
-    {
+    __aicore__ inline void operator()(AscendC::GlobalTensor<ElementDst> const &dst,
+        AscendC::LocalTensor<ElementSrc> const &src, LayoutDst const &dstLayout, LayoutSrc const &srcLayout,
+        uint8_t unitFlag = 0) {
         AscendC::FixpipeParamsV220 intriParams;
 
         // Fixpipe layout information
@@ -59,30 +62,21 @@ struct CopyL0CToGm<NpuArch::Arch::AtlasA2,
     }
 };
 
-template <
-    class ElementAccumulator_,
-    class ElementDst_,
-    bool ReluEnable_
->
-struct CopyL0CToGm<NpuArch::Arch::AtlasA2,
-                   ElementAccumulator_,
-                   Gemm::GemmType<ElementDst_, layout::zN>,
-                   ScaleGranularity::NO_QUANT,
-                   ReluEnable_>
-{
+template <class ElementAccumulator_, class ElementDst_, bool ReluEnable_>
+struct CopyL0CToGm<NpuArch::Arch::AtlasA2, ElementAccumulator_, Gemm::GemmType<ElementDst_, layout::zN>,
+    ScaleGranularity::NO_QUANT, ReluEnable_> {
     using ArchTag = NpuArch::Arch::AtlasA2;
     using ElementDst = ElementDst_;
     using ElementSrc = ElementAccumulator_;
     using LayoutSrc = NpuArch::layout::zN;
     using LayoutDst = NpuArch::layout::zN;
-    static constexpr auto quantPre = CopyL0CToDstQuantMode<ArchTag, ElementSrc, ElementDst,
-        ScaleGranularity::NO_QUANT>::VALUE;
+    static constexpr auto quantPre =
+        CopyL0CToDstQuantMode<ArchTag, ElementSrc, ElementDst, ScaleGranularity::NO_QUANT>::VALUE;
     static constexpr auto reluEn = ReluEnable_;
 
-    __aicore__ inline
-    void operator()(AscendC::GlobalTensor<ElementDst> const &dst, AscendC::LocalTensor<ElementSrc> const &src,
-        LayoutDst const &dstLayout, LayoutSrc const &srcLayout, uint8_t unitFlag = 0)
-    {
+    __aicore__ inline void operator()(AscendC::GlobalTensor<ElementDst> const &dst,
+        AscendC::LocalTensor<ElementSrc> const &src, LayoutDst const &dstLayout, LayoutSrc const &srcLayout,
+        uint8_t unitFlag = 0) {
         AscendC::FixpipeParamsV220 intriParams;
 
         // Fixpipe layout information
@@ -101,6 +95,6 @@ struct CopyL0CToGm<NpuArch::Arch::AtlasA2,
     }
 };
 
-}  // namespace NpuArch::Gemm::Tile
+} // namespace NpuArch::Gemm::Tile
 
 #endif // GEMM_TILE_COPY_L0C_TO_GM_A2_HPP
