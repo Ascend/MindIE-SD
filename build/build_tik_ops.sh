@@ -99,7 +99,6 @@ function build_and_install(){
     bash build.sh
     chmod +w ${current_script_dir}/vendors
     bash ${dst}/build_out/*.run --install-path=${current_script_dir}/vendors
-    chmod -w ${current_script_dir}/vendors
 }
 
 function build_tik_ops(){

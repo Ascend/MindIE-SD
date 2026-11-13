@@ -296,11 +296,6 @@ class CustomBuildPy(_build_py):
 
         get_python_version()
 
-        for script in os.listdir(build_dir):
-            script_path = os.path.join(build_dir, script)
-            if os.path.isfile(script_path):
-                os.chmod(script_path, 0o444)
-
         try:
             ops_dir = os.path.join(proj_root, 'csrc', 'ops')
             if is_env_enabled(SKIP_OPS_BUILD_ENV):
