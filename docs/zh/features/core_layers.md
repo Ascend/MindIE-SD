@@ -291,7 +291,7 @@ out = rotary_position_embedding(x, cos, sin, rotated_mode="rotated_half", head_f
 
 ### apply_rotary_pos_emb
 
-将 query 和 key 两路 RoPE 计算融合，并原地更新这两个张量。此接口直接封装 `torch_npu.npu_apply_rotary_pos_emb`，不再单独注册 MindIE-SD C++ 算子。
+将 query 和 key 两路 RoPE 计算融合，并原地更新这两个张量。此接口直接封装 `torch_npu.npu_apply_rotary_pos_emb`，不再单独注册 MindIE SD C++ 算子。
 
 ```python
 from mindiesd import apply_rotary_pos_emb

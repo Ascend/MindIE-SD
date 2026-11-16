@@ -11,7 +11,7 @@
     python -m build --wheel --no-isolation
     ```
 
-    >[!NOTE]说明
+    >[!NOTE] 说明
     >若环境中没有wheel等依赖，请用户使用以下命令自行安装。
     >
     >```bash

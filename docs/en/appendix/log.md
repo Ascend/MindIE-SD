@@ -36,7 +36,7 @@ When `MINDIE_LOG_VERBOSE` is disabled, the log retains only the mandatory conten
 [date time] [component name] [uppercase log level] log message
 ```
 
-> [!NOTE]NOTE
+>[!NOTE] Note
 > \*: indicates that if a component contains subcomponents or smaller functional modules, they are presented before the log information. Both the error code and the "\*" subcomponent identifier are output as part of the log message.
 
 **Table 2** Log field description
@@ -108,7 +108,7 @@ The specific format for setting the log level of a component is: _component name
 - If there is no component name before ":", the setting is applied to all components by default for unified configuration.
 - When setting log levels for multiple components at the same time, separate them with ";". A later setting has a higher priority than an earlier one, and the later setting overrides the earlier one.
 
-> [!NOTE]NOTE
+>[!NOTE] Note
 > The values of the preceding components and log levels are case-insensitive.
 
 [Example 1] Set the log level of all MindIE components to "debug" in a unified manner.
@@ -158,7 +158,7 @@ The format for setting the log flush path is: *component name*: *path*.
 - If no component name precedes ":", the setting applies to all components by default.
 - When configuring multiple components at the same time, separate them with ";". A later setting takes precedence over an earlier one, and the later setting overrides the earlier one.
 
-> [!NOTE]NOTE
+>[!NOTE] Note
 >
 > - The path must not contain special characters such as control characters.
 > - The log path must not be a symbolic link. The program validates it. Ensure that the log path is valid.
@@ -213,7 +213,7 @@ Set the log rotation format of a component as follows: _component name_: -s _cyc
 - When multiple components are set at the same time, separate them with ";". The later setting has a higher priority than the earlier one, and the later setting overrides the earlier one.
 - -s _cycle_ indicates the time period, which can be daily/weekly/monthly/yearly, or a number of days from 1 to 180; -fs _filesize_ indicates the size of each log file (in MB); -r _rotate_ indicates the maximum number of log files that can be retained per process.
 
-    > [!NOTE]NOTE
+    >[!NOTE] Note
     > After rotation, the newly generated log file is named in the format `mindie-sd_process ID_timestamp.log` (the timestamp is accurate to the second). When the number of historical files exceeds the maximum number of log files that can be retained per process, the oldest log file is automatically deleted.
 
 [Example 1] Set the log file size of all MindIE components to 500 MB in a unified manner.

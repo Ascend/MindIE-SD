@@ -117,7 +117,7 @@ When cache-dit detects that mindiesd is installed in an Ascend NPU environment, 
 python3 -m cache_dit.generate flux --model-path $FLUX_PATH --compile
 ```
 
-> [!NOTE]NOTE
+>[!NOTE] Note
 > Starting from torch_npu 2.9 (MR 30358), the NPU over-adaptation of `Tensor.to` has been removed, and the dtype cast in the compiled graph changes from `torch.ops.npu._npu_dtype_cast` to `torch.ops.aten._to_copy`. MindIE SD 3.0.0 already adapts automatically to the torch version, so no extra configuration is required. If RMSNorm / RoPE fusion does not take effect in a torch 2.9+ environment, confirm that your MindIE SD version includes the adaptation for that version.
 
 ### 2.4 Enabling the Cache-DiT DBCache Feature

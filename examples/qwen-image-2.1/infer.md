@@ -4,7 +4,7 @@
 
 Qwen-Image-2.1 是图像生成模型，覆盖文生图及参考图像编辑等工作流。该模型使用 Qwen3-VL 编码文本与参考图像，通过单流 DiT 生成图像。
 
-> [!NOTE]说明
+>[!NOTE] 说明
 > 模型支持代码来自 [vLLM-Omni PR #7759](https://github.com/vllm-project/vllm-omni/pull/7759)，请按下文安装指定源码提交。下载权重需具备模型仓库访问权限。
 
 ## 已支持的机型
@@ -28,7 +28,7 @@ hf download Qwen/Qwen-Image-2.1 --local-dir "${MODEL}"
 
 #### 1）官方 Docker 镜像
 
-通过[vllm-omni镜像仓库](https://quay.io/repository/ascend/vllm-omni?tab=tags)选择适用于 Atlas 350 的官方镜像作为基础环境。镜像中已携带MindIE-SD，无需单独安装。请替换下方镜像标签占位，并按第 2 步安装 PR 中的模型支持代码：
+通过[vllm-omni镜像仓库](https://quay.io/repository/ascend/vllm-omni?tab=tags)选择适用于 Atlas 350 的官方镜像作为基础环境。镜像中已携带MindIE SD，无需单独安装。请替换下方镜像标签占位，并按第 2 步安装 PR 中的模型支持代码：
 
 ```bash
 # 拉取适用于 Atlas 350 的官方镜像（先替换标签）
@@ -85,7 +85,7 @@ VLLM_OMNI_TARGET_DEVICE=npu pip install -e . --no-build-isolation -i https://mir
 
 #### 推荐单卡配置
 
-以下是单卡服务启动命令，使用 BF16 精度及 MindIE-SD 注意力算子：
+以下是单卡服务启动命令，使用 BF16 精度及 MindIE SD 注意力算子：
 
 ```bash
 export ASCEND_RT_VISIBLE_DEVICES=0
@@ -174,7 +174,7 @@ curl http://localhost:8091/v1/images/edits \
 
 ## 当前已适配的优化点
 
-1. 昇腾亲和的注意力算子：通过 `FLASH_ATTN` 后端调用 MindIE-SD 注意力算子，详情见[核心层接口](../../docs/zh/features/core_layers.md)。
+1. 昇腾亲和的注意力算子：通过 `FLASH_ATTN` 后端调用 MindIE SD 注意力算子，详情见[核心层接口](../../docs/zh/features/core_layers.md)。
 2. CFG 与 Ulysses 混合并行：通过 `--cfg-parallel-size` 配置 CFG 并行度，通过 `--usp` 配置序列并行度。
 
 ## 已知限制

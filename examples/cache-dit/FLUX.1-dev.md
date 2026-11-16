@@ -117,7 +117,7 @@ cache-dit 在昇腾 NPU 环境检测到已安装 mindiesd 时，会自动使用 
 python3 -m cache_dit.generate flux --model-path $FLUX_PATH --compile
 ```
 
-> [!NOTE]说明
+>[!NOTE] 说明
 > torch_npu 2.9 起（MR 30358）移除了 `Tensor.to` 的 NPU 过适配，编译图中的 dtype cast 由 `torch.ops.npu._npu_dtype_cast` 变为 `torch.ops.aten._to_copy`。MindIE SD 3.0.0 已按 torch 版本自动适配，无需额外配置；若在 torch 2.9+ 环境观察到 RMSNorm / RoPE 融合未生效，请确认 MindIE SD 版本已包含该版本适配。
 
 ### 2.4 使能Cache-DiT的DBCache功能

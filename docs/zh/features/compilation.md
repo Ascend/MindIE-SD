@@ -7,7 +7,7 @@ MindIE SD 基于 PyTorch 的 `torch.compile` 编译器提供自定义后端 `Min
 
 两项能力通过 `CompilationConfig` 统一控制。
 
->[!NOTE]说明
+>[!NOTE] 说明
 >使能该特性后，模型运行初期存在一定的编译耗时（默认最多进行8次尝试），但是在后续运行中，一般不会再次编译。在实际benchmark测试过程中，需要将预热阶段的耗时去除。
 
 ## 基本用法

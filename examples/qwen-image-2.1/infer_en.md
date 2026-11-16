@@ -4,7 +4,7 @@
 
 Qwen-Image-2.1 is an image generation model that covers workflows such as text-to-image and reference image editing. The model uses Qwen3-VL to encode text and reference images, and generates images through a single-stream DiT.
 
-> [!NOTE]NOTE
+>[!NOTE] Note
 > The model support code comes from [vLLM-Omni PR #7759](https://github.com/vllm-project/vllm-omni/pull/7759). Install the specified source commit as described below. Downloading the weights requires access to the model repository.
 
 ## Supported Devices

@@ -17,7 +17,7 @@ MindIE SD旨在构建昇腾亲和的多模态加速系列套件，配合业内�
 - FA_Power_Cap 技术：面向长序列视频生成场景，通过切分 FA 并重排 FA 与通信执行顺序，降低整网平均功耗并提升端到端性能。详情请参见[FA_Power_Cap 技术](./features/fa_power_cap.md)。
 - 自动亲和加速：基于torch.compile的inductor机制，自定义融合pass，实现昇腾亲和算子替换。
 
->[!NOTE]说明
+>[!NOTE] 说明
 >
 >- 基于MindIE SD实现昇腾加速的diffusers模型发布在[Modelers](https://modelers.cn/models?name=MindIE&page=1&size=16)和[ModelZoo](https://www.hiascend.com/software/modelzoo)。
 >对于相关但非本仓库聚焦的特性，在examples目录中提供了样例以供参考，例如，服务化部署样例请参考[服务化](../../examples/service)，多模态推理加速样例请参见[Cache](../../examples/cache)。

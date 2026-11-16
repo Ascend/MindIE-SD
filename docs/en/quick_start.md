@@ -1,6 +1,6 @@
 # Quick Start
 
-This section uses the **Wan2.1** model as an example to demonstrate how to use MindIE SD for text-to-video generation. For more inference details about this model, see [Modelers - MindIE](https://modelers.cn/models/MindIE).
+This section uses the **Wan2.1** model as an example to demonstrate how to use MindIE SD for text-to-video generation. For more inference details about this model, see [Modelers - MindIE](https://modelers.cn/models/MindIE/Wan2.1).
 
 > Before starting inference, complete the environment setup and MindIE SD installation as described in [Installation Guide](./installation.md).
 
@@ -38,7 +38,7 @@ Wan2.1-T2V-14B/
 └── ...
 ```
 
-> [!NOTE] NOTE
+>[!NOTE] Note
 >
 > - In addition to HuggingFace, model weights can also be obtained from [modelscope](https://modelscope.cn/models).
 > - For weights of other models (FLUX.1-dev, HunyuanVideo, etc.), see the links in [Model/Framework Support Matrix](features/supported_matrix.md).

@@ -46,7 +46,7 @@
  | Qwen-Image-Edit-2509 |  Atlas 800I A2推理服务器  |    ✅️    | ✅️  |  ✖️   | ✖️ |   ✅️    |
  | Z-Image-Turbo |  Atlas 800I A2推理服务器  |    ✅️    | ✖️  |  ✖️   | ✖️ |   ✅️    |
 
-> [!NOTE]说明
+>[!NOTE] 说明
 >Atlas 800I A2推理服务器默认使用算力313T，内存64 GB。
 
 ## Cache-DiT + diffusers 特性&模型性能
@@ -90,7 +90,7 @@
  | [Z-Image](https://modelers.cn/models/MindIE/Z-Image) |  <ul><li>Atlas 800I A2推理服务器</li><li>Atlas 800I A3超节点服务器</li></ul>  |    ✖️    | ✖️  |  ✖️   | ✖️ |   ✖️    |  无  |
  | [Z-Image-Turbo](https://modelers.cn/models/MindIE/Z-Image-Turbo) |  <ul><li>Atlas 800I A2推理服务器</li><li>Atlas 800I A3超节点服务器</li></ul>  |    ✖️    | ✖️  |  ✖️   | ✖️ |   ✅️    |  无  |
 
->[!NOTE]说明
+>[!NOTE] 说明
 >
 >- Atlas 300I DUO推理卡默认使用算力280T，内存48 GB。
 >- Atlas 800I A2推理服务器默认使用算力313T，内存64 GB。

@@ -14,5 +14,5 @@ Common MindIE SD error codes and their meanings, possible causes, and troublesho
 |MIE06E000004|Model initialization error. Model initialization failed.|Model weights, configuration, or runtime resources are not ready.|Check the model path, weight files, configuration values, NPU memory, and the initialization error stack.|
 |MIE06E000005|Model execution error. Model execution failed.|The model forward, scheduling, or custom operator path failed during execution.|Check the request parameters, tensor shape and dtype, scheduler status, and the CANN operator error stack.|
 
-> [!NOTE]NOTE
+>[!NOTE] Note
 > The preceding lists the common MindIE SD error codes.

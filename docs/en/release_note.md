@@ -15,16 +15,16 @@
 | -------- | ------ |
 | CANN | 9.2.0 |
 | TorchNPU | 26.2.0 |
-| MindCluster | 26.2 |
+| MindCluster | 26.2.0 |
 | Ascend HDK | See [CANN Version Compatibility Notes](https://www.hiascend.com/document/detail/en/CANNCommunityEdition/latest/softwareinst/releasenote/9.2.0/release-notes.md) for version compatibility |
 
-# Version Compatibility
+## Version Compatibility
 
-MindIE SD components must be used with matching versions. Do not mix components across different versions.
+MindIE components must be used with matching versions. Do not mix components across different versions.
 
 **Table 1** Software Version Compatibility
 
-`Y` indicates a supported combination, `/` indicates no compatibility entry, and `To be confirmed` indicates that compatibility must be confirmed and documented before release.
+`Y` indicates a supported combination, `/` indicates no compatibility entry.
 
 | MindIE SD Version | CANN 9.2.0 | CANN 9.1.0 | CANN 9.0.1 | CANN 9.0.0 | CANN 8.5.1 | CANN 8.5.0 |
 | ----------------- | ---------- | ---------- | ---------- | ---------- | ---------- | ---------- |
@@ -33,7 +33,7 @@ MindIE SD components must be used with matching versions. Do not mix components 
 | 3.0.0 | / | / | / | Y | Y | Y |
 | 2.3.0 | / | / | / | / | / | Y |
 
-| MindIE SD Version | MindCluster 26.2 | MindCluster 26.1.0 | MindCluster 26.0.0 | MindCluster 7.3.0 |
+| MindIE SD Version | MindCluster 26.2.0 | MindCluster 26.1.0 | MindCluster 26.0.0 | MindCluster 7.3.0 |
 | ----------------- | ---------- | ---------- | ---------- | ---------- |
 | 3.2.0 | Y | Y | Y | Y |
 | 3.1.0 | / | Y | Y | Y |
@@ -47,20 +47,20 @@ MindIE SD components must be used with matching versions. Do not mix components 
 | 3.0.0 | / | / | Y | Y |
 | 2.3.0 | / | / | / | Y |
 
-# Version Usage Notes
+## Version Usage Notes
 
 - The following capabilities are only available on 950PR&950DT products: the `quant_four_over_six_a5` quantization operator, the MXFP4 mode of rf_v3 block sparse attention (`precision="mxfp4"`), the EQBSA qmode1 mix path, and the fused path of the FFN fused operator (other platforms automatically fall back to the native operator chain).
 - The vLLM-Omni joint images only support the linux/amd64 platform.
 
-# 3.2.0 Release Notes
+## 3.2.0 Release Notes
 
-## New Features
+### New Features
 
 | No. | Details |
 | :--- | :----------------------------------------------------------------------------------------------------------- |
 | 1    | Functional quantized attention API. Introduces the public API `mindiesd.quant_attention`, which consolidates quantized attention execution into a reusable functional interface that accepts floating-point Q/K/V directly. `precision` supports FP8, MXFP8, and MXFP4; BNSD/BSND layouts, optional Q/K rotation matrices, and attention window configuration are supported. `FP8RotateQuantFA` shares the same execution logic as the public entry, and MXFP4/MXFP8 integration retains the legacy timestep fallback. |
 | 2    | FP8 attention mode enum and FIA full-quantization path extension. Adds the `FP8FAMode` enum (`HIGH_PRECISION` (default) and `C8V16_TILING512`); `QuantConfig`/`OnlineQuantConfig` gain the `fp8_fa_mode` option, which binds the quantization block, `value_quant_mode`, and `inner_precise` in one setting. The FIA operator adds an FP8 per-block V512 quantization path and a C8V16 (inner_precise=4) full-quantization path. |
-| 3    | Eagle block sparse attention operator family (EQBSA/EBSA). Adds `eagle_quant_block_sparse_attention`, a quantized block sparse attention operator (Q/K INT8 + V FP8 mixed precision, combining quantization and block sparsity to reduce long-sequence overhead), with the qmode1 mix path completed for 950PR&950DT products; adds `eagle_block_sparse_attention`, a non-quantized block sparse attention operator with BlockK support relaxed to 64 (16-aligned); the EagleQBSA of MiniMax-H3 is routed through rf_v3 sparse attention. |
+| 3    | Eagle block sparse attention operator family (EQBSA/EBSA). Adds `eagle_quant_block_sparse_attention`, a quantized block sparse attention operator (Q/K INT8 + V FP8 mixed precision, combining quantization and block sparsity to reduce long-sequence overhead), with the qmode1 mix path completed for 950PR&950DT products; adds `eagle_block_sparse_attention`, a non-quantized block sparse attention operator with BlockK support relaxed to 64 (16-aligned); the EQBSA of MiniMax-H3 is routed through rf_v3 sparse attention. |
 | 4    | BF16-to-FP4 adaptive quantization operator. Adds the `quant_four_over_six_a5` operator, supporting 4/6 adaptive dynamic MX quantization from BF16 input to FP4 (FLOAT4_E2M1) with E8M0 scaling and blocksize=32, adapted to 950PR&950DT products. |
 | 5    | FFN fused operator. Adds an FFN forward fused operator that merges the linear→act→linear sequence (three kernel launches) into a single kernel; activations include gelu/silu/swiglu; adapted to 950PR&950DT products, with automatic fallback to the native operator chain on other platforms. Provides the Python API `mindiesd.layers.eagle_ffn_linear`. |
 | 6    | USP sequence-parallel attention. Adds the `mindiesd.layers.usp.usp_attention` interface, combining Ulysses sequence parallelism, KV AllGather, communication quantization (FP8 E4M3/MXFP8, with quantized payload and scale communicated separately), and attention computation in a single call, with head-chunked dual-stream overlap pipelined execution. |
@@ -74,7 +74,7 @@ MindIE SD components must be used with matching versions. Do not mix components 
 | 14   | DummyRun toolchain enhancement. Quantization options are unified into `--quant {fp32,bf16,w8a8}`, with device-aware w8a8 quantization format selection (W8A8-MXFP8 on 950PR&950DT products, W8A8-DYNAMIC INT8 on Atlas 800I A2 inference server / Atlas 800I A3 SuperPoD server); Wan2.2 dummy run adds frame count and resolution configuration. |
 | 15   | Deployment and ecosystem extension. The vLLM-Omni joint images are aligned to base image v0.32.0; new inference deployment guides for MiniMax-H3, Qwen-Image-2.1, and DiffSynth-Engine, plus a FLUX.1-dev Cache-DiT example, are added. |
 
-## Modified Features
+### Modified Features
 
 | No. | Details |
 | :--- | :----------------------------------------------------------------------------------------------------------- |
@@ -83,13 +83,13 @@ MindIE SD components must be used with matching versions. Do not mix components 
 | 3    | Frequency regulator plugin execution adjustment. Manual stream synchronization and D2H/H2D state copies are replaced by unified fully asynchronous execution through the `EXEC_NPU_CMD` framework, which now manages the workspace/executor/ACL Tensor lifecycles. |
 | 4    | DummyRun example dependency adjustment. `examples/dummy_run` upgrades its diffusers dependency from 0.38.0 to 0.40.0 and transformers to 5.2.0. |
 
-## Removed Features
+### Removed Features
 
 | No. | Details |
 | :--- | :----------------------------------------------------------------------------------------------------------- |
 | 1    | Removed the redundant arch35 kernel copies of the FIA and Eagle operators (249 files in total); header includes are unified to the canonical path, and a missing canonical path now fails at compile time instead of silently falling back. This change only affects internal C++ source organization: no public API is removed, and runtime algorithms and precision paths are unchanged. |
 
-## API Change Notes
+### API Change Notes
 
 API changes include additions, modifications, deprecations, and removals. API changes only reflect code-level modifications and do not include documentation improvements in language, formatting, or links.
 
@@ -111,7 +111,7 @@ API changes include additions, modifications, deprecations, and removals. API ch
 | class mindiesd.QuantConfig | Modified | New `fp8_fa_mode` option |
 | class mindiesd.OnlineQuantConfig | Modified | New `fp8_fa_mode` option |
 
-## Resolved Issues
+### Resolved Issues
 
 | No. | Category | Issue Description |
 | :--- | :--- | :--- |
@@ -121,7 +121,7 @@ API changes include additions, modifications, deprecations, and removals. API ch
 | 4 | Operator & Compilation | The eagle_ffn operator's `math_util.h` include path was incompatible across CANN versions, causing build failures. |
 | 5 | Operator & Compilation | Since torch_npu 2.9, the dtype cast decomposition change caused all RMSNorm/RoPE compilation patterns to mismatch. |
 | 6 | Operator & Compilation | The Wan residual-gate compilation pattern incorrectly matched FLUX's reversed operand order (x + gate * y), causing incorrect broadcast semantics. |
-| 7 | Stability & Precision | RainFusion rf_v2 produced a block mask inconsistent with the NPU kernel tiling on irregularly aligned video grids (e.g., MiniMax H3 1344×768), causing corrupted video output. |
+| 7 | Stability & Precision | RainFusion rf_v2 produced a block mask inconsistent with the NPU kernel tiling on irregularly aligned video grids (e.g., MiniMax-H3 1344×768), causing corrupted video output. |
 | 8 | Stability & Precision | The `attn_cache` of `lru_cache_by_attn_param` was a module-level global dictionary shared by all decorated functions, causing cross-function cache pollution. |
 | 9 | Stability & Precision | `MXFP8RotateQuantFA` passed sequence lengths as device tensors, triggering `aten._local_scalar_dense` and causing a graph break at every attention layer during DiT aclgraph capture. |
 | 10 | Stability & Precision | EPLB `UpdateTaskTransfer.update_emit_task` used a blocking `queue.put`, deadlocking the worker thread when the instruction queue was full. |
@@ -129,7 +129,7 @@ API changes include additions, modifications, deprecations, and removals. API ch
 | 12 | Stability & Precision | Quantized layers modified `self.bias` dtype in place inside forward, repeatedly invalidating Dynamo guards and triggering recompilation. |
 | 13 | Compatibility | A new Atlas 800I A3 SuperPoD server model reports soc_version=256, which fell outside the recognition range, causing device recognition and operator loading failures. |
 
-## Known Issues
+### Known Issues
 
 | No. | Category | Issue Description |
 | :--- | :--- | :--- |
@@ -137,9 +137,9 @@ API changes include additions, modifications, deprecations, and removals. API ch
 | 2 | Usability | End-to-end integration and runnable examples for third-party frameworks such as Cache-DiT and DiffSynth-Engine are being continuously improved. |
 | 3 | Performance | Parallel communication-computation overlap and fusion schemes are being continuously extended, and joint optimization of EPLB and MoE fusion is in progress. |
 
-# Upgrade Impact
+## Upgrade Impact
 
-## Impact on Running Systems During Upgrade
+### Impact on Running Systems During Upgrade
 
 - Business impact
 
@@ -149,14 +149,16 @@ API changes include additions, modifications, deprecations, and removals. API ch
 
   No impact on network communication.
 
-## Impact on Running Systems After Upgrade
+### Impact on Running Systems After Upgrade
 
 - MoE API parameters have been renamed: existing code calling `fused_moe(..., tokens_full=..., reduce_results=...)` with keyword arguments must migrate to `inputs_sharded=` / `reduce_routed_out=`; code calling `resolve_dispatcher_class` directly must pass `top_k` explicitly. The default-value semantics are unchanged (the former `tokens_full=True` is equivalent to the current `inputs_sharded=False`).
 - Under newer CANN toolkits (which no longer ship the TBE/TIK project templates), TIK operators are automatically skipped during build; build pipelines that depend on TIK operator artifacts should take note.
 - The dummy run example CLI has changed: the `--compute-precision` and boolean `--quant` arguments have been removed in favor of the unified `--quant {fp32,bf16,w8a8}`; the diffusers dependency of `examples/dummy_run` has been upgraded to 0.40.0.
 - The vLLM-Omni joint images have been upgraded to base image v0.32.0 (Atlas 800I A2 inference server / Atlas 800I A3 SuperPoD server / 950PR&950DT products), and image tag naming has been updated accordingly.
 
-# Virus Scan Results
+## Virus Scan Results and Vulnerability Patch List
+
+### Virus Scan Results
 
 |Antivirus Software Name|Antivirus Software Version|Scan Time|Scan Result|
 |---|---|---|---|
@@ -164,11 +166,11 @@ API changes include additions, modifications, deprecations, and removals. API ch
 |Kaspersky|12.0.0.6672|2026-10-09 16:28:10|No viruses or malware.|
 |Bitdefender|7.5.1.200224|2026-10-09 16:29:08|No viruses or malware.|
 
-# Vulnerability Patch List
+### Vulnerability Patch List
 
 No new vulnerability patches in this version.
 
-# Revision History
+## Revision History
 
 | Document Version | Release Date | Description |
 | -------- | -------- | -------- |

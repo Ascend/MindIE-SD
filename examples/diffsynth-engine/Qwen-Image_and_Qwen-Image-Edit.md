@@ -1,8 +1,8 @@
 # DiffSynth-Engine Qwen-Image 推理优化指南
 
-本文介绍如何在昇腾 NPU 上通过 DiffSynth-Engine 使用 MindIE-SD 的 Attention、编译和融合算子能力，完成 Qwen-Image 文生图与 Qwen-Image-Edit-2509 图像编辑推理。
+本文介绍如何在昇腾 NPU 上通过 DiffSynth-Engine 使用 MindIE SD 的 Attention、编译和融合算子能力，完成 Qwen-Image 文生图与 Qwen-Image-Edit-2509 图像编辑推理。
 
-> 本文面向使用 DiffSynth-Engine 部署 Qwen-Image 系列模型的开发者，是可直接运行的端到端示例。MindIE-SD 的特性原理和接口说明请参见[编译特性](../../docs/zh/features/compilation.md)等开发文档。
+> 本文面向使用 DiffSynth-Engine 部署 Qwen-Image 系列模型的开发者，是可直接运行的端到端示例。MindIE SD 的特性原理和接口说明请参见[编译特性](../../docs/zh/features/compilation.md)等开发文档。
 
 ---
 
@@ -23,7 +23,7 @@
 | transformers | 4.57.6 |
 | DiffSynth-Engine | PR 272，提交 `a837164ab4546ff6134790cd2e6137a0479e9897` |
 
-表中版本用于说明本示例的实测环境，不代表修改了 DiffSynth-Engine 的正式依赖下限。使用其他版本时，请确保 torch、torch_npu、CANN 和 MindIE-SD 相互匹配。
+表中版本用于说明本示例的实测环境，不代表修改了 DiffSynth-Engine 的正式依赖下限。使用其他版本时，请确保 torch、torch_npu、CANN 和 MindIE SD 相互匹配。
 
 ---
 
@@ -45,12 +45,12 @@ mkdir -p "${MODEL_PATH}"
 
 #### 1.1.1 使用已有昇腾环境
 
-请参考 [MindIE-SD 安装指导](../../docs/zh/installation.md)完成基础环境搭建，包括：
+请参考 [MindIE SD 安装指导](../../docs/zh/installation.md)完成基础环境搭建，包括：
 
 - 昇腾驱动和固件；
 - CANN Toolkit 与算子包；
 - PyTorch 与 torch_npu；
-- MindIE-SD。
+- MindIE SD。
 
 进入推理环境后加载 CANN 环境变量：
 
@@ -66,7 +66,7 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 docker pull quay.io/ascend/mindie:3.1.0-cann9.1.0-torch_npu2.9.0.post6-950-openeuler24.03_lts_sp4-py3.11
 ```
 
-该镜像的软件栈版本与上表中的实测环境不同。选择镜像路线时，应以镜像内置的 CANN、PyTorch、torch_npu 和 MindIE-SD 版本为准，不要在后续步骤中重新安装或替换这些核心组件；后续只补齐 DiffSynth-Engine 所需的其余 Python 依赖。
+该镜像的软件栈版本与上表中的实测环境不同。选择镜像路线时，应以镜像内置的 CANN、PyTorch、torch_npu 和 MindIE SD 版本为准，不要在后续步骤中重新安装或替换这些核心组件；后续只补齐 DiffSynth-Engine 所需的其余 Python 依赖。
 
 以下命令在刚才创建的工作目录中执行。当前目录会挂载到容器的 `/workspace`，模型目录会以相同的绝对路径挂载到容器中。示例映射宿主机 0 至 3 号 NPU，可同时运行后文的单卡和四卡示例：
 
@@ -115,7 +115,7 @@ docker start -ai "${CONTAINER_NAME}"
 
 ### 1.2 安装 DiffSynth-Engine
 
-当前 MindIE-SD 适配代码位于 [DiffSynth-Engine PR 272](https://github.com/modelscope/DiffSynth-Engine/pull/272)。在该 PR 合入正式分支前，可使用已验证提交：
+当前 MindIE SD 适配代码位于 [DiffSynth-Engine PR 272](https://github.com/modelscope/DiffSynth-Engine/pull/272)。在该 PR 合入正式分支前，可使用已验证提交：
 
 ```bash
 GIT_LFS_SKIP_SMUDGE=1 git clone \
@@ -171,7 +171,7 @@ python -m pip install \
   soxr==1.1.0
 ```
 
-`--no-deps` 表示只安装命令中明确列出的软件包，不递归解析依赖。上述列表依赖基础环境已经提供 NumPy、Pillow、safetensors、requests、tokenizers、accelerate 和 einops 等公共依赖；如果使用的基础环境不同，应先核对这些包是否存在，不要直接改装 torch、torch_npu、MindIE-SD 或 CANN。
+`--no-deps` 表示只安装命令中明确列出的软件包，不递归解析依赖。上述列表依赖基础环境已经提供 NumPy、Pillow、safetensors、requests、tokenizers、accelerate 和 einops 等公共依赖；如果使用的基础环境不同，应先核对这些包是否存在，不要直接改装 torch、torch_npu、MindIE SD 或 CANN。
 
 最后以 editable 模式安装 DiffSynth-Engine 本身：
 
@@ -390,7 +390,7 @@ python qwen_image_edit_mindiesd.py \
 
 ### 2.3 使能编译和融合算子
 
-向脚本传入 `--compile` 后，DiffSynth-Engine 会对重复的 Transformer Block 调用 `torch.compile`。在 NPU 平台能力检查通过时，编译后端使用 MindIE-SD 的 `MindieSDBackend()`：
+向脚本传入 `--compile` 后，DiffSynth-Engine 会对重复的 Transformer Block 调用 `torch.compile`。在 NPU 平台能力检查通过时，编译后端使用 MindIE SD 的 `MindieSDBackend()`：
 
 ```bash
 python qwen_image_mindiesd.py \
@@ -413,8 +413,8 @@ python qwen_image_mindiesd.py \
 
 Qwen-Image 路径中包含以下优化：
 
-- MindIE-SD RoPE 融合算子；
-- MindIE-SD LayerNorm + Scale + Shift 融合算子；
+- MindIE SD RoPE 融合算子；
+- MindIE SD LayerNorm + Scale + Shift 融合算子；
 - torch_npu RMSNorm 融合算子。
 
 `USE_MINDIESD_FUSE` 由 DiffSynth-Engine NPU 适配层读取，需要在导入 DiffSynth-Engine 前设置。
@@ -452,8 +452,8 @@ python qwen_image_mindiesd.py \
 
 ## 参考链接
 
-- [MindIE-SD 安装指导](../../docs/zh/installation.md)
-- [MindIE-SD 编译特性](../../docs/zh/features/compilation.md)
+- [MindIE SD 安装指导](../../docs/zh/installation.md)
+- [MindIE SD 编译特性](../../docs/zh/features/compilation.md)
 - [DiffSynth-Engine](https://github.com/modelscope/DiffSynth-Engine)
 - [DiffSynth-Engine PR 272](https://github.com/modelscope/DiffSynth-Engine/pull/272)
 - [Qwen-Image](https://modelscope.cn/models/Qwen/Qwen-Image)
