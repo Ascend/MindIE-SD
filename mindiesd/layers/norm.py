@@ -175,7 +175,8 @@ def add_rms_norm(
     return normalized_output, residual_output
 
 
-def _check_group_norm_silu_inputs(input, weight, bias, group, eps, fused):
+# Keep the input name consistent with the public group_norm_silu interface.
+def _check_group_norm_silu_inputs(input, weight, bias, group, eps, fused):  # pylint: disable=redefined-builtin
     if not isinstance(input, torch.Tensor):
         raise ParametersInvalid(f"The data type of input must be torch.Tensor, but got {type(input)}.")
     if not isinstance(fused, bool):
@@ -211,7 +212,7 @@ def _check_group_norm_silu_inputs(input, weight, bias, group, eps, fused):
 
 
 def group_norm_silu(
-    input: torch.Tensor,
+    input: torch.Tensor,  # pylint: disable=redefined-builtin  # Preserve the public keyword argument.
     weight: torch.Tensor | None,
     bias: torch.Tensor | None,
     group: int,

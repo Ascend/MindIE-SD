@@ -28,11 +28,7 @@ def _chain_nodes(silu_node: fx.Node, native_group_norm: bool):
             return norm_value_node, norm_value_node
         return None, None
 
-    if (
-        norm_value_node.target != operator.getitem
-        or len(norm_value_node.args) != 2
-        or norm_value_node.args[1] != 0
-    ):
+    if norm_value_node.target != operator.getitem or len(norm_value_node.args) != 2 or norm_value_node.args[1] != 0:
         return None, None
     norm_node = norm_value_node.args[0]
     if isinstance(norm_node, fx.Node) and norm_node.target == torch.ops.aten.native_group_norm.default:
@@ -88,12 +84,7 @@ def _extra_check(match, native_group_norm: bool):
         for user in norm_node.users:
             if user is norm_value_node:
                 continue
-            if (
-                user.target == operator.getitem
-                and len(user.args) == 2
-                and user.args[1] in (1, 2)
-                and not user.users
-            ):
+            if user.target == operator.getitem and len(user.args) == 2 and user.args[1] in (1, 2) and not user.users:
                 continue
             return False
     elif set(norm_node.users) != {silu_node}:
@@ -125,12 +116,7 @@ def _handler(match, native_group_norm: bool):
     if norm_value_node is not norm_node:
         graph.erase_node(norm_value_node)
     for user in list(norm_node.users):
-        if (
-            user.target == operator.getitem
-            and len(user.args) == 2
-            and user.args[1] in (1, 2)
-            and not user.users
-        ):
+        if user.target == operator.getitem and len(user.args) == 2 and user.args[1] in (1, 2) and not user.users:
             graph.erase_node(user)
     if not norm_node.users:
         graph.erase_node(norm_node)

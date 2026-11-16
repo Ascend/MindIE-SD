@@ -107,7 +107,10 @@ class Chain(MixedProducer, BF16Primitives):
 
     __slots__ = ()
 
-    def __init__(self, reorder_mapping, *, state, precision="mix", sparse_type="rf_v3", pre_rearranged=False):
+    # MixedProducer.__init__ only supports mix; initialize the selected precision below.
+    def __init__(  # pylint: disable=super-init-not-called
+        self, reorder_mapping, *, state, precision="mix", sparse_type="rf_v3", pre_rearranged=False
+    ):
         _validate_attention_mode(precision, sparse_type, pre_rearranged)
         self._init_common(reorder_mapping, state, precision, sparse_type, pre_rearranged)
         if precision == "bf16":
