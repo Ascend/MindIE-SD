@@ -24,6 +24,14 @@ CONFIG_FILE_PERMISSION = 0o640
 MODELDATA_FILE_PERMISSION = 0o640
 MODELDATA_DIR_PERMISSION = 0o750
 BINARY_FILE_PERMISSION = 0o755
+# Access modes accepted by check_owner(), mapped to readable names for error messages.
+ACCESS_MODE_NAMES = {
+    os.R_OK: "read",
+    os.W_OK: "write",
+    os.R_OK | os.W_OK: "read+write",
+    os.R_OK | os.X_OK: "read+execute",
+}
+WRITE_MODE_FLAGS = ('w', 'a', 'x', '+')
 
 FLAG_OS_MAP = {
     'r': os.O_RDONLY, 'r+': os.O_RDWR,
@@ -53,7 +61,14 @@ def safe_open(file_path: str, mode='r', encoding=None, permission_mode=0o640, **
     check_link = kwargs.get('check_link', True)
 
     file_path = standardize_path(file_path, max_path_length, check_link)
-    check_file_safety(file_path, max_file_size, permission_mode)
+    writing = any(flag in mode for flag in WRITE_MODE_FLAGS)
+    access_mode = os.R_OK | os.W_OK if writing else os.R_OK
+    check_file_safety(
+        file_path,
+        max_file_size,
+        permission_mode=permission_mode,
+        access_mode=access_mode,
+    )
 
     flags = []
     for item in list(mode):
@@ -112,16 +127,51 @@ def check_file_size_lt(path: str, max_file_size=MAX_FILE_SIZE):
                 which exceeds the limit {max_file_size}.")
 
 
-def check_owner(path: str):
+def _current_groups() -> set:
+    """Return the primary and supplementary group ids of the current process."""
+    gids = {os.getgid()}
+    gids.update(getattr(os, "getgroups", lambda: [])())
+    return gids
+
+
+def check_owner(path: str, access_mode: int = os.R_OK):
+    """Check that the current process can really access ``path``.
+
+    Ownership is a deployment hint, not a permission contract. Inside containers the process
+    usually runs as a non-root user while the resources it loads (the bundled plugin .so, the
+    CANN toolkit, shared read-only model data) belong to ``root:root`` and are readable by
+    every user. Treating "not root, not the file owner, not in the file's group" as an error
+    rejected such deployments: MindIE-SD running in a non-privileged container failed with
+    MIE06E000001 while loading ``plugin/<variant>/libPTAExtensionOPS.so``.
+
+    The effective permission bits are what actually gate the access, so root/owner stay as a fast
+    path and ``os.access`` decides for everyone else; it already accounts for the real, effective
+    and supplementary group memberships, so a separate group rule is not needed.
+    """
     path_stat = os.stat(path)
-    path_owner, path_gid = path_stat.st_uid, path_stat.st_gid
+    path_owner = path_stat.st_uid
     cur_uid = os.geteuid()
-    cur_gid = os.getgid()
-    if not (cur_uid == 0 or cur_uid == path_owner or path_gid == cur_gid):
-        raise ParametersInvalid(f"The current user does not have permission to access the path:{path}. "
-                                "Because he is not root or the path owner, "
-                                "and not in the same user group with the path owner. "
-                                "Please check and make sure to satisfy at least one of the conditions above.")
+    if cur_uid == 0 or cur_uid == path_owner:
+        return
+    if os.access(path, access_mode):
+        logger.debug(
+            "[MindIE-SD/utils] Path owner differs from the current user but the permission bits "
+            "allow the operation. path=%s, owner_uid=%s, current_uid=%s, mode=%s.",
+            path,
+            path_owner,
+            cur_uid,
+            oct(path_stat.st_mode & 0o777),
+        )
+        return
+    cur_gids = _current_groups()
+    raise ParametersInvalid(
+        f"The current user does not have permission to access the path:{path}. "
+        f"Required access: {ACCESS_MODE_NAMES.get(access_mode, str(access_mode))}, "
+        f"file mode: {oct(path_stat.st_mode & 0o777)}, owner uid: {path_owner}, "
+        f"current uid: {cur_uid}, current gids: {sorted(cur_gids)}. "
+        "Please grant that permission to the current user, for example 'chmod o+r' for a "
+        "root-owned installation, or run as the file owner."
+    )
 
 
 def check_max_permission(file_path: str, permission_mode=0o640):
@@ -135,25 +185,33 @@ def check_max_permission(file_path: str, permission_mode=0o640):
             raise PermissionError(err_msg)
 
 
-def check_file_safety(file_path: str, max_file_size=MAX_FILE_SIZE, is_check_file_size=True, permission_mode=0o640):
+def check_file_safety(
+    file_path: str, max_file_size=MAX_FILE_SIZE, is_check_file_size=True, permission_mode=0o640, access_mode=os.R_OK
+):
     if not is_path_exists(file_path):
         raise ParametersInvalid(f"The path:{os.path.relpath(file_path)} doesn't exist.")
     if not os.path.isfile(file_path):
         raise ParametersInvalid(f"The input:{os.path.relpath(file_path)} is not a file.")
     if is_check_file_size:
         check_file_size_lt(file_path, max_file_size)
-    check_owner(file_path)
+    check_owner(file_path, access_mode)
     check_max_permission(file_path, permission_mode)
 
 
-def check_dir_safety(dir_path: str, max_file_num=MAX_FILENUM_PER_DIR, is_check_file_num=True, permission_mode=0o750):
+def check_dir_safety(
+    dir_path: str,
+    max_file_num=MAX_FILENUM_PER_DIR,
+    is_check_file_num=True,
+    permission_mode=0o750,
+    access_mode=os.R_OK | os.X_OK,
+):
     if not is_path_exists(dir_path):
         raise ParametersInvalid(f"The path:{os.path.relpath(dir_path)} doesn't exist.")
     if not os.path.isdir(dir_path):
         raise ParametersInvalid(f"The path:{os.path.relpath(dir_path)} is not a dir.")
     if is_check_file_num:
         check_file_num_lt(dir_path, max_file_num)
-    check_owner(dir_path)
+    check_owner(dir_path, access_mode)
     check_max_permission(dir_path, permission_mode)
 
 
