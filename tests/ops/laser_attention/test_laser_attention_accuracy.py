@@ -84,11 +84,9 @@ SMALL_CASES = (
 
 
 def _skip_a5():
-    from mindiesd.utils.get_platform import NPUDevice, get_npu_device
+    from tests.ops.device_support import require_support
 
-    npu = get_npu_device()
-    if npu == NPUDevice.A5:
-        pytest.skip(f"ascend_laser_attention is not supported on A5, got {npu}")
+    require_support("laser_attention")
 
 
 @pytest.mark.skipif(

@@ -71,7 +71,7 @@ PLUGIN_DIR = BASE_DIR / "xpu-perf-plugin"
 sys.path.insert(0, str(BASE_DIR))
 from common.schema import OP_SEQ_AXIS as SEQ_AXIS  # noqa: E402
 
-VALID_OPS = ("fa", "bsa", "gmm", "mm", "sbe")
+VALID_OPS = ("fa", "bsa", "eqbsa", "gmm", "mm", "sbe")
 
 # --op must not carry scan keys; --config only carries these keys.
 # Keys are compared after _normalize_key() lowercases them, so use lowercase.
@@ -122,6 +122,16 @@ OP_DEFAULTS = {
         "dtype": "bf16",
         "sparsity": 0.8,
         "mask_type": "rf_v3",
+    },
+    "eqbsa": {
+        "arg_type": "default",
+        "batch_size": 1,
+        "num_heads": 32,
+        "num_kv_heads": 32,
+        "head_dim": 128,
+        "causal": False,
+        "dtype": "fp8",
+        "sparsity": 0.8,
     },
     "gmm": {
         "arg_type": "default",

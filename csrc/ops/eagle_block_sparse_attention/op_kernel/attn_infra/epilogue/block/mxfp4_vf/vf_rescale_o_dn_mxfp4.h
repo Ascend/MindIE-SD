@@ -1,6 +1,19 @@
 /*
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
+
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /**
  * Copyright (c) 2025 Huawei Technologies Co., Ltd.
  * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
@@ -29,8 +42,7 @@ using namespace MicroAPI;
 
 template <bool isUpdate, uint16_t KvsBase = 256>
 __simd_vf__ void process_update_o_vf(__ubuf__ float *update_res_ub, __ubuf__ float *mm2_res_ub, __ubuf__ float *urs,
-                                     __ubuf__ float *rsum, __ubuf__ float *ursum)
-{
+    __ubuf__ float *rsum, __ubuf__ float *ursum) {
     // 更新 mm2
     MaskReg preg_all32 = CreateMask<uint32_t, MaskPattern::ALL>();
     if constexpr (isUpdate) {
@@ -92,9 +104,7 @@ __simd_vf__ void process_update_o_vf(__ubuf__ float *update_res_ub, __ubuf__ flo
 
 template <bool isUpdate, uint16_t KvsBase = 256>
 __aicore__ inline void ProcessUpdateOCallVF(const LocalTensor<float> &updateResUb, const LocalTensor<float> &mm2ResUb,
-                                            const LocalTensor<float> &urs, const LocalTensor<float> &rsum,
-                                            const LocalTensor<float> &ursum)
-{
+    const LocalTensor<float> &urs, const LocalTensor<float> &rsum, const LocalTensor<float> &ursum) {
     __ubuf__ float *update_res_ub_buf = (__ubuf__ float *)updateResUb.GetPhyAddr();
     __ubuf__ float *mm2_res_ub_buf = (__ubuf__ float *)mm2ResUb.GetPhyAddr();
     __ubuf__ float *urs_buf = (__ubuf__ float *)urs.GetPhyAddr();

@@ -42,5 +42,11 @@ docker run -itd \
 Run test:
 
 ```bash
-docker exec -it mindiesd-910b-test bash -lc 'python3 -m pip install coverage && cd /workspace/MindIE-SD && bash tests/run_test.sh --all'
+docker exec -it mindiesd-910b-test bash -lc 'python3 -m pip install coverage && cd /workspace/MindIE-SD && python3 tests/scripts/run_suites.py --all'
 ```
+
+## Omni images (Atlas 800I A2 inference server / Atlas 800I A3 SuperPoD server / 950PR&950DT products)
+
+Prebuilt `mindiesd` images that integrate vLLM-Omni and MindIE-SD are documented in [`omni/OVERVIEW.zh.md`](omni/OVERVIEW.zh.md) (Chinese) and [`omni/OVERVIEW.md`](omni/OVERVIEW.md) (English), covering image tags, build and run commands per platform (Atlas 800I A2 inference server / Atlas 800I A3 SuperPoD server / 950PR&950DT products), plus an in-container basic verification flow and known limitations for the 950PR&950DT products.
+
+See [`supported_tags.md`](supported_tags.md) for released image tags.

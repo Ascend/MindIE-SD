@@ -10,6 +10,15 @@
  * See the Mulan PSL v2 for more details.
  */
 
+/**
+ * Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
 
 /*!
  * \file quant_four_over_six_a5_tiling.h
@@ -109,8 +118,7 @@ struct QuantFourOverSixA5TilingParam {
     float invDstTypeMax{0.0};
 };
 
-enum class RoundModeList
-{
+enum class RoundModeList {
     MODE_ROUND = 0,
     MODE_FLOOR = 1,
     MODE_CEIL = 2,
@@ -123,25 +131,24 @@ enum class RoundModeList
 // T9b: 仅保留 46 自适应路径。非尾轴 optimize 模板（QuantFourOverSixA5OptimzieTiling）
 // 与 main 模板逻辑已随清理删除，仅保留尾轴 block32 模板。
 class QuantFourOverSixA5TailAxisTiling {
-public:
-    explicit QuantFourOverSixA5TailAxisTiling(gert::TilingContext* context, const QuantFourOverSixA5TilingParam& tilingParam)
-        : context_(context), tilingParam_(tilingParam), tilingData_{}
-    {}
-    ~QuantFourOverSixA5TailAxisTiling()
-    {}
+  public:
+    explicit QuantFourOverSixA5TailAxisTiling(
+        gert::TilingContext *context, const QuantFourOverSixA5TilingParam &tilingParam)
+        : context_(context), tilingParam_(tilingParam), tilingData_{} {}
+    ~QuantFourOverSixA5TailAxisTiling() {}
     ge::graphStatus DoTiling();
 
-private:
+  private:
     ge::graphStatus SetTilingParams();
     void CalcTilingKeyForTail();
-    void CalcAxisSize(const gert::Shape& xShape);
+    void CalcAxisSize(const gert::Shape &xShape);
     ge::graphStatus AutoTiling();
     std::set<int64_t> FindSplitCombo(int64_t usedCoreNum) const;
     ge::graphStatus SetTilingDataForTailAxis();
     void PrintTilingDataForTailAxis();
 
-private:
-    gert::TilingContext* context_ = nullptr;
+  private:
+    gert::TilingContext *context_ = nullptr;
     QuantFourOverSixA5TailAxisTilingData tilingData_{};
     QuantFourOverSixA5TilingParam tilingParam_;
 };

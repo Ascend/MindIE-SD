@@ -129,6 +129,46 @@ def sbe_qk_flops(batch_size, num_heads, q_len, kv_len, head_dim, stride, sparse_
     return 2 * batch_size * num_heads * q_rows * packed_k * k_cols
 
 
+def sparse_block_indices(kv_blocks, sparsity):
+    """Indices of the kv blocks a query row attends, for a block-sparse mask.
+
+    The mask is built at block granularity, so the retained fraction can only
+    be a multiple of ``1 / kv_blocks`` and at least one block must stay:
+    ``kept = round((1 - sparsity) * kv_blocks)`` clamped to
+    ``[1, kv_blocks]``. Blocks are spread evenly over the whole kv range
+    (first and last block included when more than one is kept) so the mask is
+    deterministic and does not bias attention towards the sequence head.
+
+    Mask creation and FLOPs accounting both use this rule, so the accounted
+    FLOPs are exactly the retention the kernel sees.
+    """
+    if kv_blocks <= 0:
+        raise ValueError(f"kv_blocks must be positive, got {kv_blocks}")
+    kept = min(max(int(round(kv_blocks * (1.0 - sparsity))), 1), kv_blocks)
+    if kept >= kv_blocks:
+        return list(range(kv_blocks))
+    if kept == 1:
+        return [0]
+    step = (kv_blocks - 1) / (kept - 1)
+    return [int(round(idx * step)) for idx in range(kept)]
+
+
+def sparse_kv_tokens(kv_len, block_size, sparsity):
+    """Effective kv tokens per query row for a block-sparse mask.
+
+    Counts only the kept blocks (``sparse_block_indices``) and, when ``kv_len``
+    is not a multiple of ``block_size``, only the tail block's real length.
+    This is the discount the kernel actually realizes: kv_len 4096 with
+    sparsity 0.99 keeps 1 of 32 blocks = 3.125% of the keys, not the requested
+    1%, so charging 1% would understate FLOPs by 3.125x.
+    """
+    if kv_len <= 0 or block_size <= 0:
+        raise ValueError(f"kv_len/block_size must be positive, got {kv_len}/{block_size}")
+    kv_blocks = (kv_len + block_size - 1) // block_size
+    kept = sparse_block_indices(kv_blocks, sparsity)
+    return float(sum(min(block_size, kv_len - idx * block_size) for idx in kept))
+
+
 def attention_valid_parts(q_len, kv_len, causal, sparsity):
     """Effective QK/PV element count after causal and sparsity discounts.
 

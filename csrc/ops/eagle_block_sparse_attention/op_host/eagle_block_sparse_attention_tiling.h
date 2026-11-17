@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef EAGLE_BLOCK_SPARSE_ATTENTION_TILING_H
 #define EAGLE_BLOCK_SPARSE_ATTENTION_TILING_H
 
@@ -62,7 +74,7 @@ TILING_DATA_FIELD_DEF(uint32_t, totalTaskNum);
 TILING_DATA_FIELD_DEF(uint32_t, coreTaskNum); // 向下取整: totalTaskNum / blockDim
 TILING_DATA_FIELD_DEF(uint32_t, maskType);
 TILING_DATA_FIELD_DEF(float, scaleValue);
-TILING_DATA_FIELD_DEF(uint32_t, totalQBlocks);   // T: 所有batch中Q方向切块的总数
+TILING_DATA_FIELD_DEF(uint32_t, totalQBlocks); // T: 所有batch中Q方向切块的总数
 TILING_DATA_FIELD_DEF(uint32_t, firstQBlockNum); // T: 所有batch中Q方向切块的总数
 
 // 稀疏分块参数 (blockShape)
@@ -71,7 +83,7 @@ TILING_DATA_FIELD_DEF(uint64_t, blockShapeY); // block的y维度(KV方向)
 
 // selectIdx相关参数
 TILING_DATA_FIELD_DEF(uint32_t, maxKvBlockNum); // 最大KV块数量（selectIdx的最后一维）
-TILING_DATA_FIELD_DEF(uint32_t, maxQBlockNum);  // 最大KV块数量（selectIdx的最后一维）
+TILING_DATA_FIELD_DEF(uint32_t, maxQBlockNum); // 最大KV块数量（selectIdx的最后一维）
 TILING_DATA_FIELD_DEF(uint32_t, avgRowNumPerSubCore);
 TILING_DATA_FIELD_DEF(uint32_t, preActivateSubCoreNum);
 
@@ -85,8 +97,8 @@ TILING_DATA_FIELD_DEF(uint32_t, kvCacheLayout);
 // 当actualSeqLengths为nullptr时，maxQSeqlen也用作统一的qseqlen值
 TILING_DATA_FIELD_DEF(uint32_t, maxQSeqlen); // BNSD/BSND格式Q的S维度，或统一的qseqlen值
 // 当actualSeqLengthsKv为nullptr时，maxKvSeqlen也用作统一的kvseqlen值
-TILING_DATA_FIELD_DEF(uint32_t, maxKvSeqlen);        // BNSD/BSND格式KV的S维度，或统一的kvseqlen值
-TILING_DATA_FIELD_DEF(uint32_t, useUniformQSeqlen);  // 是否使用统一的qseqlen值（1=是，0=否）
+TILING_DATA_FIELD_DEF(uint32_t, maxKvSeqlen); // BNSD/BSND格式KV的S维度，或统一的kvseqlen值
+TILING_DATA_FIELD_DEF(uint32_t, useUniformQSeqlen); // 是否使用统一的qseqlen值（1=是，0=否）
 TILING_DATA_FIELD_DEF(uint32_t, useUniformKvSeqlen); // 是否使用统一的kvseqlen值（1=是，0=否）
 
 // TilingKey for kernel dispatch (生成在tiling层)
@@ -138,35 +150,31 @@ struct EagleBsaOptionalParaInfo {
 
 // Q Input Layout枚举
 enum BSAQInputLayout : uint32_t {
-    TND_Q = 0,  // [T, N, D] format
+    TND_Q = 0, // [T, N, D] format
     BNSD_Q = 1, // [B, N, S, D] format
-    BSND_Q = 2  // [B, S, N, D] format
+    BSND_Q = 2 // [B, S, N, D] format
 };
 
 // KVCache Layout枚举
 enum BSAKvCacheLayout : uint32_t {
-    TND_KV = 0,  // [T, N, D] format
+    TND_KV = 0, // [T, N, D] format
     BNSD_KV = 1, // [B, N, S, D] format
-    BSND_KV = 2  // [B, S, N, D] format
+    BSND_KV = 2 // [B, S, N, D] format
 };
 
 // inner prec 枚举
-enum EagleBsaInnerCalcPrec : uint32_t {
-    ALL_HIGH = 0,
-    ALL_LOW = 1,
-    LOW_HIGH_MIXED = 4
-};
+enum EagleBsaInnerCalcPrec : uint32_t { ALL_HIGH = 0, ALL_LOW = 1, LOW_HIGH_MIXED = 4 };
 
 // Tiling类
 class EagleBsaTiling {
-public:
+  public:
     EagleBsaTiling() = default;
     ~EagleBsaTiling() = default;
 
     ge::graphStatus GetBsaTiling(gert::TilingContext *bsaContext, EagleBlockSparseAttentionTilingData &tilingData);
     ge::graphStatus BsaSetTilingData(gert::TilingContext *context, EagleBlockSparseAttentionTilingData &tilingData);
 
-private:
+  private:
     ge::graphStatus GetNpuInfo(gert::TilingContext *bsaContext);
     ge::graphStatus ParseAttrs(gert::TilingContext *bsaContext);
     ge::graphStatus GetInputLayout(gert::TilingContext *bsaContext);
@@ -175,8 +183,8 @@ private:
     ge::graphStatus CheckQKVDtype(gert::TilingContext *bsaContext);
     ge::graphStatus CheckAttentionOutDtype(gert::TilingContext *bsaContext);
     ge::graphStatus CheckNDFormat(gert::TilingContext *bsaContext);
-    ge::graphStatus CheckQKVDimVal(gert::TilingContext *bsaContext, uint32_t kHeads, uint32_t vHeads, uint32_t kHeadDim,
-                                   uint32_t vHeadDim);
+    ge::graphStatus CheckQKVDimVal(
+        gert::TilingContext *bsaContext, uint32_t kHeads, uint32_t vHeads, uint32_t kHeadDim, uint32_t vHeadDim);
     ge::graphStatus ParseQKVInTND(gert::TilingContext *bsaContext);
     ge::graphStatus ParseQKVInBNSD(gert::TilingContext *bsaContext);
     ge::graphStatus ParseQKVInBSND(gert::TilingContext *bsaContext);
@@ -207,7 +215,7 @@ private:
     ge::graphStatus FillTilingData(gert::TilingContext *bsaContext);
     uint64_t GenerateTilingKey(gert::TilingContext *bsaContext);
 
-private:
+  private:
     uint32_t batch_ = 0;
     uint32_t qSeqlen_ = 0;
     uint32_t kvSeqlen_ = 0;
@@ -240,7 +248,7 @@ private:
     const int64_t *qSeqLenList_ = nullptr;
     const int64_t *kvSeqLenList_ = nullptr;
     const int64_t *blockShapeList = nullptr;
-    bool useUniformQSeqlen_ = false;  // 是否使用统一的qseqlen值（使用maxQSeqlen_）
+    bool useUniformQSeqlen_ = false; // 是否使用统一的qseqlen值（使用maxQSeqlen_）
     bool useUniformKvSeqlen_ = false; // 是否使用统一的kvseqlen值（使用maxKvSeqlen_）
 
     uint64_t mm1OutSize_ = 0;
@@ -261,9 +269,9 @@ private:
     uint64_t workSpaceSize_ = 0;
     uint64_t libapiSize_ = 0;
 
-    uint32_t maxQSeqlen_ = 0;   // BNSD/BSND格式Q的S维度
-    uint32_t maxKvSeqlen_ = 0;  // BNSD/BSND格式KV的S维度
-    int64_t totalTokensT_ = 0;  // TND格式Q的第一维（T维度，总token数）
+    uint32_t maxQSeqlen_ = 0; // BNSD/BSND格式Q的S维度
+    uint32_t maxKvSeqlen_ = 0; // BNSD/BSND格式KV的S维度
+    int64_t totalTokensT_ = 0; // TND格式Q的第一维（T维度，总token数）
     int64_t totalTokensKv_ = 0; // TND格式KV的第一维（T维度，总token数）
     uint32_t btKvTokens_ = 0; // [TND mxfp4] BTkv = sum_b CeilDiv(S2_b, 64), V-scale TND dim0(ParseSeqlensInTND 累加)
 

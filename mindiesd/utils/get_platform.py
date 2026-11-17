@@ -11,10 +11,29 @@
 # See the Mulan PSL v2 for more details.
 
 from enum import Enum, auto
+
+from packaging.version import InvalidVersion, Version
 import torch_npu
 from .logs import logger
 
 PLATFORM = None
+
+
+def get_cann_version(module: str = "CANN") -> str:
+    """Return the CANN component version; propagate missing API and query errors."""
+    return torch_npu.utils.get_cann_version(module)
+
+
+def is_cann_version_at_least(required: tuple[int, int, int], module: str = "CANN") -> bool:
+    """Compare CANN versions numerically; unknown versions conservatively return False."""
+    version = get_cann_version(module)
+    if not version:
+        return False
+    try:
+        return Version(version) >= Version(".".join(str(part) for part in required))
+    except InvalidVersion:
+        logger.warning("Unrecognized CANN %s version: %s", module, version)
+        return False
 
 
 class NPUDevice(Enum):

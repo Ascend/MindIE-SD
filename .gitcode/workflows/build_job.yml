@@ -25,7 +25,7 @@ jobs:
     name: Compile
     select: selected_by_default
     needs: [ ]
-    runs-on: [ self-hosted, default, "${{ inputs.runs_on_arch }}", cpu=32 ]
+    runs-on: [ self-hosted, default, "${{ inputs.runs_on_arch }}", cpu=64 ]
     container:
       image: ${{ inputs.CP_DOCKER_IMG }}
       options: --user root

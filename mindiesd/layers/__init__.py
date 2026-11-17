@@ -16,14 +16,27 @@ from .flash_attn.attention_forward_varlen import attention_forward_varlen
 from .flash_attn.sparse_flash_attn import sparse_attention
 from ._custom_ops import apply_rotary_pos_emb, frequency_regulator
 from .activation import get_activation_layer
-from .norm import RMSNorm, add_layer_norm, add_rms_norm, fast_layernorm
+from .norm import RMSNorm, add_layer_norm, add_rms_norm, fast_layernorm, group_norm_silu
 from .adalayernorm import layernorm_scale_shift
 from .muls_add import muls_add
 from .residual_gate_add import qwen_residual_gate_add, residual_gate_add
+from .rms_norm_indexed_scale_shift_dynamic_mx_quant import (
+    rms_norm_indexed_scale_shift_dynamic_mx_quant,
+)
 from .rope import rotary_position_embedding
+from .split_qkv_norm_rope_concat import (
+    split_qkv_norm_rope_concat,
+    triton_split_qkv_norm_rope_concat,
+    validate_split_qkv_norm_rope_concat_inputs,
+)
 from .fused_moe import fused_moe
 from .eagle_ffn_linear import eagle_ffn_linear
+from .quant.transpose_dynamic_quant import transpose_dynamic_quant
 from .flash_attn import SparseLinearAttention
+from .indexed_gate_rms_norm_scale_shift_dynamic_mx_quant import (
+    indexed_gate_rms_norm_scale_shift_dynamic_mx_quant,
+)
+from .qbmm_swiglu_mxquant import run as qbmm_swiglu_mxquant
 
 __all__ = [
     "RMSNorm",
@@ -38,11 +51,19 @@ __all__ = [
     "frequency_regulator",
     "fused_moe",
     "get_activation_layer",
+    "group_norm_silu",
+    "indexed_gate_rms_norm_scale_shift_dynamic_mx_quant",
     "layernorm_scale_shift",
     "muls_add",
+    "qbmm_swiglu_mxquant",
     "qwen_residual_gate_add",
     "residual_gate_add",
+    "rms_norm_indexed_scale_shift_dynamic_mx_quant",
     "rotary_position_embedding",
     "sparse_attention",
+    "split_qkv_norm_rope_concat",
     "SparseLinearAttention",
+    "triton_split_qkv_norm_rope_concat",
+    "validate_split_qkv_norm_rope_concat_inputs",
+    "transpose_dynamic_quant",
 ]

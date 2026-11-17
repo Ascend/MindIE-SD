@@ -1,4 +1,4 @@
-# A5 sparse_block_estimate tests
+# 950PR&950DT products sparse_block_estimate tests
 
 The operator returns an `int8` mask and an `int32` sparse count. The mask gate is a business ruler for that integer output: `diff_ratio < 0.02`, `omitted_ratio < 0.01`, plus count-table consistency and zero padding. It is not a floating-point mixed-tolerance check.
 

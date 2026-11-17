@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /*!
  * \file aclnn_eagle_ffn_v2.h
  * \brief
@@ -76,13 +88,12 @@ extern "C" {
  * @param [out] executor：返回op执行器，包含了算子计算流程。
  * @return      aclnnStatus: 返回状态码
  */
-__attribute__((visibility("default"))) aclnnStatus aclnnEagleFfnV2GetWorkspaceSize(
-    const aclTensor *x, const aclTensor *weight1, const aclTensor *weight2, const aclIntArray *expertTokens,
-    const aclTensor *bias1, const aclTensor *bias2, const aclTensor *scale, const aclTensor *offset,
-    const aclTensor *deqScale1, const aclTensor *deqScale2, const aclTensor *antiquantScale1,
-    const aclTensor *antiquantScale2, const aclTensor *antiquantOffset1, const aclTensor *antiquantOffset2,
-    const char *activation, int64_t innerPrecise, bool tokensIndexFlag, const aclTensor *y, uint64_t *workspaceSize,
-    aclOpExecutor **executor);
+__attribute__((visibility("default"))) aclnnStatus aclnnEagleFfnV2GetWorkspaceSize(const aclTensor *x,
+    const aclTensor *weight1, const aclTensor *weight2, const aclIntArray *expertTokens, const aclTensor *bias1,
+    const aclTensor *bias2, const aclTensor *scale, const aclTensor *offset, const aclTensor *deqScale1,
+    const aclTensor *deqScale2, const aclTensor *antiquantScale1, const aclTensor *antiquantScale2,
+    const aclTensor *antiquantOffset1, const aclTensor *antiquantOffset2, const char *activation, int64_t innerPrecise,
+    bool tokensIndexFlag, const aclTensor *y, uint64_t *workspaceSize, aclOpExecutor **executor);
 
 /**
  * @brief aclnnEagleFfnV2的第二段接口，用于执行计算。
@@ -92,8 +103,8 @@ __attribute__((visibility("default"))) aclnnStatus aclnnEagleFfnV2GetWorkspaceSi
  * @param [in] stream: 指定执行任务的AscendCL stream流。
  * @return     aclnnStatus: 返回状态码
  */
-__attribute__((visibility("default"))) aclnnStatus aclnnEagleFfnV2(void *workspace, uint64_t workspaceSize,
-                                                              aclOpExecutor *executor, aclrtStream stream);
+__attribute__((visibility("default"))) aclnnStatus aclnnEagleFfnV2(
+    void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, aclrtStream stream);
 
 #ifdef __cplusplus
 }

@@ -18,6 +18,7 @@
 #include "rainfusionattention.h"
 #include "ada_block_sparse_attention.h"
 #include "sparse_block_estimate.h"
+#include "ada_relu2_block_estimate.h"
 #include "layernorm.h"
 #include "block_sparse_attention.h"
 #include "eagle_block_sparse_attention.h"
@@ -26,11 +27,18 @@
 #include "quant_flash_attn_metadata.h"
 #include "fused_infer_attention_score.h"
 #include "mul_add.h"
+#include "eagle_indexed_gate_norm_modulate.h"
 #include "norm_rope_concat.h"
+#include "eagle_split_norm_rope_concat.h"
 #include "eagle_ffn_linear.h"
+#include "eagle_quant_batch_matmul_swiglu.h"
 #include "quant_four_over_six_a5.h"
 
 TORCH_LIBRARY(mindiesd, m) {
+    m.def("eagle_quant_batch_matmul_swiglu(Tensor x1, Tensor x2, Tensor scale, "
+          "Tensor? offset=None, Tensor? bias=None, Tensor? pertoken_scale=None, "
+          "ScalarType? output_dtype=None, bool transpose_x1=False, bool transpose_x2=False, "
+          "int group_size=0) -> Tensor");
     m.def("la(Tensor query, Tensor key, Tensor value, \
         Tensor? atten_mask=None, Tensor? alibi_mask=None, Tensor? \
         drop_mask=None, float scale_value=1.0, int head_num=2, str input_layout='BNSD', \
@@ -63,6 +71,11 @@ TORCH_LIBRARY(mindiesd, m) {
         float threshold=1, bool causal=True, bool keep_sink=True,  \
         bool keep_recent=True, float row_sparse=1) \
         -> (Tensor, Tensor)");
+    m.def("ada_relu2_block_estimate(Tensor query, Tensor key,  \
+        int[]? actual_seq_lengths=None, int[]? actual_seq_lengths_kv=None,  \
+        str input_layout='BNSD', int stride=8, int sparse_size=128,  \
+        int num_heads=1, int num_key_value_heads=1, float scale_value=1,  \
+        float threshold=1, Tensor? q_scale=None, Tensor? k_scale=None) -> (Tensor, Tensor)");
     m.def("layernorm(Tensor input, int[] normalized_shape, Tensor? weight=None, Tensor? bias=None, float eps=1e-05, \
         int impl_mode=0) -> (Tensor, Tensor, Tensor)");
     m.def("block_sparse_attention(Tensor query, Tensor key, Tensor value, \
@@ -130,11 +143,19 @@ TORCH_LIBRARY(mindiesd, m) {
         int? dequant_scale_value_dtype=None, int? dequant_scale_key_rope_dtype=None, \
         ScalarType? out_dtype=None) -> (Tensor, Tensor)");
     m.def("mul_add(Tensor a, Tensor b, Tensor c) -> Tensor");
+    m.def("eagle_indexed_gate_norm_modulate(Tensor residual, Tensor gate, Tensor branch, "
+          "Tensor shift, Tensor scale, Tensor indices, Tensor? weight=None, Tensor? bias=None, int norm_type=0, "
+          "float eps=1e-6, ScalarType? output_dtype=None) -> (Tensor, Tensor)");
     m.def("eagle_ffn_linear(Tensor x, Tensor weight1, Tensor weight2, \
         Tensor? bias1=None, Tensor? bias2=None, str activation='gelu', int inner_precise=0) -> Tensor");
     m.def("quant_four_over_six_a5(Tensor x, int axis=-1, str round_mode='rint', \
         int dst_type=40, int blocksize=32, int scale_alg=2, float dst_type_max=4.0) \
         -> (Tensor, Tensor)");
+    m.def(
+        "eagle_split_norm_rope_concat(Tensor qkv, "
+        "Tensor? norm_query_weight, Tensor? norm_key_weight, Tensor rope_cos, Tensor rope_sin, "
+        "int[] head_counts, int norm_type, int rope_type, int? rotary_dim=None, float eps=1e-5, bool output_bnsd=True) "
+        "-> (Tensor, Tensor, Tensor)");
     m.def("norm_rope_concat(Tensor query, Tensor key, Tensor value, \
         Tensor? encoder_query=None, Tensor? encoder_key=None, Tensor? encoder_value=None, \
         Tensor? norm_query_weight=None, Tensor? norm_query_bias=None, \
@@ -148,6 +169,7 @@ TORCH_LIBRARY(mindiesd, m) {
 }
 
 TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m) {
+    m.impl("eagle_quant_batch_matmul_swiglu", &eagle_quant_batch_matmul_swiglu_impl_npu);
     m.impl("la", &la_mindie_sd_impl_npu);
     m.impl("adaln", &adaln_mindie_sd_impl_npu);
     m.impl("adaln_v2", &adaln_v2_mindie_sd_impl_npu);
@@ -155,6 +177,7 @@ TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m) {
     m.impl("rainfusionattention", &rainfusionattention_mindie_sd_impl_npu);
     m.impl("ada_block_sparse_attention", &ada_block_sparse_attention_impl_npu);
     m.impl("sparse_block_estimate", &sparse_block_estimate_mindie_sd_impl_npu);
+    m.impl("ada_relu2_block_estimate", &ada_relu2_block_estimate_mindie_sd_impl_npu);
     m.impl("layernorm", &layernorm_mindie_sd_impl_npu);
     m.impl("block_sparse_attention", &block_sparse_attention_impl_npu);
     m.impl("eagle_block_sparse_attention", &eagle_block_sparse_attention_impl_npu);
@@ -163,10 +186,11 @@ TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m) {
     m.impl("quant_flash_attn_metadata", &quant_flash_attn_metadata_impl_npu);
     m.impl("fused_infer_attention_score_v2", &fused_infer_attention_score_v2_impl_npu);
     m.impl("mul_add", &mul_add_mindie_sd_impl_npu);
+    m.impl("eagle_indexed_gate_norm_modulate", &eagle_indexed_gate_norm_modulate_impl_npu);
     m.impl("eagle_ffn_linear", &eagle_ffn_linear_mindie_sd_impl_npu);
     m.impl("quant_four_over_six_a5", &quant_four_over_six_a5_mindie_sd_impl_npu);
     m.impl("norm_rope_concat", &norm_rope_concat_mindie_sd_impl_npu);
+    m.impl("eagle_split_norm_rope_concat", &eagle_split_norm_rope_concat_impl_npu);
 }
 
 TORCH_LIBRARY_IMPL(mindiesd, CatchAll, m) { m.impl("quant_flash_attn_metadata", &quant_flash_attn_metadata_impl_npu); }
-

@@ -10,6 +10,16 @@
  * See the Mulan PSL v2 for more details.
  */
 
+/**
+ * Copyright (c) 2025 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
 /*!
  * \file flash_attn_tiling_data.h
  * \brief
@@ -63,6 +73,8 @@ struct FlashAttnBaseParams {
     uint32_t kvCuSeqLensSize; /* 用户输入的cu_seqlens_kv的长度 */
     uint32_t qSeqUsedSize; /* 用户输入的seqused_q的长度 */
     uint32_t kvSeqUsedSize; /* 用户输入的seqused_kv的长度 */
+    int32_t maxSeqlenQ; /* seqUsed/cuSeq 为空时 kernel 侧每个 batch 的实际序列长度 */
+    int32_t maxSeqlenKv; /* seqUsed/cuSeq 为空时 kernel 侧每个 batch 的实际序列长度 */
     float scaleValue;
     uint8_t isSoftMaxLseEnable;
     uint32_t coreNum;
@@ -110,7 +122,7 @@ class FlashAttnTilingData {
     FlashAttnEmptyTensorParams flashAttnEmptyTensorParams;
 };
 
-class QuantFlashAttnTilingData {
+class EagleQuantFlashAttnTilingData {
   public:
     FlashAttnTilingData baseTiling;
     FlashAttnMetaData flashAttnMetaData;

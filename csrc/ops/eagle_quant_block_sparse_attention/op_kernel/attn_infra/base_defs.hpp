@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /*!
  * \file base_defs.hpp
  * \brief
@@ -24,12 +36,16 @@
 #include "../attn_infra/detail/dependent_false.hpp"
 #include "../attn_infra/detail/macros.hpp"
 #ifndef DUMP_TENSOR
-#define DEBUG_PRINT(str) do {  AscendC::printf("[DEBUG] Line: %d %s\n", __LINE__, str); } while(0)
-#define DUMP_TENSOR(mmResUb, m, n ) \
-    do { AscendC::printf("line %d, tensor: %s\n", __LINE__, #mmResUb); \
-        uint32_t array_ ## __LINE__[] = {static_cast<uint32_t>(m), static_cast<uint32_t>(n)}; \
-        AscendC::DumpTensor(mmResUb, 2, (m)*(n)); \
-    } while(0)
+#define DEBUG_PRINT(str) \
+    do { \
+        AscendC::printf("[DEBUG] Line: %d %s\n", __LINE__, str); \
+    } while (0)
+#define DUMP_TENSOR(mmResUb, m, n) \
+    do { \
+        AscendC::printf("line %d, tensor: %s\n", __LINE__, #mmResUb); \
+        uint32_t array_##__LINE__[] = {static_cast<uint32_t>(m), static_cast<uint32_t>(n)}; \
+        AscendC::DumpTensor(mmResUb, 2, (m) * (n)); \
+    } while (0)
 #endif
 
 namespace NpuArch {
@@ -46,7 +62,7 @@ constexpr uint32_t BYTE_PER_VECTOR_FRACTAL = BYTE_PER_BLK * BLK_NUM_PER_VECTOR_F
 constexpr uint64_t L2_OFFSET = 0;
 constexpr uint32_t STRIDE_LIMIT = 65536;
 
-constexpr uint32_t BYTE_PER_BLK_FP = 128;  /// datablock size of A1->C2PiPE2GM
+constexpr uint32_t BYTE_PER_BLK_FP = 128; /// datablock size of A1->C2PiPE2GM
 
 constexpr uint32_t MX_SCALE_COPY_GROUP_NUM = 2;
 constexpr uint32_t MX_SCALE_GROUP_NUM = 32;

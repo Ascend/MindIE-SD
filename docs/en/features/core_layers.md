@@ -1,4 +1,5 @@
-﻿# Core Acceleration API
+<!-- markdownlint-disable MD024 -->
+# Core Acceleration API
 
 This document describes the interfaces exposed by the `mindiesd` package through the `layers` module. All interfaces can be imported directly using `from mindiesd import <interface_name>`.
 
@@ -70,8 +71,6 @@ out = attention_forward(query, key, value)
 - When migrating from `torch.nn.functional.scaled_dot_product_attention`, the input layout needs to be adjusted from `[B,N,S,D]` to `[B,S,N,D]`, and the `transpose` operation should be removed.
 - When migrating from `flash_attn.flash_attn_func`, the input layout is already `[B,S,N,D]` and can be directly replaced.
 - This interface only provides forward inference and does not support backward gradient computation. When migrating, remove `dropout` and set the input tensor's `requires_grad` to `False`.
-
----
 
 ### attention_forward_varlen
 
@@ -145,8 +144,6 @@ out = attention_forward_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k, causal=False
 #### Migration Guide
 
 - When migrating from `flash_attn.flash_attn_varlen_func`, the interface parameters are largely consistent and can be directly replaced.
-
----
 
 ### sparse_attention
 
@@ -228,8 +225,6 @@ out = sparse_attention(
 )
 ```
 
----
-
 ## Fused Operators
 
 The fused operator series interfaces provide Ascend high-performance fused operators, covering basic computations such as positional encoding, normalization, and activation functions.
@@ -241,9 +236,14 @@ The fused operator series interfaces provide Ascend high-performance fused opera
 | `add_layer_norm` | Function | Fused residual Add and LayerNorm operator |
 | `add_rms_norm` | Function | Fused residual Add and RMSNorm operator |
 | `RMSNorm` | Class | RMS normalization fused operator |
+| `group_norm_silu` | Function | Fused GroupNorm and SiLU operator |
 | `fast_layernorm` | Function | High-performance LayerNorm fused operator |
 | `layernorm_scale_shift` | Function | Adaptive LayerNorm (AdaLayerNorm) fused operator |
+| `rms_norm_indexed_scale_shift_dynamic_mx_quant` | Function | Fused RMSNorm, indexed AdaLN affine and dynamic MX quantization operator |
+| `indexed_gate_rms_norm_scale_shift_dynamic_mx_quant` | Function | Fused indexed gate residual RMSNorm, indexed AdaLN affine and dynamic MX quantization operator |
+| `split_qkv_norm_rope_concat` | Function | Fused Split QKV, Q/K RMSNorm, partial RoPE, and optional V copy |
 | `get_activation_layer` | Function | Get activation function instance (with NPU-accelerated versions) |
+| `transpose_dynamic_quant` | Function | Transpose + dynamic quantization fused operator (FP8 output, configurable quant axis) |
 
 ### rotary_position_embedding
 
@@ -296,8 +296,6 @@ out = rotary_position_embedding(x, cos, sin, rotated_mode="rotated_half", head_f
 
 - **rotated_half**: Suitable for models like OpenSoraPlan, Stable Audio, etc. Splits `x` into front and back halves for rotation.
 - **rotated_interleaved**: Suitable for models like HunyuanDiT, OpenSora, Flux, CogVideox, etc. Rotates `x` by interleaving adjacent elements.
-
----
 
 ### apply_rotary_pos_emb
 
@@ -409,6 +407,76 @@ assert query_out.data_ptr() == query.data_ptr()
 assert key_out.data_ptr() == key.data_ptr()
 ```
 
+### norm_rope_concat
+
+Fuse Q/K normalization, RoPE and optional encoder sequence concatenation. V is only concatenated and reordered.
+Import with `from mindiesd import norm_rope_concat`. Inputs must share an NPU device and an FP16/BF16/FP32 dtype.
+Q/K/V are 4D tensors with matching B/N/D and matching K/V sequence lengths; D must be even and at most 1024.
+
+| Parameter | Default | Description |
+| --- | --- | --- |
+| `input_layout` | `"BSND"` | Shared Q/K/V and encoder input layout: BSND or BNSD |
+| `output_layout` | `"BSND"` | Layout of the first three outputs: BSND or BNSD |
+| `norm_type` | `0` | 0: none; 1: LayerNorm; 2: affine LayerNorm; 3: RMSNorm; 4: affine RMSNorm |
+| `norm_added_type` | `0` | Encoder Q/K norm type; same values as `norm_type` |
+| `rope_type` | `0` | 0: none; 1: interleaved channel pairs; 2: half-split pairs |
+| `concat_order` | `0` | 0: main before encoder; 1: main after encoder |
+| `eps` | `1e-5` | Positive finite epsilon |
+| `is_training` | `False` | Whether to write applicable norm statistics |
+
+`encoder_query/key/value` are optional; encoder K/V must appear together.
+Use `norm_query/key_weight/bias` for the main branch and `norm_added_query/key_weight/bias` for the encoder,
+all shaped `[D]`. Affine modes require weights; affine LayerNorm also requires biases.
+`rope_sin/cos` must appear together and are required when RoPE is enabled. Their shape is `[S_rope,D]`;
+only the first S_rope positions of the concatenated sequence are rotated.
+
+```python
+import torch
+from mindiesd import norm_rope_concat
+
+q = torch.randn(1, 17, 2, 128, device="npu", dtype=torch.bfloat16)
+weight = torch.ones(128, device=q.device, dtype=q.dtype)
+outputs = norm_rope_concat(
+    q, q, q, norm_type=4,
+    norm_query_weight=weight, norm_key_weight=weight,
+    input_layout="BSND", output_layout="BNSD",
+)
+query_out, key_out, value_out = outputs[:3]
+```
+
+The 11 outputs are Q/K/V followed by mean/rstd pairs for main Q, main K, encoder Q and encoder K.
+BSND outputs are views of BNSD storage and may be noncontiguous. The eight statistics retain their original
+layouts and are only valid for the corresponding training/norm modes. Inputs are normalized to contiguous
+BSND inside the API without changing the kernel layout contract. Invalid parameters raise `ParametersInvalid`;
+operator execution errors propagate unchanged.
+
+For legacy BSND-input/BNSD-output calls, explicitly pass `output_layout="BNSD"`.
+Omitting both layout arguments selects BSND input and output.
+
+### split_qkv_norm_rope_concat
+
+Fuses packed-QKV split, per-head Q/K RMSNorm, partial NeoX RoPE, tail concatenation, and an optional V copy into one Triton kernel. Q/K normalization and rotation use FP32 arithmetic and round back to the input dtype.
+
+```python
+from mindiesd import split_qkv_norm_rope_concat
+```
+
+The API is also available from `mindiesd.layers`. The `torch.ops.mindiesd.split_qkv_norm_rope_concat` operator allocates Q/K/V and provides fake/meta support; the Python wrapper retains the optional `v_out` zero-copy path.
+
+```python
+split_qkv_norm_rope_concat(
+    qkv, q_weight, k_weight, cos_sin_cache, positions,
+    *, num_heads, head_dim, rope_dim, eps=1e-5, validate_values=False, v_out=None, out_dtype=None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]
+```
+
+- `qkv`: `[T, 3*N*D]`; `q_weight`/`k_weight`: `[D]`; `cos_sin_cache`: `[maxPos, R]` containing `concat(cos, sin)` rows; `positions`: int32 `[T]`.
+- `N in [1,128]`; `D in [96,256]` and divisible by 8; `R` is even and `R <= D`; `T=0` is valid.
+- All tensors must share a device; `qkv`, weights, cache, and `v_out` must be contiguous; positions must be contiguous int32. Only bf16/fp16 on Ascend NPU are supported.
+- Returns `(q_out, k_out, v_out)`, each `[T,N,D]`; the third value is `None` when `v_out=None`.
+- `validate_values=False` by default so only metadata is checked; set it to `True` for debugging or boundary checks to avoid full-tensor scans and host synchronization on hot paths.
+- A5 reference stack: CANN 9.2.1, torch_npu 2.10.0.post7, triton-ascend 3.6.0.post2. A6 requires an available Ascend 960DT.
+
 ---
 
 ### add_layer_norm
@@ -459,8 +527,6 @@ bias = torch.zeros(1024, device="npu", dtype=torch.float16)
 out, residual_out = add_layer_norm(x, residual, weight, bias)
 ```
 
----
-
 ### add_rms_norm
 
 Fuses residual addition with RMSNorm and returns both the normalized output and the residual sum.
@@ -507,8 +573,6 @@ weight = torch.ones(1024, device="npu", dtype=torch.float16)
 out, residual_out = add_rms_norm(x, residual, weight)
 ```
 
----
-
 ### RMSNorm
 
 RMS normalization fused operator, equivalent to T5LayerNorm. Focuses on the root mean square of the input tensor without computing the mean.
@@ -552,7 +616,35 @@ x = torch.randn(2, 4096, 1024, device="npu", dtype=torch.float16)
 out = norm(x)
 ```
 
----
+### group_norm_silu
+
+Combines GroupNorm and SiLU into one TorchNPU fused operator call. It is intended for channel-first tensors such as NCHW.
+
+```python
+from mindiesd import group_norm_silu
+```
+
+#### Function Signature
+
+```python
+group_norm_silu(input, weight, bias, group, eps=1e-5) -> torch.Tensor
+```
+
+`weight` and `bias` may be `None`. The input rank must be 2 to 8, and its channel dimension (dimension 1) must be divisible by `group`. Supported dtypes and devices depend on the installed TorchNPU/CANN versions. This API requires an NPU and has no CPU fallback.
+
+#### Usage Example
+
+```python
+import torch
+from mindiesd import group_norm_silu
+
+x = torch.randn(2, 320, 32, 32, device="npu", dtype=torch.float16)
+weight = torch.ones(320, device="npu", dtype=x.dtype)
+bias = torch.zeros(320, device="npu", dtype=x.dtype)
+out = group_norm_silu(x, weight, bias, group=32, eps=1e-5)
+```
+
+When using `torch.compile(..., backend=MindieSDBackend())`, the compiler backend automatically fuses supported `GroupNorm → SiLU` graph patterns.
 
 ### fast_layernorm
 
@@ -597,8 +689,6 @@ x = torch.randn(2, 4096, 1024, device="npu", dtype=torch.float16)
 
 out = fast_layernorm(norm, x, impl_mode=0, fused=True)
 ```
-
----
 
 ### layernorm_scale_shift
 
@@ -653,7 +743,159 @@ out = layernorm_scale_shift(norm, x, scale, shift, fused=True)
 - The last dimension of `x` must equal the last dimension of `scale` and `shift`.
 - If `scale` or `shift` is a 3D tensor, its second dimension must be 1 or equal to the second dimension (sequence length) of `x`.
 
----
+### rms_norm_indexed_scale_shift_dynamic_mx_quant
+
+Fused RMSNorm, indexed AdaLN affine and dynamic MX (Microscaling) quantization (DynamicMxQuant): merges the three AdaLN block steps (normalization, adaptive modulation, and quantization) into a single call that emits the quantized activation and its block scales.
+
+Formula:
+
+1. `x_norm = rms_norm(x, weight, eps)`
+2. `fused = x_norm * (1 + scale[indices]) + shift[indices]`
+3. `y, mxscale = dynamic_mx_quant(fused, dst_type, block_size=32)`
+
+On the single-kernel path, the modulation result stays in registers and is consumed directly by quantization. On the two-stage path, the result is written to a temporary HBM tensor and then read by the quantizer. Both paths return only the quantized values `y` and block scales `mxscale`. Call `rms_norm_indexed_scale_shift` when the floating-point activation itself is required.
+
+```python
+from mindiesd import rms_norm_indexed_scale_shift_dynamic_mx_quant
+```
+
+#### Function Signature
+
+```python
+rms_norm_indexed_scale_shift_dynamic_mx_quant(
+    x, weight, shift, scale, indices,
+    eps=1e-6,
+    dst_type="float8_e4m3fn"
+) -> tuple[torch.Tensor, torch.Tensor]
+```
+
+#### Parameter Description
+
+| Parameter | Type | Required | Default | Description |
+|------|------|------|--------|------|
+| `x` | `torch.Tensor` | Yes | - | Input activation, 2D `[rows, hidden]`, `bfloat16` or `float16` |
+| `weight` | `torch.Tensor` | Yes | - | RMSNorm weight, 1D `[hidden]`, same dtype as `x` |
+| `shift` | `torch.Tensor` | Yes | - | Indexed AdaLN shift, 2D `[conditions, hidden]`, same dtype as `x` |
+| `scale` | `torch.Tensor` | Yes | - | Indexed AdaLN scale, 2D `[conditions, hidden]`, same dtype as `x` |
+| `indices` | `torch.Tensor` | Yes | - | Per-row condition index, 1D `[rows]`, `int32` or `int64` |
+| `eps` | `float` | No | `1e-6` | Finite positive value added to the RMSNorm variance |
+| `dst_type` | `str` | No | `"float8_e4m3fn"` | MX output type: `"float8_e4m3fn"`, `"float8_e5m2"`, `"float4_e2m1fn_x2"` or `"float4_e1m2fn_x2"`; aliases `"float4_e2m1"` and `"float4_e1m2"` are also accepted |
+
+#### Return Value
+
+Returns a tuple `(y, mxscale)`:
+
+| Value | Type | Description |
+|--------|------|------|
+| `y` | `torch.Tensor` | Quantized result. `[rows, hidden]` for FP8 output; packed `uint8` of `[rows, hidden // 2]` for FP4 output |
+| `mxscale` | `torch.Tensor` | `float8_e8m0fnu` block scale of 32 elements per group, shape `[rows, ceil(groups / 2), 2]` |
+
+#### Usage Example
+
+```python
+import torch
+from mindiesd import rms_norm_indexed_scale_shift_dynamic_mx_quant
+
+rows, hidden, conditions = 1024, 2048, 8
+x = torch.randn(rows, hidden, device="npu", dtype=torch.bfloat16)
+weight = torch.randn(hidden, device="npu", dtype=torch.bfloat16)
+shift = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+scale = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+indices = torch.randint(0, conditions, (rows,), device="npu", dtype=torch.int32)
+
+y, mxscale = rms_norm_indexed_scale_shift_dynamic_mx_quant(
+    x, weight, shift, scale, indices,
+    eps=1e-6,
+    dst_type="float8_e4m3fn",
+)
+```
+
+#### Constraints
+
+- `x` must be 2D; `weight` must be 1D with length `hidden`; `shift` and `scale` must both have shape `[conditions, hidden]` with `conditions > 0`.
+- `x`, `weight`, `shift` and `scale` must share the same dtype, either `bfloat16` or `float16`; `indices` supports `int32`/`int64`, must have shape `[rows]`, and every value must satisfy `0 <= index < conditions`.
+- Invalid indices are rejected on the device and reported as a device error on the next NPU synchronization. The operator does not introduce a host synchronization for index-range validation.
+- All inputs must live on the same device.
+- `dst_type` must be one of the four values above; MXFP4 output requires an even `hidden` size.
+- Requires an Ascend NPU environment where Triton is available.
+
+### indexed_gate_rms_norm_scale_shift_dynamic_mx_quant
+
+Fuses indexed gate residual, RMSNorm, indexed AdaLN affine and dynamic MX (Microscaling) quantization (DynamicMxQuant): merges the gate residual, normalization, adaptive modulation and quantization into a single call.
+
+Formula:
+
+1. `updated = residual + gate[indices] * branch`
+2. `modulated = rms_norm(updated, weight, eps) * (1 + scale[indices]) + shift[indices]`
+3. `y, mxscale = dynamic_mx_quant(modulated, dst_type, block_size=32)`
+
+```python
+from mindiesd import indexed_gate_rms_norm_scale_shift_dynamic_mx_quant
+```
+
+#### Function Signature
+
+```python
+indexed_gate_rms_norm_scale_shift_dynamic_mx_quant(
+    residual, gate, branch, weight, shift, scale, indices,
+    eps=1e-6,
+    dst_type="float8_e4m3fn",
+) -> tuple[torch.Tensor, torch.Tensor]
+```
+
+#### Parameter Description
+
+| Parameter | Type | Required | Default | Description |
+|------|------|------|--------|------|
+| `residual` | `torch.Tensor` | Yes | - | Input residual, 2D `[rows, hidden]`, `bfloat16` or `float16` |
+| `gate` | `torch.Tensor` | Yes | - | Gate weight, 2D `[conditions, hidden]`, same dtype as `residual` |
+| `branch` | `torch.Tensor` | Yes | - | Branch activation, 2D `[rows, hidden]`, same dtype as `residual` |
+| `weight` | `torch.Tensor` | Yes | - | RMSNorm weight, 1D `[hidden]`, same dtype as `residual` |
+| `shift` | `torch.Tensor` | Yes | - | Indexed AdaLN shift, 2D `[conditions, hidden]`, same dtype as `residual` |
+| `scale` | `torch.Tensor` | Yes | - | Indexed AdaLN scale, 2D `[conditions, hidden]`, same dtype as `residual` |
+| `indices` | `torch.Tensor` | Yes | - | Per-row condition index, 1D `[rows]`, `int32` or `int64` |
+| `eps` | `float` | No | `1e-6` | Finite positive value added to the RMSNorm variance |
+| `dst_type` | `str` | No | `"float8_e4m3fn"` | MX output type: `"float8_e4m3fn"`, `"float8_e5m2"`, `"float4_e2m1fn_x2"` or `"float4_e1m2fn_x2"`; aliases `"float4_e2m1"`, `"float4_e2m1fn"`, `"float4_e1m2"` and `"float4_e1m2fn"` are also accepted |
+
+#### Return Value
+
+Returns a tuple `(y, mxscale)`:
+
+| Value | Type | Description |
+|--------|------|------|
+| `y` | `torch.Tensor` | Quantized result. `[rows, hidden]` for FP8 output; packed `uint8` of `[rows, hidden // 2]` for FP4 output |
+| `mxscale` | `torch.Tensor` | `float8_e8m0fnu` block scale of 32 elements per group, shape `[rows, ceil(groups / 2), 2]` |
+
+#### Usage Example
+
+```python
+import torch
+from mindiesd import indexed_gate_rms_norm_scale_shift_dynamic_mx_quant
+
+rows, hidden, conditions = 1024, 2048, 8
+residual = torch.randn(rows, hidden, device="npu", dtype=torch.bfloat16)
+gate = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+branch = torch.randn(rows, hidden, device="npu", dtype=torch.bfloat16)
+weight = torch.randn(hidden, device="npu", dtype=torch.bfloat16)
+shift = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+scale = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+indices = torch.randint(0, conditions, (rows,), device="npu", dtype=torch.int32)
+
+y, mxscale = indexed_gate_rms_norm_scale_shift_dynamic_mx_quant(
+    residual, gate, branch, weight, shift, scale, indices,
+    eps=1e-6,
+    dst_type="float8_e4m3fn",
+)
+```
+
+#### Constraints
+
+- `residual` and `branch` must share the same 2D shape `[rows, hidden]`; `gate`, `shift` and `scale` must share the same 2D shape `[conditions, hidden]`; `weight` must be 1D with length `hidden`.
+- `residual`, `gate`, `branch`, `weight`, `shift` and `scale` must share the same dtype, `bfloat16` or `float16`; `indices` supports `int32`/`int64` and must contain exactly `rows` values.
+- All inputs must live on the same device.
+- `dst_type` must be one of the values above; MXFP4 output requires an even `hidden` size.
+- Requires an Ascend NPU environment where Triton is available.
+- The operator picks, per input shape, either the single-kernel fused implementation or the Triton modulation kernel followed by `npu_dynamic_mx_quant`; both are byte-exact. Once Triton supports the AscendC quantization instructions, all shapes use the fused implementation.
 
 ### get_activation_layer
 
@@ -700,7 +942,59 @@ act = get_activation_layer("gelu-fast")
 out = act(hidden_states)
 ```
 
----
+### transpose_dynamic_quant
+
+Fused transpose and dynamic quantization operator, equivalent to the `Transpose + DynamicQuantV2 + Transpose` small-op chain: per-group symmetric dynamic quantization along the quantization axis, producing FP8 quantized output and per-group scales. Both transposes are folded into index arithmetic with no extra transpose copies.
+
+```python
+from mindiesd import transpose_dynamic_quant
+```
+
+#### Function Signature
+
+```python
+transpose_dynamic_quant(
+    x, smooth_scales, axis
+) -> tuple[torch.Tensor, torch.Tensor]
+```
+
+#### Parameter Description
+
+| Parameter | Type | Required | Default | Description |
+|------|------|------|--------|------|
+| `x` | `torch.Tensor` | Yes | - | Input tensor, ND, `float16` or `bfloat16`, at least 2 dims |
+| `smooth_scales` | `torch.Tensor` | No | `None` | Smoothing scales; `None` means unused. Must be 1-D with length equal to the quant axis length `x.shape[axis]`, multiplied element-wise along that axis (aligned with the official `aclnnDynamicQuantV2` `smoothScalesOptional` constraint); dtype must match `x` and must be on the same device as `x` |
+| `axis` | `int` | Yes | - | Quantization axis (the reduction axis for max); any axis is supported (negative axes included) |
+
+#### Return Value
+
+`tuple[torch.Tensor, torch.Tensor]`:
+
+- `y`: quantized output, `float8_e4m3fn`; shape and layout are identical to `x`
+- `scale`: per-group scales, `float32`, shape is `x` without the `axis` dim
+
+#### Usage Example
+
+```python
+import torch
+from mindiesd import transpose_dynamic_quant
+
+x = torch.randn(14, 224905, 128, device="npu", dtype=torch.bfloat16)
+y, scale = transpose_dynamic_quant(x, None, 1)
+# y: [14, 224905, 128] float8_e4m3fn (same layout as x)
+# scale: [14, 128] float32
+```
+
+#### Constraints
+
+- The input tensor must reside on an Ascend NPU, with no more than 2^31 - 1 elements (int32 index limit)
+- `smooth_scales` must be on the same device as `x`
+- Quantization formula: `scale = max(|x * smooth|) / 448`, `y = fp8_rn(x * smooth / scale)`; the product is evaluated in fp32 and the quotient is cast to fp8_e4m3fn with a single RN rounding, bit-identical to `aclnnDynamicQuantV2`; all-zero groups output `scale = 0` and `y = 0`
+- The operator requires Triton-Ascend; calls raise `RuntimeError` directly when the environment is unavailable — there is no CPU fallback implementation
+
+#### Semantics
+
+`smooth_scales` must be 1-D with length equal to the quant axis length (`x.shape[axis]`) and is multiplied element-wise along that axis — consistent with the official `aclnnDynamicQuantV2` constraint on `smoothScalesOptional` (1-D, matching the last dim of the DQ input, which corresponds to the original quantization axis in this fused chain). Each element is multiplied by its own smooth coefficient before the per-group absolute max produces `scale`, so coefficients vary along the quant axis index. This convention holds for any `axis` without special-casing.
 
 ### Linear
 

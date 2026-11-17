@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=65.5", "wheel"]
+requires = ["setuptools>=65.5", "wheel", "packaging>=20.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -30,6 +30,7 @@ Issues = "https://gitcode.com/Ascend/MindIE-SD/issues"
 
 [tool.setuptools]
 include-package-data = true
+license-files = ["LICENSE.md", "THIRD_PARTY_LICENSES.txt"]
 
 [tool.setuptools.dynamic]
 version = { attr = "version.__version__" }

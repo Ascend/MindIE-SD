@@ -1,6 +1,19 @@
 /*
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
+
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /**
  * Copyright (c) 2025 Huawei Technologies Co., Ltd.
  * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
@@ -25,9 +38,8 @@ using namespace AscendC;
 using namespace MicroAPI;
 
 template <typename T, uint16_t QsBase = 128>
-__simd_vf__ inline void mm1_res_pre_padding_align_kvs32_multi_qs64_vf(__ubuf__ T *s, uint16_t actKvsTile,
-                                                                      uint16_t kvsActBaseTileAlign32)
-{
+__simd_vf__ inline void mm1_res_pre_padding_align_kvs32_multi_qs64_vf(
+    __ubuf__ T *s, uint16_t actKvsTile, uint16_t kvsActBaseTileAlign32) {
     // ====================== 寄存器定义 ======================
     MaskReg mask_VL64_16b = CreateMask<uint16_t, MaskPattern::VL64>();
     uint16_t kvsIdx = 0;
@@ -45,9 +57,8 @@ __simd_vf__ inline void mm1_res_pre_padding_align_kvs32_multi_qs64_vf(__ubuf__ T
 }
 
 template <typename T>
-__aicore__ inline void Mm1ResPrePaddingAlignKvs32MultiQs64CallVF(const LocalTensor<T> &srcTensor, uint16_t actKvsTile,
-                                                                 uint16_t kvsActBaseTileAlign32)
-{
+__aicore__ inline void Mm1ResPrePaddingAlignKvs32MultiQs64CallVF(
+    const LocalTensor<T> &srcTensor, uint16_t actKvsTile, uint16_t kvsActBaseTileAlign32) {
     __ubuf__ T *s_ub = (__ubuf__ T *)srcTensor.GetPhyAddr();
 
     mm1_res_pre_padding_align_kvs32_multi_qs64_vf<T>(s_ub, actKvsTile, kvsActBaseTileAlign32);

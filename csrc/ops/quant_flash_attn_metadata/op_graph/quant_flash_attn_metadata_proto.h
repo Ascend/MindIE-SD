@@ -10,12 +10,22 @@
  * See the Mulan PSL v2 for more details.
  */
 
+/**
+ * Copyright (c) 2025 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
 /*!
  * \file flash_attn_metadata_proto.h
  * \brief
  */
-#ifndef QUANT_FLASH_ATTN_METADATA_PROTO_H
-#define QUANT_FLASH_ATTN_METADATA_PROTO_H
+#ifndef EAGLE_QUANT_FLASH_ATTN_METADATA_PROTO_H
+#define EAGLE_QUANT_FLASH_ATTN_METADATA_PROTO_H
 
 #include "graph/operator_reg.h"
 #include "graph/types.h"
@@ -54,7 +64,7 @@ namespace ge {
 * @li metadata: A matrix tensor. The type support int32.
 * The output of attention structure.
 */
-REG_OP(QuantFlashAttnMetadata)
+REG_OP(EagleQuantFlashAttnMetadata)
     .OPTIONAL_INPUT(cu_seqlens_q, TensorType({DT_INT32}))
     .OPTIONAL_INPUT(cu_seqlens_kv, TensorType({DT_INT32}))
     .OPTIONAL_INPUT(seqused_q, TensorType({DT_INT32}))
@@ -75,7 +85,7 @@ REG_OP(QuantFlashAttnMetadata)
     .REQUIRED_ATTR(custom_soc_version, String)
     .REQUIRED_ATTR(aic_core_num, Int)
     .REQUIRED_ATTR(aiv_core_num, Int)
-    .OP_END_FACTORY_REG(QuantFlashAttnMetadata)
+    .OP_END_FACTORY_REG(EagleQuantFlashAttnMetadata)
 
 } // namespace ge
 

@@ -30,7 +30,7 @@ Q、K、V 分别按上表的目标 dtype 生成。大小 shape 的每组 shape /
 
 日志在调用前从实际张量读取 Q/K/V 的 shape、dtype、device、stride 和连续性，同时打印 layout、head_num、scale、pre_tokens、next_tokens、is_highPrecision 和预期输出状态。覆盖命令行参数后，日志仍对应实际输入；不使用固定业务 shape 作为场景标识。大 shape 的 5376 / 8960 均为有效长度，不能将其结果解释为带补齐屏蔽的 5280 / 8800 场景。
 
-A5 / 950 上该算子不可用，本目录 NPU 用例会 skip 或直接退出。
+Ascend 950PR&950DT系列产品上该算子不可用，本目录 NPU 用例会 skip 或直接退出。
 
 ## 文件与执行
 

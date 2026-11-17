@@ -7,7 +7,7 @@ MindIE SD provides multiple parallelism strategies to solve the problems of insu
 - **Ulysses Sequence Parallel (USP)**: Splits input along the sequence dimension, reorganizes across attention head dimensions via AlltoAll, and computes different attention heads in parallel on each card.
 - **CFG Parallel**: Distributes positive and negative sample inference to different devices for parallel execution. Suitable for diffusion models using Classifier-Free Guidance.
 
-Each strategy can be used independently or combined. For specific support details, please refer to [supported_matrix.md](supported_matrix.md).
+Each strategy can be used independently or combined. For specific support details, please refer to [Model/Framework Support Matrix](supported_matrix.md).
 
 **Recommendations:**
 
@@ -89,8 +89,6 @@ For column-wise splitting, each device independently computes local matrix multi
 
 Suitable for models with large hidden dimensions (hidden_size). Particularly effective when single-card memory cannot accommodate the full weight matrix. TP relies on high-bandwidth inter-card communication (such as HCCS). It is recommended to use it only within a single-machine multi-card scope, and the TP degree should not exceed the number of NPUs in a single machine.
 
----
-
 ## Ring Sequence Parallel
 
 ### Principle
@@ -143,8 +141,6 @@ for step in range(1, world_size):
     k_chunk, v_chunk = k_recv, v_recv
     out += local_attn(q_chunk, k_chunk, v_chunk)
 ```
-
----
 
 ## Ulysses Sequence Parallel
 
@@ -232,13 +228,9 @@ Suitable for scenarios with many attention heads and ample AlltoAll bandwidth. C
     x = torch.cat(output_list, dim=1)
     ```
 
----
-
 ## FA_Power_Cap Technology
 
 `FA_Power_Cap` technology can use `--comm_type 0/1/2` to switch between baseline, InsertComm, and BlockAttn paths. For the step-by-step manual integration guide, see [FA_Power_Cap Technology](./fa_power_cap.md).
-
----
 
 ## CFG Parallel
 

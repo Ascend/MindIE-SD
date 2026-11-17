@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD024 -->
 # 核心加速API
 
 本文档描述 `mindiesd` 包通过 `layers` 模块对外暴露的接口。所有接口均可通过 `from mindiesd import <接口名>` 直接导入使用。
@@ -71,8 +72,6 @@ out = attention_forward(query, key, value)
 - 从 `flash_attn.flash_attn_func` 迁移时，输入布局已为 `[B,S,N,D]`，可直接替换。
 - 本接口仅提供前向推理，不支持反向梯度计算，迁移时需去掉 `dropout` 并将输入张量的 `requires_grad` 设为 `False`。
 
----
-
 ### attention_forward_varlen
 
 变长序列注意力前向计算接口，适用于同一 batch 内序列长度不一致的场景。
@@ -145,8 +144,6 @@ out = attention_forward_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k, causal=False
 #### 迁移指南
 
 - 从 `flash_attn.flash_attn_varlen_func` 迁移时，接口参数基本一致，可直接替换调用。
-
----
 
 ### sparse_attention
 
@@ -226,8 +223,6 @@ out = sparse_attention(
 )
 ```
 
----
-
 ## 融合算子
 
 融合算子系列接口提供昇腾高性能融合算子，涵盖位置编码、归一化和激活函数等基础计算。
@@ -239,9 +234,14 @@ out = sparse_attention(
 | `add_layer_norm` | 函数 | 残差 Add 与 LayerNorm 融合算子 |
 | `add_rms_norm` | 函数 | 残差 Add 与 RMSNorm 融合算子 |
 | `RMSNorm` | 类 | RMS 归一化融合算子 |
+| `group_norm_silu` | 函数 | GroupNorm 与 SiLU 融合算子 |
 | `fast_layernorm` | 函数 | 高性能 LayerNorm 融合算子 |
 | `layernorm_scale_shift` | 函数 | 自适应 LayerNorm（AdaLayerNorm）融合算子 |
+| `rms_norm_indexed_scale_shift_dynamic_mx_quant` | 函数 | RMSNorm、索引 AdaLN 仿射与动态 MX 量化融合算子 |
+| `indexed_gate_rms_norm_scale_shift_dynamic_mx_quant` | 函数 | 索引门控残差 RMSNorm、索引 AdaLN 仿射与动态 MX 量化融合算子 |
+| `split_qkv_norm_rope_concat` | 函数 | Split QKV、Q/K RMSNorm、Partial RoPE 与可选 V 拷贝融合算子 |
 | `get_activation_layer` | 函数 | 获取激活函数实例（含 NPU 加速版本） |
+| `transpose_dynamic_quant` | 函数 | 转置 + 动态量化融合算子（FP8 输出，量化轴可配置） |
 
 ### rotary_position_embedding
 
@@ -294,8 +294,6 @@ out = rotary_position_embedding(x, cos, sin, rotated_mode="rotated_half", head_f
 
 - **rotated_half**：适用于 OpenSoraPlan、Stable Audio 等模型，将 `x` 拆分为前后两半进行旋转。
 - **rotated_interleaved**：适用于 HunyuanDiT、OpenSora、Flux、CogVideox 等模型，将 `x` 按相邻元素交错进行旋转。
-
----
 
 ### apply_rotary_pos_emb
 
@@ -407,6 +405,74 @@ assert query_out.data_ptr() == query.data_ptr()
 assert key_out.data_ptr() == key.data_ptr()
 ```
 
+### norm_rope_concat
+
+融合 Q/K 归一化、RoPE 和可选 encoder 序列拼接；V 只参与拼接与布局转换。
+通过 `from mindiesd import norm_rope_concat` 调用，仅支持同设备、同 dtype 的 NPU FP16/BF16/FP32 张量。
+Q/K/V 为四维张量，B/N/D 一致，K/V 序列长度一致；D 为偶数且不超过 1024。
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `input_layout` | `"BSND"` | Q/K/V 与非空 encoder 输入共用的布局，支持 BSND/BNSD |
+| `output_layout` | `"BSND"` | 前三个输出的布局，支持 BSND/BNSD |
+| `norm_type` | `0` | 0：无；1：LayerNorm；2：affine LayerNorm；3：RMSNorm；4：affine RMSNorm |
+| `norm_added_type` | `0` | encoder Q/K 的归一化类型，取值同 `norm_type` |
+| `rope_type` | `0` | 0：无；1：相邻通道配对；2：前后半区配对 |
+| `concat_order` | `0` | 0：主分支在 encoder 前；1：主分支在 encoder 后 |
+| `eps` | `1e-5` | 有限正数 |
+| `is_training` | `False` | 是否写出适用的归一化统计量 |
+
+`encoder_query/key/value` 可省略，其中 encoder K/V 必须成对提供。
+主分支使用 `norm_query/key_weight/bias`，encoder 使用 `norm_added_query/key_weight/bias`，形状均为 `[D]`。
+affine 模式要求对应 weight，affine LayerNorm 还要求 bias。
+`rope_sin/cos` 必须成对提供，启用 RoPE 时必填，形状为 `[S_rope,D]`，只旋转拼接序列的前 S_rope 个位置。
+
+```python
+import torch
+from mindiesd import norm_rope_concat
+
+q = torch.randn(1, 17, 2, 128, device="npu", dtype=torch.bfloat16)
+weight = torch.ones(128, device=q.device, dtype=q.dtype)
+outputs = norm_rope_concat(
+    q, q, q, norm_type=4,
+    norm_query_weight=weight, norm_key_weight=weight,
+    input_layout="BSND", output_layout="BNSD",
+)
+query_out, key_out, value_out = outputs[:3]
+```
+
+返回 11 个张量：前三个为 Q/K/V，随后为主 Q、主 K、encoder Q、encoder K 的 mean/rstd 各一对。
+BSND 输出为 BNSD 存储上的转置视图，可能不连续；八个统计输出的布局不随 `output_layout` 改变，
+仅在对应训练和归一化模式下保证数值有效。输入在接口内部转为连续 BSND，不改变 kernel 的布局契约。
+非法参数抛出 `ParametersInvalid`，底层执行错误原样传播。
+
+迁移旧版 BSND 输入、BNSD 输出调用时，显式指定 `output_layout="BNSD"`。
+省略两个 layout 参数时，输入和输出均按 BSND 解释。
+
+### split_qkv_norm_rope_concat
+
+将 packed QKV 拆分、Q/K 逐 head RMSNorm、partial NeoX RoPE、尾段拼接和可选 V 拷贝融合到单个 Triton kernel。Q/K 归一化与旋转使用 FP32 计算，最终按输入 dtype 写回。
+
+```python
+from mindiesd import split_qkv_norm_rope_concat
+```
+
+该接口也可从 `mindiesd.layers` 导入。`torch.ops.mindiesd.split_qkv_norm_rope_concat` 返回新分配的 Q/K/V，并提供 fake/meta 实现；Python 封装保留可选 `v_out` 的零额外拷贝语义。
+
+```python
+split_qkv_norm_rope_concat(
+    qkv, q_weight, k_weight, cos_sin_cache, positions,
+    *, num_heads, head_dim, rope_dim, eps=1e-5, validate_values=False, v_out=None, out_dtype=None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]
+```
+
+- `qkv`: `[T, 3*N*D]`；`q_weight`/`k_weight`: `[D]`；`cos_sin_cache`: `[maxPos, R]`，行为 `concat(cos, sin)`；`positions`: int32 `[T]`。
+- `N in [1,128]`；`D in [96,256]` 且为 8 的倍数；`R` 为偶数且 `R <= D`；`T=0` 合法。
+- 所有张量必须同设备；`qkv`、权重、cache 和 `v_out` 连续，`positions` 为连续 int32。仅支持 bf16/fp16 和 Ascend NPU。
+- 返回 `(q_out, k_out, v_out)`，形状均为 `[T,N,D]`；`v_out=None` 时第三项为 `None`。
+- 默认 `validate_values=False`，仅执行元数据校验；调试或边界检查时显式设为 `True`，避免热路径扫描完整张量并触发 host 同步。
+- A5 参考验证栈为 CANN 9.2.1、torch_npu 2.10.0.post7、triton-ascend 3.6.0.post2；A6 依赖可用的 Ascend 960DT。
+
 ---
 
 ### add_layer_norm
@@ -457,8 +523,6 @@ bias = torch.zeros(1024, device="npu", dtype=torch.float16)
 out, residual_out = add_layer_norm(x, residual, weight, bias)
 ```
 
----
-
 ### add_rms_norm
 
 融合残差加法与 RMSNorm，并同时返回归一化结果和残差加法结果。
@@ -505,8 +569,6 @@ weight = torch.ones(1024, device="npu", dtype=torch.float16)
 out, residual_out = add_rms_norm(x, residual, weight)
 ```
 
----
-
 ### RMSNorm
 
 RMS 归一化融合算子，等效于 T5LayerNorm，不涉及均值计算，专注于输入张量的根均方值。
@@ -550,7 +612,35 @@ x = torch.randn(2, 4096, 1024, device="npu", dtype=torch.float16)
 out = norm(x)
 ```
 
----
+### group_norm_silu
+
+将 GroupNorm 和 SiLU 合并为一次 TorchNPU 融合算子调用，适用于 NCHW 等 channel-first 张量。
+
+```python
+from mindiesd import group_norm_silu
+```
+
+#### 函数签名
+
+```python
+group_norm_silu(input, weight, bias, group, eps=1e-5) -> torch.Tensor
+```
+
+`weight` 和 `bias` 可传入 `None`。输入维度须为 2~8，通道数（第 1 维）须能被 `group` 整除。算子支持的数据类型和设备范围由安装的 TorchNPU/CANN 版本决定。本接口仅支持 NPU，不提供 CPU 回退。
+
+#### 使用示例
+
+```python
+import torch
+from mindiesd import group_norm_silu
+
+x = torch.randn(2, 320, 32, 32, device="npu", dtype=torch.float16)
+weight = torch.ones(320, device="npu", dtype=x.dtype)
+bias = torch.zeros(320, device="npu", dtype=x.dtype)
+out = group_norm_silu(x, weight, bias, group=32, eps=1e-5)
+```
+
+在使用 `torch.compile(..., backend=MindieSDBackend())` 时，编译后端会自动融合支持的 `GroupNorm → SiLU` 图模式。
 
 ### fast_layernorm
 
@@ -595,8 +685,6 @@ x = torch.randn(2, 4096, 1024, device="npu", dtype=torch.float16)
 
 out = fast_layernorm(norm, x, impl_mode=0, fused=True)
 ```
-
----
 
 ### layernorm_scale_shift
 
@@ -651,7 +739,159 @@ out = layernorm_scale_shift(norm, x, scale, shift, fused=True)
 - `x` 的最后一维必须与 `scale`、`shift` 的最后一维相等。
 - 若 `scale` 或 `shift` 为 3D 张量，则第二维必须为 1 或与 `x` 的第二维（序列长度）相等。
 
----
+### rms_norm_indexed_scale_shift_dynamic_mx_quant
+
+融合 RMSNorm、索引 AdaLN 仿射与动态 MX（Microscaling）量化（DynamicMxQuant），将 AdaLN 块内“归一化 → 自适应调制 → 量化”三步合并为一次调用，直接产出量化激活与块缩放。
+
+计算公式：
+
+1. `x_norm = rms_norm(x, weight, eps)`
+2. `fused = x_norm * (1 + scale[indices]) + shift[indices]`
+3. `y, mxscale = dynamic_mx_quant(fused, dst_type, block_size=32)`
+
+走单 kernel 路径时，调制结果直接在寄存器内参与量化。走两段执行路径时，先把调制结果写回 HBM 临时张量，再由量化算子读入。两条路径均返回量化值 `y` 和块缩放 `mxscale`。若调用方还需要 AdaLN 的浮点激活，应使用 `rms_norm_indexed_scale_shift`。
+
+```python
+from mindiesd import rms_norm_indexed_scale_shift_dynamic_mx_quant
+```
+
+#### 函数签名
+
+```python
+rms_norm_indexed_scale_shift_dynamic_mx_quant(
+    x, weight, shift, scale, indices,
+    eps=1e-6,
+    dst_type="float8_e4m3fn"
+) -> tuple[torch.Tensor, torch.Tensor]
+```
+
+#### 参数说明
+
+| 参数 | 类型 | 必选 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `x` | `torch.Tensor` | 是 | - | 输入激活，2D `[rows, hidden]`，支持 `bfloat16` 与 `float16` |
+| `weight` | `torch.Tensor` | 是 | - | RMSNorm 权重，1D `[hidden]`，dtype 与 `x` 一致 |
+| `shift` | `torch.Tensor` | 是 | - | 索引 AdaLN 偏移，2D `[conditions, hidden]`，dtype 与 `x` 一致 |
+| `scale` | `torch.Tensor` | 是 | - | 索引 AdaLN 缩放，2D `[conditions, hidden]`，dtype 与 `x` 一致 |
+| `indices` | `torch.Tensor` | 是 | - | 每行对应的条件索引，1D `[rows]`，`int32` 或 `int64` |
+| `eps` | `float` | 否 | `1e-6` | RMSNorm 方差中使用的有限正数 |
+| `dst_type` | `str` | 否 | `"float8_e4m3fn"` | MX 输出类型，支持 `"float8_e4m3fn"`、`"float8_e5m2"`、`"float4_e2m1fn_x2"`、`"float4_e1m2fn_x2"`，同时接受别名 `"float4_e2m1"` 与 `"float4_e1m2"` |
+
+#### 返回值
+
+返回二元组 `(y, mxscale)`：
+
+| 返回值 | 类型 | 说明 |
+|--------|------|------|
+| `y` | `torch.Tensor` | 量化结果。FP8 输出为 `[rows, hidden]`；FP4 输出为 `[rows, hidden // 2]` 的打包 `uint8` |
+| `mxscale` | `torch.Tensor` | `float8_e8m0fnu` 的 32 元素块缩放，形状 `[rows, ceil(groups / 2), 2]` |
+
+#### 使用示例
+
+```python
+import torch
+from mindiesd import rms_norm_indexed_scale_shift_dynamic_mx_quant
+
+rows, hidden, conditions = 1024, 2048, 8
+x = torch.randn(rows, hidden, device="npu", dtype=torch.bfloat16)
+weight = torch.randn(hidden, device="npu", dtype=torch.bfloat16)
+shift = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+scale = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+indices = torch.randint(0, conditions, (rows,), device="npu", dtype=torch.int32)
+
+y, mxscale = rms_norm_indexed_scale_shift_dynamic_mx_quant(
+    x, weight, shift, scale, indices,
+    eps=1e-6,
+    dst_type="float8_e4m3fn",
+)
+```
+
+#### 约束条件
+
+- `x` 必须为 2D，`weight` 必须为 1D 且长度等于 `hidden`，`shift` 与 `scale` 形状必须同为 `[conditions, hidden]`，且 `conditions > 0`。
+- `x`、`weight`、`shift`、`scale` 的 dtype 必须一致，仅支持 `bfloat16` 与 `float16`；`indices` 支持 `int32`/`int64`，形状必须严格为 `[rows]`，每个索引必须满足 `0 <= index < conditions`。
+- 非法索引会在设备侧被拦截，并在后续 NPU 同步时报告设备错误；算子不会为索引范围检查执行主机同步。
+- 所有输入必须位于同一 device。
+- `dst_type` 必须为上述四种取值之一；MXFP4 输出要求 `hidden` 为偶数。
+- 需要在支持 Triton 的昇腾 NPU 环境运行。
+
+### indexed_gate_rms_norm_scale_shift_dynamic_mx_quant
+
+融合索引门控残差、RMSNorm、索引 AdaLN 仿射与动态 MX（Microscaling）量化（DynamicMxQuant），将“门控残差 → 归一化 → 自适应调制 → 量化”合并为一次调用。
+
+计算公式：
+
+1. `updated = residual + gate[indices] * branch`
+2. `modulated = rms_norm(updated, weight, eps) * (1 + scale[indices]) + shift[indices]`
+3. `y, mxscale = dynamic_mx_quant(modulated, dst_type, block_size=32)`
+
+```python
+from mindiesd import indexed_gate_rms_norm_scale_shift_dynamic_mx_quant
+```
+
+#### 函数签名
+
+```python
+indexed_gate_rms_norm_scale_shift_dynamic_mx_quant(
+    residual, gate, branch, weight, shift, scale, indices,
+    eps=1e-6,
+    dst_type="float8_e4m3fn",
+) -> tuple[torch.Tensor, torch.Tensor]
+```
+
+#### 参数说明
+
+| 参数 | 类型 | 必选 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `residual` | `torch.Tensor` | 是 | - | 输入残差，2D `[rows, hidden]`，支持 `bfloat16` 或 `float16` |
+| `gate` | `torch.Tensor` | 是 | - | 门控权重，2D `[conditions, hidden]`，dtype 与 `residual` 一致 |
+| `branch` | `torch.Tensor` | 是 | - | 分支激活，2D `[rows, hidden]`，dtype 与 `residual` 一致 |
+| `weight` | `torch.Tensor` | 是 | - | RMSNorm 权重，1D `[hidden]`，dtype 与 `residual` 一致 |
+| `shift` | `torch.Tensor` | 是 | - | 索引 AdaLN 偏移，2D `[conditions, hidden]`，dtype 与 `residual` 一致 |
+| `scale` | `torch.Tensor` | 是 | - | 索引 AdaLN 缩放，2D `[conditions, hidden]`，dtype 与 `residual` 一致 |
+| `indices` | `torch.Tensor` | 是 | - | 每行对应的条件索引，1D `[rows]`，`int32` 或 `int64` |
+| `eps` | `float` | 否 | `1e-6` | RMSNorm 方差中使用的有限正数 |
+| `dst_type` | `str` | 否 | `"float8_e4m3fn"` | MX 输出类型，支持 `"float8_e4m3fn"`、`"float8_e5m2"`、`"float4_e2m1fn_x2"`、`"float4_e1m2fn_x2"`，同时接受别名 `"float4_e2m1"`、`"float4_e2m1fn"`、`"float4_e1m2"` 与 `"float4_e1m2fn"` |
+
+#### 返回值
+
+返回二元组 `(y, mxscale)`：
+
+| 返回值 | 类型 | 说明 |
+|--------|------|------|
+| `y` | `torch.Tensor` | 量化结果。FP8 输出为 `[rows, hidden]`；FP4 输出为 `[rows, hidden // 2]` 的打包 `uint8` |
+| `mxscale` | `torch.Tensor` | `float8_e8m0fnu` 的 32 元素块缩放，形状 `[rows, ceil(groups / 2), 2]` |
+
+#### 使用示例
+
+```python
+import torch
+from mindiesd import indexed_gate_rms_norm_scale_shift_dynamic_mx_quant
+
+rows, hidden, conditions = 1024, 2048, 8
+residual = torch.randn(rows, hidden, device="npu", dtype=torch.bfloat16)
+gate = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+branch = torch.randn(rows, hidden, device="npu", dtype=torch.bfloat16)
+weight = torch.randn(hidden, device="npu", dtype=torch.bfloat16)
+shift = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+scale = torch.randn(conditions, hidden, device="npu", dtype=torch.bfloat16)
+indices = torch.randint(0, conditions, (rows,), device="npu", dtype=torch.int32)
+
+y, mxscale = indexed_gate_rms_norm_scale_shift_dynamic_mx_quant(
+    residual, gate, branch, weight, shift, scale, indices,
+    eps=1e-6,
+    dst_type="float8_e4m3fn",
+)
+```
+
+#### 约束条件
+
+- `residual` 与 `branch` 形状一致且必须为 2D `[rows, hidden]`；`gate`、`shift`、`scale` 形状一致且为 2D `[conditions, hidden]`；`weight` 为 1D 且长度等于 `hidden`。
+- `residual`、`gate`、`branch`、`weight`、`shift`、`scale` 的 dtype 必须一致，支持 `bfloat16` 或 `float16`；`indices` 支持 `int32`/`int64`，元素个数必须等于 `rows`。
+- 所有输入必须位于同一 device。
+- `dst_type` 必须为上述取值之一；MXFP4 输出要求 `hidden` 为偶数。
+- 需要在支持 Triton 的昇腾 NPU 环境运行。
+- 算子内部按输入形状选择“单 kernel 融合实现”或“Triton 调制 kernel + `npu_dynamic_mx_quant` 链式实现”，两条实现路径结果逐字节一致。待 Triton 支持 AscendC 量化指令后统一走融合实现。
 
 ### get_activation_layer
 
@@ -698,7 +938,59 @@ act = get_activation_layer("gelu-fast")
 out = act(hidden_states)
 ```
 
----
+### transpose_dynamic_quant
+
+融合转置与动态量化的算子，等价于 `Transpose + DynamicQuantV2 + Transpose` 小算子链：沿量化轴按组对称动态量化，输出 FP8 量化结果与每组缩放系数。两次转置折叠进索引寻址，无额外转置拷贝。
+
+```python
+from mindiesd import transpose_dynamic_quant
+```
+
+#### 函数签名
+
+```python
+transpose_dynamic_quant(
+    x, smooth_scales, axis
+) -> tuple[torch.Tensor, torch.Tensor]
+```
+
+#### 参数说明
+
+| 参数 | 类型 | 必选 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `x` | `torch.Tensor` | 是 | - | 输入张量，ND，`float16` 或 `bfloat16`，至少 2 维 |
+| `smooth_scales` | `torch.Tensor` | 否 | `None` | 平滑缩放系数，`None` 表示不使用；1-D 且长度等于量化轴长 `x.shape[axis]`，沿量化轴逐元素乘（对齐官方 `aclnnDynamicQuantV2` 的 `smoothScalesOptional` 约束），dtype 与 `x` 一致，且与 `x` 位于同一设备 |
+| `axis` | `int` | 是 | - | 量化轴（组内求 max 的轴），任意轴均支持（含负轴） |
+
+#### 返回值
+
+`tuple[torch.Tensor, torch.Tensor]`：
+
+- `y`：量化输出，`float8_e4m3fn`，形状与布局均与 `x` 一致
+- `scale`：每组缩放系数，`float32`，形状为 `x` 去掉 `axis` 维
+
+#### 使用示例
+
+```python
+import torch
+from mindiesd import transpose_dynamic_quant
+
+x = torch.randn(14, 224905, 128, device="npu", dtype=torch.bfloat16)
+y, scale = transpose_dynamic_quant(x, None, 1)
+# y: [14, 224905, 128] float8_e4m3fn（与 x 同布局）
+# scale: [14, 128] float32
+```
+
+#### 约束说明
+
+- 输入张量须位于昇腾 NPU，元素数不超过 2^31 - 1（int32 索引上限）
+- `smooth_scales` 与 `x` 必须位于同一设备
+- 量化公式：`scale = max(|x * smooth|) / 448`，`y = fp8_rn(x * smooth / scale)`；乘积在 fp32 域完成、商单次 RN 舍入到 fp8_e4m3fn，与 `aclnnDynamicQuantV2` 逐位一致；全零组输出 `scale = 0`、`y = 0`
+- 算子依赖 Triton-Ascend；环境不可用时调用直接抛出 `RuntimeError`，无 CPU 回退实现
+
+#### 语义说明
+
+`smooth_scales` 为 1-D、长度等于量化轴长（`x.shape[axis]`），沿量化轴逐元素乘——与官方 `aclnnDynamicQuantV2` 文档对 `smoothScalesOptional` 的约束一致（1-D，shape 与 DQ 输入的最后一维相同，融合链中该维即原输入的量化轴）。组内每个元素乘以各自的 smooth 系数后再取绝对值最大值得到 `scale`，因此 smooth 系数随量化轴下标变化；该约定对任意 `axis` 取值一致，无需按轴区分。
 
 ### Linear
 

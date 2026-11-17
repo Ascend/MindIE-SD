@@ -12,5 +12,19 @@
 
 
 import os
+import re
+from packaging.version import Version
 
-__version__ = os.environ.get("MINDIE_SD_VERSION_OVERRIDE", "3.1.0").replace("T", "post")
+
+def normalize_version(value):
+    """Convert legacy release overrides before both wheel and tar packaging."""
+    value = re.sub(r"\.RC(\d+)\.(\d+)", r"rc\1.post\2", value)
+    value = re.sub(r"\.T([0-9]*)$", r"+t\1", value)
+    value = re.sub(r"T([0-9]+)$", r".post\1", value)
+    return str(Version(value))
+
+
+__version__ = normalize_version(os.environ.get("MINDIE_SD_VERSION_OVERRIDE", "3.1.0"))
+
+if __name__ == "__main__":
+    print(__version__)

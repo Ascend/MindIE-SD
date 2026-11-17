@@ -14,6 +14,8 @@
 from typing import Optional
 import torch
 import torch_npu
+
+# pylint: disable=unexpected-keyword-arg  # RF-v3 accepts these after the prerequisite primitives PR
 from .sparse_flash_attn_rf_v2 import (
     rain_fusion_attention,
     get_blockwise_mask,
@@ -109,6 +111,11 @@ def sparse_attention(
     precision: str = "bf16",
     mxfp4_dst_type_max: float = 0.0,
     mxfp4_scale_alg: Optional[int] = None,
+    bsa_backend: Optional[str] = None,
+    exec_kernel: Optional[str] = None,
+    pre_rearranged: bool = False,
+    image_spans: Optional[list] = None,
+    image_sparsity: Optional[float] = None,
     **kwargs,
 ):
     """
@@ -187,26 +194,77 @@ def sparse_attention(
         mxfp4_dst_type_max (float, default to 0.0):
             MXFP4 quantization range (dstTypeMax). 0 selects OCP scaling (quantMode=2);
             a positive value (typically in [6, 12]) selects CX scaling (quantMode=3).
+        image_spans: Independent reference-image regions, each with start and latent_shape=[H,W].
+            Requires video_spans; images must not overlap video regions.
+        image_sparsity: Fraction of each reference image's key blocks dropped for queries in video_spans.
+            Must be provided together with image_spans; both default to None.
+            Protected first-frame query blocks remain dense.
         mxfp4_scale_alg (int, *optional*, defaults to `None`):
             Optional scale_alg forwarded to npu_dynamic_mx_quant on the MXFP4 path.
+        bsa_backend (str, optional):
+            Explicit RF-v3 backend, 'cann' or 'eagle'; omitted defaults to 'cann'.
+            Mix always uses Eagle Quant BSA; either backend selection accepts it.
+        exec_kernel (str, optional):
+            Compatibility selection 'eagle_bsa' maps to bsa_backend='eagle'.
+        pre_rearranged (bool):
+            BF16 RF-v3 inputs already follow RF order; preserve that output order.
     """
     check_params(input_layout, sparse_type)
+    sparse_type, inner_precise = _resolve_sparse_type_for_a5(sparse_type, inner_precise)
+    if sparse_type == "rf_v3" and precision not in ("bf16", "mix", "fp8", "mxfp4"):
+        raise ParametersInvalid("precision must be 'bf16', 'mix', 'fp8' or 'mxfp4'")
+    if bsa_backend not in (None, "cann", "eagle"):
+        raise ParametersInvalid("bsa_backend must be 'cann' or 'eagle'")
+    if exec_kernel not in (None, "eagle_bsa"):
+        raise ParametersInvalid("exec_kernel must be None or 'eagle_bsa'")
+    if exec_kernel is not None and bsa_backend not in (None, "eagle"):
+        raise ParametersInvalid("exec_kernel conflicts with bsa_backend")
+    if (bsa_backend is not None or exec_kernel is not None) and sparse_type != "rf_v3":
+        raise ParametersInvalid("backend selection requires sparse_type='rf_v3'")
+    backend = "eagle" if exec_kernel is not None else (bsa_backend or "cann")
+    if backend == "eagle" and precision not in ("bf16", "mix"):
+        raise ParametersInvalid("bsa_backend='eagle' requires precision='bf16' or 'mix'")
+    if not isinstance(pre_rearranged, bool):
+        raise ParametersInvalid("pre_rearranged must be a bool")
+    if pre_rearranged and (sparse_type != "rf_v3" or precision != "bf16"):
+        raise ParametersInvalid("pre_rearranged requires BF16 RF-v3")
+    if pre_rearranged and video_spans is None:
+        raise ParametersInvalid("pre_rearranged requires video_spans")
+    if (image_spans is None) != (image_sparsity is None):
+        raise ParametersInvalid("image_spans and image_sparsity must be provided together or both omitted.")
+    if image_sparsity is not None:
+        if (
+            isinstance(image_sparsity, bool)
+            or not isinstance(image_sparsity, (int, float))
+            or not 0 <= image_sparsity <= 1
+        ):
+            raise ParametersInvalid("image_sparsity must be a number within [0, 1].")
+    if image_spans is not None and video_spans is None:
+        raise ParametersInvalid("image_spans requires an explicit video_spans layout.")
     if video_spans is not None:
         if sparse_type not in ("rf_v2", "rf_v3"):
             raise ParametersInvalid("video_spans requires sparse_type='rf_v2' or sparse_type='rf_v3'.")
         if txt_len != 0 or latent_shape_q is not None or latent_shape_k is not None:
             raise ParametersInvalid("video_spans cannot be combined with txt_len, latent_shape_q, or latent_shape_k.")
-    sparse_type, inner_precise = _resolve_sparse_type_for_a5(sparse_type, inner_precise)
     batch, head_dim = q.shape[0], q.shape[-1]
     scale = head_dim**-0.5 if scale is None else scale
 
     if sparse_type == "rf_v2":
         if video_spans is not None:
-            q_rf, k_rf, v_rf, qkv_pool, inverse, dense_blocks, first_frame_blocks = (
-                do_multi_span_tensor_rearrange_pooling(q, k, v, video_spans, block_size, input_layout)
+            q_rf, k_rf, v_rf, qkv_pool, inverse, dense_blocks, first_frame_blocks, reference_plan = (
+                do_multi_span_tensor_rearrange_pooling(
+                    q, k, v, video_spans, block_size, input_layout, image_spans=image_spans, return_reference_plan=True
+                )
             )
             select_idx, select_num_idx = get_multi_span_blockwise_mask(
-                qkv_pool, sparsity, scale, dense_blocks, first_frame_blocks, input_layout
+                qkv_pool,
+                sparsity,
+                scale,
+                dense_blocks,
+                first_frame_blocks,
+                input_layout,
+                reference_plan=reference_plan,
+                image_sparsity=image_sparsity,
             )
         else:
             q_rf, k_rf, v_rf, qkv_pool = do_tensor_rearrange_pooling(
@@ -263,9 +321,13 @@ def sparse_attention(
             scale=scale,
             inner_precise=inner_precise,
             video_spans=video_spans,
+            image_spans=image_spans,
+            image_sparsity=image_sparsity,
             precision=precision,
             mxfp4_dst_type_max=mxfp4_dst_type_max,
             mxfp4_scale_alg=mxfp4_scale_alg,
+            bsa_backend=backend,
+            pre_rearranged=pre_rearranged,
         )
     elif sparse_type == "ada_bsa":
         smask, sct = get_estimate_mask(

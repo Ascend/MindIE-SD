@@ -19,10 +19,12 @@ import os
 import sys
 import argparse
 import math
-from mindiesd.env import set_environment_variables
 
-set_environment_variables()
-from mindiesd.layers import register_ops as _mindiesd_register_ops  # noqa: F401,E402
+# 新 dev 的 plugin 注册要求在选定设备之后 import mindiesd（见 tests 的 initialize）；
+# 且设备只支持 allow_internal_format=False。
+torch.npu.set_device(0)
+torch.npu.config.allow_internal_format = False
+import mindiesd as _mindiesd  # noqa: F401,E402  (import 即注册 plugin)
 
 npu_quant_flash_attn = torch.ops.mindiesd.quant_flash_attn
 npu_quant_flash_attn_metadata = torch.ops.mindiesd.quant_flash_attn_metadata
@@ -38,7 +40,7 @@ np.random.seed(21)  # 固定随机种子
 np.set_printoptions(suppress=True)
 
 DEVICE_ID = 0
-torch.npu.config.allow_internal_format = True
+torch.npu.config.allow_internal_format = False
 
 logging.basicConfig(level=logging.INFO, format='%(message)s', force=True)
 logger = logging.getLogger(__name__)
@@ -484,13 +486,13 @@ def rearrange_by_layout(bnsd_tensor, layout, b, act_seq_lens):
     if layout == "BNSD":
         return bnsd_tensor
     elif layout == "BSH":
-        return bnsd_to_bsh(bnsd_tensor)  # BNSD->BSND, 再将ND合并为H
+        return bnsd_to_bsh(bnsd_tensor).contiguous()  # BNSD->BSND, 再将ND合并为H
     elif layout == "BSND":
-        return bnsd_to_bsnd(bnsd_tensor)
+        return bnsd_to_bsnd(bnsd_tensor).contiguous()
     elif layout == "TND":
-        return bnsd_to_tnd(bnsd_tensor, b, act_seq_lens)
+        return bnsd_to_tnd(bnsd_tensor, b, act_seq_lens).contiguous()
     elif layout == "NTD":
-        return bnsd_to_ntd(bnsd_tensor, b, act_seq_lens)
+        return bnsd_to_ntd(bnsd_tensor, b, act_seq_lens).contiguous()
     else:
         return None
 
@@ -574,7 +576,9 @@ def cpu_golden_base(
     invalid_rows_out_value = 0
     invalid_rows_lse_value = float('inf')
 
-    attn_out = torch.zeros_like(query)
+    attn_out = torch.zeros(
+        *query.shape[:-1], value.shape[-1], dtype=query.dtype, device=query.device
+    )  # out 末维为 v_d (支持 qk_d != v_d)
     softmax_lse = torch.full((b, n1, s1, 1), float('-inf'), dtype=compute_date_type)
     for i in range(b):
         b_s1 = get_act_seq_len_by_batch(i, s1, actual_seq_lengths)
@@ -664,7 +668,7 @@ def cpu_golden_qkv_mxfp4_attn(
         v_quant_axis="seq_k",
     )
 
-    return attn_out.reshape(b, s1, n1, qk_d).permute(1, 0, 2, 3).to(src_date_type), None
+    return attn_out.reshape(b, s1, n1, value.shape[-1]).permute(0, 2, 1, 3).to(src_date_type), None  # BNSD 规范形
 
 
 def cpu_golden_qkv_mxfp4_flash_attn(
@@ -724,7 +728,7 @@ def cpu_golden_qkv_mxfp4_flash_attn(
         v_quant_axis="seq_k",
     )  # blockwise_snap_local/blockwise/global
 
-    return attn_out.reshape(b, s1, n1, qk_d).permute(1, 0, 2, 3).to(src_date_type), None
+    return attn_out.reshape(b, s1, n1, value.shape[-1]).permute(0, 2, 1, 3).to(src_date_type), None  # BNSD 规范形
 
 
 def compare(golden_name, golden_data, real_name, real_data, src_dtype):
@@ -923,7 +927,11 @@ def run_fia_eager(
     if query_rope is not None:
         query_rope = rearrange_by_layout(query_rope, query_layout, b, act_seq_lens_q)
     if q_descale is not None:
-        q_descale = rearrange_by_layout(q_descale, query_layout, b, act_seq_lens_q)
+        # Q-scale 的物理布局契约与 query 数据不同: kernel 侧 GetQueryScaleGmFormat 对 BNSD/BSND
+        # 都要求 BNGSD(G=1 时即 BNSD 排列) ⇒ 这两种布局不能按 query_layout 重排, 否则 BSND 下
+        # Q 与 scale 的物理排列不一致。TND/NTD 按其自身契约处理。
+        if query_layout in ("TND", "NTD"):
+            q_descale = rearrange_by_layout(q_descale, query_layout, b, act_seq_lens_q)
 
     # kv dtype
     k_descale = None
@@ -1037,8 +1045,8 @@ def run_fia_eager(
         num_heads_kv=num_key_value_heads,
         head_dim=qk_d,
         batch_size=b,
-        max_seqlen_q=-1,
-        max_seqlen_kv=-1,
+        max_seqlen_q=s1,  # 无 cu_seqlens/seqused 时必须传真实长度: metadata 划分器依赖它,
+        max_seqlen_kv=s2,  # max_seqlen=-1 会算出残缺任务划分(仅部分 tile 被调度)
         mask_mode=sparse_mode,
         win_left=pre_tokens,
         win_right=next_tokens,

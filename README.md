@@ -33,11 +33,14 @@
 
 **MindIE SD**（Mind Inference Engine Stable Diffusion）是 MindIE 的视图生成推理模型套件，它的目标是为稳定扩散（**Stable Diffusion**, SD）系列大模型提供在昇腾硬件及其软件栈上的端到端推理解决方案。该软件系统内部集成了各功能模块，并对外提供统一的编程接口。
 
+支持的模型及特性叠加情况请参见[模型/框架支持矩阵](docs/zh/features/supported_matrix.md)。
+
 ## 📢 Latest News
 
+- 11/11/2026: 完成 [MiniMax-H3-Image 昇腾 Day0 推理适配](examples/minimax-h3-image/infer.md) 🚀
 - 09/23/2026: [MXAttention 论文](docs/tech_report/MXAttention.pdf) 已投稿 ICLR（[arXiv:2607.24377](https://arxiv.org/abs/2607.24377)）📄
 - 09/20/2026: 完成 [Qwen-Image-2.1 昇腾高性能推理适配与优化](examples/qwen-image-2.1/infer.md) 🚀
-- 09/04/2026: MindIE SD支持Lightx2v框架实现MiniMax H3在Ascend 950PR&950DT系列产品上的加速
+- 09/04/2026: MindIE SD支持Lightx2v框架实现MiniMax H3在950PR&950DT系列产品上的加速
 - 08/03/2026: 完成 [MiniMax-H3 昇腾高性能推理适配与优化](examples/minimax-h3/infer.md) 🚀
 - 07/2026: [RotateAttention](docs/tech_report/RotateAttention.pdf) 已被 ECCV 2026 录用 🏆
 - 06/2026: 完成低精度推理、多模态 MoE、稀疏注意力和部署生态增强 ⚡
@@ -83,17 +86,89 @@ MindIE SD 架构和关键特性详见[架构介绍](docs/zh/architecture.md)。
 - [Cache-DiT](https://github.com/vipshop/cache-dit)
 - [Lightx2v](https://github.com/ModelTC/lightx2v)
 
+## 🙏 Acknowledgment
+
+感谢 [CANN ops-transformer](https://gitcode.com/cann/ops-transformer) 和 [CANN ops-nn](https://gitcode.com/cann/ops-nn) 社区提供的算子源码。
+
+- **迁移与多模态性能优化**：本仓的 `QuantFlashAttn`、`EagleFusedInferAttentionScore`、`EagleBlockSparseAttention` 和 `EagleFfn` 分别迁移自 CANN 的 [QuantFlashAttn](https://gitcode.com/cann/ops-transformer/tree/master/attention/quant_flash_attn)、[FusedInferAttentionScore](https://gitcode.com/cann/ops-transformer/tree/master/attention/fused_infer_attention_score)、[BlockSparseAttention](https://gitcode.com/cann/ops-transformer/tree/master/attention/block_sparse_attention) 和 [FFN](https://gitcode.com/cann/ops-transformer/tree/master/ffn/ffn)，并针对多模态推理场景进行性能优化。
+- **基于 CANN 算子开发**：
+  - `EagleQuantBlockSparseAttention` 基于 CANN [BlockSparseAttention](https://gitcode.com/cann/ops-transformer/tree/master/attention/block_sparse_attention) 开发混合精度块稀疏注意力。
+  - `quant_four_over_six_a5` 基于 CANN [动态 MX 量化](https://gitcode.com/cann/ops-nn/tree/master/quant/dynamic_mx_quant) 基础代码开发 Four Over Six 量化扩展。
+  - `eagle_quant_batch_matmul_swiglu` 基于 CANN [QuantBatchMatmulV3](https://gitcode.com/cann/ops-nn/tree/a5a8fbf3e02d7632ffa2c56b29e8755f1aa62720/matmul/quant_batch_matmul_v3) 的量化矩阵乘实现，参考 [SwiGlu](https://gitcode.com/cann/ops-nn/tree/a5a8fbf3e02d7632ffa2c56b29e8755f1aa62720/activation/swi_glu) 的门控计算，在同一算子内完成 INT8 矩阵乘、FP32 反量化和 SwiGLU 激活。
+
+感谢以下贡献者在相关 CANN 算子上的工作：[cardiac_index](https://gitcode.com/cardiac_index), [XiyueL](https://gitcode.com/XiyueL), [jiang-lirui](https://gitcode.com/jiang-lirui), [monologue815](https://gitcode.com/monologue815), [chenyizhou](https://gitcode.com/chenyizhou), [liwenguihw](https://gitcode.com/liwenguihw), [wmg1](https://gitcode.com/wmg1), [liyuanqiang](https://gitcode.com/liyuanqiang), [llqx-1](https://gitcode.com/llqx-1), [wuyi_huawei](https://gitcode.com/wuyi_huawei), [merlinsantosh](https://gitcode.com/merlinsantosh)。
+
+<a id="paper-citations"></a>
+
 ## 📝 Paper Citations
 
-```txt
+<pre><details><summary>Show more
+<code>@misc{yu2026mxattentiondatafreeoptimalscaling,
+      title={MXAttention: Data-Free Optimal Scaling and Pre-Normalization Quantization for MXFP4 Attention},
+      author={Jianlin Yu and Jing Lin and Linghui Kong and Aiyue Chen and Weiyi Sun and Chenyu Zeng and Wangli Lan and Jinxi Li and Zhuo Zheng and Ziyang Yue and Danning Ke and Fei Yi and Tianchi Hu and Yuan Ding and Yiwu Yao and Junsong Wang},
+      year={2026},
+      eprint={2607.24377},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2607.24377},
+}
+
+@misc{liu2026rotateattentionropeawarerotationrange,
+      title={RotateAttention: RoPE-Aware Rotation and Range Rectification for INT4 Quantized Attention in Video Generation},
+      author={Yaofu Liu and Wanli Lan and Jinxi Li and Binhang Yuan and Harry Yang},
+      year={2026},
+      eprint={2607.02584},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2607.02584},
+}</code></summary><code>
+
 @misc{RainFusion2.0@2025,
     title = {RainFusion2.0: Temporal-Spatial Awareness and Hardware-Efficient Block-wise Sparse Attention},
-    url = {https://gitcode.com/Ascend/MindIE-SD.git},
-    note = {Open-source software available at https://gitcode.com/Ascend/MindIE-SD.git},
-    author = {Aiyue Chen and others},
-    year = {2025}
-    }
-```
+    author = {Aiyue Chen and Yaofu Liu and Junjian Huang and Guang Lian and Yiwu Yao and Wangli Lan and Jing Lin and Zhixin Ma and Tingting Zhou and Harry Yang},
+    year = {2025},
+    url = {https://gitcode.com/Ascend/MindIE-SD/blob/dev/docs/tech_report/RainFusion2.0.pdf}
+}
+
+@misc{zhang2025slasparsitydiffusiontransformers,
+      title={SLA: Beyond Sparsity in Diffusion Transformers via Fine-Tunable Sparse-Linear Attention},
+      author={Jintao Zhang and Haoxu Wang and Kai Jiang and Shuo Yang and Kaiwen Zheng and Haocheng Xi and Ziteng Wang and Hongzhou Zhu and Min Zhao and Ion Stoica and Joseph E. Gonzalez and Jun Zhu and Jianfei Chen},
+      year={2025},
+      eprint={2509.24006},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2509.24006},
+}
+
+@misc{zhang2025sageattentionaccurate8bitattention,
+      title={SageAttention: Accurate 8-Bit Attention for Plug-and-play Inference Acceleration},
+      author={Jintao Zhang and Jia Wei and Haofeng Huang and Pengle Zhang and Jun Zhu and Jianfei Chen},
+      year={2025},
+      eprint={2410.02367},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2410.02367},
+}
+
+@misc{ashkboos2024quarotoutlierfree4bitinference,
+      title={QuaRot: Outlier-Free 4-Bit Inference in Rotated LLMs},
+      author={Saleh Ashkboos and Amirkeivan Mohtashami and Maximilian L. Croci and Bo Li and Pashmina Cameron and Martin Jaggi and Dan Alistarh and Torsten Hoefler and James Hensman},
+      year={2024},
+      eprint={2404.00456},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2404.00456},
+}
+
+@misc{cook2026sixaccuratenvfp4quantization,
+      title={Four Over Six: More Accurate NVFP4 Quantization with Adaptive Block Scaling},
+      author={Jack Cook and Junxian Guo and Guangxuan Xiao and Yujun Lin and Keith Wyss and Mahdi Nazemi and Asit Mishra and Carlo del Mundo and Tijmen Blankevoort and Song Han},
+      year={2026},
+      eprint={2512.02010},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2512.02010},
+}</code></details></pre>
 
 <a id="wechat-community"></a>
 

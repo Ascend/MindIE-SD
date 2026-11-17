@@ -10,6 +10,15 @@
  * See the Mulan PSL v2 for more details.
  */
 
+/**
+ * Copyright (c) 2025 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
 
 /*!
  * \file tiling_base.h
@@ -60,11 +69,9 @@ struct CompileInfoCommon {
     uint32_t rsvd;
 };
 
-class TilingBaseClass
-{
-public:
-    explicit TilingBaseClass(gert::TilingContext* context) : context_(context)
-    {}
+class TilingBaseClass {
+  public:
+    explicit TilingBaseClass(gert::TilingContext *context) : context_(context) {}
 
     virtual ~TilingBaseClass() = default;
 
@@ -72,8 +79,7 @@ public:
     //     1、GRAPH_SUCCESS: 成功，并且不需要继续执行后续Tiling类的实现
     //     2、GRAPH_FAILED: 失败，中止整个Tiling流程
     //     3、GRAPH_PARAM_INVALID: 本类不支持，需要继续往下执行其他Tiling类的实现
-    ge::graphStatus DoTiling()
-    {
+    ge::graphStatus DoTiling() {
         auto ret = GetShapeAttrsInfo();
         if (ret != ge::GRAPH_SUCCESS) {
             return ret;
@@ -107,12 +113,9 @@ public:
     }
 
     // 更新 context
-    virtual void Reset(gert::TilingContext* context)
-    {
-        context_ = context;
-    }
+    virtual void Reset(gert::TilingContext *context) { context_ = context; }
 
-protected:
+  protected:
     virtual bool IsCapable() = 0;
     // 1、获取平台信息比如CoreNum、UB/L1/L0C资源大小
     virtual ge::graphStatus GetPlatformInfo() = 0;
@@ -131,9 +134,8 @@ protected:
     // 8、Dump Tiling数据
     virtual void DumpTilingInfo() { OP_LOGD(context_, "%ld", DefaultTilingInfoDump()); }
 
-    int64_t DefaultTilingInfoDump()
-    {
-        auto buf = (uint32_t*)context_->GetRawTilingData()->GetData();
+    int64_t DefaultTilingInfoDump() {
+        auto buf = (uint32_t *)context_->GetRawTilingData()->GetData();
         auto bufLen = context_->GetRawTilingData()->GetDataSize();
         std::ostringstream oss;
         oss << "Start to dump tiling info. tilingkey:" << context_->GetTilingKey() << ", tiling data size:" << bufLen
@@ -149,8 +151,7 @@ protected:
         return 0;
     }
 
-    static uint32_t CalcTschBlockDim(uint32_t sliceNum, uint32_t aicCoreNum, uint32_t aivCoreNum)
-    {
+    static uint32_t CalcTschBlockDim(uint32_t sliceNum, uint32_t aicCoreNum, uint32_t aivCoreNum) {
         uint32_t ration;
         if (aicCoreNum == 0 || aivCoreNum == 0 || aicCoreNum > aivCoreNum) {
             return sliceNum;
@@ -159,9 +160,7 @@ protected:
         return (sliceNum + (ration - 1)) / ration;
     }
 
-    template <typename T>
-    [[nodiscard]] std::string GetShapeDebugStr(const T& shape) const
-    {
+    template <typename T> [[nodiscard]] std::string GetShapeDebugStr(const T &shape) const {
         std::ostringstream oss;
         oss << "[";
         if (shape.GetDimNum() > 0) {
@@ -175,8 +174,7 @@ protected:
     }
 
     [[nodiscard]] std::string GetTensorDebugStr(
-        const gert::StorageShape* shape, const gert::CompileTimeTensorDesc* tensor) const
-    {
+        const gert::StorageShape *shape, const gert::CompileTimeTensorDesc *tensor) const {
         if (shape == nullptr || tensor == nullptr) {
             return "nil ";
         }
@@ -192,8 +190,7 @@ protected:
         return oss.str();
     }
 
-    [[nodiscard]] std::string GetTilingContextDebugStr()
-    {
+    [[nodiscard]] std::string GetTilingContextDebugStr() {
         std::ostringstream oss;
         for (size_t i = 0; i < context_->GetComputeNodeInfo()->GetInputsNum(); ++i) {
             oss << "input" << i << ": ";
@@ -207,11 +204,10 @@ protected:
         return oss.str();
     }
 
-    [[nodiscard]] std::string GetTilingDataDebugStr() const
-    {
+    [[nodiscard]] std::string GetTilingDataDebugStr() const {
         auto rawTilingData = context_->GetRawTilingData();
         auto rawTilingDataSize = rawTilingData->GetDataSize();
-        auto data = reinterpret_cast<const int32_t*>(rawTilingData->GetData());
+        auto data = reinterpret_cast<const int32_t *>(rawTilingData->GetData());
         size_t len = rawTilingDataSize / sizeof(int32_t);
         std::ostringstream oss;
         for (size_t i = 0; i < len; i++) {
@@ -220,8 +216,8 @@ protected:
         return oss.str();
     }
 
-protected:
-    gert::TilingContext* context_ = nullptr;
+  protected:
+    gert::TilingContext *context_ = nullptr;
     std::unique_ptr<platform_ascendc::PlatformAscendC> ascendcPlatform_{nullptr};
     uint32_t blockDim_{0};
     uint64_t workspaceSize_{0};

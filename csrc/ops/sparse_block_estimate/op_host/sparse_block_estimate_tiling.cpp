@@ -440,7 +440,8 @@ ge::graphStatus SparseBlockEstimateTilingFunc(gert::TilingContext *context) {
 
     size_t userWorkspaceSize = coresAiv *
         (SINGLE_CORE_MBASE * sizeof(float) * (SINGLE_CORE_NBASE + 32) * (db * 2 /* first reduce + qk */) +
-            SINGLE_CORE_MBASE * sizeof(half) * db * stride * tiling.get_dim()); // reorderq
+            SINGLE_CORE_MBASE * sizeof(half) * db * stride * tiling.get_dim() + // reorderq
+            2ULL * SINGLE_CORE_NBASE * stride * tiling.get_dim() * sizeof(half)); // padded last K tile
     size_t systemWorkspaceSize = static_cast<size_t>(ascendcPlatform.GetLibApiWorkSpaceSize());
     size_t *currentWorkspace = context->GetWorkspaceSizes(1);
     currentWorkspace[0] = userWorkspaceSize + systemWorkspaceSize;

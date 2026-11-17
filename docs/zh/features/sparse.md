@@ -43,7 +43,7 @@ RainFusion2.0 是一种在线自适应的块稀疏注意力方案，通过以下
 - `"fp8"`：Q/K 先做 Hadamard 旋转打散离群值，再对 Q/K/V 做 FP8 块量化（依赖 V2 及以上版本 kernel）。
 - `"mxfp4"`：走 `aclnnBlockSparseAttentionV3` 的 MXFP4 通路——保留 Q/K 的 Hadamard 旋转后量化为 FP4 E2M1 数据 + E8M0 缩放（Q/K 沿头维、V 沿序列维按 32 元素分组）。`mxfp4_dst_type_max` 选择量程策略：`0` 为 OCP（quantMode=2，floor），正值（常用 6~12）为 CX（quantMode=3，ceil，量程标定推荐 7.25）。仅 Ascend 950PR&950DT系列产品支持。
 
-接口参数与调用示例参见 [core_layers.md 中的 sparse_attention 章节](core_layers.md#sparse_attention)。
+接口参数与调用示例参见[核心加速API中的 sparse_attention 章节](core_layers.md#sparse_attention)。
 <!-- end id1 -->
 
 ### ada_bsa（自适应块稀疏）
@@ -61,7 +61,7 @@ RainFusion2.0 是一种在线自适应的块稀疏注意力方案，通过以下
 
 ## 接口说明
 
-稀疏注意力通过 `sparse_attention` 接口对外提供，完整参数说明请参见 [core_layers.md 中的 sparse_attention 章节](core_layers.md#sparse_attention)。
+稀疏注意力通过 `sparse_attention` 接口对外提供，完整参数说明请参见[核心加速API中的 sparse_attention 章节](core_layers.md#sparse_attention)。
 
 基本调用方式如下：
 
@@ -77,6 +77,9 @@ out = sparse_attention(q, k, v, head_num=24, input_layout="BNSD", sparse_type="r
 |------|------|------|
 | `sparse_type` | 否 | 稀疏策略：`None`（全注意力）、`"rf_v2"`、`"ada_bsa"` |
 | `sparsity` | 否 | 稀疏率，取值范围 `[0, 1]`，`0` 表示不稀疏 |
+| `video_spans` | 否 | 视频区间列表，每项为 `{"start": int, "latent_shape": [T, H, W]}`，支持多个视频片段 |
+| `image_spans` | 否 | 参考图区间列表，每项为 `{"start": int, "latent_shape": [H, W]}`，需同时提供 `video_spans` 和 `image_sparsity` |
+| `image_sparsity` | 否 | 参考图独立稀疏率，范围 `[0, 1]`；`0` 表示保留全部参考图块，默认 `None` |
 | `txt_len` | 否 | 文本 Token 长度，仅在 `sparse_type="rf_v2"` 时生效 |
 | `latent_shape_q` | 否 | Query 潜空间形状 `[t, h, w]`，仅在 `sparse_type="rf_v2"` 时生效 |
 | `latent_shape_k` | 否 | Key 潜空间形状 `[t, h, w]`，仅在 `sparse_type="rf_v2"` 时生效 |
@@ -110,6 +113,30 @@ out = sparse_attention(
     sparsity=0.8,
     latent_shape_q=[t, h, w],
     latent_shape_k=[t, h, w],
+)
+```
+
+### 多视频与参考图配置
+
+`rf_v2`、`rf_v3` 支持通过 `video_spans` 描述拼接序列中的视频片段，并通过 `image_spans`、`image_sparsity` 对参考图单独设置稀疏率；`sparsity` 仍控制视频稀疏率。
+
+- `start` 为原始 Q/K/V 序列中的 Token 偏移，区间长度为潜空间形状各维的乘积。区间须按起点排序、互不重叠，并位于未填充的有效序列内。
+- 提供 `video_spans` 时，不再设置 `txt_len`、`latent_shape_q`、`latent_shape_k`；适用于 Q/K/V 等长的自注意力。
+- `image_spans` 与 `image_sparsity` 必须同时提供或同时省略（均默认 `None`）。无参考图时省略两者；不单独配置的非视频 Token 保持全注意力。
+- 参考图稀疏作用于视频 Query 对参考图 Key 块的访问，保留首帧保护，每张参考图至少保留一个块。
+
+例如，有效序列依次包含 256 个文本 Token、256 个参考图 Token 和 1024 个视频 Token：
+
+```python
+out = sparse_attention(
+    q, k, v,  # Q/K/V 序列长度均为 1536
+    head_num=24,
+    input_layout="BNSD",
+    sparse_type="rf_v2",
+    sparsity=0.8,
+    video_spans=[{"start": 512, "latent_shape": [4, 16, 16]}],
+    image_spans=[{"start": 256, "latent_shape": [16, 16]}],
+    image_sparsity=0.5,
 )
 ```
 

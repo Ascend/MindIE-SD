@@ -10,13 +10,23 @@
  * See the Mulan PSL v2 for more details.
  */
 
+/**
+ * Copyright (c) 2025 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
 /*!
  * \file quant_flash_attn_template_tiling_key.h
  * \brief
  */
 
-#ifndef TEMPLATE_TILING_KEY_QUANT_FLASH_ATTN_H_
-#define TEMPLATE_TILING_KEY_QUANT_FLASH_ATTN_H_
+#ifndef TEMPLATE_TILING_KEY_EAGLE_QUANT_FLASH_ATTN_H_
+#define TEMPLATE_TILING_KEY_EAGLE_QUANT_FLASH_ATTN_H_
 
 #include "ascendc/host_api/tiling/template_argument.h"
 #include "quant_flash_attn_tiling_data.h"
@@ -42,7 +52,8 @@ enum class QFA_LAYOUT : uint32_t {
 
 template <typename QUANT_T, typename SCALE_T, typename OUT_T, const bool PAGE_ATTENTION = false,
     QFA_LAYOUT LAYOUT_T = QFA_LAYOUT::BSND, QFA_LAYOUT KV_LAYOUT_T = QFA_LAYOUT::BSND,
-    QFA_LAYOUT OUT_LAYOUT_T = QFA_LAYOUT::BSND, const bool HAS_MASK = false, typename... Args>
+    QFA_LAYOUT OUT_LAYOUT_T = QFA_LAYOUT::BSND, const bool HAS_MASK = false, const bool SAME_D = false,
+    typename... Args>
 struct QFAType {
     using quantType = QUANT_T;
     using scaleType = SCALE_T;
@@ -52,9 +63,12 @@ struct QFAType {
     static constexpr QFA_LAYOUT kvLayout = KV_LAYOUT_T;
     static constexpr QFA_LAYOUT outLayout = KV_LAYOUT_T;
     static constexpr bool hasMask = HAS_MASK;
+    // D128 (qkHeadDim == vHeadDim == 128) uses the pre-qk192 expressions/layout so its
+    // device codegen stays identical; D192 uses the qk192 dSizeV/192 layout paths.
+    static constexpr bool sameD = SAME_D;
 };
 
-ASCENDC_TPL_ARGS_DECL(QuantFlashAttn,
+ASCENDC_TPL_ARGS_DECL(EagleQuantFlashAttn,
     //    bit 0-7 QueryLayout
     //    0: BSND
     //    1: BNSD
@@ -71,12 +85,15 @@ ASCENDC_TPL_ARGS_DECL(QuantFlashAttn,
     //    bit 16 HasMask
     //    0: false
     //    1: true
-    ASCENDC_TPL_BOOL_DECL(hasMask, 0, 1), );
+    ASCENDC_TPL_BOOL_DECL(hasMask, 0, 1),
+    //    bit 17 sameD: qkHeadDim == 128 && vHeadDim == 128; D128 compiles the pre-qk192 path.
+    ASCENDC_TPL_BOOL_DECL(sameD, 0, 1), );
 
 ASCENDC_TPL_SEL(ASCENDC_TPL_ARGS_SEL(ASCENDC_TPL_UINT_SEL(queryOutLayout, ASCENDC_TPL_UI_LIST, LAYOUT_ENUM_BSND,
                                          LAYOUT_ENUM_BNSD, LAYOUT_ENUM_TND, LAYOUT_ENUM_BNSD_BSND),
                     ASCENDC_TPL_UINT_SEL(kvStorageMode, ASCENDC_TPL_UI_LIST, KV_STORAGE_MODE_CONTINUE,
                         KV_STORAGE_MODE_PA_BSND, KV_STORAGE_MODE_PA_BNSD),
-                    ASCENDC_TPL_BOOL_SEL(hasMask, 0, 1), ASCENDC_TPL_TILING_STRUCT_SEL(QuantFlashAttnTilingData)), );
+                    ASCENDC_TPL_BOOL_SEL(hasMask, 0, 1), ASCENDC_TPL_BOOL_SEL(sameD, 0, 1),
+                    ASCENDC_TPL_TILING_STRUCT_SEL(EagleQuantFlashAttnTilingData)), );
 
-#endif // TEMPLATE_TILING_KEY_QUANT_FLASH_ATTN_H_
+#endif // TEMPLATE_TILING_KEY_EAGLE_QUANT_FLASH_ATTN_H_

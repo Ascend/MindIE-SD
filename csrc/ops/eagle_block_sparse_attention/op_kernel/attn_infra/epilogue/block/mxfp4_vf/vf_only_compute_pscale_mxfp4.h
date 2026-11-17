@@ -1,6 +1,19 @@
 /*
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
+
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /**
  * Copyright (c) 2025 Huawei Technologies Co., Ltd.
  * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
@@ -29,9 +42,8 @@ using namespace MicroAPI;
 
 // T: half
 template <bool clear_gmax, typename T, uint16_t m = 128>
-__simd_vf__ inline void compute_only_pscale_vf(__ubuf__ T *umax1, __ubuf__ T *umax2, __ubuf__ T *ugmax_old,
-                                               __ubuf__ float *urs, uint16_t coreIndex)
-{
+__simd_vf__ inline void compute_only_pscale_vf(
+    __ubuf__ T *umax1, __ubuf__ T *umax2, __ubuf__ T *ugmax_old, __ubuf__ float *urs, uint16_t coreIndex) {
     MaskReg preg_all16 = CreateMask<uint16_t, MaskPattern::ALL>();
 
     RegTensor<half> vreg_gmax, vreg_max1, vreg_max2, vreg_rs16, vreg_gmax_old;
@@ -61,7 +73,7 @@ __simd_vf__ inline void compute_only_pscale_vf(__ubuf__ T *umax1, __ubuf__ T *um
         ShiftLefts((RegTensor<int32_t> &)vreg_rs2, (RegTensor<int32_t> &)vreg_rs2, SHIFT_VALUE, preg_all16);
 
         Interleave((RegTensor<int32_t> &)vreg_rs1, (RegTensor<int32_t> &)vreg_rs2, (RegTensor<int32_t> &)vreg_rs1,
-                   (RegTensor<int32_t> &)vreg_rs2);
+            (RegTensor<int32_t> &)vreg_rs2);
         for (uint16_t i = 0; i < 1 - coreIndex; ++i) {
             StoreAlign(urs, vreg_rs1, preg_all16);
         }
@@ -74,9 +86,7 @@ __simd_vf__ inline void compute_only_pscale_vf(__ubuf__ T *umax1, __ubuf__ T *um
 
 template <bool clear_gmax, typename T, uint16_t QsBase = 128>
 __aicore__ inline void ComputeOnlyPscaleCallVF(const LocalTensor<T> &umax1, const LocalTensor<T> &umax2,
-                                               const LocalTensor<T> &ugmaxOld, const LocalTensor<float> &urs,
-                                               uint16_t coreIndex)
-{
+    const LocalTensor<T> &ugmaxOld, const LocalTensor<float> &urs, uint16_t coreIndex) {
     __ubuf__ T *umax1_buf = (__ubuf__ T *)umax1.GetPhyAddr();
     __ubuf__ T *umax2_buf = (__ubuf__ T *)umax2.GetPhyAddr();
     __ubuf__ T *ugmax_old_buf = (__ubuf__ T *)ugmaxOld.GetPhyAddr();

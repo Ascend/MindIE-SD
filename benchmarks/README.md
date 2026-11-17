@@ -1,6 +1,6 @@
 # MindIE-SD Benchmarks
 
-核心算子（FA / BSA / GMM / MM）性能基准工具，在昇腾 NPU 上度量 MFU / MBU / 时延。
+核心算子（FA / BSA / EQBSA / GMM / MM）性能基准工具，在昇腾 NPU 上度量 MFU / MBU / 时延。
 
 ## 快速开始
 
@@ -36,7 +36,7 @@ python benchmarks/scripts/mindie_bench.py report \
 
 | `run` 参数 | 说明 |
 |---|---|
-| `--op` | 算子选择 + 结构参数（fa/bsa: num_heads/head_dim、gmm: hidden_size/moe_inter/experts/top_k、mm: K/N + 保留键 `func`=内核来源标签）；值 `{}`（默认规格）或对象；缺省 = 全部算子。注意：**内核实现按 dtype/quant_algo 自动分发**（如 fa bf16→npu_fusion_attention、mxfp4→torch.ops.mindiesd.quant_flash_attn），`func` 仅作为报告系列标签（fn=）记录，不切换内核 |
+| `--op` | 算子选择 + 结构参数（fa/bsa: num_heads/head_dim、eqbsa: num_heads/num_kv_heads/head_dim、gmm: hidden_size/moe_inter/experts/top_k、mm: K/N + 保留键 `func`=内核来源标签）；值 `{}`（默认规格）或对象；缺省 = 全部算子。注意：**内核实现按 dtype/quant_algo 自动分发**（如 fa bf16→npu_fusion_attention、mxfp4→torch.ops.mindiesd.quant_flash_attn），`func` 仅作为报告系列标签（fn=）记录，不切换内核 |
 | `--config` | 扫描矩阵 + 峰值：`seqlen` / `dtype` / `sparse` / `quant_algo` / `seed` / `timeout` / **`peak_flops`** / **`peak_bw`**；列表=笛卡尔积，标量=固定 |
 | `--devices` | NPU 设备：默认 `0`；`0,2` 多卡并行；`auto` 自动检测空闲卡 |
 | `--report-dir` | run 的结果目录（缺省自动 `reports/run_<时间戳>`）；`report` 的产物统一输出到 `reports/` |
@@ -53,18 +53,19 @@ python benchmarks/scripts/mindie_bench.py report \
 | 序列扫描 | `run_benchmark.sh` 默认段（一条命令四算子），seqlen 共享扫描轴（fa/bsa→q_len、gmm→num_tokens、mm→M），1k→256k（序列档位按需调整） |
 | 模型负载 | `run_benchmark.sh` 模型段（默认注释）：按真实模型 packed 序列（Wan2.2 / MiniMax-H3 / 图片）启用 |
 
-各算子默认规格（`--op {<op>: {}}`）：fa heads=32/head_dim=128、bsa heads=32/sparsity=0.8、gmm hidden_size=1536/moe_inter=3200/experts=128/top_k=16、mm K=5120/N=13824。更多变体见 `benchmarks/example/README.md`。
+各算子默认规格（`--op {<op>: {}}`）：fa heads=32/head_dim=128、bsa heads=32/sparsity=0.8、eqbsa q-heads=32/kv-heads=32/head_dim=128/sparsity=0.8/fp8、gmm hidden_size=1536/moe_inter=3200/experts=128/top_k=16、mm K=5120/N=13824。更多变体见 `benchmarks/example/README.md`。
 
 ## 指标
 
 - **MFU**（计算利用率）= 实测 TFLOPS / `peak_flops`；**MBU**（带宽利用率）= 实测带宽 / `peak_bw`
 - 展示为**百分比**（如 59.74%）；FA/BSA/MM 仅展示 MFU，GMM 同时展示 MFU+MBU
 - **峰值不内置**：`peak_flops` / `peak_bw` 必须由使用者通过 `--config` 输入（代码中无任何硬编码峰值）；`peak_bw` 缺失时 GMM 的 MBU 显示 n/a
+- **稀疏口径（EQBSA）**：FLOPs 按掩码**实际保留块**折算，而非按请求的 `sparsity`——掩码按块粒度取整且至少保留 1 块（kv_len=4096、sparsity=0.99 → 32 个 KV 块只留 1 块 = 3.125%，不是 1%），尾块只计真实长度。实际保留率记为 `actual_sparsity`，随 run 的 jsonl / baseline / `<op>.csv` 一起保存
 
 ## 报告（HTML）
 
 - 产物统一在 `reports/`：`benchmark-report_<时间>.{json,html}` + 每 op 一个 CSV（`reports/<op>.csv`）
-- **CSV 是数据源**：每行含 `peak_flops` / `peak_bw`；在 CSV 中更新 peak 后重跑 `report`，会用新峰值重算各 op 的 MFU/MBU，并同步更新「Peak config」段（未改 CSV 时以 run 的 `--config` 峰值为准）
+- **CSV 是数据源**：每行含 `peak_flops` / `peak_bw`（BSA/EQBSA 行另含 `sparsity` / `actual_sparsity`）；在 CSV 中更新 peak 后重跑 `report`，会用新峰值重算各 op 的 MFU/MBU，并同步更新「Peak config」段（未改 CSV 时以 run 的 `--config` 峰值为准）
 - 每个算子一个章节：综合图（全部系列）+ 图下按系列的数据表；BSA 为稀疏度透视表（metric × sparsity，无 latency 列），其余 op 为 seq len / latency / MFU... 表
 - 「Command」段：生成本报告的确切命令（可复现）
 - 「Peak config (CUBE flops / bandwidth)」段：本次 run 通过 `--config` 输入的 `peak_flops` / `peak_bw`
@@ -88,6 +89,10 @@ python benchmarks/scripts/mindie_bench.py report --report-dir reports/sbe --base
 # BSA 稀疏度扫描
 python benchmarks/scripts/mindie_bench.py run --op "{bsa: {}}" \
     --config "{seqlen: [8192, 32768, 131072], dtype: [bf16], sparse: [0.6, 0.8, 0.95, 0.99], timeout: 300, peak_flops: 377.78}"
+
+# EQBSA（Q/K INT8 + V FP8）稀疏度扫描
+python benchmarks/scripts/mindie_bench.py run --op "{eqbsa: {}}" \
+    --config "{seqlen: [4096, 8192, 131072], sparse: [0.6, 0.8, 0.95, 0.99], timeout: 300, peak_flops: 804, peak_bw: 2000}"
 
 # MM 量化档位
 python benchmarks/scripts/mindie_bench.py run --op "{mm: {}}" \

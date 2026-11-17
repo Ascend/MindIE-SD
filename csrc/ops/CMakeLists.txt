@@ -86,6 +86,13 @@ if (BUILD_OPEN_PROJECT)
             $<BUILD_INTERFACE:${ASCEND_CANN_PACKAGE_PATH}/include/aclnn_kernels>
             # For CANN 8.5 and later
             $<BUILD_INTERFACE:${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/pkg_inc>
+            # prof_common.h 位于 pkg_inc/profiling/，而 pkg_inc/toolchain/prof_api.h
+            # 以裸名 #include "prof_common.h"，只加 pkg_inc 会报找不到该头文件。
+            # 与 intf_pub（cmake/intf_pub.cmake）及 fused_infer_attention_score 的 UT 目标
+            # 保持一致，同时列出 pkg_inc 与 pkg_inc/profiling；
+            # 这里是追加而非替换：dump/adump_api.h 用的是相对 pkg_inc 根的
+            # #include "profiling/prof_common.h"，去掉 pkg_inc 会破坏该路径。
+            $<BUILD_INTERFACE:${ASCEND_CANN_PACKAGE_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux/pkg_inc/profiling>
     )
     target_compile_options(opapi PRIVATE
             -Werror=format
@@ -556,7 +563,11 @@ add_custom_target(generate_adapt_py
 add_dependencies(generate_adapt_py opbuild_gen_default opbuild_gen_inner opbuild_gen_exc)
 
 foreach (_op_name ${OP_LIST})
-    install(FILES ${ASCEND_IMPL_OUT_DIR}/dynamic/${_op_name}.py
+    set(_impl_op_name ${_op_name})
+    if (_op_name STREQUAL "quant_flash_attn" OR _op_name STREQUAL "quant_flash_attn_metadata")
+        set(_impl_op_name eagle_${_op_name})
+    endif ()
+    install(FILES ${ASCEND_IMPL_OUT_DIR}/dynamic/${_impl_op_name}.py
             DESTINATION ${IMPL_DYNAMIC_INSTALL_DIR}
             OPTIONAL
     )
@@ -568,6 +579,9 @@ install(DIRECTORY ${OPS_ADV_UTILS_KERNEL_INC}/
 
 foreach (op_dir ${OP_DIR_LIST})
     get_filename_component(_op_name "${op_dir}" NAME)
+    if (_op_name STREQUAL "quant_flash_attn")
+        set(_op_name eagle_quant_flash_attn)
+    endif ()
 
     file(GLOB KERNEL_FILES
             ${op_dir}/op_kernel/*.cpp

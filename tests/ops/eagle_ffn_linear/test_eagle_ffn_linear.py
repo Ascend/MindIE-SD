@@ -36,6 +36,10 @@ def _is_npu_available():
 def _has_mindiesd_op():
     try:
         import mindiesd  # noqa: F401
+        from mindiesd.utils.get_platform import is_a5_device
+
+        if not is_a5_device():
+            return False
         return hasattr(torch.ops, 'mindiesd') and hasattr(torch.ops.mindiesd, 'eagle_ffn_linear')
     except Exception:
         return False
@@ -63,7 +67,7 @@ def _ref(act, x, w1, w2, b1, b2):
     return F.linear(F.gelu(up), w2.float(), None if b2 is None else b2.float())
 
 
-@unittest.skipUnless(NPU_AVAILABLE, "NPU or mindiesd operator not available")
+@unittest.skipUnless(NPU_AVAILABLE, "Requires an A5 NPU and the mindiesd operator")
 @unittest.skipIf(os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU", "Skip NPU tests when MINDIE_TEST_MODE is CPU.")
 class TestFfnLinearNPU(unittest.TestCase):
     M, K, H, N = 97, 1024, 2816, 1024  # 非对齐 M
@@ -124,8 +128,9 @@ class TestFfnLinearNPU(unittest.TestCase):
         out_linear = torch.ops.mindiesd.eagle_ffn_linear(x, w1, w2, None, None, act, 0)
         out_canon = torch.ops.mindiesd.eagle_ffn_linear(x, w1.t().contiguous(), w2.t().contiguous(), None, None, act, 0)
         self.assertEqual(tuple(out_linear.shape), tuple(out_canon.shape))
-        self.assertLess((out_linear.float() - out_canon.float()).abs().max().item(), 0.5,
-                        "linear/canonical outputs should match")
+        self.assertLess(
+            (out_linear.float() - out_canon.float()).abs().max().item(), 0.5, "linear/canonical outputs should match"
+        )
 
     # ---- 拒绝路径 ----
     def test_reject_shape_mismatch(self):
@@ -155,6 +160,7 @@ class TestFfnLinearNPU(unittest.TestCase):
     # ---- 高层 API：fused 与原生链回退一致性 ----
     def test_layers_api_matches_op(self):
         from mindiesd.layers import eagle_ffn_linear as ffn_layer
+
         act, dtype = 'silu', torch.bfloat16
         x, w1, w2, b1, b2 = self._make(dtype, dtype, act)
         out_op = torch.ops.mindiesd.eagle_ffn_linear(x, w1, w2, b1, b2, act, 0)

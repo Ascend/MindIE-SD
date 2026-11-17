@@ -31,10 +31,13 @@ English | [简体中文](./README.md)
 
 ## Introduction
 
-**MindIE SD** (Mind Inference Engine Stable Diffusion) is the visual generation inference model suite of MindIE. Its goal is to provide an end-to-end inference solution for Stable Diffusion (SD) series large models on Ascend hardware and its software stack. The software system internally integrates various functional modules and provides a unified programming interface externally.
+**MindIE SD** (Mind Inference Engine Stable Diffusion) is the visual generation inference model suite of MindIE. Its goal is to provide an end-to-end inference solution for Stable Diffusion (SD) series large models on Huawei Ascend hardware and its software stack. The software system internally integrates various functional modules and provides a unified programming interface externally.
+
+For supported models and feature stacking, see [Model/Framework Support](docs/en/features/supported_matrix.md).
 
 ## 📢 Latest News
 
+- 11/11/2026: Completed [MiniMax-H3-Image Day0 inference adaptation on Ascend](examples/minimax-h3-image/infer.md) 🚀
 - 09/23/2026: [MXAttention paper](docs/tech_report/MXAttention.pdf) has been submitted to ICLR ([arXiv:2607.24377](https://arxiv.org/abs/2607.24377)) 📄
 - 09/20/2026: Completed [high-performance Qwen-Image-2.1 inference adaptation and optimization on Ascend](examples/qwen-image-2.1/infer.md) 🚀
 - 09/04/2026: MindIE SD supports the Lightx2v framework to accelerate MiniMax H3 on 950PR&950DT products
@@ -63,7 +66,7 @@ For other installation methods and environment dependencies, see [Installation G
 
 For MindIE SD architecture and key features, see [Architecture Overview](docs/zh/architecture.md).
 
-![MindIE SD Architecture Diagram](https://raw.gitcode.com/Ascend/MindIE-SD/raw/dev/docs/figures/architecture_overview.png)
+![MindIE SD Architecture Diagram](https://raw.gitcode.com/Ascend/MindIE-SD/raw/dev/docs/figures/architecture_overview_en.png)
 
 ## Quick Start
 
@@ -83,17 +86,86 @@ The following projects have integrated MindIE SD as a multimodal inference backe
 - [Cache-DiT](https://github.com/vipshop/cache-dit)
 - [Lightx2v](https://github.com/ModelTC/lightx2v)
 
+## 🙏 Acknowledgment
+
+We thank the [CANN ops-transformer](https://gitcode.com/cann/ops-transformer) and [CANN ops-nn](https://gitcode.com/cann/ops-nn) communities for their operator source code.
+
+- **Migration and multimodal performance optimization**: The local operators `QuantFlashAttn`, `EagleFusedInferAttentionScore`, `EagleBlockSparseAttention`, and `EagleFfn` are migrated from CANN [QuantFlashAttn](https://gitcode.com/cann/ops-transformer/tree/master/attention/quant_flash_attn), [FusedInferAttentionScore](https://gitcode.com/cann/ops-transformer/tree/master/attention/fused_infer_attention_score), [BlockSparseAttention](https://gitcode.com/cann/ops-transformer/tree/master/attention/block_sparse_attention), and [FFN](https://gitcode.com/cann/ops-transformer/tree/master/ffn/ffn), respectively, and optimized for multimodal inference.
+- **Development based on CANN operators**: `EagleQuantBlockSparseAttention` builds on CANN [BlockSparseAttention](https://gitcode.com/cann/ops-transformer/tree/master/attention/block_sparse_attention) to implement mixed-precision block-sparse attention. `quant_four_over_six_a5` builds on CANN [dynamic MX quantization](https://gitcode.com/cann/ops-nn/tree/master/quant/dynamic_mx_quant) infrastructure to implement the Four Over Six quantization extension.
+
+We thank the following contributors for their work on the related CANN operators: [cardiac_index](https://gitcode.com/cardiac_index), [XiyueL](https://gitcode.com/XiyueL), [jiang-lirui](https://gitcode.com/jiang-lirui), [monologue815](https://gitcode.com/monologue815), [chenyizhou](https://gitcode.com/chenyizhou), [liwenguihw](https://gitcode.com/liwenguihw).
+
+<a id="paper-citations"></a>
+
 ## Paper Citations
 
-```text
+<pre><details><summary>Show more
+<code>@misc{yu2026mxattentiondatafreeoptimalscaling,
+      title={MXAttention: Data-Free Optimal Scaling and Pre-Normalization Quantization for MXFP4 Attention},
+      author={Jianlin Yu and Jing Lin and Linghui Kong and Aiyue Chen and Weiyi Sun and Chenyu Zeng and Wangli Lan and Jinxi Li and Zhuo Zheng and Ziyang Yue and Danning Ke and Fei Yi and Tianchi Hu and Yuan Ding and Yiwu Yao and Junsong Wang},
+      year={2026},
+      eprint={2607.24377},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2607.24377},
+}
+
+@misc{liu2026rotateattentionropeawarerotationrange,
+      title={RotateAttention: RoPE-Aware Rotation and Range Rectification for INT4 Quantized Attention in Video Generation},
+      author={Yaofu Liu and Wanli Lan and Jinxi Li and Binhang Yuan and Harry Yang},
+      year={2026},
+      eprint={2607.02584},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2607.02584},
+}</code></summary><code>
+
 @misc{RainFusion2.0@2025,
     title = {RainFusion2.0: Temporal-Spatial Awareness and Hardware-Efficient Block-wise Sparse Attention},
-    url = {https://gitcode.com/Ascend/MindIE-SD.git},
-    note = {Open-source software available at https://gitcode.com/Ascend/MindIE-SD.git},
-    author = {Aiyue Chen and others},
-    year = {2025}
-    }
-```
+    author = {Aiyue Chen and Yaofu Liu and Junjian Huang and Guang Lian and Yiwu Yao and Wangli Lan and Jing Lin and Zhixin Ma and Tingting Zhou and Harry Yang},
+    year = {2025},
+    url = {https://gitcode.com/Ascend/MindIE-SD/blob/dev/docs/tech_report/RainFusion2.0.pdf}
+}
+
+@misc{zhang2025slasparsitydiffusiontransformers,
+      title={SLA: Beyond Sparsity in Diffusion Transformers via Fine-Tunable Sparse-Linear Attention},
+      author={Jintao Zhang and Haoxu Wang and Kai Jiang and Shuo Yang and Kaiwen Zheng and Haocheng Xi and Ziteng Wang and Hongzhou Zhu and Min Zhao and Ion Stoica and Joseph E. Gonzalez and Jun Zhu and Jianfei Chen},
+      year={2025},
+      eprint={2509.24006},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2509.24006},
+}
+
+@misc{zhang2025sageattentionaccurate8bitattention,
+      title={SageAttention: Accurate 8-Bit Attention for Plug-and-play Inference Acceleration},
+      author={Jintao Zhang and Jia Wei and Haofeng Huang and Pengle Zhang and Jun Zhu and Jianfei Chen},
+      year={2025},
+      eprint={2410.02367},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2410.02367},
+}
+
+@misc{ashkboos2024quarotoutlierfree4bitinference,
+      title={QuaRot: Outlier-Free 4-Bit Inference in Rotated LLMs},
+      author={Saleh Ashkboos and Amirkeivan Mohtashami and Maximilian L. Croci and Bo Li and Pashmina Cameron and Martin Jaggi and Dan Alistarh and Torsten Hoefler and James Hensman},
+      year={2024},
+      eprint={2404.00456},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2404.00456},
+}
+
+@misc{cook2026sixaccuratenvfp4quantization,
+      title={Four Over Six: More Accurate NVFP4 Quantization with Adaptive Block Scaling},
+      author={Jack Cook and Junxian Guo and Guangxuan Xiao and Yujun Lin and Keith Wyss and Mahdi Nazemi and Asit Mishra and Carlo del Mundo and Tijmen Blankevoort and Song Han},
+      year={2026},
+      eprint={2512.02010},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2512.02010},
+}</code></details></pre>
 
 <a id="wechat-community"></a>
 

@@ -9,7 +9,7 @@
 # See the Mulan PSL v2 for more details.
 
 add_ops_compile_options(
-        OP_NAME QuantFlashAttn
+        OP_NAME EagleQuantFlashAttn
         OPTIONS --cce-auto-sync=off
                 -Wno-deprecated-declarations
                 -Werror
@@ -18,7 +18,7 @@ add_ops_compile_options(
 
 set(quant_flash_attn_depends common PARENT_SCOPE)
 target_sources(op_host_aclnnInner PRIVATE
-        quant_flash_attn_def.cpp
+        eagle_quant_flash_attn_def.cpp
 )
 
 target_sources(optiling PRIVATE

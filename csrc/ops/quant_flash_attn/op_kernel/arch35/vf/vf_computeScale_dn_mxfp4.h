@@ -9,6 +9,7 @@
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PSL v2 for more details.
  */
+
 /*!
  * \file vf_computeScale_dn_mxfp4.h
  * \brief
@@ -30,7 +31,7 @@ using namespace MicroAPI;
 template <bool clear_gmax, typename T, uint16_t m = 128>
 __simd_vf__ inline void computePscaleVF(__ubuf__ uint8_t *mxscale1, __ubuf__ uint8_t *mxscale2, __ubuf__ T *ulmax1,
     __ubuf__ T *ulmax2, __ubuf__ T *umax1, __ubuf__ T *umax2, __ubuf__ T *ugmax_old, __ubuf__ float *urs,
-    uint16_t firstLoop, uint16_t secondLoop) {
+    uint16_t firstLoop, uint16_t secondLoop, uint16_t coreIndex) {
     MaskReg preg_all16 = CreateMask<uint16_t, MaskPattern::ALL>();
     MaskReg preg_all8 = CreateMask<uint8_t, MaskPattern::ALL>();
 
@@ -64,8 +65,13 @@ __simd_vf__ inline void computePscaleVF(__ubuf__ uint8_t *mxscale1, __ubuf__ uin
 
         Interleave((RegTensor<int32_t> &)vreg_rs1, (RegTensor<int32_t> &)vreg_rs2, (RegTensor<int32_t> &)vreg_rs1,
             (RegTensor<int32_t> &)vreg_rs2);
-        StoreAlign(urs, vreg_rs1, preg_all16);
-        StoreAlign(urs + m / 2, vreg_rs2, preg_all16);
+        for (uint16_t i = 0; i < 1 - coreIndex; ++i) {
+            StoreAlign(urs, vreg_rs1, preg_all16);
+        }
+
+        for (uint16_t i = 0; i < coreIndex; ++i) {
+            StoreAlign(urs, vreg_rs2, preg_all16);
+        }
     }
 
     Duplicate(vreg_max1, MIN_VALUE);
@@ -179,7 +185,7 @@ template <bool clear_gmax, typename T, uint16_t S1Base = 128>
 __aicore__ inline void computePscale(const LocalTensor<uint8_t> &mxscale1, const LocalTensor<uint8_t> &mxscale2,
     const LocalTensor<T> &ulmax1, const LocalTensor<T> &ulmax2, const LocalTensor<T> &umax1,
     const LocalTensor<T> &umax2, const LocalTensor<T> &ugmaxOld, const LocalTensor<float> &urs, uint16_t firstLoop,
-    uint16_t secondLoop) {
+    uint16_t secondLoop, uint16_t coreIndex) {
     __ubuf__ uint8_t *mxscale1VF = (__ubuf__ uint8_t *)mxscale1.GetPhyAddr();
     __ubuf__ uint8_t *mxscale2VF = (__ubuf__ uint8_t *)mxscale2.GetPhyAddr();
     __ubuf__ T *ulmax1VF = (__ubuf__ T *)ulmax1.GetPhyAddr();
@@ -189,8 +195,8 @@ __aicore__ inline void computePscale(const LocalTensor<uint8_t> &mxscale1, const
     __ubuf__ T *ugmaxOldVF = (__ubuf__ T *)ugmaxOld.GetPhyAddr();
     __ubuf__ float *ursVF = (__ubuf__ float *)urs.GetPhyAddr();
 
-    computePscaleVF<clear_gmax, T, S1Base>(
-        mxscale1VF, mxscale2VF, ulmax1VF, ulmax2VF, umax1VF, umax2VF, ugmaxOldVF, ursVF, firstLoop, secondLoop);
+    computePscaleVF<clear_gmax, T, S1Base>(mxscale1VF, mxscale2VF, ulmax1VF, ulmax2VF, umax1VF, umax2VF, ugmaxOldVF,
+        ursVF, firstLoop, secondLoop, coreIndex);
 }
 }
 #endif // COMPUTESCALE_DN_MXFP4_H_

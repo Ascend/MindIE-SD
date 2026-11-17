@@ -85,8 +85,6 @@ fused_moe(
 
 当前版本暂不支持融合算子路径。若设置 `use_fused_op=True`，接口会回退到非融合算子路径完成计算。
 
----
-
 ## 非融合算子路径（当前默认）
 
 该路径将 MoE 前向拆成多个阶段完成，支持非量化和量化 MoE 推理，覆盖单卡、TP 和 EP 场景，并提供 static 和 dynamic 两种 Token 分发方式。static dispatcher 适用于单卡、TP 以及部分 EP 场景；dynamic dispatcher 面向 EP 场景下的 all-to-all Token 交换。

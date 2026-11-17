@@ -51,7 +51,11 @@ def attention_math(query, key, value, attn_mask, scale, head_first=False):
                 "The attn_mask must be a 2D tensor with shape [q_seqlen, kv_seqlen],"
                 " or a 4D tensor with shape [batch_size, num_heads, q_seqlen, kv_seqlen]"
             )
-        attn_bias = torch.zeros(q_seqlen, kv_seqlen, dtype=dtype).to(device)
+        if attn_mask.dim() == 4 and (
+            attn_mask.size(0) not in (1, query.size(0)) or attn_mask.size(1) not in (1, query.size(1))
+        ):
+            raise ParametersInvalid("The attn_mask batch and head dimensions must be 1 or match query.")
+        attn_bias = torch.zeros_like(attn, dtype=dtype, device=device)
         attn_bias.masked_fill_(attn_mask.logical_not(), float("-inf"))
         attn += attn_bias
     attn = torch.softmax(attn, dim=-1)

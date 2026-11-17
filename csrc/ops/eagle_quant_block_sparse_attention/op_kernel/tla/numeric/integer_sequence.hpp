@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef TLA_NUMERIC_INTEGER_SEQUENCE_HPP
 #define TLA_NUMERIC_INTEGER_SEQUENCE_HPP
 
@@ -16,53 +28,40 @@
 
 namespace tla {
 
-template <typename T, T... Ns>
-struct IntegerSequence {
+template <typename T, T... Ns> struct IntegerSequence {
     using value_type = T;
     static constexpr size_t size() { return sizeof...(Ns); }
 };
 
-template <typename Sequence, typename T, size_t N>
-struct MakeIntegerSequenceImpl;
+template <typename Sequence, typename T, size_t N> struct MakeIntegerSequenceImpl;
 
-template <typename T, size_t... Ns>
-struct MakeIntegerSequenceImpl<IntegerSequence<T, Ns...>, T, 0> {
+template <typename T, size_t... Ns> struct MakeIntegerSequenceImpl<IntegerSequence<T, Ns...>, T, 0> {
     typedef IntegerSequence<T, Ns...> type;
 };
 
-template <typename T, size_t N, size_t... Ns>
-struct MakeIntegerSequenceImpl<IntegerSequence<T, Ns...>, T, N> {
+template <typename T, size_t N, size_t... Ns> struct MakeIntegerSequenceImpl<IntegerSequence<T, Ns...>, T, N> {
     typedef typename MakeIntegerSequenceImpl<IntegerSequence<T, N - 1, Ns...>, T, N - 1>::type type;
 };
 
-template <typename T, T N>
-using MakeIntegerSequence = typename MakeIntegerSequenceImpl<IntegerSequence<T>, T, N>::type;
-
+template <typename T, T N> using MakeIntegerSequence = typename MakeIntegerSequenceImpl<IntegerSequence<T>, T, N>::type;
 
 // index_sequence
-template <size_t... Ints>
-using index_sequence = IntegerSequence<size_t, Ints...>;
+template <size_t... Ints> using index_sequence = IntegerSequence<size_t, Ints...>;
 
-template <size_t N>
-using make_index_sequence = MakeIntegerSequence<size_t, N>;
+template <size_t N> using make_index_sequence = MakeIntegerSequence<size_t, N>;
 
 // int_sequence
-template <int... Ints>
-using int_sequence = IntegerSequence<int, Ints...>;
+template <int... Ints> using int_sequence = IntegerSequence<int, Ints...>;
 
-template <int N>
-using make_int_sequence = MakeIntegerSequence<int, N>;
+template <int N> using make_int_sequence = MakeIntegerSequence<int, N>;
 
 // Shortcuts
-template <int... Ints>
-using seq = int_sequence<Ints...>;
+template <int... Ints> using seq = int_sequence<Ints...>;
 
-template <int N>
-using make_seq = make_int_sequence<N>;
+template <int N> using make_seq = make_int_sequence<N>;
 
-template <class Tuple>
-using tuple_seq = make_seq<tuple_size<tla::remove_cvref_t<Tuple>>::value>;
+template <class Tuple> using tuple_seq = make_seq<tuple_size<tla::remove_cvref_t<Tuple>>::value>;
 
 } // end namespace tla
 
-#endif  // TLA_NUMERIC_INTEGER_SEQUENCE_HPP
+#endif // TLA_NUMERIC_INTEGER_SEQUENCE_HPP

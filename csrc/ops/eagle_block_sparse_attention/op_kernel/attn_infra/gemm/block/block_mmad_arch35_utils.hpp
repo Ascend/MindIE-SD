@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef BLOCK_MMAD_ARCH35_UTILS_HPP
 #define BLOCK_MMAD_ARCH35_UTILS_HPP
 
@@ -106,7 +118,7 @@ static constexpr uint32_t ROW_SUM_PAD_NUM = 16;
 static constexpr uint32_t ROW_SUM_NUM = 128;
 
 // 硬件 NZ 分形块维度
-static constexpr uint32_t NZ_C0_ELEMS = 16;  // NZ 分形 C0 维元素个数
+static constexpr uint32_t NZ_C0_ELEMS = 16; // NZ 分形 C0 维元素个数
 static constexpr uint32_t FP4_C0_ELEMS = 64; // fp4 数据类型每个 C0 块元素个数
 
 // PV mmad M 维（含 rowsum pad）

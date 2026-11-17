@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /*!
  * \file ffn_arch35_tiling.cpp
  * \brief FFN arch35 (ascend950) fused 路径 tiling：布局识别 + up/down 融合 tiling。
@@ -37,12 +49,11 @@ using namespace optiling;
 using namespace optiling::matmul_v3_advanced;
 
 class FfnMatMulV3Tiling : public MatMulV3BasicAswtTiling {
-public:
+  public:
     FfnMatMulV3Tiling(gert::TilingContext *ctx, MatMulTilingCfg &cfg, bool allowFullLoad = true)
         : MatMulV3BasicAswtTiling(ctx, cfg), allowFullLoad_(allowFullLoad) {}
 
-    ge::graphStatus ComputeOnly()
-    {
+    ge::graphStatus ComputeOnly() {
         ge::graphStatus ret = GetShapeAttrsInfo();
         if (ret != ge::GRAPH_SUCCESS) {
             return ret;
@@ -57,8 +68,7 @@ public:
         return AdjustOpTiling();
     }
 
-    ge::graphStatus GetBasicTiling(MatMulV3BasicTilingData &out) const
-    {
+    ge::graphStatus GetBasicTiling(MatMulV3BasicTilingData &out) const {
         ge::graphStatus ret = GetTilingDataProcess(out);
         if (ret == ge::GRAPH_SUCCESS) {
             out.fullLoad = static_cast<uint8_t>(fullLoad_);
@@ -66,9 +76,8 @@ public:
         return ret;
     }
 
-protected:
-    ge::graphStatus DoOpTiling() override
-    {
+  protected:
+    ge::graphStatus DoOpTiling() override {
         // 全载内核暂不支持 gelu/silu 融合，仅 down 允许全载
         const bool forceOff = !allowFullLoad_;
         if (forceOff) {
@@ -77,10 +86,10 @@ protected:
             l0C2Out_ = MatMulV3TilingHelper::GetL0C2Out(compileInfo_, args_, runInfo_);
             fullLoad_ = MatMulV3FullLoad::NONE_FULL_LOAD;
             if (l0C2Out_ == MatMulV3L0C2Out::ON_THE_FLY) {
-                uint64_t remainSizeForAL1BL1 = args_.hasBias ?
-                    (compileInfo_.l1Size - BIAS_TABLE_NUM * DATA_SIZE_FP32) : compileInfo_.l1Size;
+                uint64_t remainSizeForAL1BL1 =
+                    args_.hasBias ? (compileInfo_.l1Size - BIAS_TABLE_NUM * DATA_SIZE_FP32) : compileInfo_.l1Size;
                 runInfo_.stepKa = remainSizeForAL1BL1 / NUM_TWO / ((runInfo_.baseM + runInfo_.baseN) * runInfo_.baseK) /
-                                  args_.aDtypeSize;
+                    args_.aDtypeSize;
                 runInfo_.stepKb = runInfo_.stepKa;
                 runInfo_.depthA1 = runInfo_.stepKa * DB_SIZE;
                 runInfo_.depthB1 = runInfo_.stepKb * DB_SIZE;
@@ -94,18 +103,16 @@ protected:
         return MatMulV3BasicAswtTiling::DoOpTiling();
     }
 
-private:
+  private:
     bool allowFullLoad_ = true;
 };
 
 // Basic StreamK tiling（split-K 场景）
 class FfnMatMulV3StreamKTiling : public MatMulV3BasicStreamKTiling {
-public:
-    FfnMatMulV3StreamKTiling(gert::TilingContext *ctx, MatMulTilingCfg &cfg)
-        : MatMulV3BasicStreamKTiling(ctx, cfg) {}
+  public:
+    FfnMatMulV3StreamKTiling(gert::TilingContext *ctx, MatMulTilingCfg &cfg) : MatMulV3BasicStreamKTiling(ctx, cfg) {}
 
-    ge::graphStatus ComputeOnly()
-    {
+    ge::graphStatus ComputeOnly() {
         ge::graphStatus ret = GetShapeAttrsInfo();
         if (ret != ge::GRAPH_SUCCESS) {
             return ret;
@@ -120,21 +127,15 @@ public:
         return AdjustOpTiling();
     }
 
-    ge::graphStatus GetBasicTiling(MatMulV3BasicTilingData &out) const
-    {
-        return GetTilingDataProcess(out);
-    }
+    ge::graphStatus GetBasicTiling(MatMulV3BasicTilingData &out) const { return GetTilingDataProcess(out); }
 };
 } // namespace
 
-bool FFNArch35Tiling::DetectLayout(const gert::TilingContext *context,
-                                   const gert::StorageShape *weight1Shape,
-                                   const gert::StorageShape *weight2Shape,
-                                   int64_t xK, bool isSwiglu, bool &isLinear)
-{
+bool FFNArch35Tiling::DetectLayout(const gert::TilingContext *context, const gert::StorageShape *weight1Shape,
+    const gert::StorageShape *weight2Shape, int64_t xK, bool isSwiglu, bool &isLinear) {
     isLinear = false;
-    if (weight1Shape == nullptr || weight2Shape == nullptr ||
-        weight1Shape->GetStorageShape().GetDimNum() < 2 || weight2Shape->GetStorageShape().GetDimNum() < 2) {
+    if (weight1Shape == nullptr || weight2Shape == nullptr || weight1Shape->GetStorageShape().GetDimNum() < 2 ||
+        weight2Shape->GetStorageShape().GetDimNum() < 2) {
         return false;
     }
     // 维度统一取最后两维（与 infershape/aclnn 一致，为将来 >2 维权重预留）。
@@ -146,22 +147,18 @@ bool FFNArch35Tiling::DetectLayout(const gert::TilingContext *context,
     const int64_t w2Dim1 = w2Shape.GetDim(w2Shape.GetDimNum() - 1);
 
     // 布局识别走公共规则（ffn_layout.h）；swiglu 隐藏宽=w1 边长一半
-    const ffnlayout::FfnLayout layout =
-        ffnlayout::FfnDetectLayout(w1Dim0, w1Dim1, w2Dim0, w2Dim1, xK, isSwiglu);
+    const ffnlayout::FfnLayout layout = ffnlayout::FfnDetectLayout(w1Dim0, w1Dim1, w2Dim0, w2Dim1, xK, isSwiglu);
     if (layout == ffnlayout::FfnLayout::INVALID) {
-        OP_LOGE(context, "FFN arch35 weight1 shape [%ld, %ld] does not match x K=%ld",
-                static_cast<long>(w1Dim0), static_cast<long>(w1Dim1), static_cast<long>(xK));
+        OP_LOGE(context, "FFN arch35 weight1 shape [%ld, %ld] does not match x K=%ld", static_cast<long>(w1Dim0),
+            static_cast<long>(w1Dim1), static_cast<long>(xK));
         return false;
     }
     isLinear = (layout == ffnlayout::FfnLayout::LINEAR);
     return true;
 }
 
-ge::graphStatus FFNArch35Tiling::Tiling(gert::TilingContext *context,
-                                        const FFNCompileInfo *compileInfoPtr,
-                                        FFNTilingData &tilingData,
-                                        const FFNArch35TilingParams &params)
-{
+ge::graphStatus FFNArch35Tiling::Tiling(gert::TilingContext *context, const FFNCompileInfo *compileInfoPtr,
+    FFNTilingData &tilingData, const FFNArch35TilingParams &params) {
     const uint32_t activeType = params.activeType;
     const uint32_t &expertNum = params.expertNum;
     const uint32_t &bs = params.bs;
@@ -175,8 +172,8 @@ ge::graphStatus FFNArch35Tiling::Tiling(gert::TilingContext *context,
     if (compileInfoPtr->socVersion != platform_ascendc::SocVersion::ASCEND950 || expertNum > 1 ||
         (xDataType != ge::DT_BF16 && xDataType != ge::DT_FLOAT16) ||
         (activeType != static_cast<uint32_t>(ActiveType::GELU) &&
-         activeType != static_cast<uint32_t>(ActiveType::SILU) &&
-         activeType != static_cast<uint32_t>(ActiveType::SWIGLU))) {
+            activeType != static_cast<uint32_t>(ActiveType::SILU) &&
+            activeType != static_cast<uint32_t>(ActiveType::SWIGLU))) {
         return ge::GRAPH_FAILED;
     }
     const bool isSwiglu = (activeType == static_cast<uint32_t>(ActiveType::SWIGLU));
@@ -198,8 +195,7 @@ ge::graphStatus FFNArch35Tiling::Tiling(gert::TilingContext *context,
     if (hasBias1) {
         biasDtype = bias1Desc->GetDataType();
         if (biasDtype != ge::DT_BF16 && biasDtype != ge::DT_FLOAT16 && biasDtype != ge::DT_FLOAT) {
-            OP_LOGE(context, "FFN arch35 only supports bf16/fp16/float32 bias, got %d",
-                    static_cast<int>(biasDtype));
+            OP_LOGE(context, "FFN arch35 only supports bf16/fp16/float32 bias, got %d", static_cast<int>(biasDtype));
             return ge::GRAPH_FAILED;
         }
         if (bias2Desc->GetDataType() != biasDtype) {
@@ -219,8 +215,8 @@ ge::graphStatus FFNArch35Tiling::Tiling(gert::TilingContext *context,
     using namespace matmul_v3_advanced;
     MatmulV3CompileInfo mmCompileInfo{};
     OP_CHECK_IF(InitCompileInfo(context->GetPlatformInfo(), &mmCompileInfo) != ge::GRAPH_SUCCESS,
-                OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "init mat_mul_v3 compile info failed"),
-                return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "init mat_mul_v3 compile info failed"),
+        return ge::GRAPH_FAILED);
 
     auto computeOneStage = [&](uint64_t m, uint64_t k, uint64_t n, bool isDown, bool useStreamK,
                                MatMulV3BasicTilingData &out) -> ge::graphStatus {
@@ -271,7 +267,7 @@ ge::graphStatus FFNArch35Tiling::Tiling(gert::TilingContext *context,
         ge::graphStatus ret = tiling.ComputeOnly();
         if (ret != ge::GRAPH_SUCCESS) {
             OP_LOGE(context, "FFN arch35 mat_mul_v3 tiling failed: m=%lu k=%lu n=%lu ret=%d", m, k, n,
-                    static_cast<int>(ret));
+                static_cast<int>(ret));
             return ret;
         }
         return tiling.GetBasicTiling(out);
@@ -283,21 +279,21 @@ ge::graphStatus FFNArch35Tiling::Tiling(gert::TilingContext *context,
     const uint32_t downK = hiddenCols;
     uint32_t swigluSingle = 0; // 0=回退两段式(gate+up+down)，1=single(2H)
     OP_CHECK_IF(computeOneStage(bs, k1, n1, false, false, up) != ge::GRAPH_SUCCESS,
-                OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "compute up matmul tiling failed"),
-                return ge::GRAPH_FAILED);
+        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "compute up matmul tiling failed"),
+        return ge::GRAPH_FAILED);
     if (isSwiglu) {
         swigluSingle = (up.n == n1 && up.nL1 % 32 == 0 && up.baseN % 32 == 0 && up.nL1 == up.baseN);
         if (!swigluSingle) {
             OP_CHECK_IF(computeOneStage(bs, k1, hiddenCols, false, false, up) != ge::GRAPH_SUCCESS,
-                        OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "compute up matmul tiling failed"),
-                        return ge::GRAPH_FAILED);
+                OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "compute up matmul tiling failed"),
+                return ge::GRAPH_FAILED);
         }
     }
     bool downStreamK = false;
     if (!isSwiglu) {
         OP_CHECK_IF(computeOneStage(bs, downK, n2, true, false, down) != ge::GRAPH_SUCCESS,
-                    OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "compute down matmul tiling failed"),
-                    return ge::GRAPH_FAILED);
+            OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "compute down matmul tiling failed"),
+            return ge::GRAPH_FAILED);
         const MatMulV3BasicTilingData basicDown = down;
         const uint64_t fullM = ((static_cast<uint64_t>(bs) + 15U) / 16U) * 16U;
         if (basicDown.baseM < fullM) {
@@ -307,7 +303,7 @@ ge::graphStatus FFNArch35Tiling::Tiling(gert::TilingContext *context,
                 down = skDown;
                 downStreamK = true;
                 OP_LOGI(context, "FFN down uses official StreamK split-K (usedCore=%u skSingleCoreK=%u)",
-                        down.usedCoreNum, down.skSingleCoreK);
+                    down.usedCoreNum, down.skSingleCoreK);
             } else if (skRet != ge::GRAPH_SUCCESS && skRet != ge::GRAPH_PARAM_INVALID) {
                 OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "compute down stream-k tiling failed");
                 return ge::GRAPH_FAILED;
@@ -315,8 +311,8 @@ ge::graphStatus FFNArch35Tiling::Tiling(gert::TilingContext *context,
         }
     } else {
         OP_CHECK_IF(computeOneStage(bs, downK, n2, true, false, down) != ge::GRAPH_SUCCESS,
-                    OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "compute down matmul tiling failed"),
-                    return ge::GRAPH_FAILED);
+            OPS_REPORT_VECTOR_INNER_ERR(context->GetNodeName(), "compute down matmul tiling failed"),
+            return ge::GRAPH_FAILED);
     }
 
     tilingData.set_upUsedCoreNum(up.usedCoreNum);
@@ -399,22 +395,20 @@ ge::graphStatus FFNArch35Tiling::Tiling(gert::TilingContext *context,
     size_t *workspaces = context->GetWorkspaceSizes(1);
     if (downStreamK) {
         workspaces[0] = compileInfoPtr->sysWorkspaceSize + hiddenOffset +
-                        static_cast<size_t>(bs) * hiddenCols * xDataTypeSize + 128 +
-                        static_cast<uint64_t>(down.usedCoreNum) * 256 * 256 * sizeof(float);
+            static_cast<size_t>(bs) * hiddenCols * xDataTypeSize + 128 +
+            static_cast<uint64_t>(down.usedCoreNum) * 256 * 256 * sizeof(float);
     } else {
         workspaces[0] = compileInfoPtr->sysWorkspaceSize + hiddenOffset +
-                        static_cast<size_t>(bs) * hiddenCols * xDataTypeSize + 128 +
-                        static_cast<size_t>(bs) * n2 * 4;
+            static_cast<size_t>(bs) * hiddenCols * xDataTypeSize + 128 + static_cast<size_t>(bs) * n2 * 4;
     }
 
     tilingData.SaveToBuffer(context->GetRawTilingData()->GetData(), context->GetRawTilingData()->GetCapacity());
     context->GetRawTilingData()->SetDataSize(tilingData.GetDataSize());
     OP_LOGI(context,
-            "FFN arch35 fused tiling set(act=%u): M=%u K=%u H=%u N=%u blockDim=%u upCore=%u downCore=%u "
-            "swigluSingle=%u up=(n=%u,%u,%u,%u,dbL0C=%u,ubDB=%u) down=(k=%u,%u,%u,%u,dbL0C=%u,ubDB=%u)",
-            activeType, bs, k1, hiddenCols, n2, blockDim, up.usedCoreNum, down.usedCoreNum, swigluSingle,
-            up.n, up.baseM, up.baseN, up.baseK, up.l0cDB, up.ubDB, down.k, down.baseM, down.baseN, down.baseK,
-            down.l0cDB, down.ubDB);
+        "FFN arch35 fused tiling set(act=%u): M=%u K=%u H=%u N=%u blockDim=%u upCore=%u downCore=%u "
+        "swigluSingle=%u up=(n=%u,%u,%u,%u,dbL0C=%u,ubDB=%u) down=(k=%u,%u,%u,%u,dbL0C=%u,ubDB=%u)",
+        activeType, bs, k1, hiddenCols, n2, blockDim, up.usedCoreNum, down.usedCoreNum, swigluSingle, up.n, up.baseM,
+        up.baseN, up.baseK, up.l0cDB, up.ubDB, down.k, down.baseM, down.baseN, down.baseK, down.l0cDB, down.ubDB);
     return ge::GRAPH_SUCCESS;
 }
 

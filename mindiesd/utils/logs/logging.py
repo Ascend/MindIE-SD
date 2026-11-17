@@ -38,7 +38,7 @@ def get_pid():
 
 
 def get_uid():
-    return os.getuid()
+    return os.getuid()  # pylint: disable=no-member
 
 
 def check_owner_permission(file_path, max_mode) -> bool:
@@ -124,10 +124,14 @@ class MindIELogFileHandler(BaseRotatingHandler):
         # Be aware that, at this point, _cur_log_file is not created yet since the use of delay mode.
         log_path_files = os.listdir(real_log_path)
         log_files = []
+        history_root = os.path.realpath(real_log_path)
         for it in log_path_files:
-            real_file_path = os.path.realpath(os.path.join(real_log_path, it))
+            file_path = os.path.join(real_log_path, it)
+            if os.path.islink(file_path) or not os.path.isfile(file_path):
+                continue
+            real_file_path = os.path.realpath(file_path)
             time_str = self._get_time_str(it)
-            if time_str and real_file_path.startswith(real_log_path) and os.path.exists(real_file_path):
+            if time_str and os.path.commonpath((history_root, real_file_path)) == history_root:
                 log_files.append((real_file_path, time_str))
         self._history_files = sorted(log_files, key=lambda x: x[1])
         # Deal with history file number by deleting oldest one
@@ -220,7 +224,7 @@ class MindIELogFileHandler(BaseRotatingHandler):
         match = re.match(reg, file_name)
         if match and len(match.groups()) > 1:
             log_pid = match.group(1)
-            if log_pid == get_pid():
+            if log_pid == str(get_pid()):
                 log_time = match.group(2)
         return log_time
 

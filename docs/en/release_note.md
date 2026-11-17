@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD025 -->
 # Version Compatibility Notes
 
 ## Product Version Information
@@ -16,8 +17,7 @@
 | CANN | 9.2.0 |
 | TorchNPU | 26.2.0 |
 | MindCluster | 26.2 |
-| CCAE | iMaster CCAE V100R026C10SPC100 |
-| Ascend HDK | See [CANN Version Compatibility Notes](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/900/releasenote/9.0.1release-notes.md) for version compatibility |
+| Ascend HDK | See [CANN Version Compatibility Notes](https://www.hiascend.com/document/detail/en/CANNCommunityEdition/latest/softwareinst/releasenote/9.2.0/release-notes.md) for version compatibility |
 
 # Version Compatibility
 
@@ -48,13 +48,6 @@ MindIE SD components must be used with matching versions. Do not mix components 
 | 3.0.0 | / | / | Y | Y |
 | 2.3.0 | / | / | / | Y |
 
-| MindIE SD Version | CCAE iMaster CCAE V100R026C10SPC100 | CCAE iMaster CCAE V100R026C00SPC010 | CCAE iMaster CCAE V100R025C30SPC100 |
-| ----------------- | ---------- | ---------- | ---------- |
-| 3.2.0 | To be confirmed | To be confirmed | To be confirmed |
-| 3.1.0 | Y | Y | Y |
-| 3.0.0 | / | Y | Y |
-| 2.3.0 | / | / | Y |
-
 # Version Usage Notes
 
 - The following capabilities are only available on 950PR&950DT products: the `quant_four_over_six_a5` quantization operator, the MXFP4 mode of rf_v3 block sparse attention (`precision="mxfp4"`), the EQBSA qmode1 mix path, and the fused path of the FFN fused operator (other platforms automatically fall back to the native operator chain).
@@ -81,6 +74,8 @@ MindIE SD components must be used with matching versions. Do not mix components 
 | 13   | Build acceleration. Adds the `SKIP_ALL_OPS_PLUGIN_BUILD` environment variable: operator and plugin compilation is skipped when cached artifacts are complete and compatible, with automatic fallback to a full build otherwise; the default behavior is unchanged. |
 | 14   | DummyRun toolchain enhancement. Quantization options are unified into `--quant {fp32,bf16,w8a8}`, with device-aware w8a8 quantization format selection (W8A8-MXFP8 on 950PR&950DT products, W8A8-DYNAMIC INT8 on Atlas 800I A2 inference server / Atlas 800I A3 SuperPoD server); Wan2.2 dummy run adds frame count and resolution configuration. |
 | 15   | Deployment and ecosystem extension. The vLLM-Omni joint images are aligned to base image v0.28.0 with a new variant for 950PR&950DT products; new inference deployment guides for MiniMax-H3, Qwen-Image-2.1, and DiffSynth-Engine, plus a FLUX.1-dev Cache-DiT example, are added. |
+| 16   | AdaLN indexed modulation MX quantization fused operator. Adds the public API `mindiesd.rms_norm_indexed_scale_shift_dynamic_mx_quant`, which fuses RMSNorm, the indexed AdaLN affine (`x * (1 + scale[idx]) + shift[idx]`) and 32-element dynamic MX quantization (FP8 E4M3/E5M2, FP4 E2M1/E1M2) into a single call, returning the quantized activation and E8M0 block scales for the downstream quantized matmul. |
+| 17   | Indexed gate residual AdaLN MX quantization fused operator. Adds the public API `mindiesd.indexed_gate_rms_norm_scale_shift_dynamic_mx_quant`, which fuses the gate residual (`residual + gate[idx] * branch`), RMSNorm, indexed AdaLN affine (`x * (1 + scale[idx]) + shift[idx]`) and 32-element dynamic MX quantization (FP8 E4M3, MXFP4 E2M1/E1M2) into a single call, returning the quantized result and E8M0 block scales. |
 
 ## Modified Features
 
@@ -112,8 +107,10 @@ API changes include additions, modifications, deprecations, and removals. API ch
 | class mindiesd.FP8FAMode | New | FP8 attention mode enum (HIGH_PRECISION / C8V16_TILING512) |
 | def mindiesd.layers.eagle_ffn_linear | New | FFN fused operator API; takes the fused path on 950PR&950DT products |
 | def mindiesd.layers.residual_gate_add | New | Residual gate fused operator API |
+| def mindiesd.layers.rms_norm_indexed_scale_shift_dynamic_mx_quant | New | Fused RMSNorm, indexed AdaLN affine and dynamic MX quantization operator; quantization output supports FP8 E4M3/E5M2 and MXFP4 E2M1/E1M2 with E8M0 block scales |
+| def mindiesd.layers.indexed_gate_rms_norm_scale_shift_dynamic_mx_quant | New | Fused indexed gate residual RMSNorm, indexed AdaLN affine and dynamic MX quantization operator; quantization output supports FP8 E4M3 and MXFP4 E2M1/E1M2 with E8M0 block scales |
 | def mindiesd.layers.usp.usp_attention | New | USP sequence-parallel attention API (module-level export, not added to the top-level mindiesd namespace) |
-| New torch.ops.mindiesd operators | New | eagle_block_sparse_attention, eagle_quant_block_sparse_attention, quant_four_over_six_a5, mul_add, norm_rope_concat |
+| New torch.ops.mindiesd operators | New | eagle_block_sparse_attention, eagle_quant_block_sparse_attention, quant_four_over_six_a5, mul_add, norm_rope_concat, rms_norm_indexed_scale_shift_dynamic_mx_quant, indexed_gate_rms_norm_scale_shift_dynamic_mx_quant |
 | def mindiesd.fused_moe | Modified | Parameter `tokens_full` renamed to `inputs_sharded` (default value inverted accordingly), `reduce_results` renamed to `reduce_routed_out`; new `return_dispatcher_type` parameter |
 | def mindiesd.sparse_attention | Modified | New `video_spans` parameter for multi-video sparse attention; rf_v3 adds the `precision="mxfp4"` mode |
 | class mindiesd.QuantConfig | Modified | New `fp8_fa_mode` option |

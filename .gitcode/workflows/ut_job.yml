@@ -40,8 +40,18 @@ jobs:
 
           if [ ${arch} == aarch64 -a -f ${WORKSPACE}/tests/run_UT_test.sh ]; then
               pip list| grep torch
-              wget -q https://repo.huaweicloud.com/ascend/repos/pypi/triton-ascend/triton_ascend-3.2.1-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl
-              pip3 install triton_ascend-3.2.1-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl
+              TRITON_ASCEND_VER=$(grep -oP 'triton-ascend\s*==\s*\K[0-9][^\s;]*' "${WORKSPACE}/requirements.txt")
+              if [ -z "${TRITON_ASCEND_VER}" ]; then
+                echo "ERROR: cannot find triton-ascend==x.y.z in requirements.txt"
+                exit 1
+              fi
+              echo "Use triton-ascend version: ${TRITON_ASCEND_VER}"
+
+              WHL_NAME="triton_ascend-${TRITON_ASCEND_VER}-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl"
+              WHL_URL="https://repo.huaweicloud.com/ascend/repos/pypi/triton-ascend/${WHL_NAME}"
+
+              wget -q "${WHL_URL}"
+              pip3 install "${WHL_NAME}"
               pip3 install -r ${WORKSPACE}/requirements.txt
               pip3 install coverage
 

@@ -179,7 +179,9 @@ repos:
     hooks:
       - id: gitleaks-offline-scan
         name: Gitleaks Secret Scan(Local Binary)
-        entry: ./gitleaks
+        # Wrapper scans when ./gitleaks is present (CI installs it) and skips with a
+        # clear notice when it is missing, so fresh local checkouts are not blocked.
+        entry: pre-commit/gitleaks_scan.sh
         language: system
         pass_filenames: true
         args:

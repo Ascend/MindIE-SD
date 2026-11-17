@@ -13,17 +13,19 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from run_a5_correctness import SMALL_PRESETS, _load_custom_operator, run  # noqa: E402
+from run_a5_correctness import SMALL_PRESETS, run  # noqa: E402
 
-pytest.importorskip("torch_npu")
+torch_npu = pytest.importorskip("torch_npu")
 
 
 @pytest.fixture(scope="module", autouse=True)
 def _load_operator():
-    torch_npu = pytest.importorskip("torch_npu")
-    if not torch_npu.npu.is_available():
-        pytest.skip("NPU is not available")
-    _load_custom_operator(0)
+    from tests.ops.device_support import init_test_device, require_support
+    from mindiesd.layers.register_ops import _load_mindie_ops_library
+
+    init_test_device()
+    require_support("sparse_block_estimate")
+    _load_mindie_ops_library()
 
 
 @pytest.mark.parametrize("preset", SMALL_PRESETS)
@@ -31,7 +33,7 @@ def _load_operator():
 def test_small_shape_vs_cpu_golden(preset, dtype_name):
     args = argparse.Namespace(
         preset=preset,
-        device=0,
+        device=torch_npu.npu.current_device(),
         seed=2026,
         input_profile=None,
         case_mode="realistic",

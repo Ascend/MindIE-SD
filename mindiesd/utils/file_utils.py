@@ -13,7 +13,6 @@
 import os
 from functools import reduce
 from .exception import ParametersInvalid
-from .logs.logging import logger
 
 MAX_PATH_LENGTH = 4096
 MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024
@@ -26,13 +25,14 @@ MODELDATA_DIR_PERMISSION = 0o750
 BINARY_FILE_PERMISSION = 0o755
 
 FLAG_OS_MAP = {
-    'r': os.O_RDONLY, 'r+': os.O_RDWR,
+    'r': os.O_RDONLY,
+    'r+': os.O_RDWR,
     'w': os.O_CREAT | os.O_TRUNC | os.O_WRONLY,
     'w+': os.O_CREAT | os.O_TRUNC | os.O_RDWR,
     'a': os.O_CREAT | os.O_APPEND | os.O_WRONLY,
     'a+': os.O_CREAT | os.O_APPEND | os.O_RDWR,
     'x': os.O_CREAT | os.O_EXCL,
-    "b": getattr(os, "O_BINARY", 0)
+    "b": getattr(os, "O_BINARY", 0),
 }
 
 
@@ -53,7 +53,7 @@ def safe_open(file_path: str, mode='r', encoding=None, permission_mode=0o640, **
     check_link = kwargs.get('check_link', True)
 
     file_path = standardize_path(file_path, max_path_length, check_link)
-    check_file_safety(file_path, max_file_size, permission_mode)
+    check_file_safety(file_path, max_file_size, permission_mode=permission_mode)
 
     flags = []
     for item in list(mode):
@@ -64,8 +64,7 @@ def safe_open(file_path: str, mode='r', encoding=None, permission_mode=0o640, **
     flags = [FLAG_OS_MAP.get(mode, os.O_RDONLY) for mode in flags]
     total_flag = reduce(lambda a, b: a | b, flags)
 
-    return os.fdopen(os.open(file_path, total_flag, SAFEOPEN_FILE_PERMISSION),
-                     mode, encoding=encoding)
+    return os.fdopen(os.open(file_path, total_flag, SAFEOPEN_FILE_PERMISSION), mode, encoding=encoding)
 
 
 def standardize_path(path: str, max_path_length=MAX_PATH_LENGTH, check_link=True):
@@ -101,27 +100,30 @@ def check_path_is_link(path: str):
 
 
 def check_path_length_lt(path: str, max_path_length=MAX_PATH_LENGTH):
-    if path.__len__() > max_path_length:
-        raise ParametersInvalid(f"The length of path is {path.__len__()}, which exceeds the limit {max_path_length}.")
+    if len(path) > max_path_length:
+        raise ParametersInvalid(f"The length of path is {len(path)}, which exceeds the limit {max_path_length}.")
 
 
 def check_file_size_lt(path: str, max_file_size=MAX_FILE_SIZE):
     if os.path.getsize(path) > max_file_size:
         raise ParametersInvalid(
             f"The size of file:{os.path.relpath(path)} is {os.path.getsize(path)}, \
-                which exceeds the limit {max_file_size}.")
+                which exceeds the limit {max_file_size}."
+        )
 
 
 def check_owner(path: str):
     path_stat = os.stat(path)
     path_owner, path_gid = path_stat.st_uid, path_stat.st_gid
-    cur_uid = os.geteuid()
-    cur_gid = os.getgid()
+    cur_uid = os.geteuid()  # pylint: disable=no-member
+    cur_gid = os.getgid()  # pylint: disable=no-member
     if not (cur_uid == 0 or cur_uid == path_owner or path_gid == cur_gid):
-        raise ParametersInvalid(f"The current user does not have permission to access the path:{path}. "
-                                "Because he is not root or the path owner, "
-                                "and not in the same user group with the path owner. "
-                                "Please check and make sure to satisfy at least one of the conditions above.")
+        raise ParametersInvalid(
+            f"The current user does not have permission to access the path:{path}. "
+            "Because he is not root or the path owner, "
+            "and not in the same user group with the path owner. "
+            "Please check and make sure to satisfy at least one of the conditions above."
+        )
 
 
 def check_max_permission(file_path: str, permission_mode=0o640):

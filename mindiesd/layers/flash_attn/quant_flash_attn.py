@@ -14,12 +14,15 @@
 """Public quantized attention entry, shared validation and precision routing."""
 
 import torch
+
 from .common import _get_bnsd_shape
 from .quant_attention_mxfp4 import _mxfp4_attention_forward
 from .fused_infer_attention_score import _fp8_attention_forward, _mxfp8_attention_forward
 
 
 _SUPPORTED_PRECISIONS = ("fp8", "mxfp8", "mxfp4")
+_SUPPORTED_ROTATION_MODES = ("hadamard",)
+_FA_ROTATION_CACHE = {}
 
 
 def quant_attention(
@@ -32,6 +35,7 @@ def quant_attention(
     scale: float | None = None,
     q_rot: torch.Tensor | None = None,
     k_rot: torch.Tensor | None = None,
+    rotation_mode: str | None = None,
     pre_tokens: int = 2147483647,
     next_tokens: int = 2147483647,
     **kwargs,
@@ -68,9 +72,14 @@ def quant_attention(
             None leaves query unchanged.
         k_rot (torch.Tensor, optional, defaults to None):
             Optional [D, D] matrix applied as key @ k_rot before quantization.
-            Must share key's device; cast to key's dtype before use. Independent of q_rot: either
-            may be omitted. The caller supplies rotations preserving the
-            desired attention semantics; this function does not generate them.
+            Must share key's device; cast to key's dtype before use.
+            Independent of q_rot: either may be omitted.
+        rotation_mode (str, optional, defaults to None):
+            Optional built-in Q/K rotation. "hadamard" creates one deterministic
+            orthogonal matrix for the input device, dtype and head dimension,
+            then applies the same matrix to Q and K. The matrix is cached for
+            later calls. Cannot be combined with q_rot or k_rot. None preserves
+            the caller-provided matrices or leaves Q/K unchanged.
         pre_tokens (int, optional, defaults to 2147483647):
             Maximum number of preceding tokens visible to a query, passed
             unchanged to FIA. The default leaves the preceding window unlimited.
@@ -156,6 +165,7 @@ def quant_attention(
     if kwargs:
         raise TypeError(f"Unexpected options for {precision} quantized attention: {', '.join(sorted(kwargs))}.")
     _, _, _, head_dim = _validate_quant_attention_inputs(query, key, value, layout=layout, layout_kv=layout_kv)
+    q_rot, k_rot = _resolve_rotation(query, q_rot, k_rot, rotation_mode, head_dim)
     q_rot = _validate_rotation(query, q_rot, "q_rot")
     k_rot = _validate_rotation(key, k_rot, "k_rot")
     scale = head_dim**-0.5 if scale is None else scale
@@ -253,3 +263,25 @@ def _validate_rotation(tensor, rotation, name):
             f"but got {name}.device={rotation.device} and input.device={tensor.device}."
         )
     return rotation.to(dtype=tensor.dtype)
+
+
+def _resolve_rotation(query, q_rot, k_rot, rotation_mode, head_dim):
+    if rotation_mode is None:
+        return q_rot, k_rot
+    if rotation_mode not in _SUPPORTED_ROTATION_MODES:
+        raise ValueError(f"rotation_mode must be one of {_SUPPORTED_ROTATION_MODES}, but got {rotation_mode!r}.")
+    if q_rot is not None or k_rot is not None:
+        raise ValueError("rotation_mode cannot be combined with q_rot or k_rot.")
+
+    cache_key = (str(query.device), query.dtype, head_dim)
+    rotation = _FA_ROTATION_CACHE.get(cache_key)
+    if rotation is None:
+        from mindiesd.quantization.utils import create_online_hadamard_rot
+
+        rotation = create_online_hadamard_rot(
+            head_dim,
+            dtype=query.dtype,
+            device=query.device,
+        )
+        _FA_ROTATION_CACHE[cache_key] = rotation
+    return rotation, rotation

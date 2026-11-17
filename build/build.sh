@@ -11,6 +11,9 @@
 # See the Mulan PSL v2 for more details.
 
 set -e
+if [ -n "${ATOMGIT_WORKSPACE:-}" ]; then
+    export BUILD_JOB_NUM=${BUILD_JOB_NUM:-8}
+fi
 BUILD_DIR=$(dirname $(readlink -f $0))
 PROJ_ROOT_DIR=${BUILD_DIR}/..
 export OUTPUT_DIR=$PROJ_ROOT_DIR/output
@@ -37,18 +40,8 @@ else
     exit 1
 fi
 
-if [ -n "$MINDIE_SD_VERSION_OVERRIDE" ]; then
-    MindIESDVersion=$MINDIE_SD_VERSION_OVERRIDE
-    echo "Using MINDIE_SD_VERSION_OVERRIDE: $MindIESDVersion"
-else
-    MindIESDVersion="3.1.0"
-    echo "Using default version: $MindIESDVersion"
-fi
-MindIESDVersion=$(echo $MindIESDVersion | sed -E 's/([0-9]+)\.([0-9]+)\.RC([0-9]+)\.([0-9]+)/\1.\2rc\3.post\4/')
-MindIESDWheelVersion=$(echo $MindIESDVersion | sed -s 's!.T!.alpha!')
-MindIESDVersion=$(echo $MindIESDVersion | sed -s 's!.T!+t!')
+MindIESDVersion=$(python3 "${PROJ_ROOT_DIR}/version.py")
 echo "MindIESDVersion $MindIESDVersion"
-echo "MindIESDWheelVersion $MindIESDWheelVersion"
 
 python3 setup.py bdist_wheel
 

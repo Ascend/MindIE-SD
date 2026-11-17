@@ -10,7 +10,6 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-import argparse
 import ast
 import glob
 import os
@@ -296,16 +295,20 @@ class TestMapper:
                 "tests/layers/flash_attn/test_sparse_attention.py",
             ],
             "mindiesd/cache_agent/cache_agent.py": [
-                "tests/cache/test_cache_agent.py",
+                "tests/UT/cache/test_cache_agent.py",
+                "tests/UT/cache/test_cache_hook_semantics.py",
             ],
             "mindiesd/cache_agent/attention_cache.py": [
-                "tests/cache/test_attention_cache.py",
+                "tests/UT/cache/test_attention_cache.py",
+                "tests/UT/cache/test_cache_hook_semantics.py",
             ],
             "mindiesd/cache_agent/dit_block_cache.py": [
-                "tests/cache/test_dit_block_cache.py",
+                "tests/UT/cache/test_dit_block_cache.py",
+                "tests/UT/cache/test_cache_hook_semantics.py",
             ],
             "mindiesd/cache_agent/cache.py": [
-                "tests/cache/test_cache_agent.py",
+                "tests/UT/cache/test_cache_agent.py",
+                "tests/UT/cache/test_cache_hook_semantics.py",
             ],
             "mindiesd/quantization/quantize.py": [
                 "tests/quantization/test_quantize.py",
@@ -431,7 +434,7 @@ class TestMapper:
         # 目录匹配
         "directory": {
             "mindiesd/layers/": "tests/layers/",
-            "mindiesd/cache_agent/": "tests/cache/",
+            "mindiesd/cache_agent/": "tests/UT/cache/",
             "mindiesd/quantization/": "tests/quantization/",
             "mindiesd/compilation/": "tests/compilation/",
             "mindiesd/eplb/": "tests/eplb/",
@@ -712,44 +715,3 @@ class IncrementalTestFinder:
             print("\n🧪 没有需要运行的测试用例")
 
         print("\n" + "=" * 80)
-
-
-def main():
-    """命令行入口"""
-    parser = argparse.ArgumentParser(description="增量测试工具")
-    parser.add_argument("--base", "-b", default="master", help="基分支或commit (默认: master)")
-    parser.add_argument("--repo", "-r", default=None, help="仓库根目录 (默认: 自动检测)")
-    parser.add_argument("--no-staged", action="store_true", help="不包含暂存区变更")
-    parser.add_argument("--no-unstaged", action="store_true", help="不包含未暂存变更")
-    parser.add_argument("--dry-run", "-n", action="store_true", help="仅显示测试计划，不执行测试")
-
-    args = parser.parse_args()
-
-    # 创建运行器
-    runner = IncrementalTestFinder(repo_root=args.repo, base_branch=args.base)
-
-    # 获取增量测试
-    tests, change_info, changes = runner.get_incremental_tests(
-        since_ref=args.base,
-        include_staged=not args.no_staged,
-        include_unstaged=not args.no_unstaged,
-    )
-
-    # 打印测试计划
-    runner.print_test_plan(tests, change_info, changes)
-
-    if args.dry_run:
-        return None
-
-    if not tests:
-        print("\n没有需要运行的测试。")
-        return None
-
-    # 运行测试
-    print("\n🚀 开始运行测试...\n")
-    # 返回测试文件列表供 run.py 使用
-    return tests
-
-
-if __name__ == "__main__":
-    main()

@@ -28,13 +28,17 @@ set +e
 source $_ASCEND_INSTALL_PATH/bin/setenv.bash
 set -e
 
-USER_ABI_VERSION_RAW=$(python3 -c "import torch; print(1 if torch.compiled_with_cxx11_abi() else 0)")
-if [ $? -ne 0 ]; then
-    echo "Error: Failed to retrieve PyTorch ABI version!"
-    echo "Possible reasons: PyTorch is not installed, or the version is too old (missing the _GLIBCXX_USE_CXX11_ABI attribute)."
+USER_ABI_VERSION_RAW=$(python3 -c "import torch; print(1 if torch.compiled_with_cxx11_abi() else 0)" 2>/dev/null)
+# Only keep '0'/'1' characters so the result is immune to any extra stdout
+# pollution (e.g. from sitecustomize.py or a torch_npu C-extension init print)
+# that would otherwise corrupt USER_ABI_VERSION and break the cmake ABI check.
+export USER_ABI_VERSION=$(echo "$USER_ABI_VERSION_RAW" | tr -cd '01')
+if [ "$USER_ABI_VERSION" != "0" ] && [ "$USER_ABI_VERSION" != "1" ]; then
+    echo "Error: Failed to retrieve a valid PyTorch ABI version, raw output was: '$USER_ABI_VERSION_RAW'"
+    echo "Possible reasons: PyTorch is not installed, the version is too old (missing the _GLIBCXX_USE_CXX11_ABI attribute),"
+    echo "or its stdout is polluted by another module (e.g. sitecustomize.py)."
     exit 1
 fi
-export USER_ABI_VERSION=$(echo "$USER_ABI_VERSION_RAW" | tr -d '[:space:]')
 
 
 mkdir -p plugin_build

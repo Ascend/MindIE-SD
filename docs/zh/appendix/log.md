@@ -1,6 +1,6 @@
 # 日志参考
 
-对日志操作进行了归一化，通过六个环境变量能对MindIE所有组件进行日志设置，参见[表1](#table1)。环境变量的日志配置详情请参见[MindIE日志参考](https://www.hiascend.com/document/detail/zh/mindie/23RC1/ref/logreference/mindie_log_0213.html)。
+对日志操作进行了归一化，通过六个环境变量能对MindIE所有组件进行日志设置，参见[表1](#table1)。环境变量的日志配置详情请参见[MindIE日志参考](https://www.hiascend.com/document/detail/zh/mindie/latest/ref/logreference/docs/zh/user_guide/log/introduction.md)。
 
 ## 使用说明
 

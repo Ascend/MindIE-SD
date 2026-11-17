@@ -10,6 +10,16 @@
  * See the Mulan PSL v2 for more details.
  */
 
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
 /*!
  * \file quant_flash_attn_tiling_dn.cpp
  * \brief
@@ -29,11 +39,11 @@ using namespace ge;
 using namespace AscendC;
 namespace optiling {
 
-void QuantFlashAttnTilingDn::InitTilingInfo(TilingInfo *tilingInfo) {
-    tilingInfo_ = static_cast<QuantFlashAttnTilingInfo *>(tilingInfo);
+void EagleQuantFlashAttnTilingDn::InitTilingInfo(TilingInfo *tilingInfo) {
+    tilingInfo_ = static_cast<EagleQuantFlashAttnTilingInfo *>(tilingInfo);
 }
 
-bool QuantFlashAttnTilingDn::IsCapable() {
+bool EagleQuantFlashAttnTilingDn::IsCapable() {
     if (tilingInfo_ == nullptr) {
         return false;
     }
@@ -41,12 +51,12 @@ bool QuantFlashAttnTilingDn::IsCapable() {
     return true;
 }
 
-void QuantFlashAttnTilingDn::CalcScheduleMode() {
+void EagleQuantFlashAttnTilingDn::CalcScheduleMode() {
     scheduleMode_ = ScheduleMode::BATCH_MODE;
     OP_LOGI(tilingInfo_->opName, "FIA schedule mode: %u.", static_cast<uint32_t>(scheduleMode_));
 }
 
-ge::graphStatus QuantFlashAttnTilingDn::DoOpTiling() {
+ge::graphStatus EagleQuantFlashAttnTilingDn::DoOpTiling() {
     OP_CHECK_IF(SetPlatMemoryInfo() != ge::GRAPH_SUCCESS, OP_LOGE(tilingInfo_->opName, "Set plat memory info fail."),
         return ge::GRAPH_FAILED);
 
@@ -66,7 +76,7 @@ ge::graphStatus QuantFlashAttnTilingDn::DoOpTiling() {
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus QuantFlashAttnTilingDn::SetPlatMemoryInfo() {
+ge::graphStatus EagleQuantFlashAttnTilingDn::SetPlatMemoryInfo() {
     auto platformInfoPtr = context_->GetPlatformInfo();
     OP_CHECK_IF(platformInfoPtr == nullptr, OP_LOGE(tilingInfo_->opName, "The platformInfoPtr is null!"),
         return ge::GRAPH_FAILED);
@@ -90,14 +100,14 @@ ge::graphStatus QuantFlashAttnTilingDn::SetPlatMemoryInfo() {
     return ge::GRAPH_SUCCESS;
 }
 
-void QuantFlashAttnTilingDn::InitImplParam() {}
+void EagleQuantFlashAttnTilingDn::InitImplParam() {}
 
-void QuantFlashAttnTilingDn::SplitPolicy() {
+void EagleQuantFlashAttnTilingDn::SplitPolicy() {
     CalcNumBlocks(platformInfo_.aicNum);
     // flashDecodeFlag_ = true; // TODO 原本是根据分核，当前先写死
 }
 
-void QuantFlashAttnTilingDn::GenTilingKey() {
+void EagleQuantFlashAttnTilingDn::GenTilingKey() {
     uint8_t queryOutLayout = LAYOUT_ENUM_BSND;
     if (tilingInfo_->layoutQ == FiaLayout::BSND) {
         if (tilingInfo_->layoutOut == FiaLayout::BNSD) {
@@ -125,11 +135,14 @@ void QuantFlashAttnTilingDn::GenTilingKey() {
     }
 
     bool hasMask = tilingInfo_->attnMaskFlag;
+    // D128 (qkHeadDim == vHeadDim == 128) compiles the pre-qk192 path; D192 keeps the
+    // qk192 dSizeV/192-layout path. This is a compile-time kernel variant, not a runtime branch.
+    bool sameD = (tilingInfo_->qkHeadDim == 128U && tilingInfo_->vHeadDim == 128U);
 
-    tilingKey_ = GET_TPL_TILING_KEY(queryOutLayout, kvStorageMode, hasMask);
+    tilingKey_ = GET_TPL_TILING_KEY(queryOutLayout, kvStorageMode, hasMask, sameD);
 }
 
-void QuantFlashAttnTilingDn::CalcNumBlocks(uint32_t aicNum) {
+void EagleQuantFlashAttnTilingDn::CalcNumBlocks(uint32_t aicNum) {
     auto ascendcPlatform = platform_ascendc::PlatformAscendC(tilingInfo_->platformInfo);
     auto aivNum = aicNum * platformInfo_.cvRatio;
 
@@ -137,13 +150,13 @@ void QuantFlashAttnTilingDn::CalcNumBlocks(uint32_t aicNum) {
     OP_LOGI(tilingInfo_->opName, "FIA block dim: %u aiv Num: %u aic Num: %u.", numBlocks_, aivNum, aicNum);
 }
 
-void QuantFlashAttnTilingDn::CalcWorkspaceSize() {
+void EagleQuantFlashAttnTilingDn::CalcWorkspaceSize() {
     size_t sysWorkspaceSize = platformInfo_.defaultSysWorkspaceSize;
     workspaceSize_ = sysWorkspaceSize;
     workspaceSize_ += 0;
 }
 
-void QuantFlashAttnTilingDn::FillTiling() {
+void EagleQuantFlashAttnTilingDn::FillTiling() {
     tilingData_.baseTiling.flashAttnBaseParams.bSize = tilingInfo_->bSize;
     tilingData_.baseTiling.flashAttnBaseParams.t1Size = tilingInfo_->queryTSize;
     tilingData_.baseTiling.flashAttnBaseParams.t2Size = tilingInfo_->keyTSize;
@@ -157,6 +170,8 @@ void QuantFlashAttnTilingDn::FillTiling() {
     tilingData_.baseTiling.flashAttnBaseParams.kvCuSeqLensSize = tilingInfo_->kvCuSeqLensSize;
     tilingData_.baseTiling.flashAttnBaseParams.qSeqUsedSize = tilingInfo_->qSeqUsedSize;
     tilingData_.baseTiling.flashAttnBaseParams.kvSeqUsedSize = tilingInfo_->kvSeqUsedSize;
+    tilingData_.baseTiling.flashAttnBaseParams.maxSeqlenQ = tilingInfo_->maxSeqLenQ;
+    tilingData_.baseTiling.flashAttnBaseParams.maxSeqlenKv = tilingInfo_->maxSeqLenKv;
     tilingData_.baseTiling.flashAttnBaseParams.scaleValue = tilingInfo_->softmaxScale;
     tilingData_.baseTiling.flashAttnBaseParams.isSoftMaxLseEnable = (tilingInfo_->returnSoftmaxLse > 0);
     tilingData_.baseTiling.flashAttnBaseParams.coreNum = numBlocks_;
@@ -183,8 +198,8 @@ void QuantFlashAttnTilingDn::FillTiling() {
     tilingData_.baseTiling.flashAttnEmptyTensorParams.needInit = false;
 }
 
-ge::graphStatus QuantFlashAttnTilingDn::SetTilingData(QuantFlashAttnTilingData &tilingData) {
-    QuantFlashAttnTilingData *tiling = context_->GetTilingData<QuantFlashAttnTilingData>();
+ge::graphStatus EagleQuantFlashAttnTilingDn::SetTilingData(EagleQuantFlashAttnTilingData &tilingData) {
+    EagleQuantFlashAttnTilingData *tiling = context_->GetTilingData<EagleQuantFlashAttnTilingData>();
     OP_CHECK_IF(tiling == nullptr, OP_LOGE(tilingInfo_->opName, "The tiling data is nullptr"), return ge::GRAPH_FAILED);
     *tiling = tilingData;
     return ge::GRAPH_SUCCESS;
@@ -194,6 +209,6 @@ ge::graphStatus QuantFlashAttnTilingDn::SetTilingData(QuantFlashAttnTilingData &
 // 1. 百位代表非量化、伪量化、全量化等场景, 即: 0xx-非量化，1xx-伪量化, 2xx-全量化
 // 2. 十位表示gqa、mla、泛化，即: x0x-mla, x1x-gpa, x2x-泛化
 // 3. 个位代表特化模板到泛化模板的优先级排序
-REGISTER_TILING_TEMPLATE_FIA(
-    QuantFlashAttn, QuantFlashAttnTilingDn, std::vector<int32_t>({static_cast<int32_t>(NpuArch::DAV_3510)}), 210);
+REGISTER_TILING_TEMPLATE_FIA(EagleQuantFlashAttn, EagleQuantFlashAttnTilingDn,
+    std::vector<int32_t>({static_cast<int32_t>(NpuArch::DAV_3510)}), 210);
 } // namespace optiling

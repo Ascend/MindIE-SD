@@ -2,11 +2,22 @@ cmake_minimum_required(VERSION 3.10)
 
 project(PTAExtensionOPS)
 
+# Locate torch WITHOUT importing it. Importing torch (or torch_npu) can print
+# stray lines to stdout (e.g. a 'path string is NULL' message at interpreter
+# shutdown), which would corrupt the captured path. find_spec resolves the
+# package location without running the package's init code, sidestepping that.
+# Validate the result exists so a bad path fails here with a clear message,
+# instead of surfacing later in the include/link stage where it is hard to find.
 execute_process(
-  COMMAND python3 -c "import os;import torch; print(os.path.dirname(os.path.dirname(torch.__file__)))"
+  COMMAND python3 -c "import os, importlib.util; spec = importlib.util.find_spec('torch'); print(os.path.dirname(os.path.dirname(spec.origin)))"
   OUTPUT_VARIABLE python_site_packages_path
+  OUTPUT_STRIP_TRAILING_WHITESPACE
 )
-string(STRIP "${python_site_packages_path}" python_site_packages_path)
+if(NOT EXISTS "${python_site_packages_path}/torch")
+    message(FATAL_ERROR
+        "Failed to locate torch at '${python_site_packages_path}/torch'. "
+        "Captured python output was: '${python_site_packages_path}'")
+endif()
 set(CMAKE_SKIP_RPATH TRUE)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-conversion-null")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
@@ -51,6 +62,7 @@ add_library(PTAExtensionOPS SHARED
     ./plugin/rainfusionattention.cpp
     ./plugin/ada_block_sparse_attention.cpp
     ./plugin/sparse_block_estimate.cpp
+    ./plugin/ada_relu2_block_estimate.cpp
     ./plugin/layernorm.cpp
     ./plugin/frequency_regulator.cpp
     ./plugin/frequency_regulator_register.cpp
@@ -61,8 +73,11 @@ add_library(PTAExtensionOPS SHARED
     ./plugin/quant_flash_attn_metadata.cpp
     ./plugin/fused_infer_attention_score.cpp
     ./plugin/mul_add.cpp
+    ./plugin/eagle_indexed_gate_norm_modulate.cpp
     ./plugin/norm_rope_concat.cpp
+    ./plugin/eagle_split_norm_rope_concat.cpp
     ./plugin/eagle_ffn_linear.cpp
+    ./plugin/eagle_quant_batch_matmul_swiglu.cpp
     ./plugin/quant_four_over_six_a5.cpp)
 
 target_compile_features(PTAExtensionOPS PRIVATE cxx_std_17)
@@ -139,4 +154,3 @@ target_link_libraries(PTAExtensionOPS PUBLIC
   ${ASCEND_PATH}/lib64/libnnopbase.so
   ${ASCEND_PATH}/lib64/libopapi.so
   )
-

@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /* !
  * \file dynamic_mx_quant_tail_axis_tiling_arch35.cpp
  * \brief This tiling template only supports scenarios where the quantization axis is the last axis and the blockSize
@@ -39,8 +51,7 @@ constexpr int64_t BYTES_OF_INVERSE_SCALE_TYPE = 2;
 constexpr int64_t DB_BUFFER = 2;
 constexpr float LOAD_BALANCE_THRESHOLD = 0.75; // 负载均衡的阈值
 
-ge::graphStatus QuantFourOverSixA5TailAxisTiling::SetTilingDataForTailAxis()
-{
+ge::graphStatus QuantFourOverSixA5TailAxisTiling::SetTilingDataForTailAxis() {
     tilingData_.tilingKey = tilingParam_.tilingKey;
     tilingData_.ubSize = tilingParam_.ubSize;
     tilingData_.roundMode = tilingParam_.roundMode;
@@ -63,7 +74,7 @@ ge::graphStatus QuantFourOverSixA5TailAxisTiling::SetTilingDataForTailAxis()
     OP_CHECK_NULL_WITH_CONTEXT(context_, context_->GetRawTilingData());
     auto rawTilingData = context_->GetRawTilingData();
     errno_t ret = memcpy_s(
-        rawTilingData->GetData(), rawTilingData->GetCapacity(), reinterpret_cast<void*>(&tilingData_), tilingDataSize);
+        rawTilingData->GetData(), rawTilingData->GetCapacity(), reinterpret_cast<void *>(&tilingData_), tilingDataSize);
     if (ret != EOK) {
         OP_LOGE(context_->GetNodeName(), "memcpy_s failed, ret = %d", ret);
         return ge::GRAPH_FAILED;
@@ -72,11 +83,8 @@ ge::graphStatus QuantFourOverSixA5TailAxisTiling::SetTilingDataForTailAxis()
     return ge::GRAPH_SUCCESS;
 }
 
-void QuantFourOverSixA5TailAxisTiling::PrintTilingDataForTailAxis()
-{
-    OP_LOGI(
-        context_->GetNodeName(),
-        "tilingData is tilingKey:%ld, ubSize:%ld, roundMode:%ld, blockSize:%ld, \
+void QuantFourOverSixA5TailAxisTiling::PrintTilingDataForTailAxis() {
+    OP_LOGI(context_->GetNodeName(), "tilingData is tilingKey:%ld, ubSize:%ld, roundMode:%ld, blockSize:%ld, \
         totalCoreNum:%ld, usedCoreNum:%ld, rowTileNum:%ld, colTileNum:%ld, \
         rowNum:%ld, colNum:%ld, colNormalBlockNum:%ld, colTailLen:%ld, \
         rowNormalBlockNum:%ld, rowTailLen:%ld, maxUbBlockNum:%ld, dstTypeMax:%f, invDstTypeMax:%f.",
@@ -87,8 +95,7 @@ void QuantFourOverSixA5TailAxisTiling::PrintTilingDataForTailAxis()
         tilingData_.invDstTypeMax);
 }
 
-std::set<int64_t> QuantFourOverSixA5TailAxisTiling::FindSplitCombo(int64_t usedCoreNum) const
-{
+std::set<int64_t> QuantFourOverSixA5TailAxisTiling::FindSplitCombo(int64_t usedCoreNum) const {
     std::set<int64_t> result;
     int64_t upbound = static_cast<int64_t>(std::ceil(std::sqrt(usedCoreNum) + 1));
 
@@ -100,15 +107,14 @@ std::set<int64_t> QuantFourOverSixA5TailAxisTiling::FindSplitCombo(int64_t usedC
     return result;
 }
 
-ge::graphStatus QuantFourOverSixA5TailAxisTiling::AutoTiling()
-{
+ge::graphStatus QuantFourOverSixA5TailAxisTiling::AutoTiling() {
     // 计算可用核数
     tilingParam_.usedCoreNum =
         std::min(tilingParam_.totalCoreNum, tilingParam_.rowBlockLoopNum * tilingParam_.colBlockLoopNum);
     tilingParam_.usedCoreNum = tilingParam_.usedCoreNum == 0 ? 1 : tilingParam_.usedCoreNum;
 
     // 仿真单核多tile场景: FORCE_CORE_NUM=1 强制单核执行, 跳过 AutoTiling
-    const char* forceCoreStr = getenv("FORCE_CORE_NUM");
+    const char *forceCoreStr = getenv("FORCE_CORE_NUM");
     if (forceCoreStr) {
         int64_t forceCoreNum = std::atol(forceCoreStr);
         if (forceCoreNum > 0) {
@@ -142,8 +148,9 @@ ge::graphStatus QuantFourOverSixA5TailAxisTiling::AutoTiling()
             } else if (tilingParam_.colBlockLoopNum % n == 0) {
                 delta = delta - (tilingParam_.rowBlockLoopNum % rowNormalBlockNum) * colNormalBlockNum;
             } else {
-                delta = delta - (tilingParam_.rowBlockLoopNum % rowNormalBlockNum) *
-                                    (tilingParam_.colBlockLoopNum % colNormalBlockNum);
+                delta = delta -
+                    (tilingParam_.rowBlockLoopNum % rowNormalBlockNum) *
+                        (tilingParam_.colBlockLoopNum % colNormalBlockNum);
             }
         }
 
@@ -155,7 +162,7 @@ ge::graphStatus QuantFourOverSixA5TailAxisTiling::AutoTiling()
         return ge::GRAPH_FAILED;
     }
     // 排序以选择最合适的切分
-    std::sort(allTiling.begin(), allTiling.end(), [](const std::vector<int64_t>& a, const std::vector<int64_t>& b) {
+    std::sort(allTiling.begin(), allTiling.end(), [](const std::vector<int64_t> &a, const std::vector<int64_t> &b) {
         constexpr int FirstIndex = 1; // 优先切 M
         constexpr int DeltaIndex = 3;
         return std::make_pair(a[DeltaIndex], a[FirstIndex]) < std::make_pair(b[DeltaIndex], b[FirstIndex]);
@@ -167,23 +174,20 @@ ge::graphStatus QuantFourOverSixA5TailAxisTiling::AutoTiling()
     return ge::GRAPH_SUCCESS;
 }
 
-void QuantFourOverSixA5TailAxisTiling::CalcTilingKeyForTail()
-{
+void QuantFourOverSixA5TailAxisTiling::CalcTilingKeyForTail() {
     // blockSize == 32 的尾轴专用模板只区分 scaleAlg。
     // 10/11/12 分别对应 scaleAlg 0/1/2，dtype 由 kernel binary 的模板参数决定。
     tilingParam_.tilingKey = DIGIT_TEN + tilingParam_.scaleAlg;
 }
 
-void QuantFourOverSixA5TailAxisTiling::CalcAxisSize(const gert::Shape& xShape)
-{
+void QuantFourOverSixA5TailAxisTiling::CalcAxisSize(const gert::Shape &xShape) {
     for (size_t i = 0; i < xShape.GetDimNum() - 1; i++) {
         tilingParam_.rowNum *= xShape.GetDim(i);
     }
     tilingParam_.colNum = xShape.GetDim(xShape.GetDimNum() - 1);
 }
 
-ge::graphStatus QuantFourOverSixA5TailAxisTiling::DoTiling()
-{
+ge::graphStatus QuantFourOverSixA5TailAxisTiling::DoTiling() {
     OP_LOGD(context_->GetNodeName(), "QuantFourOverSixA5TailAxisTiling DoTiling entering.");
 
     auto xShapePtr = context_->GetInputShape(0);
@@ -192,15 +196,15 @@ ge::graphStatus QuantFourOverSixA5TailAxisTiling::DoTiling()
     CalcAxisSize(xShape);
 
     int64_t sliceSize = SLICE_SIZE_512;
-    if (tilingParam_.rowNum * CeilDivQ(tilingParam_.colNum, sliceSize) <= tilingParam_.totalCoreNum * LOAD_BALANCE_THRESHOLD) {
+    if (tilingParam_.rowNum * CeilDivQ(tilingParam_.colNum, sliceSize) <=
+        tilingParam_.totalCoreNum * LOAD_BALANCE_THRESHOLD) {
         sliceSize = SLICE_SIZE_256;
     }
     tilingParam_.rowBlockLoopNum = CeilDivQ(tilingParam_.rowNum, DIGIT_ONE);
     tilingParam_.colBlockLoopNum = CeilDivQ(tilingParam_.colNum, sliceSize);
 
     OP_CHECK_IF(
-        AutoTiling() != ge::GRAPH_SUCCESS,
-        OP_LOGE(context_, "The auto tiling failed."), return ge::GRAPH_FAILED);
+        AutoTiling() != ge::GRAPH_SUCCESS, OP_LOGE(context_, "The auto tiling failed."), return ge::GRAPH_FAILED);
 
     tilingParam_.rowNormalBlockNum = CeilDivQ(tilingParam_.rowBlockLoopNum, tilingParam_.rowTileNum);
     tilingParam_.colNormalBlockNum = CeilDivQ(tilingParam_.colBlockLoopNum, tilingParam_.colTileNum);
@@ -220,15 +224,14 @@ ge::graphStatus QuantFourOverSixA5TailAxisTiling::DoTiling()
     // <= ubSize
     if (tilingParam_.dstType == ge::DT_FLOAT4_E2M1 || tilingParam_.dstType == ge::DT_FLOAT4_E1M2) { // Y FP4
         bool isD4adp = IsFloatEqualQ(tilingParam_.dstTypeMax, 4.0f);
-        int64_t dbIn   = BYTES_OF_INPUT_UINT16_DB_BUFFER_TYPE;   // bf16×DB
-        int64_t dbOut  = BYTES_OF_OUTPUT_FP4_DB_BUFFER_TYPE;     // FP4/2×DB
-        int64_t dbScale = BYTES_OF_SCALE_TYPE * DB_BUFFER;        // E8M0×DB
-        int64_t per256Overhead =
-            SLICE_SIZE_256 * (dbIn + dbOut) +
+        int64_t dbIn = BYTES_OF_INPUT_UINT16_DB_BUFFER_TYPE; // bf16×DB
+        int64_t dbOut = BYTES_OF_OUTPUT_FP4_DB_BUFFER_TYPE; // FP4/2×DB
+        int64_t dbScale = BYTES_OF_SCALE_TYPE * DB_BUFFER; // E8M0×DB
+        int64_t per256Overhead = SLICE_SIZE_256 * (dbIn + dbOut) +
             DIGIT_EIGHT * (BYTES_OF_MAX_VALUE_TYPE + dbScale + BYTES_OF_INVERSE_SCALE_TYPE);
         if (isD4adp) {
             // D4 extra per block: scale46(2×2) + recip extra(1×2) + seTmp(2×2) + y46(2×32) = 74 B/block
-            per256Overhead += DIGIT_EIGHT * (2*2 + 1*2 + 2*2 + 2*32);
+            per256Overhead += DIGIT_EIGHT * (2 * 2 + 1 * 2 + 2 * 2 + 2 * 32);
         }
         tilingParam_.maxUbBlockNum = tilingParam_.ubSize / per256Overhead;
         if (isD4adp) {
@@ -237,28 +240,26 @@ ge::graphStatus QuantFourOverSixA5TailAxisTiling::DoTiling()
                 "maxUbBlockNum_1x256=%ld | maxUbBlockNum_1x32=%ld | "
                 "colNormalBlockNum=%ld colTailLen=%ld | rowNormalBlockNum=%ld rowTailLen=%ld | "
                 "usedCoreNum=%ld totalCoreNum=%ld",
-                tilingParam_.ubSize, per256Overhead,
-                tilingParam_.maxUbBlockNum, tilingParam_.maxUbBlockNum * DIGIT_EIGHT,
-                tilingParam_.colNormalBlockNum, tilingParam_.colTailLen,
-                tilingParam_.rowNormalBlockNum, tilingParam_.rowTailLen,
-                tilingParam_.usedCoreNum, tilingParam_.totalCoreNum);
+                tilingParam_.ubSize, per256Overhead, tilingParam_.maxUbBlockNum,
+                tilingParam_.maxUbBlockNum * DIGIT_EIGHT, tilingParam_.colNormalBlockNum, tilingParam_.colTailLen,
+                tilingParam_.rowNormalBlockNum, tilingParam_.rowTailLen, tilingParam_.usedCoreNum,
+                tilingParam_.totalCoreNum);
         }
     } else if (tilingParam_.dstType == ge::DT_FLOAT8_E5M2 || tilingParam_.dstType == ge::DT_FLOAT8_E4M3FN) { // Y FP8
-        tilingParam_.maxUbBlockNum =
-            tilingParam_.ubSize /
+        tilingParam_.maxUbBlockNum = tilingParam_.ubSize /
             (SLICE_SIZE_256 * (BYTES_OF_INPUT_UINT16_DB_BUFFER_TYPE + BYTES_OF_OUTPUT_FP8_DB_BUFFER_TYPE) +
-             DIGIT_EIGHT * (BYTES_OF_MAX_VALUE_TYPE + BYTES_OF_SCALE_TYPE * DB_BUFFER + BYTES_OF_INVERSE_SCALE_TYPE));
+                DIGIT_EIGHT *
+                    (BYTES_OF_MAX_VALUE_TYPE + BYTES_OF_SCALE_TYPE * DB_BUFFER + BYTES_OF_INVERSE_SCALE_TYPE));
     }
     tilingParam_.maxUbBlockNum *= DIGIT_EIGHT; // 转换成UB可以放下的block（1×32）数量
 
     CalcTilingKeyForTail();
-    OP_CHECK_IF(
-        SetTilingDataForTailAxis() != ge::GRAPH_SUCCESS,
+    OP_CHECK_IF(SetTilingDataForTailAxis() != ge::GRAPH_SUCCESS,
         OP_LOGE(context_, "DynamicMxQuantTailAxisSetTilingData set tiling data failed."), return ge::GRAPH_FAILED);
 
     context_->SetBlockDim(tilingData_.usedCoreNum);
     context_->SetTilingKey(tilingData_.tilingKey);
-    size_t* workspaces = context_->GetWorkspaceSizes(1);
+    size_t *workspaces = context_->GetWorkspaceSizes(1);
     OP_CHECK_NULL_WITH_CONTEXT(context_, workspaces);
     workspaces[0] = tilingParam_.workspaceSize;
 

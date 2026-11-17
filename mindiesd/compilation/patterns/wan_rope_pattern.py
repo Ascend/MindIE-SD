@@ -20,14 +20,9 @@ import sys
 
 import torch
 
+import mindiesd
+
 from ..passes.register_pattern_to_pass import PatternBase
-
-if hasattr(torch.npu, "is_available"):
-    npu_available = torch.npu.is_available()
-if npu_available:
-    import torch_npu  # noqa: F401
-
-    import mindiesd
 
 _INT64_MAX = sys.maxsize
 
@@ -46,7 +41,8 @@ def create(dtype):
             return [x, cos, sin]
 
         @staticmethod
-        def pattern(x, cos, sin):
+        # Pattern tracing requires named tensor arguments, unlike the variadic base.
+        def pattern(x, cos, sin):  # pylint: disable=arguments-differ
             def func(x, cos, sin):
                 x_shape = list(x.shape)
                 x_view = torch.ops.aten.view.default(x, x_shape[:-1] + [x_shape[-1] // 2, 2])
@@ -67,14 +63,28 @@ def create(dtype):
             return func(x, cos, sin)
 
         @staticmethod
-        def replacement(x, cos, sin):
+        # Replacement tracing uses the same named arguments as the matched graph.
+        def replacement(x, cos, sin):  # pylint: disable=arguments-differ
             def func(x, cos, sin):
-                return mindiesd.layers.rotary_position_embedding(
-                    x, cos, sin,
+                # The matched write-back uses cos even / sin odd for both
+                # coordinates, including when neighboring frequencies differ.
+                cos = cos[..., ::2].repeat_interleave(2, dim=-1)
+                sin = sin[..., 1::2].repeat_interleave(2, dim=-1)
+                # A3 interleave tiling requires a shared batch dimension for
+                # frequencies. Fold B*S without changing per-token values.
+                frequency_shape = (x.shape[0], x.shape[1], 1, x.shape[3])
+                cos = cos.expand(frequency_shape).reshape(1, -1, 1, x.shape[3])
+                sin = sin.expand(frequency_shape).reshape(1, -1, 1, x.shape[3])
+                x_in = x.reshape(1, -1, x.shape[2], x.shape[3])
+                result = mindiesd.layers.rotary_position_embedding(
+                    x_in,
+                    cos,
+                    sin,
                     rotated_mode="rotated_interleaved",
                     head_first=False,
                     fused=True,
                 )
+                return result.reshape(x.shape)
 
             return func(x, cos, sin)
 

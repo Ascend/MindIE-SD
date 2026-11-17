@@ -8,25 +8,34 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef GEMM_DISPATCH_POLICY_HPP
 #define GEMM_DISPATCH_POLICY_HPP
 
 #include "../../attn_infra/base_defs.hpp"
 #include "../../attn_infra/arch/arch.hpp"
 
-namespace NpuArch::Gemm 
-{
+namespace NpuArch::Gemm {
 
 // Block Mmad Policies
 
-template <bool ASYNC_ = false>
-struct MmadAtlasA2Base {
+template <bool ASYNC_ = false> struct MmadAtlasA2Base {
     using ArchTag = Arch::AtlasA2;
     static constexpr uint32_t ASYNC = ASYNC_;
 };
 
-template <bool ASYNC_ = false>
-struct MmadAtlasA5Base {
+template <bool ASYNC_ = false> struct MmadAtlasA5Base {
     using ArchTag = Arch::AtlasA5;
     static constexpr uint32_t ASYNC = ASYNC_;
 };
@@ -56,6 +65,6 @@ struct MmadAtlasA5BsaPV : public MmadAtlasA5 {
     static constexpr uint32_t L0_STAGES = 2;
 };
 
-}  // namespace NpuArch::Gemm
+} // namespace NpuArch::Gemm
 
-#endif  // GEMM_DISPATCH_POLICY_HPP
+#endif // GEMM_DISPATCH_POLICY_HPP

@@ -2,6 +2,14 @@
 
 Released MindIE-SD image tags are listed by version below.
 
+## MindIE-SD 3.2.0
+
+| Tag | Dockerfile | content |
+| --- | --- | --- |
+| `v3.2.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a2.ubuntu) | mindiesd 3.2.0 / vllm-omni 0.32.0 |
+| `v3.2.0-cann9.1.0-torch_npu2.10.0.post4-a3-ubuntu22.04-py3.12` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a3.ubuntu) | mindiesd 3.2.0 / vllm-omni 0.32.0-a3 |
+| `v3.2.0-cann9.1.0-torch_npu2.10.0.post4-950-ubuntu22.04-py3.12` | [Dockerfile](https://gitcode.com/Ascend/MindIE-SD/blob/dev/docker/omni/Dockerfile.a5.ubuntu) | mindiesd 3.2.0 / vllm-omni 0.32.0-a5 |
+
 ## MindIE-SD 3.1.0
 
 | Tag | Dockerfile | content |

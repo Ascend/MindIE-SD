@@ -10,15 +10,18 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-from typing import Any, Callable, Dict, List, Tuple, Optional, Sequence
 import re
+from collections.abc import Callable, Sequence
+from enum import Enum
+from typing import Any
+
 import torch
 import torch._inductor.pattern_matcher as pm
 from torch._inductor.pattern_matcher import PatternMatcherPass
 
-from .gm_pass_base import GraphModulePass
-from .._custom_decomposition import select_custom_decomp_table
 from ...utils.logs.logging import logger
+from .._custom_decomposition import select_custom_decomp_table
+from .gm_pass_base import GraphModulePass
 
 DEBUG_LOG_LEVEL = 10
 
@@ -27,8 +30,8 @@ IS_TORCH_21 = torch_version == "2.1"
 if IS_TORCH_21:
 
     def mindie_inference_graph(fn, args):
-        from torch.fx.experimental.proxy_tensor import make_fx
         from torch._subclasses.fake_tensor import FakeTensor
+        from torch.fx.experimental.proxy_tensor import make_fx
 
         decomp_table = select_custom_decomp_table()
 
@@ -44,9 +47,22 @@ if IS_TORCH_21:
         return gm
 
 
+class PatternBackend(str, Enum):
+    """算子融合模板注册的目标后端。
+
+    收敛 Inductor 与 npugraph_ex 两套 register_replacement 入口：INDUCTOR 走
+    ``torch._inductor.pattern_matcher``（default/aclgraph 路径，aot 之后生效）；
+    NPUGRAPH_EX 走 ``torch.npu.npugraph_ex.register_replacement``（npugraph_ex
+    内部正确阶段生效）。
+    """
+
+    INDUCTOR = "inductor"
+    NPUGRAPH_EX = "npugraph_ex"
+
+
 class PatternMatchPass(GraphModulePass):
     def __init__(self):
-        self.pattern_replacements: Dict[str, Tuple[Callable[..., Any], Callable[..., Any]]] = {}
+        self.pattern_replacements: dict[str, tuple[Callable[..., Any], Callable[..., Any]]] = {}
         try:
             self.pattern_pass: PatternMatcherPass = PatternMatcherPass(pass_name="pattern_match_pass")  # nosec B106
         except TypeError:
@@ -80,8 +96,9 @@ class PatternMatchPass(GraphModulePass):
         name: str,
         pattern: Callable[..., Any],
         replacement: Callable[..., Any],
-        example_inputs: List[torch.Tensor],
-        extra_check: Optional[Callable[[pm.Match], bool]] = None,
+        example_inputs: list[torch.Tensor],
+        extra_check: Callable[[pm.Match], bool] | None = None,
+        backend: "PatternBackend | str" = PatternBackend.INDUCTOR,
     ):
         if name in self.pattern_replacements:
             logger.error(
@@ -94,8 +111,36 @@ class PatternMatchPass(GraphModulePass):
             raise ValueError(f"Pattern '{name}' is already registered.")
 
         self.pattern_replacements[name] = (pattern, replacement)
-        logger.debug("Registering pattern: %s", name)
+        logger.debug("Registering pattern: %s (backend=%s)", name, backend)
 
+        if isinstance(backend, PatternBackend):
+            resolved = backend
+        else:
+            try:
+                resolved = PatternBackend(str(backend))
+            except ValueError:
+                logger.warning(
+                    "[MindIE-SD/compilation] Unknown pattern backend=%s, fall back to inductor. pattern_name=%s.",
+                    backend,
+                    name,
+                )
+                resolved = PatternBackend.INDUCTOR
+
+        if resolved == PatternBackend.NPUGRAPH_EX:
+            self._register_npugraph_ex_replacement(name, pattern, replacement, example_inputs, extra_check)
+        else:
+            self._register_inductor_replacement(name, pattern, replacement, example_inputs, extra_check)
+
+    def _register_inductor_replacement(
+        self,
+        name: str,
+        pattern: Callable[..., Any],
+        replacement: Callable[..., Any],
+        example_inputs: list[torch.Tensor],
+        extra_check: Callable[[pm.Match], bool] | None = None,
+    ):
+        # Inductor 路径：通过 torch._inductor.pattern_matcher.register_replacement 注册，
+        # 在 default/aclgraph 路径的 graph_rewrite_before_freezing（aot 之后）生效。
         if not hasattr(pm, "fwd_only"):
             if IS_TORCH_21:
                 pm.fwd_only = mindie_inference_graph
@@ -114,7 +159,7 @@ class PatternMatchPass(GraphModulePass):
             args: Sequence[Any],
             *,
             run_functional_passes: bool = True,
-            get_decomp_fn: Optional[Callable[..., Any]] = select_custom_decomp_table,
+            get_decomp_fn: Callable[..., Any] | None = select_custom_decomp_table,
         ) -> torch.fx.GraphModule:
             if IS_TORCH_21:
                 return pm.fwd_only(fn=fn, args=args)
@@ -154,3 +199,44 @@ class PatternMatchPass(GraphModulePass):
                     e,
                 )
                 raise e
+
+    def _register_npugraph_ex_replacement(
+        self,
+        name: str,
+        pattern: Callable[..., Any],
+        replacement: Callable[..., Any],
+        example_inputs: list[torch.Tensor],
+        extra_check: Callable[[pm.Match], bool] | None = None,
+    ):
+        # npugraph_ex 路径：借其原生 register_replacement，在 npugraph_ex 内部正确阶段
+        # （aot 之后）生效；不在 compile_fx 之前手工改写，避免原始 gm 单节点失配。
+        # 该 API 签名随 torch_npu 版本变化，失败时仅告警并跳过，不阻断注册流程。
+        try:
+            npugraph_ex = getattr(getattr(torch, "npu", None), "npugraph_ex", None)
+            register = getattr(npugraph_ex, "register_replacement", None)
+            if register is None:
+                logger.warning(
+                    "[MindIE-SD/compilation] npugraph_ex pattern registration skipped. "
+                    "issue=torch.npu.npugraph_ex.register_replacement not found, pattern_name=%s. "
+                    "possible_cause=torch_npu version does not provide npugraph_ex.register_replacement. "
+                    "Troubleshooting: install a compatible torch_npu version.",
+                    name,
+                )
+                return
+            register_kwargs = {}
+            if extra_check is not None:
+                register_kwargs["extra_check"] = extra_check
+            register(pattern, replacement, example_inputs, **register_kwargs)
+            logger.debug("Successfully register npugraph_ex pattern: %s", name)
+        except Exception as e:  # noqa: BLE001
+            # 注册失败不应阻断整个编译：npugraph_ex 的 register_replacement 在各版本
+            # 可能抛 ValueError/AttributeError/KeyError 等（不限于 ImportError/
+            # RuntimeError/TypeError），只捕获固定几类会让异常冒泡出 torch.compile。
+            logger.warning(
+                "[MindIE-SD/compilation] npugraph_ex pattern registration failed, skipped. "
+                "pattern_name=%s, actual_error=%s. "
+                "possible_cause=pattern/replacement/example_inputs incompatible with npugraph_ex register_replacement. "
+                "Troubleshooting: inspect the npugraph_ex register_replacement signature and pattern definition.",
+                name,
+                e,
+            )

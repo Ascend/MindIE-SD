@@ -1,6 +1,19 @@
 /*
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
+
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /**
  * Copyright (c) 2025 Huawei Technologies Co., Ltd.
  * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
@@ -28,8 +41,8 @@ using namespace MicroAPI;
 #define DROPOUT false
 
 template <uint16_t QsBase = 128, typename Otype = bfloat16_t>
-__simd_vf__ void transpose_attn_out_vf(__ubuf__ float *atten_out_md, __ubuf__ float *atten_out_dm, __ubuf__ float *rsum)
-{
+__simd_vf__ void transpose_attn_out_vf(
+    __ubuf__ float *atten_out_md, __ubuf__ float *atten_out_dm, __ubuf__ float *rsum) {
     MaskReg preg_all32 = CreateMask<float, MaskPattern::ALL>();
     MaskReg preg_all16 = CreateMask<uint16_t, MaskPattern::ALL>();
     RegTensor<float> vreg_rrsum, vreg_ones;
@@ -79,42 +92,42 @@ __simd_vf__ void transpose_attn_out_vf(__ubuf__ float *atten_out_md, __ubuf__ fl
         Cast<Otype, float, castTraitZero>(vreg_bf16_1, vreg_src1, preg_all32);
         Cast<Otype, float, castTraitOne>(vreg_bf16_2, vreg_src2, preg_all32);
         Or((RegTensor<uint16_t> &)vreg_src1, (RegTensor<uint16_t> &)vreg_bf16_1, (RegTensor<uint16_t> &)vreg_bf16_2,
-           preg_all16);
+            preg_all16);
 
         Cast<Otype, float, castTraitZero>(vreg_bf16_1, vreg_src3, preg_all32);
         Cast<Otype, float, castTraitOne>(vreg_bf16_2, vreg_src4, preg_all32);
         Or((RegTensor<uint16_t> &)vreg_src2, (RegTensor<uint16_t> &)vreg_bf16_1, (RegTensor<uint16_t> &)vreg_bf16_2,
-           preg_all16);
+            preg_all16);
 
         Cast<Otype, float, castTraitZero>(vreg_bf16_1, vreg_src5, preg_all32);
         Cast<Otype, float, castTraitOne>(vreg_bf16_2, vreg_src6, preg_all32);
         Or((RegTensor<uint16_t> &)vreg_src3, (RegTensor<uint16_t> &)vreg_bf16_1, (RegTensor<uint16_t> &)vreg_bf16_2,
-           preg_all16);
+            preg_all16);
 
         Cast<Otype, float, castTraitZero>(vreg_bf16_1, vreg_src7, preg_all32);
         Cast<Otype, float, castTraitOne>(vreg_bf16_2, vreg_src8, preg_all32);
         Or((RegTensor<uint16_t> &)vreg_src4, (RegTensor<uint16_t> &)vreg_bf16_1, (RegTensor<uint16_t> &)vreg_bf16_2,
-           preg_all16);
+            preg_all16);
 
         Cast<Otype, float, castTraitZero>(vreg_bf16_1, vreg_src9, preg_all32);
         Cast<Otype, float, castTraitOne>(vreg_bf16_2, vreg_src10, preg_all32);
         Or((RegTensor<uint16_t> &)vreg_src5, (RegTensor<uint16_t> &)vreg_bf16_1, (RegTensor<uint16_t> &)vreg_bf16_2,
-           preg_all16);
+            preg_all16);
 
         Cast<Otype, float, castTraitZero>(vreg_bf16_1, vreg_src11, preg_all32);
         Cast<Otype, float, castTraitOne>(vreg_bf16_2, vreg_src12, preg_all32);
         Or((RegTensor<uint16_t> &)vreg_src6, (RegTensor<uint16_t> &)vreg_bf16_1, (RegTensor<uint16_t> &)vreg_bf16_2,
-           preg_all16);
+            preg_all16);
 
         Cast<Otype, float, castTraitZero>(vreg_bf16_1, vreg_src13, preg_all32);
         Cast<Otype, float, castTraitOne>(vreg_bf16_2, vreg_src14, preg_all32);
         Or((RegTensor<uint16_t> &)vreg_src7, (RegTensor<uint16_t> &)vreg_bf16_1, (RegTensor<uint16_t> &)vreg_bf16_2,
-           preg_all16);
+            preg_all16);
 
         Cast<Otype, float, castTraitZero>(vreg_bf16_1, vreg_src15, preg_all32);
         Cast<Otype, float, castTraitOne>(vreg_bf16_2, vreg_src16, preg_all32);
         Or((RegTensor<uint16_t> &)vreg_src8, (RegTensor<uint16_t> &)vreg_bf16_1, (RegTensor<uint16_t> &)vreg_bf16_2,
-           preg_all16);
+            preg_all16);
 
         Interleave(vreg_src1, vreg_src5, vreg_src1, vreg_src5);
         Interleave(vreg_src2, vreg_src6, vreg_src2, vreg_src6);
@@ -159,9 +172,8 @@ __simd_vf__ void transpose_attn_out_vf(__ubuf__ float *atten_out_md, __ubuf__ fl
 }
 
 template <uint16_t QsBase = 128, typename Otype = bfloat16_t>
-__aicore__ inline void TransposeAttnOutCallVF(const LocalTensor<float> &dstTensor, const LocalTensor<float> &srcTensor,
-                                              const LocalTensor<float> &rSum)
-{
+__aicore__ inline void TransposeAttnOutCallVF(
+    const LocalTensor<float> &dstTensor, const LocalTensor<float> &srcTensor, const LocalTensor<float> &rSum) {
     __ubuf__ float *atten_out_md = (__ubuf__ float *)dstTensor.GetPhyAddr();
     __ubuf__ float *atten_out_dm = (__ubuf__ float *)srcTensor.GetPhyAddr();
     __ubuf__ float *rsum = (__ubuf__ float *)rSum.GetPhyAddr();

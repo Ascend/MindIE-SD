@@ -54,13 +54,13 @@ pre-commit install
 
 ```bash
 pre-commit run --all-files
-bash tests/run_UT_test.sh
+python tests/scripts/run_suites.py --cpu_only
 ```
 
 涉及 NPU 的变更还应按影响范围运行：
 
 ```bash
-bash tests/run_test.sh --all
+python tests/scripts/run_suites.py --all
 ```
 
 也可根据需要使用 `--cpu_only` 或 `--npu_only`。涉及模型输出或性能的变更必须
@@ -204,13 +204,13 @@ Run at least the following checks before submission:
 
 ```bash
 pre-commit run --all-files
-bash tests/run_UT_test.sh
+python tests/scripts/run_suites.py --cpu_only
 ```
 
 Changes involving NPUs should also run the applicable tests through:
 
 ```bash
-bash tests/run_test.sh --all
+python tests/scripts/run_suites.py --all
 ```
 
 Use `--cpu_only` or `--npu_only` when appropriate. Changes affecting model

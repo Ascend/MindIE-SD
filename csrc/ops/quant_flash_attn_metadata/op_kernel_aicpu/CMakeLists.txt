@@ -106,6 +106,9 @@ foreach(src ${AICPU_SRC})
                 -c ${src}
                 -o ${obj}
         DEPENDS ${src}
+                ${CMAKE_CURRENT_SOURCE_DIR}/qfa_head_split.h
+                ${CMAKE_CURRENT_SOURCE_DIR}/../../quant_flash_attn/op_kernel/arch35/qfa_query_tile.h
+                ${CMAKE_CURRENT_SOURCE_DIR}/../../common/op_kernel/load_balance/section_stream_k/section_stream_k_impl.h
         VERBATIM
     )
     list(APPEND AICPU_OBJECTS ${obj})

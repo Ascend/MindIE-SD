@@ -85,8 +85,6 @@ If `return_dispatcher_type=True`, returns `(output, dispatcher_type)`.
 
 The fused operator path is not yet supported in the current version. Setting `use_fused_op=True` falls back to the non-fused operator path.
 
----
-
 ## Non-Fused Operator Path (Current Default)
 
 This path splits the MoE forward pass into multiple stages, supporting both non-quantized and quantized MoE inference, covering single-card, TP, and EP scenarios, and providing static and dynamic token dispatch methods. The static dispatcher is suitable for single-card, TP, and some EP scenarios; the dynamic dispatcher targets all-to-all token exchange in EP scenarios.
@@ -109,7 +107,7 @@ Two token dispatch strategies are supported:
 - **static dispatcher**: Uses a static token dispatch path, suitable for single-card, TP, and some EP scenarios. This path completes token sorting, expert token statistics, and result recovery via NPU MoE routing operators.
 - **dynamic dispatcher**: Uses a dynamic token dispatch path, suitable for EP scenarios. This path performs all-to-all communication based on token-to-expert distribution and restores token order before and after expert computation.
 
-When `dispatcher_type=None`, the API auto-selects based on communication mode and NPU model: 
+When `dispatcher_type=None`, the API auto-selects based on communication mode and NPU model:
 
 <!-- npu="A3" id1 -->
 - Atlas 800I A3 SuperPoD Server use dynamic dispatcher in EP scenarios.
@@ -120,7 +118,7 @@ When `dispatcher_type=None`, the API auto-selects based on communication mode an
 <!-- npu="910b" id3 -->
 - Atlas 800I A2 inference server use static dispatcher.
 <!-- end id3 -->
-- non-EP scenarios (single-card/TP) always use static dispatcher. 
+- non-EP scenarios (single-card/TP) always use static dispatcher.
 
 You can also explicitly specify via `dispatcher_type="static"` or `dispatcher_type="dynamic"`.
 

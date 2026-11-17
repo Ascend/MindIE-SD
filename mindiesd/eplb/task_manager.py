@@ -10,6 +10,8 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+import os
+import secrets
 import threading
 from multiprocessing.connection import AuthenticationError
 
@@ -47,6 +49,32 @@ def _log_unknown_task_type(instruction):
         "UPDATE_LAYOUT; if a new task type was introduced, add it to TASK_DISPATCHER before enqueueing it.",
         instruction.task_type,
     )
+
+
+def _resolve_worker_auth_key(auth_key):
+    """Resolve the EPLB worker authentication key.
+
+    Resolution order mirrors the scheduler side: an explicitly passed key
+    wins, then the ``EPLB_AUTH_KEY`` environment variable, and finally a
+    freshly generated random key. The random fallback keeps the worker from
+    silently falling back to a shared default while still allowing single-node
+    setups where scheduler and worker start in the same process.
+    """
+    if auth_key:
+        return auth_key
+    env_key = os.environ.get("EPLB_AUTH_KEY")
+    if env_key:
+        return env_key
+    random_key = secrets.token_hex(16)
+    logger.warning(
+        "[MindIE-SD/eplb] No EPLB auth key configured for the worker. "
+        "issue=auth_key argument and EPLB_AUTH_KEY env var are both empty. "
+        "possible_cause=EPLB_AUTH_KEY was not exported on the worker host. "
+        "Troubleshooting: set EPLB_AUTH_KEY to the same shared key used by the "
+        "scheduler and restart the worker; a random key is generated as a "
+        "fallback so the well-known default is never used.",
+    )
+    return random_key
 
 
 def parse_module(module):
@@ -132,7 +160,7 @@ def construct_expert_info_transfer_pool(**kwargs):
     device = kwargs['device']
     ip = kwargs['ip']
     port = kwargs['port']
-    auth_key = kwargs['auth_key']
+    auth_key = _resolve_worker_auth_key(kwargs.get('auth_key'))
     instruction_queue, upload_queue = connect_to_schedule_manager(rank_in_group, ip, port, auth_key)
     if instruction_queue is None or upload_queue is None:
         return None, None

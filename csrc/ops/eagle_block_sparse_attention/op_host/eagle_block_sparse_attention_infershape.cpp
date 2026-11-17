@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #include <graph/utils/type_utils.h>
 #include <register/op_impl_registry.h>
 #include <string>
@@ -49,8 +61,7 @@ static constexpr uint32_t LSE_DIM_D = 1;
 
 static constexpr int32_t UNKNOWN_DIMS = -2;
 
-static ge::graphStatus InferShapeEagleBlockSparseAttention(gert::InferShapeContext *context)
-{
+static ge::graphStatus InferShapeEagleBlockSparseAttention(gert::InferShapeContext *context) {
     if (context == nullptr) {
         OP_LOGE("EagleBlockSparseAttention", "context is nullptr!");
         return ge::GRAPH_FAILED;
@@ -132,9 +143,9 @@ static ge::graphStatus InferShapeEagleBlockSparseAttention(gert::InferShapeConte
     // 验证Q和KV格式一致性：两者必须相同
     if (qLayout != kvLayout) {
         OP_LOGE(context->GetNodeName(),
-                "The parameters qInputLayout and kvInputLayout must be consistent, but currently qInputLayout is %s "
-                "and kvInputLayout is %s.",
-                qLayout.c_str(), kvLayout.c_str());
+            "The parameters qInputLayout and kvInputLayout must be consistent, but currently qInputLayout is %s "
+            "and kvInputLayout is %s.",
+            qLayout.c_str(), kvLayout.c_str());
         return ge::GRAPH_FAILED;
     }
 
@@ -210,7 +221,7 @@ static ge::graphStatus InferShapeEagleBlockSparseAttention(gert::InferShapeConte
         }
     } else {
         OP_LOGE(context->GetNodeName(), "Unsupported KV layout: %s. Only TND/BNSD/BSND format is supported.",
-                kvInputLayoutPtr);
+            kvInputLayoutPtr);
         return ge::GRAPH_FAILED;
     }
 
@@ -245,8 +256,7 @@ static ge::graphStatus InferShapeEagleBlockSparseAttention(gert::InferShapeConte
     return ge::GRAPH_SUCCESS;
 }
 
-ge::graphStatus InferDataTypeEagleBlockSparseAttention(gert::InferDataTypeContext *context)
-{
+ge::graphStatus InferDataTypeEagleBlockSparseAttention(gert::InferDataTypeContext *context) {
     if (context == nullptr) {
         return ge::GRAPH_FAILED;
     }

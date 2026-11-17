@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 /*!
  * \file aclnn_eagle_ffn_v3.h
  * \brief
@@ -76,8 +88,8 @@ extern "C" {
  * @param [out] executor：返回op执行器，包含了算子计算流程。
  * @return      aclnnStatus: 返回状态码
  */
-__attribute__((visibility("default"))) aclnnStatus aclnnEagleFfnV3GetWorkspaceSize(
-    const aclTensor *x, const aclTensor *weight1, const aclTensor *weight2, const aclTensor *expertTokensOptional,
+__attribute__((visibility("default"))) aclnnStatus aclnnEagleFfnV3GetWorkspaceSize(const aclTensor *x,
+    const aclTensor *weight1, const aclTensor *weight2, const aclTensor *expertTokensOptional,
     const aclTensor *bias1Optional, const aclTensor *bias2Optional, const aclTensor *scaleOptional,
     const aclTensor *offsetOptional, const aclTensor *deqScale1Optional, const aclTensor *deqScale2Optional,
     const aclTensor *antiquantScale1Optional, const aclTensor *antiquantScale2Optional,
@@ -92,8 +104,8 @@ __attribute__((visibility("default"))) aclnnStatus aclnnEagleFfnV3GetWorkspaceSi
  * @param [in] stream: 指定执行任务的AscendCL stream流。
  * @return     aclnnStatus: 返回状态码
  */
-__attribute__((visibility("default"))) aclnnStatus aclnnEagleFfnV3(void *workspace, uint64_t workspaceSize,
-                                                              aclOpExecutor *executor, aclrtStream stream);
+__attribute__((visibility("default"))) aclnnStatus aclnnEagleFfnV3(
+    void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, aclrtStream stream);
 
 #ifdef __cplusplus
 }

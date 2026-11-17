@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef GEMM_BLOCK_PV_ARCH35_MXFP4_HPP
 #define GEMM_BLOCK_PV_ARCH35_MXFP4_HPP
 
@@ -27,10 +39,10 @@
 
 namespace NpuArch::Gemm::Block {
 template <bool transposedMm1_, class L1TileShape_, class L0TileShape_, class ElementA_, class ElementB_,
-          class ElementC_, class ElementBias_, class TileCopy_, class TileMmad_>
+    class ElementC_, class ElementBias_, class TileCopy_, class TileMmad_>
 struct BlockMmadTla<MmadAtlasA5BsaPVMX<transposedMm1_>, L1TileShape_, L0TileShape_, ElementA_, ElementB_, ElementC_,
-                    ElementBias_, TileCopy_, TileMmad_> {
-public:
+    ElementBias_, TileCopy_, TileMmad_> {
+  public:
     using DispatchPolicy = MmadAtlasA5BsaPVMX<transposedMm1_>;
     using ArchTag = typename DispatchPolicy::ArchTag;
     using TileCopy = TileCopy_;
@@ -40,10 +52,8 @@ public:
 
     using TileMmad = TileMmad_;
 
-    template <class TensorA>
-    using CopyGmToL1A = typename TileCopy::template CopyGmToL1A<TensorA>;
-    template <class TensorB>
-    using CopyGmToL1B = typename TileCopy::template CopyGmToL1B<TensorB>;
+    template <class TensorA> using CopyGmToL1A = typename TileCopy::template CopyGmToL1A<TensorA>;
+    template <class TensorB> using CopyGmToL1B = typename TileCopy::template CopyGmToL1B<TensorB>;
 
     using ElementAccumulator = typename TileCopy::ElementAccumulator;
 
@@ -73,17 +83,15 @@ public:
 
     static constexpr AscendC::FixpipeConfig CFG_ROW_MAJOR_UB = {AscendC::CO2Layout::ROW_MAJOR, true};
 
-    __aicore__ inline BlockMmadTla(Arch::Resource<ArchTag> &resource, uint32_t &kvBufId)
-        : l1ABufId(kvBufId)
-    {
+    __aicore__ inline BlockMmadTla(Arch::Resource<ArchTag> &resource, uint32_t &kvBufId) : l1ABufId(kvBufId) {
         for (uint32_t i = 0; i < MXFP4::L1_P_BUF_CNT; i++) {
             l1BTensor[i] =
                 resource.l1Buf.template GetBufferByByte<ElementB>(MXFP4::L1_P_BUF_OFFSET + MXFP4::L1_P_BUF_SIZE * i);
         }
 
         for (uint32_t i = 0; i < MXFP4::L1_P_SCALE_BUF_CNT; i++) {
-            l1BScaleTensor[i] = resource.l1Buf.template GetBufferByByte<uint8_t>(MXFP4::L1_P_SCALE_BUF_OFFSET +
-                                                                                 MXFP4::L1_P_SCALE_BUF_SIZE * i);
+            l1BScaleTensor[i] = resource.l1Buf.template GetBufferByByte<uint8_t>(
+                MXFP4::L1_P_SCALE_BUF_OFFSET + MXFP4::L1_P_SCALE_BUF_SIZE * i);
         }
 
         for (uint32_t i = 0; i < MXFP4::L1_KV_BUF_CNT; i++) {
@@ -92,18 +100,18 @@ public:
         }
 
         for (uint32_t i = 0; i < MXFP4::L1_KV_DESCALE_BUF_CNT; i++) {
-            l1AScaleTensor[i] = resource.l1Buf.template GetBufferByByte<uint8_t>(MXFP4::L1_KV_DESCALE_BUF_OFFSET +
-                                                                                 MXFP4::L1_KV_DESCALE_BUF_SIZE * i);
+            l1AScaleTensor[i] = resource.l1Buf.template GetBufferByByte<uint8_t>(
+                MXFP4::L1_KV_DESCALE_BUF_OFFSET + MXFP4::L1_KV_DESCALE_BUF_SIZE * i);
         }
 
         for (uint32_t i = 0; i < MXFP4::L0A_PV_BUF_CNT; i++) {
-            l0ATensor[i] = resource.l0ABuf.template GetBufferByByte<ElementA>(MXFP4::L0A_PV_BUF_OFFSET +
-                                                                              MXFP4::L0A_PV_BUF_SIZE * i);
+            l0ATensor[i] = resource.l0ABuf.template GetBufferByByte<ElementA>(
+                MXFP4::L0A_PV_BUF_OFFSET + MXFP4::L0A_PV_BUF_SIZE * i);
         }
 
         for (uint32_t i = 0; i < MXFP4::L0B_PV_BUF_CNT; i++) {
-            l0BTensor[i] = resource.l0BBuf.template GetBufferByByte<ElementB>(MXFP4::L0B_PV_BUF_OFFSET +
-                                                                              MXFP4::L0B_PV_BUF_SIZE * i);
+            l0BTensor[i] = resource.l0BBuf.template GetBufferByByte<ElementB>(
+                MXFP4::L0B_PV_BUF_OFFSET + MXFP4::L0B_PV_BUF_SIZE * i);
         }
 
         l0CTensor[0] = resource.l0CBuf.template GetBufferByByte<float>(MXFP4::L0C_PV_BUF_OFFSET);
@@ -113,42 +121,37 @@ public:
     }
     __aicore__ inline ~BlockMmadTla() {}
 
-    __aicore__ inline void AllocEventID()
-    {
+    __aicore__ inline void AllocEventID() {
         AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(PV_L0AB_EVENT0);
         AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(PV_L0AB_EVENT1);
         AscendC::SetFlag<AscendC::HardEvent::FIX_M>(PV_L0C_EVENT0);
     }
 
-    __aicore__ inline void FreeEventID()
-    {
+    __aicore__ inline void FreeEventID() {
         AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(PV_L0AB_EVENT0);
         AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(PV_L0AB_EVENT1);
         AscendC::WaitFlag<AscendC::HardEvent::FIX_M>(PV_L0C_EVENT0);
     }
 
     // V: nZ L1 + V-scale → zN L0A（转置）
-    __aicore__ inline void LoadVToL0(uint32_t l1ABufId, uint32_t l0ABufId, uint32_t embedReal, uint32_t s2Align64)
-    {
+    __aicore__ inline void LoadVToL0(uint32_t l1ABufId, uint32_t l0ABufId, uint32_t embedReal, uint32_t s2Align64) {
         copyL1ToL0AMx(l0ATensor[l0ABufId], l1ATensor[l1ABufId],
-                      l1AScaleTensor[l1ABufId].template ReinterpretCast<AscendC::fp8_e8m0_t>(), embedReal, s2Align64);
+            l1AScaleTensor[l1ABufId].template ReinterpretCast<AscendC::fp8_e8m0_t>(), embedReal, s2Align64);
     }
 
     // P: zN L1 + P-scale → nZ L0B（转置）
-    __aicore__ inline void LoadPToL0(uint32_t l1BBufId, uint32_t l0BBufId, uint32_t s2Align64, uint32_t embedReal,
-                                     uint32_t s1Align64)
-    {
+    __aicore__ inline void LoadPToL0(
+        uint32_t l1BBufId, uint32_t l0BBufId, uint32_t s2Align64, uint32_t embedReal, uint32_t s1Align64) {
         constexpr uint32_t s2Base = MXFP4::S2_BASE_TILE_SIZE;
         constexpr uint32_t scaleSrcStride = s2Base / MXFP4::FP4_C0_ELEMS + 1;
         copyL1ToL0BMx(l0BTensor[l0BBufId], l1BTensor[l1BBufId],
-                      l1BScaleTensor[l1BBufId].template ReinterpretCast<AscendC::fp8_e8m0_t>(), s2Align64, embedReal,
-                      s2Base, scaleSrcStride, s1Align64);
+            l1BScaleTensor[l1BBufId].template ReinterpretCast<AscendC::fp8_e8m0_t>(), s2Align64, embedReal, s2Base,
+            scaleSrcStride, s1Align64);
     }
 
     // C = Vᵀ @ P = Oᵀ，initC 由 isTileGroupFirstTile 控制
-    __aicore__ inline void MatmulPV(uint32_t l0ABufId, uint32_t l0BBufId, uint32_t m, uint32_t n, uint32_t k,
-                                    bool initC)
-    {
+    __aicore__ inline void MatmulPV(
+        uint32_t l0ABufId, uint32_t l0BBufId, uint32_t m, uint32_t n, uint32_t k, bool initC) {
         auto l0ALayout = tla::MakeLayout<ElementA, LayoutTagL0A>(m, k);
         auto l0ATensorTla = tla::MakeTensor(l0ATensor[l0ABufId], l0ALayout, Arch::PositionL0A{});
         auto l0BLayout = tla::MakeLayout<ElementB, LayoutTagL0B>(k, n);
@@ -164,12 +167,11 @@ public:
     // 段推进天然落在 y-block 边界上（仅首段 innerStart 可能非 0），故循环内无除法/取模。
     // firstYBlockIdx / firstOriYBlockIdx 由调用方提前预取，避免首个 index 的阻塞访存落在此处。
     template <class TensorV, class TensorL1A, class TensorVScale, class TensorL1AScale>
-    __aicore__ inline void SparseVFusedBaseTileL1FullLoad(
-        TensorV &gVTensor, TensorL1A &l1ATensorTla, TensorVScale &gVScaleTensor, TensorL1AScale &l1AScaleTensorTla,
-        AscendC::GlobalTensor<int32_t> gSparseBlockIdx, uint32_t gatheredKvSTileIdx, int64_t kvSeqlen,
-        uint32_t kvSBaseTile, uint32_t blockShapeY, uint32_t yBlockNumAval, uint32_t yBlockNumRsvd,
-        uint32_t curBaseTileSize, uint32_t embed, uint32_t firstYBlockIdx, uint32_t firstOriYBlockIdx)
-    {
+    __aicore__ inline void SparseVFusedBaseTileL1FullLoad(TensorV &gVTensor, TensorL1A &l1ATensorTla,
+        TensorVScale &gVScaleTensor, TensorL1AScale &l1AScaleTensorTla, AscendC::GlobalTensor<int32_t> gSparseBlockIdx,
+        uint32_t gatheredKvSTileIdx, int64_t kvSeqlen, uint32_t kvSBaseTile, uint32_t blockShapeY,
+        uint32_t yBlockNumAval, uint32_t yBlockNumRsvd, uint32_t curBaseTileSize, uint32_t embed,
+        uint32_t firstYBlockIdx, uint32_t firstOriYBlockIdx) {
         using CopyGmToL1A = Tile::TileCopyTla<ArchTag, TensorV, TensorL1A>;
         using CopyGmToL1AScale = Tile::TileCopyTla<ArchTag, TensorVScale, TensorL1AScale>;
         CopyGmToL1A copyGmToL1A;
@@ -200,8 +202,8 @@ public:
             uint32_t peekYBlockIdx = gatheredYBlockIdx + 1;
             uint32_t peekOriIdx = oriYBlockIdx + 1;
             while (!runEndsShort && dealtLenAccum + availLen < curBaseTileSize && peekYBlockIdx < yBlockNumRsvd &&
-                   peekOriIdx < yBlockNumAval &&
-                   static_cast<uint32_t>(gSparseBlockIdx.GetValue(peekYBlockIdx)) == peekOriIdx) {
+                peekOriIdx < yBlockNumAval &&
+                static_cast<uint32_t>(gSparseBlockIdx.GetValue(peekYBlockIdx)) == peekOriIdx) {
                 uint32_t peekBlockSize =
                     (peekOriIdx == yBlockNumAval - 1) ? (kvSeqlenU - peekOriIdx * blockShapeY) : blockShapeY;
                 availLen += peekBlockSize;
@@ -220,9 +222,9 @@ public:
             copyGmToL1A(l1ATensorTile, gVTensorTile);
 
             auto gVScaleTile = GetTile(gVScaleTensor, tla::MakeCoord(0, oriStartOffset / MX_SCALE_GROUP_NUM),
-                                       tla::MakeShape(embed, curScaleLen));
+                tla::MakeShape(embed, curScaleLen));
             auto l1AScaleTile = GetTile(l1AScaleTensorTla, tla::MakeCoord(0, dealtLenAccum / MX_SCALE_GROUP_NUM),
-                                        tla::MakeShape(embed, curScaleLen));
+                tla::MakeShape(embed, curScaleLen));
             copyGmToL1AScale(l1AScaleTile, gVScaleTile);
 
             dealtLenAccum += curDealtLen;
@@ -239,33 +241,26 @@ public:
     }
 
     // L0C → UB fixpipe（SPLIT_N 模式）
-    template <class TensorUB>
-    __aicore__ inline void FixpipeMm2(uint32_t s1Align64, TensorUB &ubOTmpTensor)
-    {
+    template <class TensorUB> __aicore__ inline void FixpipeMm2(uint32_t s1Align64, TensorUB &ubOTmpTensor) {
         auto l0CTensorTla =
             tla::MakeTensor(l0CTensor[0], tla::MakeLayoutL0C(MXFP4::PV_MMAD_M_DIM, s1Align64), Arch::PositionL0C{});
-        using CopyL0CToDst =
-            Tile::CopyL0CToUBTla<ArchTag, decltype(l0CTensorTla), TensorUB, Tile::CopyL0CToUBMode::SPLIT_N,
-                                 Tile::ScaleGranularity::NO_QUANT, false>;
+        using CopyL0CToDst = Tile::CopyL0CToUBTla<ArchTag, decltype(l0CTensorTla), TensorUB,
+            Tile::CopyL0CToUBMode::SPLIT_N, Tile::ScaleGranularity::NO_QUANT, false>;
         CopyL0CToDst copyL0CToDst;
         copyL0CToDst(ubOTmpTensor, l0CTensorTla);
     }
 
     // L0C → UB fixpipe（NO_SPLIT 模式，s1 ≤ 64 时单 vector 核搬出）
-    template <class TensorUB>
-    __aicore__ inline void FixpipeMm2SingleVect(uint32_t s1Align64, TensorUB &ubOTmpTensor)
-    {
+    template <class TensorUB> __aicore__ inline void FixpipeMm2SingleVect(uint32_t s1Align64, TensorUB &ubOTmpTensor) {
         auto l0CTensorTla =
             tla::MakeTensor(l0CTensor[0], tla::MakeLayoutL0C(MXFP4::PV_MMAD_M_DIM, s1Align64), Arch::PositionL0C{});
-        using CopyL0CToDst =
-            Tile::CopyL0CToUBTla<ArchTag, decltype(l0CTensorTla), TensorUB, Tile::CopyL0CToUBMode::NO_SPLIT,
-                                 Tile::ScaleGranularity::NO_QUANT, false>;
+        using CopyL0CToDst = Tile::CopyL0CToUBTla<ArchTag, decltype(l0CTensorTla), TensorUB,
+            Tile::CopyL0CToUBMode::NO_SPLIT, Tile::ScaleGranularity::NO_QUANT, false>;
         CopyL0CToDst copyL0CToDst;
         copyL0CToDst(ubOTmpTensor, l0CTensorTla);
     }
 
-    __aicore__ inline void InitL0BufferForReduceSum()
-    {
+    __aicore__ inline void InitL0BufferForReduceSum() {
         AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(KV_EVENT0 + l1ABufId);
 
         // seed fill：V data = fp4 4.0, V scale = e8m0 0.25 → 有效值 1.0
@@ -306,9 +301,9 @@ public:
         for (uint32_t i = 0; i < MXFP4::L0A_PV_BUF_CNT; i++) {
             AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(PV_L0AB_EVENT0 + pvL0abBufId);
             LoadData(l0ATensor[pvL0abBufId].template ReinterpretCast<fp4x2_e2m1_t>(),
-                     l1ATensor[l1ABufId].template ReinterpretCast<fp4x2_e2m1_t>(),
-                     l1AScaleTensor[l1ABufId].template ReinterpretCast<AscendC::fp8_e8m0_t>(), loadData2DParamsA,
-                     loadData2DMXParamsA);
+                l1ATensor[l1ABufId].template ReinterpretCast<fp4x2_e2m1_t>(),
+                l1AScaleTensor[l1ABufId].template ReinterpretCast<AscendC::fp8_e8m0_t>(), loadData2DParamsA,
+                loadData2DMXParamsA);
             AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(PV_L0AB_EVENT0 + pvL0abBufId);
             pvL0abBufId = (pvL0abBufId + 1) % MXFP4::L0A_PV_BUF_CNT;
         }
@@ -317,35 +312,32 @@ public:
         l1ABufId = (l1ABufId + 1) % MXFP4::L1_KV_BUF_CNT;
     }
 
-    __aicore__ inline void PadPS2NotAlign64(uint32_t s2Align64, uint32_t s2Align32, uint32_t embedReal, uint32_t pSlot)
-    {
-        AscendC::InitConstValueParams<uint16_t> PL1InitParams(1, static_cast<uint16_t>(s2Align64 - s2Align32), 0,
-                                                              MXFP4::ZERO_FILL_PATTERN);
+    __aicore__ inline void PadPS2NotAlign64(
+        uint32_t s2Align64, uint32_t s2Align32, uint32_t embedReal, uint32_t pSlot) {
+        AscendC::InitConstValueParams<uint16_t> PL1InitParams(
+            1, static_cast<uint16_t>(s2Align64 - s2Align32), 0, MXFP4::ZERO_FILL_PATTERN);
         uint32_t planeOffset = s2Align32 * MXFP4::FP4_C0_ELEMS;
         AscendC::Fill(l1BTensor[pSlot][planeOffset].template ReinterpretCast<uint16_t>(), PL1InitParams);
         uint32_t plane2Offset = 2 * planeOffset + (s2Align64 - s2Align32) * MXFP4::FP4_C0_ELEMS;
         AscendC::Fill(l1BTensor[pSlot][plane2Offset].template ReinterpretCast<uint16_t>(), PL1InitParams);
     }
 
-    __aicore__ inline void PadVS2NotAlign64(uint32_t s2Align64, uint32_t curBaseTileSize, uint32_t embedReal)
-    {
-        AscendC::InitConstValueParams<uint16_t> kvL1InitParams(1, static_cast<uint16_t>(s2Align64 - curBaseTileSize), 0,
-                                                               MXFP4::ZERO_FILL_PATTERN);
+    __aicore__ inline void PadVS2NotAlign64(uint32_t s2Align64, uint32_t curBaseTileSize, uint32_t embedReal) {
+        AscendC::InitConstValueParams<uint16_t> kvL1InitParams(
+            1, static_cast<uint16_t>(s2Align64 - curBaseTileSize), 0, MXFP4::ZERO_FILL_PATTERN);
         uint32_t halfEmbed = MXFP4::ROW_SUM_NUM / 2;
-        AscendC::Fill(l1ATensor[l1ABufId][halfEmbed * curBaseTileSize].template ReinterpretCast<uint16_t>(),
-                      kvL1InitParams);
+        AscendC::Fill(
+            l1ATensor[l1ABufId][halfEmbed * curBaseTileSize].template ReinterpretCast<uint16_t>(), kvL1InitParams);
         AscendC::Fill(l1ATensor[l1ABufId][halfEmbed * curBaseTileSize * 2 + (s2Align64 - curBaseTileSize) * halfEmbed]
                           .template ReinterpretCast<uint16_t>(),
-                      kvL1InitParams);
+            kvL1InitParams);
     }
 
     template <class TensorV, class TensorC, class TaskInfoT, class TileInfoT>
     __aicore__ inline void operator()(TensorV &gV, AscendC::GlobalTensor<uint8_t> gVDequantScale,
-                                      AscendC::GlobalTensor<int32_t> gSparseIdx, TensorC &ubOTmpTensor,
-                                      GemmCoord actualBlockShapePV, TileInfoT &delay20TileInfo,
-                                      TaskInfoT &delay20TaskInfo, uint32_t kvSBaseTile, uint32_t blockShapeY,
-                                      uint32_t kvHeadMul)
-    {
+        AscendC::GlobalTensor<int32_t> gSparseIdx, TensorC &ubOTmpTensor, GemmCoord actualBlockShapePV,
+        TileInfoT &delay20TileInfo, TaskInfoT &delay20TaskInfo, uint32_t kvSBaseTile, uint32_t blockShapeY,
+        uint32_t kvHeadMul) {
         uint32_t rowNum = actualBlockShapePV[0];
         uint32_t embed = actualBlockShapePV[1];
         uint32_t curBaseTileSize = actualBlockShapePV[2];
@@ -371,33 +363,30 @@ public:
         AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(KV_EVENT0 + l1ABufId);
 
         if (delay20TileInfo.kvsActBaseTileAlign32 != delay20TileInfo.kvsActBaseTileAlign64) {
-            PadPS2NotAlign64(delay20TileInfo.kvsActBaseTileAlign64, delay20TileInfo.kvsActBaseTileAlign32, embedReal,
-                             pSlot);
+            PadPS2NotAlign64(
+                delay20TileInfo.kvsActBaseTileAlign64, delay20TileInfo.kvsActBaseTileAlign32, embedReal, pSlot);
         }
 
         if (curBaseTileSize != delay20TileInfo.kvsActBaseTileAlign64) {
             PadVS2NotAlign64(delay20TileInfo.kvsActBaseTileAlign64, curBaseTileSize, embedReal);
         }
 
-        auto l1ATensorTla =
-            tla::MakeTensor(l1ATensor[l1ABufId],
-                            tla::MakeLayout<ElementA, layout::nZ>(embedReal, delay20TileInfo.kvsActBaseTileAlign64),
-                            Arch::PositionL1{});
+        auto l1ATensorTla = tla::MakeTensor(l1ATensor[l1ABufId],
+            tla::MakeLayout<ElementA, layout::nZ>(embedReal, delay20TileInfo.kvsActBaseTileAlign64),
+            Arch::PositionL1{});
 
-        auto gVScaleTensorTla =
-            tla::MakeTensor(gVScale.ReinterpretCast<AscendC::fp8_e8m0_t>(),
-                            tla::MakeMxScaleLayout<AscendC::fp8_e8m0_t, layout::ColumnMajor, false>(
-                                kvHeadMul * embedReal, delay20TileInfo.kvsActBaseTileAlign64 / MX_SCALE_GROUP_NUM),
-                            Arch::PositionGM{});
-        auto l1AScaleTensorTla =
-            tla::MakeTensor(l1AScaleTensor[l1ABufId].ReinterpretCast<AscendC::fp8_e8m0_t>(),
-                            tla::MakeMxScaleLayout<AscendC::fp8_e8m0_t, layout::zZ, false>(
-                                embedReal, delay20TileInfo.kvsActBaseTileAlign64 / MX_SCALE_GROUP_NUM),
-                            Arch::PositionL1{});
+        auto gVScaleTensorTla = tla::MakeTensor(gVScale.ReinterpretCast<AscendC::fp8_e8m0_t>(),
+            tla::MakeMxScaleLayout<AscendC::fp8_e8m0_t, layout::ColumnMajor, false>(
+                kvHeadMul * embedReal, delay20TileInfo.kvsActBaseTileAlign64 / MX_SCALE_GROUP_NUM),
+            Arch::PositionGM{});
+        auto l1AScaleTensorTla = tla::MakeTensor(l1AScaleTensor[l1ABufId].ReinterpretCast<AscendC::fp8_e8m0_t>(),
+            tla::MakeMxScaleLayout<AscendC::fp8_e8m0_t, layout::zZ, false>(
+                embedReal, delay20TileInfo.kvsActBaseTileAlign64 / MX_SCALE_GROUP_NUM),
+            Arch::PositionL1{});
 
         SparseVFusedBaseTileL1FullLoad(gV, l1ATensorTla, gVScaleTensorTla, l1AScaleTensorTla, gSparseBlockIdx,
-                                       gatheredKvSTileIdx, kvSeqlen, kvSBaseTile, blockShapeY, yBlockNumAval,
-                                       yBlockNumRsvd, curBaseTileSize, embedReal, firstYBlockIdx, firstOriYBlockIdx);
+            gatheredKvSTileIdx, kvSeqlen, kvSBaseTile, blockShapeY, yBlockNumAval, yBlockNumRsvd, curBaseTileSize,
+            embedReal, firstYBlockIdx, firstOriYBlockIdx);
 
         AscendC::SetFlag<AscendC::HardEvent::MTE2_MTE1>(KV_EVENT0 + l1ABufId);
         AscendC::WaitFlag<AscendC::HardEvent::MTE2_MTE1>(KV_EVENT0 + l1ABufId);
@@ -413,14 +402,14 @@ public:
 
         AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(l0ABEventId);
 
-        LoadPToL0(pSlot, l0BBufId, delay20TileInfo.kvsActBaseTileAlign64, embedReal,
-                  delay20TaskInfo.qsActBaseTileAlign64);
+        LoadPToL0(
+            pSlot, l0BBufId, delay20TileInfo.kvsActBaseTileAlign64, embedReal, delay20TaskInfo.qsActBaseTileAlign64);
         LoadVToL0(l1ABufId, l0ABufId, embedReal, delay20TileInfo.kvsActBaseTileAlign64);
         AscendC::SetFlag<AscendC::HardEvent::MTE1_M>(l0ABEventId);
         AscendC::WaitFlag<AscendC::HardEvent::MTE1_M>(l0ABEventId);
 
         MatmulPV(l0ABufId, l0BBufId, mMmad, delay20TaskInfo.qsActBaseTileAlign64, delay20TileInfo.kvsActBaseTileAlign64,
-                 delay20TileInfo.isTileGoupFirstTile);
+            delay20TileInfo.isTileGoupFirstTile);
 
         AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(l0ABEventId);
         pvL0abBufId = (pvL0abBufId + 1) % MXFP4::L0A_PV_BUF_CNT;
@@ -444,7 +433,7 @@ public:
         }
     }
 
-protected:
+  protected:
     AscendC::LocalTensor<ElementA> l1ATensor[MXFP4::L1_KV_BUF_CNT];
     AscendC::LocalTensor<ElementB> l1BTensor[MXFP4::L1_P_BUF_CNT];
     AscendC::LocalTensor<ElementA> l0ATensor[MXFP4::L0A_PV_BUF_CNT];

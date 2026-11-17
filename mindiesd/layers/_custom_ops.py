@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# pylint: disable=duplicate-code
+# pylint: disable=duplicate-code,too-many-lines
 # coding=utf-8
 # Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
 # MindIE is licensed under Mulan PSL v2.
@@ -12,6 +12,7 @@
 # See the Mulan PSL v2 for more details.
 from typing import Tuple, List, Optional
 import math
+import struct
 import torch
 import torch_npu
 from . import register_ops
@@ -20,6 +21,285 @@ from ..utils import ParametersInvalid
 FREQUENCY_REGULATOR_MAX_FREQ = 0xFFFFFFFF
 APPLY_ROTARY_POS_EMB_LAYOUTS = ("BSND", "SBND", "BNSD", "TND")
 APPLY_ROTARY_POS_EMB_ROTARY_MODES = ("half", "interleave", "quarter")
+
+
+def eagle_quant_batch_matmul_swiglu(
+    x1: torch.Tensor,
+    x2: torch.Tensor,
+    scale: torch.Tensor,
+    offset: Optional[torch.Tensor] = None,
+    bias: Optional[torch.Tensor] = None,
+    pertoken_scale: Optional[torch.Tensor] = None,
+    output_dtype: torch.dtype = torch.bfloat16,
+    transpose_x1: bool = False,
+    transpose_x2: bool = False,
+    group_size: int = 0,
+) -> torch.Tensor:
+    """910B INT8 QBMM + FP32 SwiGLU; ND activation, ND/NZ weight, N/2 output, no bias."""
+    return torch.ops.mindiesd.eagle_quant_batch_matmul_swiglu(
+        x1,
+        x2,
+        scale,
+        offset,
+        bias,
+        pertoken_scale,
+        output_dtype,
+        transpose_x1,
+        transpose_x2,
+        group_size,
+    )
+
+
+@register_ops.register_mindie_fake_op("eagle_quant_batch_matmul_swiglu")
+def _eagle_quant_batch_matmul_swiglu_fake(
+    x1: torch.Tensor,
+    x2: torch.Tensor,
+    scale: torch.Tensor,
+    offset: Optional[torch.Tensor] = None,
+    bias: Optional[torch.Tensor] = None,
+    pertoken_scale: Optional[torch.Tensor] = None,
+    output_dtype: torch.dtype = torch.bfloat16,
+    transpose_x1: bool = False,
+    transpose_x2: bool = False,
+    group_size: int = 0,
+) -> torch.Tensor:
+    torch._check(2 <= x1.dim() <= 6 and 2 <= x2.dim() <= 6)
+    torch._check(x1.dtype == torch.int8 and x2.dtype == torch.int8)
+    output_dtype = torch.bfloat16 if output_dtype is None else output_dtype
+    torch._check(output_dtype in (torch.bfloat16, torch.float16))
+    torch._check(bias is None)
+    torch._check(pertoken_scale is not None)
+    torch._check(scale.dtype == torch.float32 and pertoken_scale.dtype == torch.float32)
+    torch._check(offset is None)
+    torch._check(group_size == 0)
+    for tensor in (x1, x2, scale, offset, bias, pertoken_scale):
+        if tensor is not None:
+            torch._check(tensor.is_contiguous())
+            torch._check(tensor.device == x1.device)
+    torch._check(x1.shape[-2 if transpose_x1 else -1] == x2.shape[-1 if transpose_x2 else -2])
+    batch = torch.broadcast_shapes(x1.shape[:-2], x2.shape[:-2])
+    batch_a, batch_b, batch_c = math.prod(x1.shape[:-2]), math.prod(x2.shape[:-2]), math.prod(batch)
+    if batch_a != 1:
+        torch._check(batch_a == batch_c)
+    if batch_b != 1:
+        torch._check(batch_b == batch_c)
+    m = x1.shape[-1 if transpose_x1 else -2]
+    n = x2.shape[-2 if transpose_x2 else -1]
+    torch._check(m > 0)
+    torch._check(x1.shape[-2 if transpose_x1 else -1] > 0)
+    torch._check(n > 0)
+    torch._check(n % 2 == 0)
+    torch._check(scale.dim() == 1 and scale.numel() == n)
+    torch._check(pertoken_scale.dim() == 1 and pertoken_scale.numel() == m)
+    return x1.new_empty((*batch, m, n // 2), dtype=output_dtype)
+
+
+def eagle_indexed_gate_norm_modulate(
+    residual: torch.Tensor,
+    gate: torch.Tensor,
+    branch: torch.Tensor,
+    shift: torch.Tensor,
+    scale: torch.Tensor,
+    indices: torch.Tensor,
+    weight: torch.Tensor | None = None,
+    bias: torch.Tensor | None = None,
+    norm_type: int = 0,
+    eps: float = 1e-6,
+    output_dtype: torch.dtype | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return (updated residual, modulated RMSNorm), with independent output dtype.
+
+    residual/branch are [N,D], gate/shift/scale are [K,D], weight is [D], and
+    indices is int32/int64 [N] with values in [0,K). All six floating inputs
+    share FP16 or BF16 dtype and one NPU device. D is in [1,7168], K >= 1,
+    and eps defaults to 1e-6 and must be finite and positive in FP32. N may be zero.
+    Only norm_type=0 (weighted RMSNorm) is supported. The optional weight
+    argument reserves the interface; this mode requires a non-None weight.
+    bias is reserved for future normalization modes and must be None.
+
+    All intermediate arithmetic stays FP32, including the updated residual
+    consumed by normalization. Both contiguous outputs use output_dtype
+    (FP16/BF16), defaulting to residual.dtype. Strided inputs are materialized
+    as contiguous ND in the native wrapper before the kernel launch.
+    """
+    return torch.ops.mindiesd.eagle_indexed_gate_norm_modulate(
+        residual,
+        gate,
+        branch,
+        shift,
+        scale,
+        indices,
+        weight=weight,
+        bias=bias,
+        norm_type=norm_type,
+        eps=eps,
+        output_dtype=output_dtype,
+    )
+
+
+@register_ops.register_mindie_fake_op("eagle_indexed_gate_norm_modulate")
+def eagle_indexed_gate_norm_modulate_fake(
+    residual, gate, branch, shift, scale, indices, weight=None, bias=None, norm_type=0, eps=1e-6, output_dtype=None
+):
+    if norm_type != 0:
+        raise ValueError("eagle_indexed_gate_norm_modulate: only norm_type=0 (weighted RMSNorm) is supported")
+    if bias is not None:
+        raise ValueError("eagle_indexed_gate_norm_modulate: bias must be None for norm_type=0 (weighted RMSNorm)")
+    if weight is None:
+        raise ValueError("eagle_indexed_gate_norm_modulate: weight is required for norm_type=0 (weighted RMSNorm)")
+    dtype = residual.dtype if output_dtype is None else output_dtype
+    if residual.dtype not in (torch.float16, torch.bfloat16) or dtype not in (torch.float16, torch.bfloat16):
+        raise ValueError("eagle_indexed_gate_norm_modulate: input/output dtype must be FP16 or BF16")
+    try:
+        eps_fp32 = struct.unpack("f", struct.pack("f", eps))[0]
+    except OverflowError:
+        eps_fp32 = math.inf
+    if not math.isfinite(eps_fp32) or eps_fp32 <= 0:
+        raise ValueError("eagle_indexed_gate_norm_modulate: eps must be finite and positive in FP32")
+    torch._check(residual.dim() == 2)
+    rows, hidden = residual.shape
+    torch._check(hidden >= 1)
+    torch._check(hidden <= 7168)
+    for value in (gate, branch, weight, shift, scale):
+        torch._check(value.dtype == residual.dtype)
+        torch._check(value.device == residual.device)
+    torch._check(branch.dim() == 2)
+    torch._check(branch.shape[0] == rows)
+    torch._check(branch.shape[1] == hidden)
+    torch._check(gate.dim() == 2)
+    torch._check(gate.shape[0] >= 1)
+    torch._check(gate.shape[1] == hidden)
+    for value in (shift, scale):
+        torch._check(value.dim() == 2)
+        torch._check(value.shape[0] == gate.shape[0])
+        torch._check(value.shape[1] == hidden)
+    torch._check(weight.dim() == 1)
+    torch._check(weight.shape[0] == hidden)
+    torch._check(indices.dim() == 1)
+    torch._check(indices.shape[0] == rows)
+    torch._check(indices.dtype in (torch.int32, torch.int64))
+    torch._check(indices.device == residual.device)
+    return (
+        torch.empty(residual.shape, dtype=dtype, device=residual.device),
+        torch.empty(residual.shape, dtype=dtype, device=residual.device),
+    )
+
+
+def eagle_split_norm_rope_concat(
+    qkv: torch.Tensor,
+    norm_query_weight: Optional[torch.Tensor],
+    norm_key_weight: Optional[torch.Tensor],
+    rope_cos: torch.Tensor,
+    rope_sin: torch.Tensor,
+    head_counts: List[int],
+    norm_type: int,
+    rope_type: int,
+    rotary_dim: Optional[int] = None,
+    eps: float = 1e-5,
+    output_bnsd: bool = True,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Split packed QKV, RMS-normalize Q/K and rotate their first rotary_dim features.
+
+    qkv is contiguous FP16/BF16 [S,Hq+Hk+Hv,D] or [B,S,Hq+Hk+Hv,D].
+    head_counts is an integer list [Hq,Hk,Hv]: positive counts, Hk=Hv, Hq%Hk=0, sum=qkv's head dimension.
+    D must be 128; rotary_dim is a multiple of 32 in [32,128], or None (the full D).
+    norm_type is required: 2=RMSNorm, 3=RMSNorm with weights; other modes, including skipping norm, are unsupported.
+    Weights are [D], required for type 3 and unused for type 2 (pass None).
+    Caches are [S,W], [Bc,S,W] or [Bc,S,1,W], with Bc=1 or B and W=R or R/2.
+    R is the resolved rotary_dim; half-width caches repeat adjacent values for interleave,
+    or repeat the entire half for half mode. All floating inputs share dtype/device and are contiguous.
+    rope_type is required: 0 for interleave, 1 for half. V is copied without normalization/RoPE.
+    Q/K normalization and RoPE stay FP32; only the final outputs round to the input dtype.
+    Outputs default to [B,H,S,D] (B=1 for 3D input); output_bnsd=False preserves SND/BSND.
+    Tensors must be nonempty with numel <= INT32_MAX. Shapes use qkv.shape/head_counts without data reads; no backward.
+    """
+    return torch.ops.mindiesd.eagle_split_norm_rope_concat(
+        qkv,
+        norm_query_weight,
+        norm_key_weight,
+        rope_cos,
+        rope_sin,
+        head_counts,
+        norm_type,
+        rope_type,
+        rotary_dim,
+        eps,
+        output_bnsd,
+    )
+
+
+@register_ops.register_mindie_fake_op("eagle_split_norm_rope_concat")
+def eagle_split_norm_rope_concat_fake(
+    qkv: torch.Tensor,
+    norm_query_weight: Optional[torch.Tensor],
+    norm_key_weight: Optional[torch.Tensor],
+    rope_cos: torch.Tensor,
+    rope_sin: torch.Tensor,
+    head_counts: List[int],
+    norm_type: int,
+    rope_type: int,
+    rotary_dim: Optional[int] = None,
+    eps: float = 1e-5,
+    output_bnsd: bool = True,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    torch._check(qkv.ndim in (3, 4), lambda: "qkv must be SND or BSND")
+    torch._check(qkv.dtype in (torch.float16, torch.bfloat16), lambda: "qkv must be FP16/BF16")
+    torch._check(len(head_counts) == 3, lambda: "head_counts must contain exactly three integers [Hq,Hk,Hv]")
+    batch = qkv.shape[0] if qkv.ndim == 4 else 1
+    sequence, total_heads, dim = qkv.shape[-3:]
+    for heads in head_counts:
+        torch._check(heads > 0, lambda: "each head count must be in [1,Htotal]")
+        torch._check(heads <= total_heads, lambda: "each head count must be in [1,Htotal]")
+    torch._check(sum(head_counts) == total_heads, lambda: "head counts must sum to Htotal")
+    torch._check(head_counts[1] == head_counts[2], lambda: "require Hk=Hv and Hq divisible by Hk")
+    torch._check(head_counts[0] % head_counts[1] == 0, lambda: "require Hk=Hv and Hq divisible by Hk")
+    rotary_dim = dim if rotary_dim is None else rotary_dim
+    torch._check(dim == 128, lambda: "head_dim must be 128; other dimensions are not supported")
+    torch._check(rotary_dim >= 32)
+    torch._check(rotary_dim % 32 == 0)
+    torch._check(rotary_dim <= dim)
+    torch._check(rope_type in (0, 1), lambda: "rope_type must be 0 (interleave) or 1 (half)")
+    torch._check(norm_type in (2, 3), lambda: "norm_type must be 2 (RMS_NORM) or 3 (RMS_NORM_AFFINE)")
+    try:
+        float_eps = struct.unpack("f", struct.pack("f", eps))[0]
+    except OverflowError:
+        float_eps = math.inf
+    torch._check(
+        math.isfinite(float_eps) and float_eps > 0,
+        lambda: "eps must be finite and positive after conversion to float32",
+    )
+    for tensor in (qkv, norm_query_weight, norm_key_weight, rope_cos, rope_sin):
+        if tensor is None:
+            continue
+        torch._check(tensor.dtype == qkv.dtype and tensor.device == qkv.device)
+        torch._check(tensor.is_contiguous())
+        torch._check(tensor.numel() > 0)
+        torch._check(tensor.numel() <= 2147483647)
+    for weight in (norm_query_weight, norm_key_weight):
+        torch._check(norm_type != 3 or weight is not None, lambda: "weights are required for norm_type=3")
+        if weight is not None:
+            torch._check(weight.ndim == 1)
+            torch._check(weight.shape[0] == dim)
+    torch._check(rope_cos.ndim in (2, 3, 4))
+    torch._check(rope_sin.ndim == rope_cos.ndim)
+    for cos_size, sin_size in zip(rope_cos.shape, rope_sin.shape):
+        torch._check(cos_size == sin_size)
+    torch._check((rope_cos.shape[-1] == rotary_dim) | (rope_cos.shape[-1] == rotary_dim // 2))
+    torch._check(rope_cos.shape[1 if rope_cos.ndim == 4 else -2] == sequence)
+    if rope_cos.ndim > 2:
+        torch._check((rope_cos.shape[0] == 1) | (rope_cos.shape[0] == batch))
+    if rope_cos.ndim == 4:
+        torch._check(rope_cos.shape[2] == 1)
+    outputs = []
+    for heads in head_counts:
+        if output_bnsd:
+            shape = (batch, heads, sequence, dim)
+        elif qkv.ndim == 4:
+            shape = (batch, sequence, heads, dim)
+        else:
+            shape = (sequence, heads, dim)
+        outputs.append(qkv.new_empty(shape))
+    return tuple(outputs)
 
 
 def apply_rotary_pos_emb(
@@ -649,6 +929,176 @@ def eagle_quant_block_sparse_attention_fake(
     else:
         lse_shape = [query.shape[0], query.shape[1], query.shape[2], 1]
     softmax_lse = torch.empty(lse_shape, device=query.device, dtype=torch.float32)
+    return attention_out, softmax_lse
+
+
+# ---------------------------------------------------------------------------
+# fused_infer_attention_score_v2 的 Meta 形状/类型规则
+# ---------------------------------------------------------------------------
+# 与 csrc/plugin/fused_infer_attention_score.cpp 的 FIA_LAYOUT_MAP / GetQueryBnsd /
+# GetQueryTnd / GetValueD / InferAttentionOut / InferOutputDtype / InferLseOut 一一对应。
+# fake 必须给出与真实算子一致的元数据：输出末维来自 value 的 head dim（Dq != Dv 时与
+# query 不同），量化输出类型由 quant_scale_out / query dtype 决定，NTD/TND 的 LSE 是
+# [T, N, 1]。给不出等价结论的组合显式报错，不返回近似值。
+_FIA_LAYOUT_MAP = {
+    "BSH": ("BSH", "BSH", 3),
+    "BSND": ("BSND", "BSND", 4),
+    "BNSD": ("BNSD", "BNSD", 4),
+    "TND": ("TND", "TND", 3),
+    "NTD": ("NTD", "NTD", 3),
+    "BNSD_BSND": ("BNSD", "BSND", 4),
+    "BSH_BNSD": ("BSH", "BNSD", 3),
+    "BSND_BNSD": ("BSND", "BNSD", 4),
+    "NTD_TND": ("NTD", "TND", 3),
+    "BSH_NBSD": ("BSH", "NBSD", 3),
+    "BSND_NBSD": ("BSND", "NBSD", 4),
+    "BNSD_NBSD": ("BNSD", "NBSD", 4),
+    "TND_NTD": ("TND", "NTD", 3),
+    "NSD": ("NSD", "NSD", 3),
+}
+_FIA_TND_LAYOUTS = ("TND", "NTD", "TND_NTD", "NTD_TND")
+_FIA_PA_VALUE_DIMS = (3, 4, 5)
+
+
+def _fia_layouts(query, input_layout):
+    """input_layout -> (queryLayout, outputLayout)，并按真实算子校验维度。"""
+    info = _FIA_LAYOUT_MAP.get(input_layout)
+    if info is None:
+        raise RuntimeError(f"unsupported fused_infer_attention_score input_layout: {input_layout}")
+    query_layout, output_layout, query_dim = info
+    if query.dim() != query_dim:
+        raise RuntimeError(f"query dim does not match input_layout {input_layout}: got {query.dim()}, want {query_dim}")
+    return query_layout, output_layout
+
+
+def _fia_query_bnsd(query, query_layout, num_heads):
+    """(query -> b, n, s, d)，对齐 GetQueryBnsd。"""
+    if query_layout == "BSH":
+        return query.shape[0], num_heads, query.shape[1], query.shape[2] // num_heads
+    if query_layout == "BSND":
+        return query.shape[0], query.shape[2], query.shape[1], query.shape[3]
+    if query_layout == "BNSD":
+        return query.shape[0], query.shape[1], query.shape[2], query.shape[3]
+    if query_layout == "NSD":
+        return 1, query.shape[0], query.shape[1], query.shape[2]
+    raise RuntimeError(f"layout is not supported as BNSD-like query layout: {query_layout}")
+
+
+def _fia_query_tnd(query, query_layout):
+    """(query -> t, n, d)，对齐 GetQueryTnd；NTD 的前两维是 [N, T]。"""
+    if query_layout == "TND":
+        return query.shape[0], query.shape[1], query.shape[2]
+    if query_layout == "NTD":
+        return query.shape[1], query.shape[0], query.shape[2]
+    raise RuntimeError(f"layout is not supported as TND-like query layout: {query_layout}")
+
+
+def _fia_value_d(value, block_table, query, query_layout, num_kv_heads):
+    """输出末维的 head dim，对齐 GetValueD。"""
+    if block_table is not None:
+        if value.dim() not in _FIA_PA_VALUE_DIMS:
+            raise RuntimeError(f"when page attention is enabled, value dim should be 3, 4, or 5, but got {value.dim()}")
+        if value.dim() == 3:
+            return value.shape[2] // num_kv_heads
+        if value.dim() == 4:
+            return value.shape[3]
+        return value.shape[2] * value.shape[4]
+    if value.dim() != query.dim():
+        raise RuntimeError("when page attention is disabled, value dim should equal query dim.")
+    if query_layout == "BSH":
+        return value.shape[2] // num_kv_heads
+    if query_layout in ("BSND", "BNSD"):
+        return value.shape[3]
+    if query_layout in ("TND", "NTD", "NSD"):
+        return value.shape[2]
+    raise RuntimeError(f"unsupported query layout for value dim inference: {query_layout}")
+
+
+def _fia_attention_out_shape(query, query_layout, output_layout, num_heads, value_d):
+    """注意力输出形状，对齐 InferAttentionOut。"""
+    if output_layout == "BSH":
+        batch, _, seq_len, _ = _fia_query_bnsd(query, query_layout, num_heads)
+        out_h = num_heads * value_d
+        out_h = query.shape[2] if (out_h == 0 or seq_len == 0) else out_h
+        return (batch, seq_len, out_h)
+    if output_layout == "BSND":
+        batch, heads, seq_len, d = _fia_query_bnsd(query, query_layout, num_heads)
+        out_d = d if (value_d == 0 or d == 0) else value_d
+        return (batch, seq_len, heads, out_d)
+    if output_layout == "BNSD":
+        batch, heads, seq_len, d = _fia_query_bnsd(query, query_layout, num_heads)
+        out_d = d if (value_d == 0 or d == 0) else value_d
+        return (batch, heads, seq_len, out_d)
+    if output_layout == "NBSD":
+        batch, heads, seq_len, d = _fia_query_bnsd(query, query_layout, num_heads)
+        out_d = d if (value_d == 0 or d == 0) else value_d
+        return (heads, batch, seq_len, out_d)
+    if output_layout == "TND":
+        t, n, d = _fia_query_tnd(query, query_layout)
+        out_d = d if (value_d == 0 or d == 0) else value_d
+        return (t, n, out_d)
+    if output_layout == "NTD":
+        t, n, d = _fia_query_tnd(query, query_layout)
+        out_d = d if (value_d == 0 or d == 0) else value_d
+        return (n, t, out_d)
+    if output_layout == "NSD":
+        _, n, s, d = _fia_query_bnsd(query, query_layout, num_heads)
+        out_d = d if (value_d == 0 or d == 0) else value_d
+        return (n, s, out_d)
+    raise RuntimeError(f"unsupported fused_infer_attention_score output layout: {output_layout}")
+
+
+def _fia_output_dtype(query, query_rope, quant_scale_out, out_dtype):
+    """输出 dtype，对齐 InferOutputDtype。"""
+    if out_dtype is not None:
+        return out_dtype
+    if quant_scale_out is not None:
+        return torch.int8
+    if query.dtype == torch.int8:
+        return query_rope.dtype if query_rope is not None else torch.float16
+    return query.dtype
+
+
+def _fia_lse_shape(query, input_layout, query_layout, num_heads, return_softmax_lse):
+    """softmax_lse 形状，对齐 InferLseOut。"""
+    if not return_softmax_lse:
+        return (0,)
+    if input_layout in _FIA_TND_LAYOUTS:
+        t, n, _ = _fia_query_tnd(query, query_layout)
+        return (t, n, 1)
+    batch, n, seq_len, _ = _fia_query_bnsd(query, query_layout, num_heads)
+    return (batch, n, seq_len, 1)
+
+
+@register_ops.register_mindie_fake_op("fused_infer_attention_score_v2")
+def fused_infer_attention_score_v2_fake(query, key, value, **kwargs):
+    # Block-FP8 attention path (quant_flash_attn._fp8_attention_forward) calls the
+    # mindiesd custom op (eagle_fused_infer_attention_score kernel). Without a fake
+    # impl, Dynamo/AOT fake-tensor propagation cannot infer output metadata and
+    # breaks the graph at exactly this op call site. Output metadata follows the
+    # rules in csrc/plugin/fused_infer_attention_score.cpp rather than query.shape:
+    # the last output dim is valueD (differs from Dq when Dq != Dv), int8 query
+    # defaults back to fp16, and NTD/TND lse is [T, N, 1].
+    input_layout = kwargs.get("input_layout", "BSH")
+    query_layout, output_layout = _fia_layouts(query, input_layout)
+    num_heads = kwargs.get("num_query_heads", 1)
+    if num_heads <= 0:
+        raise RuntimeError(f"num_query_heads should be greater than 0, but got {num_heads}")
+    num_kv_heads = kwargs.get("num_key_value_heads", 0) or num_heads
+    value_d = _fia_value_d(value, kwargs.get("block_table"), query, query_layout, num_kv_heads)
+    out_dtype = _fia_output_dtype(
+        query, kwargs.get("query_rope"), kwargs.get("quant_scale_out"), kwargs.get("out_dtype")
+    )
+    attention_out = torch.empty(
+        _fia_attention_out_shape(query, query_layout, output_layout, num_heads, value_d),
+        device=query.device,
+        dtype=out_dtype,
+    )
+    softmax_lse = torch.empty(
+        _fia_lse_shape(query, input_layout, query_layout, num_heads, kwargs.get("return_softmax_lse", False)),
+        device=query.device,
+        dtype=torch.float32,
+    )
     return attention_out, softmax_lse
 
 

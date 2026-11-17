@@ -17,7 +17,7 @@
     >若环境中没有wheel等依赖，请用户使用以下命令自行安装。
     >
     >```bash
-    >pip install build wheel
+    >pip install build wheel packaging
     >```
 
 2. 安装生成的 `.whl` 包请参见[安装指导](../installation.md#源码安装)。

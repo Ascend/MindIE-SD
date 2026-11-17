@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef LAYOUT_MATRIX_HPP
 #define LAYOUT_MATRIX_HPP
 
@@ -16,12 +28,11 @@
 #include "../../attn_infra/detail/alignment.hpp"
 #include "../../attn_infra/matrix_coord.hpp"
 
-namespace NpuArch::layout 
-{
+namespace NpuArch::layout {
 
 /// Mapping function for row-major matrices
 struct RowMajor {
-public:
+  public:
     /// Logical rank of tensor
     static constexpr int RANK = 2;
 
@@ -37,7 +48,7 @@ public:
     /// Stride vector
     using Stride = Coord<RANK, LongIndex>;
 
-public:
+  public:
     /// Constructor
     HOST_DEVICE
     RowMajor(Index rows = 0, Index cols = 0)
@@ -52,99 +63,62 @@ public:
     HOST_DEVICE
     RowMajor(Shape shape, Stride stride) : shape_(shape), stride_(stride) {}
 
-    template <class Element>
-    HOST_DEVICE
-    static RowMajor MakeLayout(Index rows, Index cols)
-    {
+    template <class Element> HOST_DEVICE static RowMajor MakeLayout(Index rows, Index cols) {
         return RowMajor(rows, cols);
     }
 
-    template <class Element>
-    HOST_DEVICE
-    static RowMajor MakeLayoutInUb(MatrixCoord const &shape)
-    {
+    template <class Element> HOST_DEVICE static RowMajor MakeLayoutInUb(MatrixCoord const &shape) {
         return RowMajor(shape.row(), shape.column(), RoundUp<BYTE_PER_C0 / sizeof(Element)>(shape.column()));
     }
 
     /// Returns the offset of a coordinate in linear memory.
     /// Assumes coordinate has convention (row, column)
     HOST_DEVICE
-    LongIndex GetOffset(MatrixCoord const &coord) const
-    {
+    LongIndex GetOffset(MatrixCoord const &coord) const {
         return LongIndex(coord.row()) * stride_[0] + LongIndex(coord.column());
     }
 
     /// Returns the layout of a tile_common.
     HOST_DEVICE
-    RowMajor GetTileLayout(MatrixCoord const &tileShape) const
-    {
-        return RowMajor(tileShape, stride());
-    }
+    RowMajor GetTileLayout(MatrixCoord const &tileShape) const { return RowMajor(tileShape, stride()); }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    Shape shape() const
-    {
-        return shape_;
-    }
+    Shape shape() const { return shape_; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    Shape &shape()
-    {
-        return shape_;
-    }
+    Shape &shape() { return shape_; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    typename Shape::Index shape(int idx) const
-    {
-        return shape_[idx];
-    }
+    typename Shape::Index shape(int idx) const { return shape_[idx]; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    typename Shape::Index &shape(int idx)
-    {
-        return shape_[idx];
-    }
+    typename Shape::Index &shape(int idx) { return shape_[idx]; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    Stride stride() const
-    {
-        return stride_;
-    }
+    Stride stride() const { return stride_; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    Stride &stride()
-    {
-        return stride_;
-    }
+    Stride &stride() { return stride_; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    typename Stride::Index stride(int idx) const
-    {
-        return stride_[idx];
-    }
+    typename Stride::Index stride(int idx) const { return stride_[idx]; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    typename Stride::Index &stride(int idx)
-    {
-        return stride_[idx];
-    }
+    typename Stride::Index &stride(int idx) { return stride_[idx]; }
 
     /// Returns the length of the layout
     HOST_DEVICE
-    LongIndex Capacity() const
-    {
-        return static_cast<LongIndex>(shape_[0]) * stride_[0];
-    }
+    LongIndex Capacity() const { return static_cast<LongIndex>(shape_[0]) * stride_[0]; }
 
-protected:
+  protected:
     //
     // Data members
     //
@@ -158,7 +132,7 @@ protected:
 
 /// Mapping function for col-major matrices
 struct ColumnMajor {
-public:
+  public:
     /// Logical rank of tensor
     static constexpr int RANK = 2;
 
@@ -174,7 +148,7 @@ public:
     /// Stride vector
     using Stride = Coord<RANK, LongIndex>;
 
-public:
+  public:
     // Methods
 
     /// Constructor
@@ -191,92 +165,58 @@ public:
     HOST_DEVICE
     ColumnMajor(Shape shape, Stride stride) : shape_(shape), stride_(stride) {}
 
-    template <class Element>
-    HOST_DEVICE
-    static ColumnMajor MakeLayout(Index rows, Index cols)
-    {
+    template <class Element> HOST_DEVICE static ColumnMajor MakeLayout(Index rows, Index cols) {
         return ColumnMajor(rows, cols);
     }
 
     /// Returns the offset of a coordinate in linear memory.
     /// Assumes coordinate has convention (row, column)
     HOST_DEVICE
-    LongIndex GetOffset(MatrixCoord const &coord) const
-    {
+    LongIndex GetOffset(MatrixCoord const &coord) const {
         return LongIndex(coord.row()) + LongIndex(coord.column()) * stride_[1];
     }
 
     /// Returns the layout of a tile_common.
     HOST_DEVICE
-    ColumnMajor GetTileLayout(MatrixCoord const &tileShape) const
-    {
-        return ColumnMajor(tileShape, stride());
-    }
+    ColumnMajor GetTileLayout(MatrixCoord const &tileShape) const { return ColumnMajor(tileShape, stride()); }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    Shape shape() const
-    {
-        return shape_;
-    }
+    Shape shape() const { return shape_; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    Shape &shape()
-    {
-        return shape_;
-    }
+    Shape &shape() { return shape_; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    typename Shape::Index shape(int idx) const
-    {
-        return shape_[idx];
-    }
+    typename Shape::Index shape(int idx) const { return shape_[idx]; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    typename Shape::Index &shape(int idx)
-    {
-        return shape_[idx];
-    }
+    typename Shape::Index &shape(int idx) { return shape_[idx]; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    Stride stride() const
-    {
-        return stride_;
-    }
+    Stride stride() const { return stride_; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    Stride &stride()
-    {
-        return stride_;
-    }
+    Stride &stride() { return stride_; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    typename Stride::Index stride(int idx) const
-    {
-        return stride_[idx];
-    }
+    typename Stride::Index stride(int idx) const { return stride_[idx]; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    typename Stride::Index &stride(int idx)
-    {
-        return stride_[idx];
-    }
+    typename Stride::Index &stride(int idx) { return stride_[idx]; }
 
     /// Returns the length of the layout
     HOST_DEVICE
-    LongIndex Capacity() const
-    {
-        return static_cast<LongIndex>(shape_[1]) * stride_[1];
-    }
+    LongIndex Capacity() const { return static_cast<LongIndex>(shape_[1]) * stride_[1]; }
 
-protected:
+  protected:
     //
     // Data members
     //
@@ -290,7 +230,7 @@ protected:
 
 /// Mapping function for nZ matrices which is col-major inside fractal and row-major between fractal
 struct nZ {
-public:
+  public:
     /// Logical rank of tensor
     static constexpr int RANK = 4;
 
@@ -312,148 +252,99 @@ public:
     /// Stride vector
     using Stride = Coord<RANK, LongIndex>;
 
-public:
+  public:
     // Methods
 
     /// Constructor
-    HOST_DEVICE constexpr
-    nZ(Index orgRows = 0,                 /// Number of rows of origin matrices
-       Index orgCols = 0,                 /// Number of cols of origin matrices
-       Index rowsInFractal = 0,           /// Number of rows inside the fractal
-       Index rowsByFractal = 0,           /// number of rows by the fractal
-       Index colsInFractal = 0,           /// number of cols inside the fractal
-       Index colsByFractal = 0,           /// number of cols by the fractal
-       LongIndex strideRowsInFractal = 0, /// number of elements between adjacent rows inside the fractal
-       LongIndex strideRowsByFractal = 0, /// number of elements between adjacent fractal rows
-       LongIndex strideColsInFractal = 0, /// number of elements between adjacent cols inside the fractal
-       LongIndex strideColsByFractal = 0) /// number of elements between adjacent fractal cols
+    HOST_DEVICE constexpr nZ(Index orgRows = 0, /// Number of rows of origin matrices
+        Index orgCols = 0, /// Number of cols of origin matrices
+        Index rowsInFractal = 0, /// Number of rows inside the fractal
+        Index rowsByFractal = 0, /// number of rows by the fractal
+        Index colsInFractal = 0, /// number of cols inside the fractal
+        Index colsByFractal = 0, /// number of cols by the fractal
+        LongIndex strideRowsInFractal = 0, /// number of elements between adjacent rows inside the fractal
+        LongIndex strideRowsByFractal = 0, /// number of elements between adjacent fractal rows
+        LongIndex strideColsInFractal = 0, /// number of elements between adjacent cols inside the fractal
+        LongIndex strideColsByFractal = 0) /// number of elements between adjacent fractal cols
         : orgShape_(MakeCoord(orgRows, orgCols)),
           shape_(MakeCoord(rowsInFractal, rowsByFractal, colsInFractal, colsByFractal)),
           stride_(MakeCoord(strideRowsInFractal, strideRowsByFractal, strideColsInFractal, strideColsByFractal)) {}
 
     /// Ctor
-    HOST_DEVICE constexpr
-    nZ(OrgShape orgShape, Shape shape, Stride stride) : orgShape_(orgShape), shape_(shape), stride_(stride) {}
+    HOST_DEVICE constexpr nZ(OrgShape orgShape, Shape shape, Stride stride)
+        : orgShape_(orgShape), shape_(shape), stride_(stride) {}
 
     /// Make the layout of a coordinate (row, column)
-    template <class Element>
-    HOST_DEVICE constexpr
-    static nZ MakeLayout(Index orgRows, Index orgCols)
-    {
+    template <class Element> HOST_DEVICE constexpr static nZ MakeLayout(Index orgRows, Index orgCols) {
         constexpr uint32_t ELE_NUM_PER_C0 = static_cast<uint32_t>(BYTE_PER_C0) / static_cast<uint32_t>(sizeof(Element));
         constexpr uint32_t ELE_NUM_PER_FRACTAL = BYTE_PER_FRACTAL / sizeof(Element);
         Index rowsRound = RoundUp<ELE_NUM_PER_C0>(orgRows);
         Index colsRound = RoundUp<C0_NUM_PER_FRACTAL>(orgCols);
-        return nZ(orgRows,
-                  orgCols,
-                  ELE_NUM_PER_C0,
-                  rowsRound / ELE_NUM_PER_C0,
-                  C0_NUM_PER_FRACTAL,
-                  colsRound / C0_NUM_PER_FRACTAL,
-                  1,
-                  colsRound * ELE_NUM_PER_C0,
-                  ELE_NUM_PER_C0,
-                  ELE_NUM_PER_FRACTAL);
+        return nZ(orgRows, orgCols, ELE_NUM_PER_C0, rowsRound / ELE_NUM_PER_C0, C0_NUM_PER_FRACTAL,
+            colsRound / C0_NUM_PER_FRACTAL, 1, colsRound * ELE_NUM_PER_C0, ELE_NUM_PER_C0, ELE_NUM_PER_FRACTAL);
     }
 
     /// Returns the offset of a coordinate in linear memory.
     /// Assumes coordinate has convention (row, column)
     HOST_DEVICE
-    LongIndex GetOffset(MatrixCoord const &coord) const
-    {
+    LongIndex GetOffset(MatrixCoord const &coord) const {
         return LongIndex(coord.row()) / shape_[0] * stride_[1] + LongIndex(coord.column()) / shape_[2] * stride_[3] +
             (LongIndex(coord.row()) % shape_[0]) * stride_[0] + (LongIndex(coord.column()) % shape_[2]) * stride_[2];
     }
 
     /// Returns the layout of a tile_common.
     HOST_DEVICE
-    nZ GetTileLayout(MatrixCoord const &tileOriShape) const
-    {
+    nZ GetTileLayout(MatrixCoord const &tileOriShape) const {
         auto tileShape = MakeCoord(
-            shape(0), CeilDiv(tileOriShape.row(), shape(0)),
-            shape(2), CeilDiv(tileOriShape.column(), shape(2))
-        );
+            shape(0), CeilDiv(tileOriShape.row(), shape(0)), shape(2), CeilDiv(tileOriShape.column(), shape(2)));
         return nZ(tileOriShape, tileShape, stride());
     }
 
     /// Returns the origin shape of the layout
     HOST_DEVICE
-    typename OrgShape::Index orgShape(int idx) const
-    {
-        return orgShape_[idx];
-    }
+    typename OrgShape::Index orgShape(int idx) const { return orgShape_[idx]; }
 
     /// Returns the origin shape of the layout
     HOST_DEVICE
-    typename OrgShape::Index &orgShape(int idx)
-    {
-        return orgShape_[idx];
-    }
+    typename OrgShape::Index &orgShape(int idx) { return orgShape_[idx]; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    Shape shape() const
-    {
-        return shape_;
-    }
+    Shape shape() const { return shape_; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    Shape &shape()
-    {
-        return shape_;
-    }
+    Shape &shape() { return shape_; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    typename Shape::Index shape(int idx) const
-    {
-        return shape_[idx];
-    }
+    typename Shape::Index shape(int idx) const { return shape_[idx]; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    typename Shape::Index &shape(int idx)
-    {
-        return shape_[idx];
-    }
+    typename Shape::Index &shape(int idx) { return shape_[idx]; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    Stride stride() const
-    {
-        return stride_;
-    }
+    Stride stride() const { return stride_; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    Stride &stride()
-    {
-        return stride_;
-    }
+    Stride &stride() { return stride_; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    typename Stride::Index stride(int idx) const
-    {
-        return stride_[idx];
-    }
+    typename Stride::Index stride(int idx) const { return stride_[idx]; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    typename Stride::Index &stride(int idx)
-    {
-        return stride_[idx];
-    }
+    typename Stride::Index &stride(int idx) { return stride_[idx]; }
 
     /// Returns the length of the layout
     HOST_DEVICE
-    LongIndex Capacity() const
-    {
-        return static_cast<LongIndex>(stride_[1]) * shape_[1];
-    }
+    LongIndex Capacity() const { return static_cast<LongIndex>(stride_[1]) * shape_[1]; }
 
-private:
+  private:
     /// Origin Shape data member
     OrgShape orgShape_;
 
@@ -466,7 +357,7 @@ private:
 
 /// Mapping function for zN matrices which is row-major inside fractal and col-major between fractal
 struct zN {
-public:
+  public:
     /// Logical rank of tensor
     static constexpr int RANK = 4;
 
@@ -488,163 +379,106 @@ public:
     /// Stride vector
     using Stride = Coord<RANK, LongIndex>;
 
-public:
+  public:
     // Methods
 
     /// Constructor
-    HOST_DEVICE constexpr
-    zN(Index orgRows = 0,                 /// Number of rows of origin matrices
-       Index orgCols = 0,                 /// Number of cols of origin matrices
-       Index rowsInFractal = 0,           /// Number of rows inside the fractal
-       Index rowsByFractal = 0,           /// number of rows by the fractal
-       Index colsInFractal = 0,           /// number of cols inside the fractal
-       Index colsByFractal = 0,           /// number of cols by the fractal
-       LongIndex strideRowsInFractal = 0, /// number of elements between adjacent rows inside the fractal
-       LongIndex strideRowsByFractal = 0, /// number of elements between adjacent fractal rows
-       LongIndex strideColsInFractal = 0, /// number of elements between adjacent cols inside the fractal
-       LongIndex strideColsByFractal = 0) /// number of elements between adjacent fractal cols
+    HOST_DEVICE constexpr zN(Index orgRows = 0, /// Number of rows of origin matrices
+        Index orgCols = 0, /// Number of cols of origin matrices
+        Index rowsInFractal = 0, /// Number of rows inside the fractal
+        Index rowsByFractal = 0, /// number of rows by the fractal
+        Index colsInFractal = 0, /// number of cols inside the fractal
+        Index colsByFractal = 0, /// number of cols by the fractal
+        LongIndex strideRowsInFractal = 0, /// number of elements between adjacent rows inside the fractal
+        LongIndex strideRowsByFractal = 0, /// number of elements between adjacent fractal rows
+        LongIndex strideColsInFractal = 0, /// number of elements between adjacent cols inside the fractal
+        LongIndex strideColsByFractal = 0) /// number of elements between adjacent fractal cols
         : orgShape_(MakeCoord(orgRows, orgCols)),
           shape_(MakeCoord(rowsInFractal, rowsByFractal, colsInFractal, colsByFractal)),
           stride_(MakeCoord(strideRowsInFractal, strideRowsByFractal, strideColsInFractal, strideColsByFractal)) {}
 
     /// Ctor
-    HOST_DEVICE constexpr
-    zN(OrgShape orgShape, Shape shape, Stride stride) : orgShape_(orgShape), shape_(shape), stride_(stride) {}
+    HOST_DEVICE constexpr zN(OrgShape orgShape, Shape shape, Stride stride)
+        : orgShape_(orgShape), shape_(shape), stride_(stride) {}
 
     /// Make the layout of a coordinate (row, column)
-    template <class Element>
-    HOST_DEVICE constexpr
-    static zN MakeLayout(Index orgRows, Index orgCols)
-    {
+    template <class Element> HOST_DEVICE constexpr static zN MakeLayout(Index orgRows, Index orgCols) {
         constexpr uint32_t ELE_NUM_PER_C0 = static_cast<uint32_t>(BYTE_PER_C0) / static_cast<uint32_t>(sizeof(Element));
         constexpr uint32_t ELE_NUM_PER_FRACTAL = BYTE_PER_FRACTAL / sizeof(Element);
         Index rowsRound = RoundUp<C0_NUM_PER_FRACTAL>(orgRows);
         Index colsRound = RoundUp<ELE_NUM_PER_C0>(orgCols);
-        return zN(orgRows,
-                  orgCols,
-                  C0_NUM_PER_FRACTAL,
-                  rowsRound / C0_NUM_PER_FRACTAL,
-                  ELE_NUM_PER_C0,
-                  colsRound / ELE_NUM_PER_C0,
-                  ELE_NUM_PER_C0,
-                  ELE_NUM_PER_FRACTAL,
-                  1,
-                  rowsRound * ELE_NUM_PER_C0);
+        return zN(orgRows, orgCols, C0_NUM_PER_FRACTAL, rowsRound / C0_NUM_PER_FRACTAL, ELE_NUM_PER_C0,
+            colsRound / ELE_NUM_PER_C0, ELE_NUM_PER_C0, ELE_NUM_PER_FRACTAL, 1, rowsRound * ELE_NUM_PER_C0);
     }
 
     HOST_DEVICE
-    static zN MakeLayoutInL0C(MatrixCoord const &shape)
-    {
-        return zN(shape.row(),
-                  shape.column(),
-                  C0_NUM_PER_FRACTAL,
-                  CeilDiv<C0_NUM_PER_FRACTAL>(shape.row()),
-                  C0_NUM_PER_FRACTAL,
-                  CeilDiv<C0_NUM_PER_FRACTAL>(shape.column()),
-                  C0_NUM_PER_FRACTAL,
-                  C0_NUM_PER_FRACTAL * C0_NUM_PER_FRACTAL,
-                  1,
-                  RoundUp<C0_NUM_PER_FRACTAL>(shape.row()) * C0_NUM_PER_FRACTAL);
+    static zN MakeLayoutInL0C(MatrixCoord const &shape) {
+        return zN(shape.row(), shape.column(), C0_NUM_PER_FRACTAL, CeilDiv<C0_NUM_PER_FRACTAL>(shape.row()),
+            C0_NUM_PER_FRACTAL, CeilDiv<C0_NUM_PER_FRACTAL>(shape.column()), C0_NUM_PER_FRACTAL,
+            C0_NUM_PER_FRACTAL * C0_NUM_PER_FRACTAL, 1, RoundUp<C0_NUM_PER_FRACTAL>(shape.row()) * C0_NUM_PER_FRACTAL);
     }
 
     /// Returns the offset of a coordinate in linear memory.
     /// Assumes coordinate has convention (row, column)
     HOST_DEVICE
-    LongIndex GetOffset(MatrixCoord const &coord) const
-    {
+    LongIndex GetOffset(MatrixCoord const &coord) const {
         return LongIndex(coord.row()) / shape_[0] * stride_[1] + LongIndex(coord.column()) / shape_[2] * stride_[3] +
             (LongIndex(coord.row()) % shape_[0]) * stride_[0] + (LongIndex(coord.column()) % shape_[2]) * stride_[2];
     }
 
     /// Returns the layout of a tile_common.
     HOST_DEVICE
-    zN GetTileLayout(MatrixCoord const &tileOriShape) const
-    {
+    zN GetTileLayout(MatrixCoord const &tileOriShape) const {
         auto tileShape = MakeCoord(
-            shape(0), CeilDiv(tileOriShape.row(), shape(0)),
-            shape(2), CeilDiv(tileOriShape.column(), shape(2))
-        );
+            shape(0), CeilDiv(tileOriShape.row(), shape(0)), shape(2), CeilDiv(tileOriShape.column(), shape(2)));
         return zN(tileOriShape, tileShape, stride());
     }
 
     /// Returns the origin shape of the layout
     HOST_DEVICE
-    typename OrgShape::Index orgShape(int idx) const
-    {
-        return orgShape_[idx];
-    }
+    typename OrgShape::Index orgShape(int idx) const { return orgShape_[idx]; }
 
     /// Returns the origin shape of the layout
     HOST_DEVICE
-    typename OrgShape::Index &orgShape(int idx)
-    {
-        return orgShape_[idx];
-    }
+    typename OrgShape::Index &orgShape(int idx) { return orgShape_[idx]; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    Shape shape() const
-    {
-        return shape_;
-    }
+    Shape shape() const { return shape_; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    Shape &shape()
-    {
-        return shape_;
-    }
+    Shape &shape() { return shape_; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    typename Shape::Index shape(int idx) const
-    {
-        return shape_[idx];
-    }
+    typename Shape::Index shape(int idx) const { return shape_[idx]; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    typename Shape::Index &shape(int idx)
-    {
-        return shape_[idx];
-    }
+    typename Shape::Index &shape(int idx) { return shape_[idx]; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    Stride stride() const
-    {
-        return stride_;
-    }
+    Stride stride() const { return stride_; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    Stride &stride()
-    {
-        return stride_;
-    }
+    Stride &stride() { return stride_; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    typename Stride::Index stride(int idx) const
-    {
-        return stride_[idx];
-    }
+    typename Stride::Index stride(int idx) const { return stride_[idx]; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    typename Stride::Index &stride(int idx)
-    {
-        return stride_[idx];
-    }
+    typename Stride::Index &stride(int idx) { return stride_[idx]; }
 
     /// Returns the length of the layout
     HOST_DEVICE
-    LongIndex Capacity() const
-    {
-        return static_cast<LongIndex>(stride_[3]) * shape_[3];
-    }
+    LongIndex Capacity() const { return static_cast<LongIndex>(stride_[3]) * shape_[3]; }
 
-private:
+  private:
     /// Origin Shape data member
     OrgShape orgShape_;
 
@@ -657,7 +491,7 @@ private:
 
 /// Mapping function for zN matrices which is row-major inside fractal and row-major between fractal
 struct zZ {
-public:
+  public:
     /// Logical rank of tensor
     static constexpr int RANK = 4;
 
@@ -679,129 +513,86 @@ public:
     /// Stride vector
     using Stride = Coord<RANK, LongIndex>;
 
-public:
+  public:
     // Methods
 
     /// Constructor
-    HOST_DEVICE constexpr
-    zZ(Index orgRows = 0,                 /// Number of rows of origin matrices
-       Index orgCols = 0,                 /// Number of cols of origin matrices
-       Index rowsInFractal = 0,           /// Number of rows inside the fractal
-       Index rowsByFractal = 0,           /// number of rows by the fractal
-       Index colsInFractal = 0,           /// number of cols inside the fractal
-       Index colsByFractal = 0,           /// number of cols by the fractal
-       LongIndex strideRowsInFractal = 0, /// number of elements between adjacent rows inside the fractal
-       LongIndex strideRowsByFractal = 0, /// number of elements between adjacent fractal rows
-       LongIndex strideColsInFractal = 0, /// number of elements between adjacent cols inside the fractal
-       LongIndex strideColsByFractal = 0) /// number of elements between adjacent fractal cols
+    HOST_DEVICE constexpr zZ(Index orgRows = 0, /// Number of rows of origin matrices
+        Index orgCols = 0, /// Number of cols of origin matrices
+        Index rowsInFractal = 0, /// Number of rows inside the fractal
+        Index rowsByFractal = 0, /// number of rows by the fractal
+        Index colsInFractal = 0, /// number of cols inside the fractal
+        Index colsByFractal = 0, /// number of cols by the fractal
+        LongIndex strideRowsInFractal = 0, /// number of elements between adjacent rows inside the fractal
+        LongIndex strideRowsByFractal = 0, /// number of elements between adjacent fractal rows
+        LongIndex strideColsInFractal = 0, /// number of elements between adjacent cols inside the fractal
+        LongIndex strideColsByFractal = 0) /// number of elements between adjacent fractal cols
         : orgShape_(MakeCoord(orgRows, orgCols)),
           shape_(MakeCoord(rowsInFractal, rowsByFractal, colsInFractal, colsByFractal)),
           stride_(MakeCoord(strideRowsInFractal, strideRowsByFractal, strideColsInFractal, strideColsByFractal)) {}
 
     /// Ctor
-    HOST_DEVICE constexpr
-    zZ(OrgShape orgShape, Shape shape, Stride stride) : orgShape_(orgShape), shape_(shape), stride_(stride) {}
+    HOST_DEVICE constexpr zZ(OrgShape orgShape, Shape shape, Stride stride)
+        : orgShape_(orgShape), shape_(shape), stride_(stride) {}
 
     /// Make the layout of a coordinate (row, column)
-    template <class Element>
-    HOST_DEVICE constexpr
-    static zZ MakeLayout(Index orgRows, Index orgCols)
-    {
+    template <class Element> HOST_DEVICE constexpr static zZ MakeLayout(Index orgRows, Index orgCols) {
         constexpr uint32_t ELE_NUM_PER_C0 = static_cast<uint32_t>(BYTE_PER_C0) / static_cast<uint32_t>(sizeof(Element));
         constexpr uint32_t ELE_NUM_PER_FRACTAL = BYTE_PER_FRACTAL / sizeof(Element);
         Index rowsRound = RoundUp<C0_NUM_PER_FRACTAL>(orgRows);
         Index colsRound = RoundUp<ELE_NUM_PER_C0>(orgCols);
-        return zZ(orgRows,
-                  orgCols,
-                  C0_NUM_PER_FRACTAL,
-                  rowsRound / C0_NUM_PER_FRACTAL,
-                  ELE_NUM_PER_C0,
-                  colsRound / ELE_NUM_PER_C0,
-                  ELE_NUM_PER_C0,
-                  colsRound * C0_NUM_PER_FRACTAL,
-                  1,
-                  ELE_NUM_PER_FRACTAL);
+        return zZ(orgRows, orgCols, C0_NUM_PER_FRACTAL, rowsRound / C0_NUM_PER_FRACTAL, ELE_NUM_PER_C0,
+            colsRound / ELE_NUM_PER_C0, ELE_NUM_PER_C0, colsRound * C0_NUM_PER_FRACTAL, 1, ELE_NUM_PER_FRACTAL);
     }
 
     /// Returns the offset of a coordinate in linear memory.
     /// Assumes coordinate has convention (row, column)
     HOST_DEVICE
-    LongIndex GetOffset(MatrixCoord const &coord) const
-    {
+    LongIndex GetOffset(MatrixCoord const &coord) const {
         return LongIndex(coord.row()) / shape_[0] * stride_[1] + LongIndex(coord.column()) / shape_[2] * stride_[3];
     }
 
     /// Returns the origin shape of the layout
     HOST_DEVICE
-    typename OrgShape::Index orgShape(int idx) const
-    {
-        return orgShape_[idx];
-    }
+    typename OrgShape::Index orgShape(int idx) const { return orgShape_[idx]; }
 
     /// Returns the origin shape of the layout
     HOST_DEVICE
-    typename OrgShape::Index &orgShape(int idx)
-    {
-        return orgShape_[idx];
-    }
+    typename OrgShape::Index &orgShape(int idx) { return orgShape_[idx]; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    Shape shape() const
-    {
-        return shape_;
-    }
+    Shape shape() const { return shape_; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    Shape &shape()
-    {
-        return shape_;
-    }
+    Shape &shape() { return shape_; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    typename Shape::Index shape(int idx) const
-    {
-        return shape_[idx];
-    }
+    typename Shape::Index shape(int idx) const { return shape_[idx]; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    typename Shape::Index &shape(int idx)
-    {
-        return shape_[idx];
-    }
+    typename Shape::Index &shape(int idx) { return shape_[idx]; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    Stride stride() const
-    {
-        return stride_;
-    }
+    Stride stride() const { return stride_; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    Stride &stride()
-    {
-        return stride_;
-    }
+    Stride &stride() { return stride_; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    typename Stride::Index stride(int idx) const
-    {
-        return stride_[idx];
-    }
+    typename Stride::Index stride(int idx) const { return stride_[idx]; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    typename Stride::Index &stride(int idx)
-    {
-        return stride_[idx];
-    }
+    typename Stride::Index &stride(int idx) { return stride_[idx]; }
 
-private:
+  private:
     /// Origin Shape data member
     OrgShape orgShape_;
 
@@ -816,7 +607,7 @@ private:
 /// A special data layout designed to improve the efficiency of matrix operations in non-512B aligned scenarios.
 /// This layout is row-major within blocks and also row-major between blocks.
 struct PaddingRowMajor {
-public:
+  public:
     /// Logical rank of tensor
     static constexpr int RANK = 4;
 
@@ -838,105 +629,71 @@ public:
     /// Stride vector
     using Stride = Coord<RANK, LongIndex>;
 
-public:
+  public:
     /// Constructor
     HOST_DEVICE
-    PaddingRowMajor(Index orgRows = 0, Index orgCols = 0, Index blockRows = 0, Index blockCols = 0) :
-        orgShape_(MakeCoord(orgRows, orgCols)),
-        shape_(MakeCoord(blockRows, CeilDiv(orgRows, blockRows), blockCols, CeilDiv(orgCols, blockCols))),
-        stride_(MakeCoord((LongIndex)blockCols, (LongIndex)blockRows * (LongIndex)RoundUp(orgCols, blockCols),
-        (LongIndex)1, (LongIndex)blockRows * (LongIndex)blockCols)) {}
+    PaddingRowMajor(Index orgRows = 0, Index orgCols = 0, Index blockRows = 0, Index blockCols = 0)
+        : orgShape_(MakeCoord(orgRows, orgCols)),
+          shape_(MakeCoord(blockRows, CeilDiv(orgRows, blockRows), blockCols, CeilDiv(orgCols, blockCols))),
+          stride_(MakeCoord((LongIndex)blockCols, (LongIndex)blockRows * (LongIndex)RoundUp(orgCols, blockCols),
+              (LongIndex)1, (LongIndex)blockRows * (LongIndex)blockCols)) {}
 
     /// Returns the offset of a coordinate in linear memory.
     /// Assumes coordinate has convention (row, column)
     HOST_DEVICE
-    LongIndex GetOffset(MatrixCoord const &coord) const
-    {
+    LongIndex GetOffset(MatrixCoord const &coord) const {
         LongIndex blockRows = (LongIndex)shape_[0];
         LongIndex blockCols = (LongIndex)shape_[2];
-        return (LongIndex)coord.row() / blockRows * stride_[1]
-            + (LongIndex)coord.column() / blockCols * stride_[3]
-            + (LongIndex)coord.row() % blockRows * stride_[0]
-            + (LongIndex)coord.column() % blockCols;
+        return (LongIndex)coord.row() / blockRows * stride_[1] + (LongIndex)coord.column() / blockCols * stride_[3] +
+            (LongIndex)coord.row() % blockRows * stride_[0] + (LongIndex)coord.column() % blockCols;
     }
 
     HOST_DEVICE
-    PaddingRowMajor GetTileLayout(MatrixCoord const &tileShape) const
-    {
+    PaddingRowMajor GetTileLayout(MatrixCoord const &tileShape) const {
         return PaddingRowMajor(tileShape.row(), tileShape.column(), shape_[0], shape_[2]);
     }
 
     /// Returns the origin shape of the layout
     HOST_DEVICE
-    typename OrgShape::Index orgShape(int idx) const
-    {
-        return orgShape_[idx];
-    }
+    typename OrgShape::Index orgShape(int idx) const { return orgShape_[idx]; }
 
     /// Returns the origin shape of the layout
     HOST_DEVICE
-    typename OrgShape::Index &orgShape(int idx)
-    {
-        return orgShape_[idx];
-    }
+    typename OrgShape::Index &orgShape(int idx) { return orgShape_[idx]; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    Shape shape() const
-    {
-        return shape_;
-    }
+    Shape shape() const { return shape_; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    Shape &shape()
-    {
-        return shape_;
-    }
+    Shape &shape() { return shape_; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    typename Shape::Index shape(int idx) const
-    {
-        return shape_[idx];
-    }
+    typename Shape::Index shape(int idx) const { return shape_[idx]; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    typename Shape::Index &shape(int idx)
-    {
-        return shape_[idx];
-    }
+    typename Shape::Index &shape(int idx) { return shape_[idx]; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    Stride stride() const
-    {
-        return stride_;
-    }
+    Stride stride() const { return stride_; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    Stride &stride()
-    {
-        return stride_;
-    }
+    Stride &stride() { return stride_; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    typename Stride::Index stride(int idx) const
-    {
-        return stride_[idx];
-    }
+    typename Stride::Index stride(int idx) const { return stride_[idx]; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    typename Stride::Index &stride(int idx)
-    {
-        return stride_[idx];
-    }
+    typename Stride::Index &stride(int idx) { return stride_[idx]; }
 
-private:
+  private:
     //
     // Data members
     //
@@ -955,7 +712,7 @@ private:
 /// A special data layout designed to improve the efficiency of matrix operations in non-512B aligned scenarios.
 /// This layout is column-major within blocks and also column-major between blocks.
 struct PaddingColumnMajor {
-public:
+  public:
     /// Logical rank of tensor
     static constexpr int RANK = 4;
 
@@ -977,106 +734,71 @@ public:
     /// Stride vector
     using Stride = Coord<RANK, LongIndex>;
 
-public:
+  public:
     /// Constructor
     HOST_DEVICE
-    PaddingColumnMajor(Index orgRows = 0, Index orgCols = 0, Index blockRows = 0, Index blockCols = 0) :
-        orgShape_(MakeCoord(orgRows, orgCols)),
-        shape_(MakeCoord(blockRows, CeilDiv(orgRows, blockRows), blockCols, CeilDiv(orgCols, blockCols))),
-        stride_(MakeCoord((LongIndex)1, (LongIndex)blockRows * (LongIndex)blockCols, (LongIndex)blockRows,
-        (LongIndex)RoundUp(orgRows, blockRows) * (LongIndex)blockCols)) {}
+    PaddingColumnMajor(Index orgRows = 0, Index orgCols = 0, Index blockRows = 0, Index blockCols = 0)
+        : orgShape_(MakeCoord(orgRows, orgCols)),
+          shape_(MakeCoord(blockRows, CeilDiv(orgRows, blockRows), blockCols, CeilDiv(orgCols, blockCols))),
+          stride_(MakeCoord((LongIndex)1, (LongIndex)blockRows * (LongIndex)blockCols, (LongIndex)blockRows,
+              (LongIndex)RoundUp(orgRows, blockRows) * (LongIndex)blockCols)) {}
 
     /// Returns the offset of a coordinate in linear memory.
     /// Assumes coordinate has convention (row, column)
     HOST_DEVICE
-    LongIndex GetOffset(MatrixCoord const &coord) const
-    {
+    LongIndex GetOffset(MatrixCoord const &coord) const {
         LongIndex blockRows = (LongIndex)shape_[0];
         LongIndex blockCols = (LongIndex)shape_[2];
-        return (LongIndex)coord.row() / blockRows * stride_[1]
-            + (LongIndex)coord.column() / blockCols * stride_[3]
-            + (LongIndex)coord.row() % blockRows
-            + (LongIndex)coord.column() % blockCols * stride_[2];
+        return (LongIndex)coord.row() / blockRows * stride_[1] + (LongIndex)coord.column() / blockCols * stride_[3] +
+            (LongIndex)coord.row() % blockRows + (LongIndex)coord.column() % blockCols * stride_[2];
     }
 
     HOST_DEVICE
-    PaddingColumnMajor GetTileLayout(MatrixCoord const &tileShape) const
-    {
+    PaddingColumnMajor GetTileLayout(MatrixCoord const &tileShape) const {
         return PaddingColumnMajor(tileShape.row(), tileShape.column(), shape_[0], shape_[2]);
     }
 
     /// Returns the origin shape of the layout
     HOST_DEVICE
-    typename OrgShape::Index orgShape(int idx) const
-    {
-        return orgShape_[idx];
-    }
+    typename OrgShape::Index orgShape(int idx) const { return orgShape_[idx]; }
 
     /// Returns the origin shape of the layout
     HOST_DEVICE
-    typename OrgShape::Index &orgShape(int idx)
-    {
-        return orgShape_[idx];
-    }
+    typename OrgShape::Index &orgShape(int idx) { return orgShape_[idx]; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    Shape shape() const
-    {
-        return shape_;
-    }
+    Shape shape() const { return shape_; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    Shape &shape()
-    {
-        return shape_;
-    }
+    Shape &shape() { return shape_; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    typename Shape::Index shape(int idx) const
-    {
-        return shape_[idx];
-    }
+    typename Shape::Index shape(int idx) const { return shape_[idx]; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    typename Shape::Index &shape(int idx)
-    {
-        return shape_[idx];
-    }
+    typename Shape::Index &shape(int idx) { return shape_[idx]; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    Stride stride() const
-    {
-        return stride_;
-    }
+    Stride stride() const { return stride_; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    Stride &stride()
-    {
-        return stride_;
-    }
+    Stride &stride() { return stride_; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    typename Stride::Index stride(int idx) const
-    {
-        return stride_[idx];
-    }
+    typename Stride::Index stride(int idx) const { return stride_[idx]; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    typename Stride::Index &stride(int idx)
-    {
-        return stride_[idx];
-    }
+    typename Stride::Index &stride(int idx) { return stride_[idx]; }
 
-
-private:
+  private:
     //
     // Data members
     //
@@ -1095,7 +817,7 @@ private:
 // new add layout nN
 // nN layout
 struct nN {
-public:
+  public:
     /// Logical rank of tensor
     static constexpr int RANK = 4;
 
@@ -1117,122 +839,92 @@ public:
     /// Stride vector
     using Stride = Coord<RANK, LongIndex>;
 
-public:
+  public:
     // Methods
 
     /// Constructor
     HOST_DEVICE
-    nN(Index orgRows = 0,  /// Number of rows of origin matrices
-    Index orgCols = 0,  /// Number of cols of origin matrices
+    nN(Index orgRows = 0, /// Number of rows of origin matrices
+        Index orgCols = 0, /// Number of cols of origin matrices
 
-    Index rowsInFractal = 0,  /// Number of rows inside the fractal
-    Index rowsByFractal = 0,  /// number of rows by the fractal
-    Index colsInFractal = 0,  /// number of cols inside the fractal
-    Index colsByFractal = 0,  /// number of cols by the fractal
+        Index rowsInFractal = 0, /// Number of rows inside the fractal
+        Index rowsByFractal = 0, /// number of rows by the fractal
+        Index colsInFractal = 0, /// number of cols inside the fractal
+        Index colsByFractal = 0, /// number of cols by the fractal
 
-    LongIndex strideRowsInFractal = 0,  /// number of elements between adjacent rows inside the fractal
-    LongIndex strideRowsByFractal = 0,  /// number of elements between adjacent fractal rows
-    LongIndex strideColsInFractal = 0,  /// number of elements between adjacent cols inside the fractal
-    LongIndex strideColsByFractal = 0)  /// number of elements between adjacent fractal cols
+        LongIndex strideRowsInFractal = 0, /// number of elements between adjacent rows inside the fractal
+        LongIndex strideRowsByFractal = 0, /// number of elements between adjacent fractal rows
+        LongIndex strideColsInFractal = 0, /// number of elements between adjacent cols inside the fractal
+        LongIndex strideColsByFractal = 0) /// number of elements between adjacent fractal cols
         : orgShape_(MakeCoord(orgRows, orgCols)),
-        shape_(MakeCoord(rowsInFractal, rowsByFractal, colsInFractal, colsByFractal)),
-        stride_(MakeCoord(strideRowsInFractal, strideRowsByFractal, strideColsInFractal, strideColsByFractal)) {
-    }
+          shape_(MakeCoord(rowsInFractal, rowsByFractal, colsInFractal, colsByFractal)),
+          stride_(MakeCoord(strideRowsInFractal, strideRowsByFractal, strideColsInFractal, strideColsByFractal)) {}
 
     /// Ctor
     HOST_DEVICE
-    nN(OrgShape orgShape, Shape shape, Stride stride)
-        : orgShape_(orgShape), shape_(shape), stride_(stride) {}
+    nN(OrgShape orgShape, Shape shape, Stride stride) : orgShape_(orgShape), shape_(shape), stride_(stride) {}
 
     /// Make the layout of a coordinate (row, column)
-    template <class Element>
-    HOST_DEVICE static nN MakeLayout(Index orgRows, Index orgCols) {
+    template <class Element> HOST_DEVICE static nN MakeLayout(Index orgRows, Index orgCols) {
         static constexpr uint32_t ELE_NUM_PER_C0 = BYTE_PER_C0 / sizeof(Element);
         static constexpr uint32_t ELE_NUM_PER_FRACTAL = BYTE_PER_FRACTAL / sizeof(Element);
         Index rowsRound = RoundUp<ELE_NUM_PER_C0>(orgRows);
         Index colsRound = RoundUp<C0_NUM_PER_FRACTAL>(orgCols);
-        return nN(orgRows,
-                orgCols,
+        return nN(orgRows, orgCols,
 
-                ELE_NUM_PER_C0,
-                rowsRound / ELE_NUM_PER_C0,
-                C0_NUM_PER_FRACTAL,
-                colsRound / C0_NUM_PER_FRACTAL,
+            ELE_NUM_PER_C0, rowsRound / ELE_NUM_PER_C0, C0_NUM_PER_FRACTAL, colsRound / C0_NUM_PER_FRACTAL,
 
-                1,
-                ELE_NUM_PER_FRACTAL,
-                ELE_NUM_PER_C0,
-                rowsRound * C0_NUM_PER_FRACTAL);
+            1, ELE_NUM_PER_FRACTAL, ELE_NUM_PER_C0, rowsRound * C0_NUM_PER_FRACTAL);
     }
 
     /// Returns the offset of a coordinate in linear memory.
     /// Assumes coordinate has convention (row, column)
     HOST_DEVICE
-    LongIndex GetOffset(MatrixCoord const& coord) const {
+    LongIndex GetOffset(MatrixCoord const &coord) const {
         return LongIndex(coord.row()) / shape_[0] * stride_[1] + LongIndex(coord.column()) / shape_[2] * stride_[3];
     }
 
     /// Returns the origin shape of the layout
     HOST_DEVICE
-    typename OrgShape::Index orgShape(int idx) const {
-        return orgShape_[idx];
-    }
+    typename OrgShape::Index orgShape(int idx) const { return orgShape_[idx]; }
 
     /// Returns the origin shape of the layout
     HOST_DEVICE
-    typename OrgShape::Index& orgShape(int idx) {
-        return orgShape_[idx];
-    }
+    typename OrgShape::Index &orgShape(int idx) { return orgShape_[idx]; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    Shape shape() const {
-        return shape_;
-    }
+    Shape shape() const { return shape_; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    Shape& shape() {
-        return shape_;
-    }
+    Shape &shape() { return shape_; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    typename Shape::Index shape(int idx) const {
-        return shape_[idx];
-    }
+    typename Shape::Index shape(int idx) const { return shape_[idx]; }
 
     /// Returns the shape of the layout
     HOST_DEVICE
-    typename Shape::Index& shape(int idx) {
-        return shape_[idx];
-    }
+    typename Shape::Index &shape(int idx) { return shape_[idx]; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    Stride stride() const {
-        return stride_;
-    }
+    Stride stride() const { return stride_; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    Stride& stride() {
-        return stride_;
-    }
+    Stride &stride() { return stride_; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    typename Stride::Index stride(int idx) const {
-        return stride_[idx];
-    }
+    typename Stride::Index stride(int idx) const { return stride_[idx]; }
 
     /// Returns the stride of the layout
     HOST_DEVICE
-    typename Stride::Index& stride(int idx) {
-        return stride_[idx];
-    }
+    typename Stride::Index &stride(int idx) { return stride_[idx]; }
 
-private:
+  private:
     /// Origin Shape data member
     OrgShape orgShape_;
 
@@ -1242,6 +934,6 @@ private:
     /// Stride data member
     Stride stride_;
 };
-}  // namespace NpuArch::layout
+} // namespace NpuArch::layout
 
-#endif  // LAYOUT_MATRIX_HPP
+#endif // LAYOUT_MATRIX_HPP

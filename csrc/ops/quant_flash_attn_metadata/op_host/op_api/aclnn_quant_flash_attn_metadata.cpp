@@ -10,6 +10,16 @@
  * See the Mulan PSL v2 for more details.
  */
 
+/**
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
 /*!
  * \file aclnn_quant_flash_attn_metadata.cpp
  * \brief
@@ -153,13 +163,13 @@ static aclnnStatus ParamsCheck(const aclTensor *cuSeqlensQOptional, const aclTen
     return ACLNN_SUCCESS;
 }
 
-aclnnStatus aclnnQuantFlashAttnMetadataGetWorkspaceSize(const aclTensor *cuSeqlensQOptional,
+aclnnStatus aclnnEagleQuantFlashAttnMetadataGetWorkspaceSize(const aclTensor *cuSeqlensQOptional,
     const aclTensor *cuSeqlensKvOptional, const aclTensor *sequsedQOptional, const aclTensor *sequsedKvOptional,
     int64_t batchSize, int64_t maxSeqlenQ, int64_t maxSeqlenKv, int64_t numHeadsQ, int64_t numHeadsKv, int64_t headDim,
     int64_t qQuantMode, int64_t kQuantMode, int64_t vQuantMode, int64_t qDtype, int64_t kDtype, int64_t vDtype,
     int64_t maskMode, int64_t winLeft, int64_t winRight, const char *layoutQ, const char *layoutKv,
     const char *layoutOut, const aclTensor *metaData, uint64_t *workspaceSize, aclOpExecutor **executor) {
-    L2_DFX_PHASE_1(aclnnQuantFlashAttnMetadata,
+    L2_DFX_PHASE_1(aclnnEagleQuantFlashAttnMetadata,
         DFX_IN(cuSeqlensQOptional, cuSeqlensKvOptional, sequsedQOptional, sequsedKvOptional, batchSize, maxSeqlenQ,
             maxSeqlenKv, numHeadsQ, numHeadsKv, headDim, qQuantMode, kQuantMode, vQuantMode, qDtype, kDtype, vDtype,
             maskMode, winLeft, winRight, layoutQ, layoutKv, layoutOut),
@@ -178,7 +188,7 @@ aclnnStatus aclnnQuantFlashAttnMetadataGetWorkspaceSize(const aclTensor *cuSeqle
     uint32_t aivCoreNum = npuInfo.GetVectorCoreNum();
     const char *socVersion = npuInfo.GetSocLongVersion().c_str();
 
-    auto output = l0op::QuantFlashAttnMetadata(cuSeqlensQOptional, cuSeqlensKvOptional, sequsedQOptional,
+    auto output = l0op::EagleQuantFlashAttnMetadata(cuSeqlensQOptional, cuSeqlensKvOptional, sequsedQOptional,
         sequsedKvOptional, batchSize, maxSeqlenQ, maxSeqlenKv, numHeadsQ, numHeadsKv, headDim, qQuantMode, kQuantMode,
         vQuantMode, qDtype, kDtype, vDtype, maskMode, winLeft, winRight, layoutQ, layoutKv, layoutOut, socVersion,
         aicCoreNum, aivCoreNum, metaData, uniqueExecutor.get());
@@ -189,9 +199,9 @@ aclnnStatus aclnnQuantFlashAttnMetadataGetWorkspaceSize(const aclTensor *cuSeqle
     return ACLNN_SUCCESS;
 }
 
-__attribute__((visibility("default"))) aclnnStatus aclnnQuantFlashAttnMetadata(
+__attribute__((visibility("default"))) aclnnStatus aclnnEagleQuantFlashAttnMetadata(
     void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, aclrtStream stream) {
-    L2_DFX_PHASE_2(aclnnQuantFlashAttnMetadata);
+    L2_DFX_PHASE_2(aclnnEagleQuantFlashAttnMetadata);
     return CommonOpExecutorRun(workspace, workspaceSize, executor, stream);
 }
 

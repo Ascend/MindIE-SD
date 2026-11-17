@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef TLA_UTIL_TYPE_TRAITS_HPP
 #define TLA_UTIL_TYPE_TRAITS_HPP
 
@@ -19,31 +31,26 @@
 #define inline __inline__ __attribute__((always_inline))
 #endif
 
-#define TLA_REQUIRES(...)   typename std::enable_if<(__VA_ARGS__)>::type* = nullptr
+#define TLA_REQUIRES(...) typename std::enable_if<(__VA_ARGS__)>::type * = nullptr
 
 namespace tla {
 
 // using std::remove_cvref;
-template <class T>
-struct remove_cvref {
+template <class T> struct remove_cvref {
     using type = std::remove_cv_t<std::remove_reference_t<T>>;
 };
 
 // using std::remove_cvref_t;
-template <class T>
-using remove_cvref_t = typename remove_cvref<T>::type;
-
+template <class T> using remove_cvref_t = typename remove_cvref<T>::type;
 
 // tuple_size, tuple_element
-template <class T, class = void>
-struct tuple_size;
+template <class T, class = void> struct tuple_size;
 
 template <class T>
 struct tuple_size<T, std::void_t<typename std::tuple_size<T>::type>>
     : std::integral_constant<size_t, std::tuple_size<T>::value> {};
 
-template <class T>
-constexpr size_t tuple_size_v = tuple_size<T>::value;
+template <class T> constexpr size_t tuple_size_v = tuple_size<T>::value;
 
 } // end namespace tla
 

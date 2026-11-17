@@ -8,6 +8,18 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * MindIE is licensed under Mulan PSL v2.
+ * You can use this software according to the terms and conditions of the Mulan PSL v2.
+ * You may obtain a copy of Mulan PSL v2 at:
+ *          http://license.coscl.org.cn/MulanPSL2
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PSL v2 for more details.
+ */
+
 #ifndef EAGLE_QUANT_BLOCK_SPARSE_ATTENTION_H_
 #define EAGLE_QUANT_BLOCK_SPARSE_ATTENTION_H_
 
@@ -17,33 +29,15 @@
 
 namespace l0op {
 
-const std::array<const aclTensor *, 2> EagleQuantBlockSparseAttention(
-    const aclTensor *query,
-    const aclTensor *key,
-    const aclTensor *value,
-    const aclTensor *blockSparseMaskOptional,
-    const aclTensor *attenMaskOptional,
-    const aclIntArray *blockShapeOptional,
-    const aclIntArray *actualSeqLengthsOptional,
-    const aclIntArray *actualSeqLengthsKvOptional,
-    const aclTensor *blockTableOptional,
-    const aclTensor *queryScaleOptional,
-    const aclTensor *keyScaleOptional,
-    const aclTensor *valueScaleOptional,
-    const char *qInputLayout,
-    const char *kvInputLayout,
-    int64_t numKeyValueHeads,
-    int64_t maskType,
-    double scaleValue,
-    int64_t innerPrecise,
-    int64_t blockSize,
-    int64_t preTokens,
-    int64_t nextTokens,
-    int64_t softmaxLseFlag,
-    aclOpExecutor *executor,
-    op::DataType outDType);
+const std::array<const aclTensor *, 2> EagleQuantBlockSparseAttention(const aclTensor *query, const aclTensor *key,
+    const aclTensor *value, const aclTensor *blockSparseMaskOptional, const aclTensor *attenMaskOptional,
+    const aclIntArray *blockShapeOptional, const aclIntArray *actualSeqLengthsOptional,
+    const aclIntArray *actualSeqLengthsKvOptional, const aclTensor *blockTableOptional,
+    const aclTensor *queryScaleOptional, const aclTensor *keyScaleOptional, const aclTensor *valueScaleOptional,
+    const char *qInputLayout, const char *kvInputLayout, int64_t numKeyValueHeads, int64_t maskType, double scaleValue,
+    int64_t innerPrecise, int64_t blockSize, int64_t preTokens, int64_t nextTokens, int64_t softmaxLseFlag,
+    aclOpExecutor *executor, op::DataType outDType);
 
 } // namespace l0op
 
-#endif  // EAGLE_QUANT_BLOCK_SPARSE_ATTENTION_H_
-
+#endif // EAGLE_QUANT_BLOCK_SPARSE_ATTENTION_H_
