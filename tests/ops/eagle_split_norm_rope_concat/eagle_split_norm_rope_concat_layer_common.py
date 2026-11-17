@@ -10,15 +10,20 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-"""Production paths for the 910B packed-QKV Slice/RmsNorm/RoPE/Concat chain.
+"""Production paths for the 910B/950 packed-QKV Slice/RmsNorm/RoPE/Concat chain.
 
 No device initialization or business-package imports at module load time.
 """
 
-from eagle_split_norm_rope_concat_cases import PROD_HEADS, PROD_SHAPE, case_attrs, is_compact, output_shapes
+from tests.ops.eagle_split_norm_rope_concat.eagle_split_norm_rope_concat_cases import (
+    case_geometry,
+    case_attrs,
+    is_compact,
+    output_shapes,
+)
 
 PATHS = ("composed",)
-PROTOCOL = "eagle_snrc_layer_event_v6"
+PROTOCOL = "eagle_snrc_layer_event_v7"
 
 
 def scenario_name(path, case_id):
@@ -35,13 +40,14 @@ def scenario_name(path, case_id):
 
 
 def input_config(case_id):
+    shape, heads = case_geometry(case_id)
     rotary = case_attrs(case_id)["rotary_dim"]
     width = rotary // 2 if is_compact(case_id) else rotary
     return {
         "case_id": case_id,
-        "qkv_shape": list(PROD_SHAPE),
+        "qkv_shape": list(shape),
         "qkv_dtype": "bfloat16",
-        "head_counts": list(PROD_HEADS),
+        "head_counts": list(heads),
         "head_counts_type": "int[]",
         "weight_shapes": [[128], [128]],
         "weight_dtype": "bfloat16",
@@ -54,6 +60,7 @@ def input_config(case_id):
         "compute_dtype": "native_operator_internal",
         "intermediate_dtype": "bfloat16",
         "norm_output_rounding": True,
+        "slice_op": "torch.narrow+clone(contiguous_format)",
         "rms_op": "torch_npu.npu_rms_norm",
         "rope_op": "torch_npu.npu_rotary_mul",
         "cache_policy": "reuse_same_inputs_hot_cache",
@@ -90,24 +97,24 @@ def run_path(path, inputs, case_id, trace=None):
             cos_full = cos.repeat_interleave(2, dim=-1)
             sin_full = sin.repeat_interleave(2, dim=-1)
     results = []
-    # Process Q then K; npu_slice materializes each slice.
-    # Offsets and sizes specify the batch, token, head and feature dimensions.
-    for name, offset, weight in (("q", 0, qw), ("k", 56, kw)):
-        sliced = torch_npu.npu_slice(packed, [0, 0, offset, 0], [1, 5672, 56, 128])
+    # Materialize every slice inside the timed path, including already-contiguous views.
+    # Use standard tensor operations: npu_slice has no ACLNN implementation on 950.
+    for name, offset, count, weight in (("q", 0, heads[0], qw), ("k", heads[0], heads[1], kw)):
+        sliced = packed.narrow(2, offset, count).clone(memory_format=torch.contiguous_format)
         norm, rstd = torch_npu.npu_rms_norm(sliced, weight, epsilon=attrs["eps"])
-        rope_input = torch_npu.npu_slice(norm, [0, 0, 0, 0], [1, 5672, 56, rotary]) if rotary < 128 else norm
+        rope_input = norm.narrow(3, 0, rotary).clone(memory_format=torch.contiguous_format) if rotary < 128 else norm
         rotated = torch_npu.npu_rotary_mul(rope_input, cos_full, sin_full, rotary_mode)
         tail = None
         if rotary < 128:
-            tail = torch_npu.npu_slice(norm, [0, 0, 0, rotary], [1, 5672, 56, 128 - rotary])
+            tail = norm.narrow(3, rotary, 128 - rotary).clone(memory_format=torch.contiguous_format)
         output = torch.cat((rotated, tail), dim=-1) if tail is not None else rotated
         if trace is not None:
             trace.append(
                 {
                     "branch": name,
                     "slice_offsets": [0, 0, offset, 0],
-                    "slice_sizes": [1, 5672, 56, 128],
-                    "slice_metadata_dtype": "int64",
+                    "slice_sizes": [1, 5672, count, 128],
+                    "slice_op": "torch.narrow+clone(contiguous_format)",
                     "rms_op": "torch_npu.npu_rms_norm",
                     "rms_input": tensor_state(sliced),
                     "weight_input": tensor_state(weight),
@@ -129,7 +136,7 @@ def run_path(path, inputs, case_id, trace=None):
         results.append(output)
     if path == "composed":
         # Materialize V to match the fused operator's three-output contract.
-        value = torch_npu.npu_slice(packed, [0, 0, 112, 0], [1, 5672, 56, 128])
+        value = packed.narrow(2, sum(heads[:2]), heads[2]).clone(memory_format=torch.contiguous_format)
         if attrs["output_bnsd"]:
             value = value.transpose(1, 2).contiguous()
         if trace is not None:

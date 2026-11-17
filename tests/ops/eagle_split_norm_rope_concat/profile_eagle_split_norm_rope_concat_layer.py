@@ -18,18 +18,15 @@ import json
 import math
 import os
 from pathlib import Path
-import sys
 
-from eagle_split_norm_rope_concat_cases import (
+from tests.ops.eagle_split_norm_rope_concat.eagle_split_norm_rope_concat_cases import (
     add_profile_selection,
     resolve_profile_selection,
-    PROD_HEADS,
-    PROD_SHAPE,
     case_attrs,
     is_compact,
     output_shapes,
 )
-from eagle_split_norm_rope_concat_layer_common import (
+from tests.ops.eagle_split_norm_rope_concat.eagle_split_norm_rope_concat_layer_common import (
     PATHS,
     PROTOCOL,
     input_config,
@@ -52,11 +49,10 @@ def main():
     args.case = resolve_profile_selection(parser, args)
     if args.device_id < 0 or args.iterations < 1 or not 0 <= args.seed < 2**32:
         parser.error("Require nonnegative device ID, positive iterations and seed in [0,2^32)")
-    if os.environ.get("ASCEND_RT_VISIBLE_DEVICES"):
-        parser.error("Unset ASCEND_RT_VISIBLE_DEVICES; use a physical --device-id")
     if not args.output.is_absolute() or args.output.exists():
         parser.error("--output must be an absolute path to a new timing JSON")
-    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+    if os.environ.get("ASCEND_RT_VISIBLE_DEVICES"):
+        parser.error("Unset ASCEND_RT_VISIBLE_DEVICES and pass --device-id as the physical NPU ID")
     import torch
     import torch_npu  # noqa: F401
 
@@ -64,13 +60,16 @@ def main():
     torch.npu.set_compile_mode(jit_compile=False)
     import mindiesd  # noqa: F401
 
-    from eagle_split_norm_rope_concat_accuracy_common import log_inputs, make_inputs
+    from tests.ops.eagle_split_norm_rope_concat.eagle_split_norm_rope_concat_accuracy_common import (
+        log_inputs,
+        make_inputs,
+    )
 
     attrs = case_attrs(args.case)
     config = input_config(args.case)
     inputs = make_inputs(
-        PROD_SHAPE,
-        PROD_HEADS,
+        tuple(config["qkv_shape"]),
+        tuple(config["head_counts"]),
         attrs["rotary_dim"],
         torch.bfloat16,
         "cpu",

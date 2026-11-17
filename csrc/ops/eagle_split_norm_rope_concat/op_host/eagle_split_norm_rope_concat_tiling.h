@@ -30,6 +30,12 @@ TILING_DATA_FIELD_DEF(uint32_t, ropeBatch);
 TILING_DATA_FIELD_DEF(uint32_t, outputBnsd);
 TILING_DATA_FIELD_DEF(float, eps);
 TILING_DATA_FIELD_DEF(uint32_t, headTile);
+// Append 950-only fields; the 910B prefix and kernel stay unchanged.
+TILING_DATA_FIELD_DEF(uint32_t, tokenTileQ);
+TILING_DATA_FIELD_DEF(uint32_t, tokenTileK);
+TILING_DATA_FIELD_DEF(uint32_t, tokenTileV);
+TILING_DATA_FIELD_DEF(uint32_t, ropeCacheTokens);
+TILING_DATA_FIELD_DEF(uint32_t, targetRows);
 END_TILING_DATA_DEF;
 REGISTER_TILING_DATA_CLASS(EagleSplitNormRopeConcat, EagleSplitNormRopeConcatTilingData)
 } // namespace optiling

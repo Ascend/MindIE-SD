@@ -19,7 +19,7 @@ import tempfile
 
 import torch
 
-from eagle_split_norm_rope_concat_accuracy_common import (
+from tests.ops.eagle_split_norm_rope_concat.eagle_split_norm_rope_concat_accuracy_common import (
     PROD_HEADS,
     PROD_SHAPE,
     call_dut,
@@ -28,7 +28,15 @@ from eagle_split_norm_rope_concat_accuracy_common import (
     init_device,
     make_inputs,
 )
-from eagle_split_norm_rope_concat_cases import CASE_IDS, accuracy_distributions, case_attrs, is_compact
+from tests.ops.eagle_split_norm_rope_concat.eagle_split_norm_rope_concat_cases import (
+    ASYMMETRIC_CASE,
+    BASE_CASE_IDS,
+    CASE_IDS,
+    accuracy_distributions,
+    case_attrs,
+    case_geometry,
+    is_compact,
+)
 
 
 def input_fingerprints(inputs):
@@ -158,13 +166,12 @@ def main():
         "--distribution",
         choices=("all", "uniform", "normal"),
         default="all",
-        help="all selects the fixed balanced distribution assigned to each case",
+        help="all selects assigned distributions: original eight plus asymmetric normal and uniform (ten on Ascend950)",
     )
     parser.add_argument(
         "--shape",
         type=int,
         nargs=4,
-        default=PROD_SHAPE,
         metavar=("B", "S", "Htotal", "D"),
         help="Actual BSND input shape (default: 1 5672 168 128); D must be 128",
     )
@@ -172,10 +179,10 @@ def main():
         "--heads",
         type=int,
         nargs=3,
-        default=PROD_HEADS,
         metavar=("Q", "K", "V"),
-        help="Head counts (default: 56 56 56); Q+K+V=Htotal, K=V, Q divisible by K",
+        help="Override head counts; Q+K+V=Htotal. Ascend950: each branch in [1,128]",
     )
+    parser.add_argument("--case", choices=CASE_IDS, help="Select one named production case")
     parser.add_argument("--rope-type", choices=("all", "half", "interleave"), default="all")
     parser.add_argument(
         "--cache-width", choices=("all", "full", "half"), default="all", help="cos/sin width: full=R, half=R/2"
@@ -194,6 +201,13 @@ def main():
         help="Repeated DUT calls per distribution, excluding the baseline (default: 1000)",
     )
     args = parser.parse_args()
+    custom_geometry = args.shape is not None or args.heads is not None
+    if custom_geometry:
+        args.shape = tuple(args.shape or PROD_SHAPE)
+        default_heads = (1, 128, 128) if args.shape == (1, 5672, 257, 128) else PROD_HEADS
+        args.heads = tuple(args.heads or default_heads)
+    else:
+        args.shape, args.heads = PROD_SHAPE, PROD_HEADS
     if args.device_id < 0:
         parser.error("--device-id must be nonnegative")
     if any(value <= 0 or value > 2147483647 for value in (*args.shape, *args.heads)):
@@ -202,12 +216,16 @@ def main():
         parser.error("--shape D must be 128")
     if math.prod(args.shape) > 2147483647:
         parser.error("--shape numel must not exceed 2147483647")
-    query_heads, key_heads, value_heads = args.heads
-    if sum(args.heads) != args.shape[2] or key_heads != value_heads or query_heads % key_heads:
-        parser.error("--heads must satisfy Q+K+V=Htotal, K=V, and Q divisible by K")
+    if sum(args.heads) != args.shape[2]:
+        parser.error("--heads must satisfy Q+K+V=Htotal")
+    candidates = CASE_IDS if not custom_geometry else BASE_CASE_IDS
+    if custom_geometry and (args.shape, args.heads) == case_geometry(ASYMMETRIC_CASE):
+        candidates = (ASYMMETRIC_CASE,)
+    if args.case is not None:
+        candidates = (args.case,)
     cases = tuple(
         case_id
-        for case_id in CASE_IDS
+        for case_id in candidates
         if args.rope_type in ("all", case_id.split("-", maxsplit=1)[0])
         and args.output_layout in ("all", case_id.split("-", maxsplit=2)[1])
         and (args.rotary_dim == "all" or case_attrs(case_id)["rotary_dim"] == int(args.rotary_dim))
@@ -232,9 +250,16 @@ def main():
         )
     )
     device = init_device(args.device_id)
+    if torch.npu.get_soc_version() != 260:
+        if args.case == ASYMMETRIC_CASE:
+            parser.error("The asymmetric production case requires Ascend950")
+        cases = tuple(key for key in cases if key != ASYMMETRIC_CASE)
+        if not cases:
+            parser.error("No selected case is supported on this device")
     stages = ("accuracy", "stress") if args.mode == "all" else (args.mode,)
     for stage in stages:
         for case_id in cases:
+            shape, heads = (args.shape, args.heads) if custom_geometry else case_geometry(case_id)
             attrs = case_attrs(case_id)
             distributions = accuracy_distributions(case_id) if args.distribution == "all" else (args.distribution,)
             for distribution in distributions:
@@ -242,13 +267,13 @@ def main():
                 rotary_dim = attrs["rotary_dim"]
                 width = rotary_dim // 2 if is_compact(case_id) else rotary_dim
                 description = (
-                    f"shape={tuple(args.shape)} heads={tuple(args.heads)} "
+                    f"shape={tuple(shape)} heads={tuple(heads)} "
                     f"rope={rope} output={layout} cos/sin_width={width} R={rotary_dim} dtype=bf16"
                 )
                 print(f"START {stage} {description} distribution={distribution}", flush=True)
                 inputs = make_inputs(
-                    tuple(args.shape),
-                    tuple(args.heads),
+                    tuple(shape),
+                    tuple(heads),
                     rotary_dim,
                     torch.bfloat16,
                     device,

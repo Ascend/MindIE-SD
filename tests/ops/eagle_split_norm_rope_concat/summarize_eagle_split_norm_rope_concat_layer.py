@@ -17,8 +17,13 @@ import json
 import math
 from pathlib import Path
 
-from eagle_split_norm_rope_concat_cases import CASE_IDS
-from eagle_split_norm_rope_concat_layer_common import PATHS, PROTOCOL, input_config, scenario_name
+from tests.ops.eagle_split_norm_rope_concat.eagle_split_norm_rope_concat_cases import CASE_IDS
+from tests.ops.eagle_split_norm_rope_concat.eagle_split_norm_rope_concat_layer_common import (
+    PATHS,
+    PROTOCOL,
+    input_config,
+    scenario_name,
+)
 
 
 def positive(value):
@@ -54,8 +59,9 @@ def validate(report, path, case_id, reference, profiled):
         if report[key] != reference[key]:
             raise ValueError(f"Inconsistent {key} across captures")
     width = config["rope_shapes"][0][-1]
+    total_heads = config["qkv_shape"][2]
     expected = [
-        ([1, 5672, 168, 128], "torch.bfloat16", [5672 * 168 * 128, 168 * 128, 128, 1]),
+        (config["qkv_shape"], "torch.bfloat16", [5672 * total_heads * 128, total_heads * 128, 128, 1]),
         ([128], "torch.bfloat16", [1]),
         ([128], "torch.bfloat16", [1]),
         ([1, 5672, 1, width], "torch.bfloat16", [5672 * width, width, width, 1]),

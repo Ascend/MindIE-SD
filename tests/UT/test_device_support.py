@@ -38,11 +38,11 @@ def test_matrix_exactly_matches_opdef(operator):
             assert support.supports(operator, family, kind)
 
 
-def test_indexed_split_not_generalized_to_a3_or_a5():
+def test_indexed_and_split_soc_support():
     for operator in ["eagle_indexed_gate_norm_modulate", "eagle_split_norm_rope_concat"]:
         assert support.supports(operator, "A2")
         assert not support.supports(operator, "A3")
-        assert not support.supports(operator, "A5")
+        assert support.supports(operator, "A5") == (operator == "eagle_split_norm_rope_concat")
         assert not support.supports(operator, "Duo")
 
 
@@ -77,28 +77,54 @@ def test_unknown_operator_family_or_kind_is_not_a_skip():
         support.supports("mul_add", "A2", "unknown")
 
 
-def test_init_uses_visible_logical_ordinal_without_changing_mask(monkeypatch):
+@pytest.mark.parametrize("requested,expected", [(None, 1), ("0", 0)], ids=["current", "explicit"])
+def test_split_fixture_selects_visible_logical_device(monkeypatch, requested, expected):
     import os
-    import torch
+    import sys
+    from types import ModuleType
 
-    monkeypatch.setenv("ASCEND_RT_VISIBLE_DEVICES", "1,2")
-    monkeypatch.setenv("MINDIE_TEST_DEVICE_ID", "1")
+    import torch
+    from tests.ops.eagle_split_norm_rope_concat.test_eagle_split_norm_rope_concat import device_fixture
+
+    monkeypatch.setenv("MINDIE_TEST_MODE", "NPU")
+    # Exercise the real fixture and selector without loading the NPU operator library.
+    monkeypatch.setitem(sys.modules, "mindiesd", ModuleType("mindiesd"))
+    monkeypatch.setenv("ASCEND_RT_VISIBLE_DEVICES", "3,7")
+    if requested is None:
+        monkeypatch.delenv("MINDIE_TEST_DEVICE_ID", raising=False)
+    else:
+        monkeypatch.setenv("MINDIE_TEST_DEVICE_ID", requested)
     with (
+        patch.object(torch_npu.npu, "current_device", return_value=1) as current,
         patch.object(torch_npu.npu, "device_count", return_value=2),
         patch.object(torch_npu.npu, "is_available", return_value=True),
         patch.object(torch_npu.npu, "set_device") as select,
-        patch.object(torch, "device", return_value="logical-device"),
+        patch.object(torch, "device", side_effect=lambda name: name),
     ):
-        assert support.init_test_device() == "logical-device"
-        select.assert_called_once_with(1)
-    assert os.environ["ASCEND_RT_VISIBLE_DEVICES"] == "1,2"
+        assert device_fixture.__wrapped__() == f"npu:{expected}"
+        select.assert_called_once_with(expected)
+        if requested is None:
+            current.assert_called_once_with()
+        else:
+            current.assert_not_called()
+    assert os.environ["ASCEND_RT_VISIBLE_DEVICES"] == "3,7"
+
+
+@pytest.mark.parametrize("requested", ["", "npu:1", "-1"])
+def test_invalid_logical_device_index(monkeypatch, requested):
+    monkeypatch.setenv("MINDIE_TEST_DEVICE_ID", requested)
+    with pytest.raises(ValueError, match="MINDIE_TEST_DEVICE_ID must be a nonnegative logical device index"):
+        support.selected_device_index()
+
+
+def test_init_rejects_out_of_range_device(monkeypatch):
     monkeypatch.setenv("MINDIE_TEST_DEVICE_ID", "2")
     with (
         patch.object(torch_npu.npu, "device_count", return_value=2),
         patch.object(torch_npu.npu, "is_available", return_value=True),
         patch.object(torch_npu.npu, "set_device") as select,
     ):
-        with pytest.raises(RuntimeError, match="resource unavailable"):
+        with pytest.raises(RuntimeError, match="requested logical device 2, visible count=2"):
             support.init_test_device()
         select.assert_not_called()
 

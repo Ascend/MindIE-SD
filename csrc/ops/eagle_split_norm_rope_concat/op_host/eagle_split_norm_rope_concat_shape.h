@@ -29,7 +29,7 @@ struct ShapeInfo {
 };
 
 inline bool ParseShape(const gert::Shape &packed, const gert::Shape &headShape, const int64_t *heads, int64_t rotaryDim,
-    int64_t ropeType, float eps, ShapeInfo &info) {
+    int64_t ropeType, float eps, ShapeInfo &info, bool independentHeads = false) {
     const size_t rank = packed.GetDimNum();
     if ((rank != 3 && rank != 4) || headShape.GetDimNum() != 1 || headShape.GetDim(0) != 3 || heads == nullptr ||
         (ropeType != 0 && ropeType != 1) || !std::isfinite(eps) || eps <= 0) {
@@ -57,7 +57,8 @@ inline bool ParseShape(const gert::Shape &packed, const gert::Shape &headShape, 
         }
         info.heads[i] = heads[i];
     }
-    return heads[0] + heads[1] + heads[2] == totalHeads && heads[1] == heads[2] && heads[0] % heads[1] == 0;
+    return heads[0] + heads[1] + heads[2] == totalHeads &&
+        (independentHeads || (heads[1] == heads[2] && heads[0] % heads[1] == 0));
 }
 
 inline bool CheckRope(const gert::Shape &cos, const gert::Shape &sin, int64_t rotaryDim, ShapeInfo &info) {

@@ -15,6 +15,7 @@
 #include <string_view>
 #include <vector>
 #include <c10/core/DeviceGuard.h>
+#include "acl/acl.h"
 #include "torch_npu/csrc/framework/utils/OpAdapter.h"
 #include "torch_npu/csrc/core/npu/NPUFormat.h"
 #include "pytorch_npu_helper.h"
@@ -60,8 +61,17 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> eagle_split_norm_rope_concat_impl
         TORCH_CHECK(head > 0 && head <= totalHeads, "each head count must be in [1,Htotal]");
     }
     TORCH_CHECK(head_counts[0] + head_counts[1] + head_counts[2] == totalHeads, "head counts must sum to Htotal");
-    TORCH_CHECK(head_counts[1] == head_counts[2] && head_counts[0] % head_counts[1] == 0,
-        "require Hk=Hv and Hq divisible by Hk");
+    const c10::DeviceGuard deviceGuard(qkv.device());
+    const char *soc = aclrtGetSocName();
+    TORCH_CHECK(soc != nullptr, "Cannot query NPU SoC for EagleSplitNormRopeConcat");
+    if (std::string_view(soc).find("Ascend950") == 0) {
+        for (const auto head : head_counts) {
+            TORCH_CHECK(head <= 128, "Ascend950 requires each Q/K/V head count in [1,128]");
+        }
+    } else {
+        TORCH_CHECK(head_counts[1] == head_counts[2] && head_counts[0] % head_counts[1] == 0,
+            "require Hk=Hv and Hq divisible by Hk");
+    }
     const auto checkWeight = [&](const c10::optional<at::Tensor> &weight, const char *name) {
         const bool present = weight.has_value() && weight->defined();
         TORCH_CHECK(norm_type != 3 || present, name, " is required for norm_type=3");
@@ -84,7 +94,6 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> eagle_split_norm_rope_concat_impl
     TORCH_CHECK(cacheSequence == sequence, "RoPE cache sequence dimension must equal S");
     TORCH_CHECK(rope_cos.dim() != 4 || rope_cos.size(2) == 1, "RoPE cache head dimension must be 1");
 
-    const c10::DeviceGuard deviceGuard(qkv.device());
     const auto allocate = [&](int64_t headCount) {
         std::vector<int64_t> shape;
         if (output_bnsd) {

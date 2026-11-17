@@ -13,21 +13,29 @@ OUTPUT_LAYOUT="all"
 SHAPE=(1 5672 168 128)
 HEADS=(56 56 56)
 DRY_RUN=0
+CUSTOM_GEOMETRY=0
 STRESS_RUNS=1000
 OUTPUT_DIR=""
 usage() {
     echo "Usage: $0 [--device-id ID] [--mode all|accuracy|stress] [--stress-runs N] [--output DIR]"
     echo "  --shape B S Htotal D       Actual BSND input (default: 1 5672 168 128; D=128 only)"
-    echo "  --heads Q K V             Head counts (default: 56 56 56; sum=Htotal, K=V, Q divisible by K)"
+    echo "  --heads Q K V             Head counts (default: 56 56 56; sum=Htotal; Ascend950 each branch 1..128)"
     echo "  --rope-type all|half|interleave   (default: all)"
     echo "  --cache-width all|full|half       cos/sin width full=R, half=R/2 (default: all)"
-    echo "  --rotary-dim all|96|128          (default: all; eight crossed representatives)"
+    echo "  --rotary-dim all|96|128          (default: all; ten input cases on Ascend950)"
     echo "  --output-layout all|bsnd|bnsd     (default: all)"
     echo "  --dry-run                 Validate and print selected scenarios without Python/NPU or output files"
     echo "Fixed precision configuration: BF16, affine RMSNorm (norm_type=3), eps=1e-5."
     echo "Example: $0 --shape 1 5672 168 128 --heads 56 56 56 --rope-type interleave --cache-width half --output-layout bnsd --mode accuracy"
-    echo "Default: eight cases with one assigned distribution each (4 uniform + 4 normal), then stress (1000 repeats each)."
+    echo "Default: original eight cases plus Ascend950 [1,128,128]-head normal and uniform, then stress (1000 repeats each)."
     echo "Default output: <repository>/log/eagle_split_norm_rope_concat/accuracy_YYYYMMDD_HHMMSS/ (accuracy.log and stress mismatch dumps)."
+}
+set_case_distributions() {
+    case "$1" in
+        half-bsnd-asymmetric) DISTRIBUTIONS=(normal uniform) ;;
+        half-bsnd|interleave-bnsd|half-bnsd-compact|interleave-bsnd-compact) DISTRIBUTIONS=(uniform) ;;
+        *) DISTRIBUTIONS=(normal) ;;
+    esac
 }
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -42,10 +50,10 @@ while [[ $# -gt 0 ]]; do
             STRESS_RUNS="$2"; shift 2 ;;
         --shape)
             [[ $# -ge 5 ]] || { echo "--shape needs B S Htotal D" >&2; exit 1; }
-            SHAPE=("$2" "$3" "$4" "$5"); shift 5 ;;
+            SHAPE=("$2" "$3" "$4" "$5"); CUSTOM_GEOMETRY=1; shift 5 ;;
         --heads)
             [[ $# -ge 4 ]] || { echo "--heads needs Q K V" >&2; exit 1; }
-            HEADS=("$2" "$3" "$4"); shift 4 ;;
+            HEADS=("$2" "$3" "$4"); CUSTOM_GEOMETRY=1; shift 4 ;;
         --rope-type|--cache-width|--output-layout|--rotary-dim)
             [[ $# -ge 2 && -n "$2" && "$2" != --* ]] || { echo "Missing value for $1" >&2; exit 1; }
             case "$1" in
@@ -81,11 +89,18 @@ for value in "${SHAPE[@]}"; do
     (( numel <= 2147483647 / value )) || { echo "--shape numel must not exceed 2147483647" >&2; exit 1; }
     numel=$((numel * value))
 done
-(( HEADS[0] + HEADS[1] + HEADS[2] == SHAPE[2] && HEADS[1] == HEADS[2] && HEADS[0] % HEADS[1] == 0 )) || {
-    echo "--heads must satisfy Q+K+V=Htotal, K=V, and Q divisible by K" >&2; exit 1;
+(( HEADS[0] + HEADS[1] + HEADS[2] == SHAPE[2] )) || {
+    echo "--heads must satisfy Q+K+V=Htotal" >&2; exit 1;
 }
 CASES=()
-for scenario in half-bsnd half-bnsd-r128 interleave-bsnd-r128 interleave-bnsd half-bsnd-compact-r128 half-bnsd-compact interleave-bsnd-compact interleave-bnsd-compact-r128; do
+for scenario in half-bsnd half-bnsd-r128 interleave-bsnd-r128 interleave-bnsd half-bsnd-compact-r128 half-bnsd-compact interleave-bsnd-compact interleave-bnsd-compact-r128 half-bsnd-asymmetric; do
+    if ((CUSTOM_GEOMETRY)); then
+        if [[ "${SHAPE[*]}" == '1 5672 257 128' && "${HEADS[*]}" == '1 128 128' ]]; then
+            [[ "$scenario" == half-bsnd-asymmetric ]] || continue
+        else
+            [[ "$scenario" != half-bsnd-asymmetric ]] || continue
+        fi
+    fi
     rope="${scenario%%-*}"
     layout="${scenario#*-}"; layout="${layout%%-*}"
     width=full; [[ "$scenario" != *-compact* ]] || width=half
@@ -97,18 +112,35 @@ for scenario in half-bsnd half-bnsd-r128 interleave-bsnd-r128 interleave-bnsd ha
     CASES+=("$scenario")
 done
 ((${#CASES[@]})) || { echo "No selected representative scenario; relax RoPE/layout/cache/R filters" >&2; exit 1; }
-unset ASCEND_RT_VISIBLE_DEVICES
 [[ -z "$DEVICE_ID" || "$DEVICE_ID" =~ ^[0-9]+$ ]] || { echo "Invalid device ID" >&2; exit 1; }
 if (( DRY_RUN )); then
-    echo "shape=${SHAPE[*]} heads=${HEADS[*]} dtype=bf16 norm_type=3 eps=1e-5 mode=$MODE selected=${#CASES[@]}"
+    selected=0
+    for scenario in "${CASES[@]}"; do
+        set_case_distributions "$scenario"
+        selected=$((selected + ${#DISTRIBUTIONS[@]}))
+    done
+    echo "shape=${SHAPE[*]} heads=${HEADS[*]} dtype=bf16 norm_type=3 eps=1e-5 mode=$MODE selected=$selected"
     for scenario in "${CASES[@]}"; do
         rope="${scenario%%-*}"
         layout="${scenario#*-}"; layout="${layout%%-*}"
         rotary=96; [[ "$scenario" != *-r128 ]] || rotary=128
         width=$rotary; [[ "$scenario" != *-compact* ]] || width=$((rotary / 2))
-        echo "rope=$rope output=$layout cos/sin_width=$width R=$rotary"
+        case_shape="${SHAPE[*]}"; case_heads="${HEADS[*]}"
+        if ((!CUSTOM_GEOMETRY)) && [[ "$scenario" == half-bsnd-asymmetric ]]; then case_shape='1 5672 257 128'; case_heads='1 128 128'; fi
+        set_case_distributions "$scenario"
+        for distribution in "${DISTRIBUTIONS[@]}"; do
+            echo "case=$scenario shape=$case_shape heads=$case_heads rope=$rope output=$layout cos/sin_width=$width R=$rotary distribution=$distribution"
+        done
     done
     exit 0
+fi
+[[ "$DEVICE_ID" =~ ^[0-9]+$ ]] || { echo "Supply --device-id for an allocated healthy logical NPU" >&2; exit 1; }
+soc_version="$(python3 -c 'import sys, torch_npu; torch_npu.npu.set_device(int(sys.argv[1])); print(torch_npu.npu.get_soc_version())' "$DEVICE_ID")"
+if [[ "$soc_version" != 260 ]]; then
+    FILTERED_CASES=()
+    for scenario in "${CASES[@]}"; do [[ "$scenario" == half-bsnd-asymmetric ]] || FILTERED_CASES+=("$scenario"); done
+    CASES=("${FILTERED_CASES[@]}")
+    ((${#CASES[@]})) || { echo "The asymmetric case requires Ascend950" >&2; exit 1; }
 fi
 if [[ -z "$OUTPUT_DIR" ]]; then
     mkdir -p "${REPO_ROOT}/log/eagle_split_norm_rope_concat"
@@ -119,12 +151,9 @@ else
     [[ -z "$(ls -A -- "$OUTPUT_DIR")" ]] || { echo "Output directory must be empty" >&2; exit 1; }
 fi
 OUTPUT_DIR="$(cd -- "$OUTPUT_DIR" && pwd)"
-if [[ -z "${DEVICE_ID}" ]]; then
-    DEVICE_ID="$(python3 "${REPO_ROOT}/tests/tools/select_npu_device.py" --format=id 2> >(tee "${OUTPUT_DIR}/npu_select.log" >&2))"
-fi
-[[ "${DEVICE_ID}" =~ ^[0-9]+$ ]] || { echo "Invalid device ID" >&2; exit 1; }
+cd "$REPO_ROOT"
 {
-echo "Physical NPU ID=$DEVICE_ID; log=${OUTPUT_DIR}/accuracy.log"
+echo "Logical NPU ID=$DEVICE_ID; log=${OUTPUT_DIR}/accuracy.log"
 RESULTS=()
 for stage in accuracy stress; do
     [[ "${MODE}" == all || "${MODE}" == "${stage}" ]] || continue
@@ -133,20 +162,21 @@ for stage in accuracy stress; do
         layout="${scenario#*-}"; layout="${layout%%-*}"
         width=full; [[ "$scenario" != *-compact* ]] || width=half
         rotary=96; [[ "$scenario" != *-r128 ]] || rotary=128
-        description="shape=${SHAPE[*]} heads=${HEADS[*]} rope=$rope output=$layout cache_width=$width R=$rotary dtype=bf16"
-        case "$scenario" in
-            half-bsnd|interleave-bnsd|half-bnsd-compact|interleave-bsnd-compact) distribution=uniform ;;
-            *) distribution=normal ;;
-        esac
-        python3 -u "${SCRIPT_DIR}/check_eagle_split_norm_rope_concat_prod_accuracy.py" \
-            --device-id "${DEVICE_ID}" --mode "${stage}" --rope-type "$rope" --cache-width "$width" \
-            --output-layout "$layout" --rotary-dim "$rotary" --shape "${SHAPE[@]}" --heads "${HEADS[@]}" --distribution "${distribution}" \
-            --stress-runs "${STRESS_RUNS}" --output "$OUTPUT_DIR"
-        if [[ "${stage}" == stress ]]; then
-            RESULTS+=("PASS stress $description distribution=${distribution} runs=${STRESS_RUNS} outputs=q,k,v bit_exact")
-        else
-            RESULTS+=("PASS accuracy $description distribution=${distribution} outputs=q,k,v (mixed tolerance diagnostic only)")
-        fi
+        CASE_SHAPE=("${SHAPE[@]}"); CASE_HEADS=("${HEADS[@]}")
+        if ((!CUSTOM_GEOMETRY)) && [[ "$scenario" == half-bsnd-asymmetric ]]; then CASE_SHAPE=(1 5672 257 128); CASE_HEADS=(1 128 128); fi
+        description="shape=${CASE_SHAPE[*]} heads=${CASE_HEADS[*]} rope=$rope output=$layout cache_width=$width R=$rotary dtype=bf16"
+        set_case_distributions "$scenario"
+        for distribution in "${DISTRIBUTIONS[@]}"; do
+            python3 -u -m tests.ops.eagle_split_norm_rope_concat.check_eagle_split_norm_rope_concat_prod_accuracy \
+                --device-id "${DEVICE_ID}" --mode "${stage}" --rope-type "$rope" --cache-width "$width" \
+                --output-layout "$layout" --rotary-dim "$rotary" --case "$scenario" --shape "${CASE_SHAPE[@]}" --heads "${CASE_HEADS[@]}" --distribution "${distribution}" \
+                --stress-runs "${STRESS_RUNS}" --output "$OUTPUT_DIR"
+            if [[ "${stage}" == stress ]]; then
+                RESULTS+=("PASS stress $description distribution=${distribution} runs=${STRESS_RUNS} outputs=q,k,v bit_exact")
+            else
+                RESULTS+=("PASS accuracy $description distribution=${distribution} outputs=q,k,v (mixed tolerance diagnostic only)")
+            fi
+        done
     done
 done
 echo "=== Selected tests passed ==="

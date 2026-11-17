@@ -8,9 +8,11 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../../.." && pwd)"
 PYTHON="${PYTHON:-python3}"
 DEVICE_ID="${DEVICE_ID:-}"
 ITERATIONS=10
-RUNS=20
+RUNS=""
+FUSED_RUNS_950=3
+FUSED_RUNS_910B=20
 SEED=20261017
-MSPROF_WARMUP="${MSPROF_WARMUP:-20}"
+MSPROF_WARMUP="${MSPROF_WARMUP:-100}"
 OUTPUT_DIR=""
 USE_MSPROF=1
 PATH_SELECTION=""
@@ -19,12 +21,15 @@ CACHE_WIDTH=all
 OUTPUT_LAYOUT=all
 ROTARY_DIM=all
 DRY_RUN=0
+SHAPE_FILTER=""
 SUMMARY_ARGS=()
 while (($#)); do
     case "$1" in
         --dry-run) DRY_RUN=1; shift ;;
         --shape)
-            [[ $# -ge 5 && "$2 $3 $4 $5" == '1 5672 168 128' ]] || { echo "Performance supports --shape 1 5672 168 128 only" >&2; exit 2; }
+            [[ $# -ge 5 ]] || { echo "--shape requires four dimensions" >&2; exit 2; }
+            SHAPE_FILTER="$2 $3 $4 $5"
+            [[ "$SHAPE_FILTER" == '1 5672 168 128' || "$SHAPE_FILTER" == '1 5672 257 128' ]] || { echo "Unsupported performance shape" >&2; exit 2; }
             shift 5 ;;
         --no-msprof) USE_MSPROF=0; shift ;;
         --device-id|--iterations|--runs|--seed|--output|--path|--rope-type|--cache-width|--output-layout|--rotary-dim)
@@ -46,21 +51,16 @@ while (($#)); do
             esac
             shift 2 ;;
         -h|--help)
-            echo "Usage: $0 [--path fused|composed] [--shape 1 5672 168 128] [--rope-type all|half|interleave] [--cache-width all|full|half] [--output-layout all|bsnd|bnsd] [--rotary-dim all|96|128] [--dry-run] [--device-id N] [--iterations 10] [--runs 20] [--seed N] [--output DIR] [--no-msprof]"
-            echo "Omit --path to run both: 8 fused + 8 matching complete-QKV composition scenarios (16 total)."
-            echo "Filters select the crossed representative matrix; unmatched combinations fail. --dry-run previews without Python/NPU or files."
-            echo "Default output: <repository>/log/eagle_split_norm_rope_concat/perf_YYYYMMDD_HHMMSS/"
-            echo "Packed QKV [1,5672,168,128] BF16; heads [56,56,56]; cos/sin [1,5672,1,W], W=R or R/2, R=96/128 BF16; weighted RMSNorm."
-            echo "Eight representatives cross RoPE, output layout, cache width and R; no 16-case Cartesian expansion."
-            echo "D=128 only; fused computes RMSNorm/RoPE in FP32 with final BF16 rounding."
-            echo "Composed uses native BF16 RmsNorm and RoPE, including BF16 rounding after RmsNorm."
-            echo "Paths: fused QKV; composed QKV including V Slice (one matching baseline)."
-            echo "Each path/case uses normal inputs only, 20 independent captures each."
-            echo "Fused: msprof op, MSPROF_WARMUP=20, one target call, Task Duration(us)."
-            echo "Composed: fixed warmup=5, Event samples=10; --iterations applies only here."
-            echo "--no-msprof requires --path composed."
-            echo "All selected paths are summarized together at the end in final_summary.txt."
-            echo "Per-capture durations and data directories form one table directly above the overview; also saved as capture_details.txt."
+            echo "Usage: $0 [--device-id N] [--path fused|composed] [--shape B S Htotal D] [--dry-run]"
+            echo "Shapes: 1 5672 168 128, heads 56 56 56 (910B/950); 1 5672 257 128, heads 1 128 128 (950 only). BF16 BSND input."
+            echo "Selectors: --rope-type all|half|interleave --cache-width all|full|half --output-layout all|bsnd|bnsd --rotary-dim all|96|128"
+            echo "Default: fused + composed. Captures per case for both paths: Ascend950=3, 910B=20."
+            echo "--runs N overrides captures for every selected path; --seed 20261017 --output DIR; MSPROF_WARMUP=100."
+            echo "910B selects the original eight. Explicit --shape selects one input geometry."
+            echo "Every capture uses normal inputs and one target call; msprof performs warmup/replay."
+            echo "Composed uses five Event warmups and --iterations 10 samples; --no-msprof requires --path composed."
+            echo "--device-id is a physical NPU ID; omitted: auto-select once via tests/tools/select_npu_device.py."
+            echo "Profiling clears ASCEND_RT_VISIBLE_DEVICES. --dry-run previews both architectures without device access or files."
             exit 0 ;;
         *) echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -74,7 +74,10 @@ esac
     echo "Invalid RoPE/cache/layout/R selection; see --help" >&2; exit 2;
 }
 SELECTED_CASES=()
-for scenario in half-bsnd half-bnsd-r128 interleave-bsnd-r128 interleave-bnsd half-bsnd-compact-r128 half-bnsd-compact interleave-bsnd-compact interleave-bnsd-compact-r128; do
+for scenario in half-bsnd half-bnsd-r128 interleave-bsnd-r128 interleave-bnsd half-bsnd-compact-r128 half-bnsd-compact interleave-bsnd-compact interleave-bnsd-compact-r128 half-bsnd-asymmetric; do
+    case_shape='1 5672 168 128'; case_heads='56 56 56'
+    if [[ "$scenario" == half-bsnd-asymmetric ]]; then case_shape='1 5672 257 128'; case_heads='1 128 128'; fi
+    [[ -z "$SHAPE_FILTER" || "$SHAPE_FILTER" == "$case_shape" ]] || continue
     rope="${scenario%%-*}"
     layout="${scenario#*-}"; layout="${layout%%-*}"
     width=full; [[ "$scenario" != *-compact* ]] || width=half
@@ -96,17 +99,42 @@ for path in "${SELECTED_PATHS[@]}"; do
     fi
 done
 [[ "$MSPROF_WARMUP" =~ ^(0|[1-9][0-9]*)$ ]] && ((MSPROF_WARMUP <= 500)) || { echo "Invalid MSPROF_WARMUP (0..500)" >&2; exit 2; }
-[[ "$ITERATIONS" =~ ^[1-9][0-9]*$ && "$RUNS" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid counts" >&2; exit 2; }
+[[ "$ITERATIONS" =~ ^[1-9][0-9]*$ && ( -z "$RUNS" || "$RUNS" =~ ^[1-9][0-9]*$ ) ]] || { echo "Invalid counts" >&2; exit 2; }
 [[ "$SEED" =~ ^[0-9]+$ ]] || { echo "Invalid seed" >&2; exit 2; }
 [[ -z "$DEVICE_ID" || "$DEVICE_ID" =~ ^[0-9]+$ ]] || { echo "Invalid device ID" >&2; exit 2; }
-if ((DRY_RUN)); then
-    echo "shape=1 5672 168 128 heads=56 56 56 dtype=bf16 selected=${#SELECTED_CASES[@]} performance_total=$((${#SELECTED_CASES[@]} * ${#SELECTED_PATHS[@]})) paths=${SELECTED_PATHS[*]}"
+CANDIDATE_CASES=("${SELECTED_CASES[@]}")
+resolve_plan() {
+    local architecture="$1" scenario path count
+    SELECTED_CASES=()
+    for scenario in "${CANDIDATE_CASES[@]}"; do
+        [[ "$architecture" == ascend950 || "$scenario" != half-bsnd-asymmetric ]] || continue
+        SELECTED_CASES+=("$scenario")
+    done
+    FUSED_RUNS="${RUNS:-$FUSED_RUNS_910B}"
+    [[ "$architecture" != ascend950 ]] || FUSED_RUNS="${RUNS:-$FUSED_RUNS_950}"
+    COMPOSED_RUNS="$FUSED_RUNS"
+    PERFORMANCE_RECORDS=0
+    for path in "${SELECTED_PATHS[@]}"; do
+        count="$FUSED_RUNS"; [[ "$path" == fused ]] || count="$COMPOSED_RUNS"
+        PERFORMANCE_RECORDS=$((PERFORMANCE_RECORDS + ${#SELECTED_CASES[@]} * count))
+    done
+}
+print_plan() {
+    echo "architecture=$1 dtype=bf16 selected=${#SELECTED_CASES[@]} performance_records=$PERFORMANCE_RECORDS paths=${SELECTED_PATHS[*]} fused_runs=$FUSED_RUNS composed_runs=$COMPOSED_RUNS fused_warmup=$MSPROF_WARMUP"
     for scenario in "${SELECTED_CASES[@]}"; do
         rope="${scenario%%-*}"
         layout="${scenario#*-}"; layout="${layout%%-*}"
         rotary=96; [[ "$scenario" != *-r128 ]] || rotary=128
         width=$rotary; [[ "$scenario" != *-compact* ]] || width=$((rotary / 2))
-        echo "rope=$rope output=$layout cos/sin_width=$width R=$rotary"
+        case_shape='1 5672 168 128'; case_heads='56 56 56'
+        if [[ "$scenario" == half-bsnd-asymmetric ]]; then case_shape='1 5672 257 128'; case_heads='1 128 128'; fi
+        echo "case=$scenario shape=$case_shape heads=$case_heads rope=$rope output=$layout cos/sin_width=$width R=$rotary"
+    done
+}
+if ((DRY_RUN)); then
+    for architecture in ascend910b ascend950; do
+        resolve_plan "$architecture"
+        print_plan "$architecture"
     done
     exit 0
 fi
@@ -132,20 +160,32 @@ if [[ -z "$DEVICE_ID" ]]; then
     "$PYTHON" "${REPO_ROOT}/tests/tools/select_npu_device.py" --format=report | tee "${OUTPUT_DIR}/npu_select.log"
     DEVICE_ID="$(sed -n 's/^Selected NPU: //p' "${OUTPUT_DIR}/npu_select.log")"
 fi
-[[ "$DEVICE_ID" =~ ^[0-9]+$ ]] || { echo "No valid physical device selected" >&2; exit 1; }
+[[ "$DEVICE_ID" =~ ^[0-9]+$ ]] || { echo "No valid physical device selected" >&2; exit 2; }
+soc_version="$("$PYTHON" -c 'import sys, torch_npu; torch_npu.npu.set_device(int(sys.argv[1])); print(torch_npu.npu.get_soc_version())' "$DEVICE_ID")"
+case "$soc_version" in
+    260) architecture=ascend950 ;;
+    22[0-5]) architecture=ascend910b ;;
+    *) echo "Unsupported SoC version: $soc_version; expected 910B or Ascend950" >&2; exit 2 ;;
+esac
+resolve_plan "$architecture"
+((${#SELECTED_CASES[@]})) || { echo "The asymmetric case requires Ascend950" >&2; exit 2; }
+print_plan "$architecture"
+cd "$REPO_ROOT"
+export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:$PYTHONPATH}"
 COMMON=(--device-id "$DEVICE_ID" --iterations "$ITERATIONS" --seed "$SEED")
-echo "NPU=$DEVICE_ID cases=${SELECTED_CASES[*]} distribution=normal; fused warmup=$MSPROF_WARMUP (default 20); composed warmup=5 iterations=$ITERATIONS; captures=$RUNS output=$OUTPUT_DIR"
+echo "Physical NPU=$DEVICE_ID distribution=normal; composed warmup=5 iterations=$ITERATIONS; output=$OUTPUT_DIR"
 # Complete all scenarios of one path before starting the next path.
 for path in "${SELECTED_PATHS[@]}"; do
+    PATH_RUNS="$FUSED_RUNS"; [[ "$path" == fused ]] || PATH_RUNS="$COMPOSED_RUNS"
     for case_id in "${SELECTED_CASES[@]}"; do
         FUSED_DURATIONS=()
-        for ((run = 1; run <= RUNS; run++)); do
+        for ((run = 1; run <= PATH_RUNS; run++)); do
             printf -v run_dir '%s/%s/normal/run_%02d/%s' "$OUTPUT_DIR" "$case_id" "$run" "$path"
             mkdir -p "$run_dir"
-            echo "Path=$path case=$case_id distribution=normal Test=$run/$RUNS"
+            echo "Path=$path case=$case_id distribution=normal Test=$run/$PATH_RUNS"
             if [[ "$path" == fused ]]; then
                 msprof op --kernel-name=EagleSplitNormRopeConcat --warm-up="$MSPROF_WARMUP" \
-                    --launch-count=1 --kill=on --output="$run_dir" \
+                    --launch-count=1 --kill=off --output="$run_dir" \
                     "$PYTHON" "${SCRIPT_DIR}/profile_eagle_split_norm_rope_concat_prod.py" \
                     --device-id "$DEVICE_ID" --seed "$SEED" --case "$case_id" \
                     --msprof-mode 2>&1 | tee "${run_dir}/msprof.log"
@@ -164,11 +204,11 @@ for path in "${SELECTED_PATHS[@]}"; do
                 continue
             elif ((USE_MSPROF)); then
                 msprof --output="$run_dir" --task-time=on --ascendcl=on --runtime-api=on \
-                    "$PYTHON" "${SCRIPT_DIR}/profile_eagle_split_norm_rope_concat_layer.py" "${COMMON[@]}" \
+                    "$PYTHON" -m tests.ops.eagle_split_norm_rope_concat.profile_eagle_split_norm_rope_concat_layer "${COMMON[@]}" \
                     --path "$path" --case "$case_id" --msprof-mode \
                     --output "${run_dir}/${TIMING_FILE}" 2>&1 | tee "${run_dir}/msprof.log"
             else
-                "$PYTHON" "${SCRIPT_DIR}/profile_eagle_split_norm_rope_concat_layer.py" "${COMMON[@]}" \
+                "$PYTHON" -m tests.ops.eagle_split_norm_rope_concat.profile_eagle_split_norm_rope_concat_layer "${COMMON[@]}" \
                     --path "$path" --case "$case_id" \
                     --output "${run_dir}/${TIMING_FILE}" 2>&1 | tee "${run_dir}/timing.log"
             fi
@@ -190,9 +230,9 @@ for path in "${SELECTED_PATHS[@]}"; do
                 NR == 1 { minimum=$1; maximum=$1 }
                 { print NR, $1; if ($1 < minimum) minimum=$1; if ($1 > maximum) maximum=$1 }
                 END {
-                    printf "Warmup=%s (default 20); captures=%d (default 20)\n", warmup, NR
+                    printf "Warmup=%s (default 100); captures=%d (Ascend950 default 3; 910B default 20)\n", warmup, NR
                     printf "Min Task Duration(us): %s; Max Task Duration(us): %s\n", minimum, maximum
-                    print "NOTICE: if spread exceeds 10%, consider more warmups and a fresh complete set (default 20) in a new directory on the same device/inputs; retain warnings if variation persists."
+                    print "NOTICE: if spread exceeds 10%, consider more warmups and a fresh complete set in a new directory on the same device/inputs; retain warnings if variation persists."
                     if (NR < 2) {
                         print "WARNING: cannot assess spread with fewer than two samples."
                     } else {
@@ -207,8 +247,8 @@ for path in "${SELECTED_PATHS[@]}"; do
 done
 if ((${#COMPOSED_PATHS[@]})); then
     # Guard optional array expansion for older Bash versions with nounset.
-    if "$PYTHON" "${SCRIPT_DIR}/summarize_eagle_split_norm_rope_concat_layer.py" \
-        --output "$OUTPUT_DIR" --runs "$RUNS" --paths "${COMPOSED_PATHS[@]}" \
+    if "$PYTHON" -m tests.ops.eagle_split_norm_rope_concat.summarize_eagle_split_norm_rope_concat_layer \
+        --output "$OUTPUT_DIR" --runs "$COMPOSED_RUNS" --paths "${COMPOSED_PATHS[@]}" \
         --cases "${SELECTED_CASES[@]}" ${SUMMARY_ARGS[@]+"${SUMMARY_ARGS[@]}"} > "${OUTPUT_DIR}/summary.log" 2>&1; then
         [[ -s "${OUTPUT_DIR}/summary.txt" ]] || { echo "Missing composed summary" >&2; exit 1; }
     else
@@ -237,7 +277,7 @@ format_table() {
     for path in "${SELECTED_PATHS[@]}"; do
         if [[ "$path" == fused ]]; then
             for case_id in "${SELECTED_CASES[@]}"; do
-                for ((run = 1; run <= RUNS; run++)); do
+                for ((run = 1; run <= FUSED_RUNS; run++)); do
                     printf -v run_dir '%s/%s/normal/run_%02d/%s' "$OUTPUT_DIR" "$case_id" "$run" "$path"
                     duration="$(cat "${run_dir}/task_duration_us.txt")"
                     printf 'fused/%s/normal\t%d\tTask Duration\t%s\t%s\n' "$case_id" "$run" "$duration" "$run_dir"
@@ -246,7 +286,7 @@ format_table() {
         fi
     done
     if ((${#COMPOSED_PATHS[@]})); then
-        awk -v expected="$(( ${#COMPOSED_PATHS[@]} * ${#SELECTED_CASES[@]} * RUNS ))" '
+        awk -v expected="$(( ${#COMPOSED_PATHS[@]} * ${#SELECTED_CASES[@]} * COMPOSED_RUNS ))" '
             /^Scenario[[:space:]]+Test[[:space:]]/ { rows=1; next }
             /^Performance results:/ { rows=0 }
             rows && NF {
@@ -285,7 +325,7 @@ format_table() {
     fi
     } | format_table
     echo "=== Measurement notes ==="
-    echo "NPU=$DEVICE_ID; captures=$RUNS; fused warmup=$MSPROF_WARMUP; composed warmup=5 samples=$ITERATIONS; msprof=$USE_MSPROF"
+    echo "Physical NPU=$DEVICE_ID; fused captures=$FUSED_RUNS; composed captures=$COMPOSED_RUNS; fused warmup=$MSPROF_WARMUP; composed warmup=5 samples=$ITERATIONS; msprof=$USE_MSPROF"
     for path in "${SELECTED_PATHS[@]}"; do
         if [[ "$path" == fused ]]; then
             for case_id in "${SELECTED_CASES[@]}"; do

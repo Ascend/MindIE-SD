@@ -11,15 +11,11 @@
 # See the Mulan PSL v2 for more details.
 
 import math
-import os
 import random
 
 import torch
 
-if __package__:
-    from .eagle_split_norm_rope_concat_cases import PROD_HEADS, PROD_SHAPE  # pylint: disable=relative-beyond-top-level
-else:
-    from eagle_split_norm_rope_concat_cases import PROD_HEADS, PROD_SHAPE
+from tests.ops.eagle_split_norm_rope_concat.eagle_split_norm_rope_concat_cases import PROD_HEADS, PROD_SHAPE
 
 SEED = 20261017
 PROD_ATTRS = dict(norm_type=3, rope_type=1, rotary_dim=96, eps=1e-5, output_bnsd=False)
@@ -33,8 +29,8 @@ _QK_TOLERANCES = {
 
 
 def init_device(device_id):
-    if device_id < 0 or os.environ.get("ASCEND_RT_VISIBLE_DEVICES"):
-        raise ValueError("Use a nonnegative physical device ID; unset ASCEND_RT_VISIBLE_DEVICES")
+    if device_id < 0:
+        raise ValueError("Use a nonnegative logical device ID inside the existing visibility allocation")
     import torch_npu  # noqa: F401
 
     torch.npu.set_device(device_id)

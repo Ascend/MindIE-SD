@@ -39,7 +39,7 @@ static ge::graphStatus InferEagleSplitNormRopeConcat(gert::InferShapeContext *ct
     }
     eagle_snrc::ShapeInfo info{};
     if (!eagle_snrc::ParseShape(*ctx->GetRequiredInputShape(0), *ctx->GetRequiredInputShape(1),
-            heads->GetData<int64_t>(), *rotary, *rope, *eps, info) ||
+            heads->GetData<int64_t>(), *rotary, *rope, *eps, info, true) ||
         !eagle_snrc::CheckRope(*ctx->GetRequiredInputShape(4), *ctx->GetRequiredInputShape(5), info.rotaryDim, info)) {
         return ge::GRAPH_FAILED;
     }

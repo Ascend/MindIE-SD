@@ -201,7 +201,8 @@ def eagle_split_norm_rope_concat(
     """Split packed QKV, RMS-normalize Q/K and rotate their first rotary_dim features.
 
     qkv is contiguous FP16/BF16 [S,Hq+Hk+Hv,D] or [B,S,Hq+Hk+Hv,D].
-    head_counts is an integer list [Hq,Hk,Hv]: positive counts, Hk=Hv, Hq%Hk=0, sum=qkv's head dimension.
+    head_counts is [Hq,Hk,Hv] with positive counts summing to qkv's head dimension.
+    Ascend 950 accepts independent counts in [1,128]; 910B requires Hk=Hv and Hq%Hk=0.
     D must be 128; rotary_dim is a multiple of 32 in [32,128], or None (the full D).
     norm_type is required: 2=RMSNorm, 3=RMSNorm with weights; other modes, including skipping norm, are unsupported.
     Weights are [D], required for type 3 and unused for type 2 (pass None).
@@ -251,8 +252,14 @@ def eagle_split_norm_rope_concat_fake(
         torch._check(heads > 0, lambda: "each head count must be in [1,Htotal]")
         torch._check(heads <= total_heads, lambda: "each head count must be in [1,Htotal]")
     torch._check(sum(head_counts) == total_heads, lambda: "head counts must sum to Htotal")
-    torch._check(head_counts[1] == head_counts[2], lambda: "require Hk=Hv and Hq divisible by Hk")
-    torch._check(head_counts[0] % head_counts[1] == 0, lambda: "require Hk=Hv and Hq divisible by Hk")
+    from ..utils.get_platform import is_a5_device
+
+    if is_a5_device():
+        for heads in head_counts:
+            torch._check(heads <= 128, lambda: "Ascend950 requires each Q/K/V head count in [1,128]")
+    else:
+        torch._check(head_counts[1] == head_counts[2], lambda: "require Hk=Hv and Hq divisible by Hk")
+        torch._check(head_counts[0] % head_counts[1] == 0, lambda: "require Hk=Hv and Hq divisible by Hk")
     rotary_dim = dim if rotary_dim is None else rotary_dim
     torch._check(dim == 128, lambda: "head_dim must be 128; other dimensions are not supported")
     torch._check(rotary_dim >= 32)

@@ -10,11 +10,11 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-"""Eight crossed configurations covering R=96/128 without a 16-case product."""
+"""Eight original configurations plus one Ascend 950 asymmetric-head case."""
 
 PROD_SHAPE = (1, 5672, 168, 128)
 PROD_HEADS = (56, 56, 56)
-CASE_IDS = (
+BASE_CASE_IDS = (
     "half-bsnd",
     "half-bnsd-r128",
     "interleave-bsnd-r128",
@@ -24,6 +24,16 @@ CASE_IDS = (
     "interleave-bsnd-compact",
     "interleave-bnsd-compact-r128",
 )
+ASYMMETRIC_CASE = "half-bsnd-asymmetric"
+CASE_IDS = (*BASE_CASE_IDS, ASYMMETRIC_CASE)
+
+
+def case_geometry(case_id):
+    if case_id not in CASE_IDS:
+        raise ValueError(f"Unknown production case: {case_id}")
+    if case_id == ASYMMETRIC_CASE:
+        return (1, 5672, 257, 128), (1, 128, 128)
+    return PROD_SHAPE, PROD_HEADS
 
 
 def is_compact(case_id):
@@ -33,8 +43,10 @@ def is_compact(case_id):
 
 
 def accuracy_distributions(case_id):
-    # Eight configurations, four uniform and four normal; no 16-case Cartesian product.
+    # Original eight stay unchanged; asymmetric heads cover both distributions.
     index = CASE_IDS.index(case_id)
+    if case_id == ASYMMETRIC_CASE:
+        return ("normal", "uniform")
     return ("uniform" if index in (0, 3, 5, 6) else "normal",)
 
 
@@ -53,13 +65,14 @@ def case_attrs(case_id):
 
 def output_shapes(case_id):
     attrs = case_attrs(case_id)
-    batch, seq, _, dim = PROD_SHAPE
-    return tuple((batch, heads, seq, dim) if attrs["output_bnsd"] else (batch, seq, heads, dim) for heads in PROD_HEADS)
+    shape, counts = case_geometry(case_id)
+    batch, seq, _, dim = shape
+    return tuple((batch, heads, seq, dim) if attrs["output_bnsd"] else (batch, seq, heads, dim) for heads in counts)
 
 
 def add_profile_selection(parser):
     parser.add_argument("--case", choices=CASE_IDS, help="Internal capture key; prefer semantic selectors")
-    parser.add_argument("--shape", type=int, nargs=4, default=PROD_SHAPE, metavar=("B", "S", "Htotal", "D"))
+    parser.add_argument("--shape", type=int, nargs=4, metavar=("B", "S", "Htotal", "D"))
     parser.add_argument("--rope-type", choices=("half", "interleave"))
     parser.add_argument("--cache-width", choices=("full", "half"))
     parser.add_argument("--output-layout", choices=("bsnd", "bnsd"))
@@ -67,19 +80,23 @@ def add_profile_selection(parser):
 
 
 def resolve_profile_selection(parser, args):
-    if tuple(args.shape) != PROD_SHAPE:
-        parser.error("Performance supports --shape 1 5672 168 128 only")
+    shape = tuple(args.shape) if args.shape is not None else None
+    if shape is not None and shape not in (PROD_SHAPE, case_geometry(ASYMMETRIC_CASE)[0]):
+        parser.error("Performance supports --shape 1 5672 168 128 or 1 5672 257 128")
     filters = (args.rope_type, args.cache_width, args.output_layout, args.rotary_dim)
     if args.case is not None:
         if any(value is not None for value in filters):
             parser.error("Do not combine internal --case with semantic selectors")
+        if shape is not None and shape != case_geometry(args.case)[0]:
+            parser.error("--shape does not match --case")
         return args.case
     if all(value is None for value in filters):
-        return CASE_IDS[0]
+        return ASYMMETRIC_CASE if shape == case_geometry(ASYMMETRIC_CASE)[0] else CASE_IDS[0]
     matches = [
         key
         for key in CASE_IDS
-        if (args.rope_type is None or key.split("-", maxsplit=1)[0] == args.rope_type)
+        if (shape or PROD_SHAPE) == case_geometry(key)[0]
+        and (args.rope_type is None or key.split("-", maxsplit=1)[0] == args.rope_type)
         and (args.output_layout is None or key.split("-")[1] == args.output_layout)
         and (args.cache_width is None or is_compact(key) == (args.cache_width == "half"))
         and (args.rotary_dim is None or case_attrs(key)["rotary_dim"] == args.rotary_dim)

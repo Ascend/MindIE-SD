@@ -5,6 +5,7 @@ import importlib
 import os
 import unittest
 from itertools import product
+from math import prod
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -87,29 +88,37 @@ def test_actual_pytest_matrix_uses_representative_rows():
 
 
 def test_split_retains_unique_regression_matrix():
-    path = Path(__file__).parents[2] / "ops/eagle_split_norm_rope_concat/test_eagle_split_norm_rope_concat.py"
+    folder = Path(__file__).parents[2] / "ops/eagle_split_norm_rope_concat"
+    assert [path.name for path in folder.glob("test*.py")] == ["test_eagle_split_norm_rope_concat.py"]
+    module = importlib.import_module(f"tests.ops.{folder.name}.test_{folder.name}")
     functions = {
-        n.name: n
-        for n in ast.parse(path.read_text(encoding="utf-8")).body
-        if isinstance(n, ast.FunctionDef) and n.name.startswith("test_")
+        name: getattr(function, "pytestmark", ()) for name, function in vars(module).items() if name.startswith("test_")
     }
-    total = 0
-    native = 0
-    for function in functions.values():
-        count = 1
-        positive = False
-        for decorator in function.decorator_list:
-            if isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute):
-                if decorator.func.attr == "parametrize":
-                    count *= len(decorator.args[1].elts)
-                elif decorator.func.attr == "usefixtures":
-                    positive |= any(
-                        isinstance(arg, ast.Constant) and arg.value == "supported_soc" for arg in decorator.args
-                    )
-        total += count
-        native += count if positive else 0
-    assert total == 100
-    assert native == 38
+    counts = {
+        name: prod(len(mark.args[1]) for mark in marks if mark.name == "parametrize")
+        for name, marks in functions.items()
+    }
+    legacy = {name for name in counts if not name.startswith("test_950_")}
+    assert sum(counts[name] for name in legacy) == 100
+    native = {
+        name
+        for name in legacy
+        if any(mark.name == "usefixtures" and "supported_soc" in mark.args for mark in functions[name])
+    }
+    assert sum(counts[name] for name in native) == 38
+    assert counts["test_950_rotary_boundaries"] == 32
+    assert counts["test_950_independent_head_tiles"] == 16
+    assert counts["test_950_rejects_each_head_above_128"] == 3
+    assert sum(counts.values()) == 100 + 24 + 16 + 3 + 32
+    axes = {
+        mark.args[0]: mark.args[1] for mark in functions["test_950_rotary_boundaries"] if mark.name == "parametrize"
+    }
+    assert set(axes["rotary"]) == {32, 64, 96, 128}
+    rows = [param.values for param in axes["rope,layout,compact,batch,seq,distribution"]]
+    assert {row[:3] for row in rows} == set(product((0, 1), (False, True), (False, True)))
+    assert {row[3] for row in rows} == {1, 2}
+    assert {row[4] for row in rows} == {1, 2, 3, 4, 5, 7}
+    assert {row[5] for row in rows} == {"uniform", "normal"}
     assert {
         "test_interleave_r96_gather_boundaries",
         "test_fp32_norm_flows_directly_into_rope",
@@ -131,6 +140,7 @@ def test_fixture_selects_logical_device_and_actual_registered_family(monkeypatch
     module = importlib.import_module(f"tests.ops.{name}.{filename}")
     monkeypatch.setenv("MINDIE_TEST_MODE", "NPU")
     monkeypatch.setenv("ASCEND_RT_VISIBLE_DEVICES", "1,2")
+    monkeypatch.setenv("MINDIE_TEST_DEVICE_ID", "1")
     select = Mock(return_value="npu:1")
     monkeypatch.setattr(module, "init_test_device", select)
     monkeypatch.setattr(device_support, "current_device_family", lambda: family)
@@ -138,7 +148,7 @@ def test_fixture_selects_logical_device_and_actual_registered_family(monkeypatch
     assert fixture.__wrapped__() == "npu:1"
     select.assert_called_once_with()
     assert os.environ["ASCEND_RT_VISIBLE_DEVICES"] == "1,2"
-    if family == "A2":
+    if family == "A2" or (family == "A5" and name == "eagle_split_norm_rope_concat"):
         module.supported_soc_fixture.__wrapped__("npu:1")
     else:
         with pytest.raises(unittest.SkipTest):

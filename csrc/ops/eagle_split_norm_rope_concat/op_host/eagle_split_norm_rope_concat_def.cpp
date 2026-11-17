@@ -50,6 +50,7 @@ class EagleSplitNormRopeConcat : public OpDef {
         this->Attr("eps").AttrType(OPTIONAL).Float(1e-5);
         this->Attr("output_bnsd").AttrType(OPTIONAL).Bool(true);
         this->AICore().AddConfig("ascend910b");
+        this->AICore().AddConfig("ascend950");
     }
 };
 OP_ADD(EagleSplitNormRopeConcat);

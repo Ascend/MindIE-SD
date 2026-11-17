@@ -14,7 +14,7 @@ FAMILIES = frozenset(("A2", "A3", "A5", "Duo"))
 REGISTRATIONS = {
     "eagle_quant_batch_matmul_swiglu": ("ascend910b",),
     "eagle_indexed_gate_norm_modulate": ("ascend910b",),
-    "eagle_split_norm_rope_concat": ("ascend910b",),
+    "eagle_split_norm_rope_concat": ("ascend910b", "ascend950"),
     "eagle_block_sparse_attention": ("ascend910b", "ascend910_93"),
     "ada_block_sparse_attention": ("ascend910b", "ascend910_93"),
     "la_preprocess": ("ascend910b", "ascend910_93"),
@@ -57,10 +57,9 @@ def selected_device_index():
     """Logical device index inside the caller's existing visibility allocation."""
     requested = os.environ.get("MINDIE_TEST_DEVICE_ID")
     if requested is not None:
-        index = int(requested)
-        if index < 0:
-            raise ValueError("MINDIE_TEST_DEVICE_ID must be a nonnegative logical index")
-        return index
+        if not requested.isascii() or not requested.isdecimal():
+            raise ValueError(f"MINDIE_TEST_DEVICE_ID must be a nonnegative logical device index, got {requested!r}")
+        return int(requested)
     import torch_npu
 
     return int(torch_npu.npu.current_device())

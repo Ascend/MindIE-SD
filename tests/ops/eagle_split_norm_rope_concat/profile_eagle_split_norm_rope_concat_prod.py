@@ -11,15 +11,19 @@
 # See the Mulan PSL v2 for more details.
 
 import argparse
+import os
 
 import torch
 
-from eagle_split_norm_rope_concat_accuracy_common import call_dut, init_device, make_inputs
-from eagle_split_norm_rope_concat_cases import (
+from tests.ops.eagle_split_norm_rope_concat.eagle_split_norm_rope_concat_accuracy_common import (
+    call_dut,
+    init_device,
+    make_inputs,
+)
+from tests.ops.eagle_split_norm_rope_concat.eagle_split_norm_rope_concat_cases import (
     add_profile_selection,
     resolve_profile_selection,
-    PROD_HEADS,
-    PROD_SHAPE,
+    case_geometry,
     case_attrs,
     is_compact,
     output_shapes,
@@ -38,13 +42,16 @@ def main():
         parser.error("seed must be in [0,2^32)")
     if args.device_id < 0:
         parser.error("--device-id must be nonnegative")
+    if os.environ.get("ASCEND_RT_VISIBLE_DEVICES"):
+        parser.error("Unset ASCEND_RT_VISIBLE_DEVICES and pass --device-id as the physical NPU ID")
     print(f"[1] Initializing device npu:{args.device_id}", flush=True)
     device = init_device(args.device_id)
     attrs = case_attrs(args.case)
+    shape, heads = case_geometry(args.case)
     print(f"[2] CPU input generation: case={args.case} distribution=normal seed={args.seed}", flush=True)
     host_inputs = make_inputs(
-        PROD_SHAPE,
-        PROD_HEADS,
+        shape,
+        heads,
         attrs["rotary_dim"],
         torch.bfloat16,
         "cpu",
