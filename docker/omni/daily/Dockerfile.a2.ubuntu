@@ -1,0 +1,131 @@
+# MindIE-SD daily image for FlashGen on Ascend A2 (Linux ARM64).
+# The image builds the MindIE-SD wheel from the current source tree and
+# applies vLLM-Omni PRs #10596 and #8632 to the current Omni A2 nightly.
+#
+# Build from the repository root:
+#   docker build --pull --no-cache --platform linux/arm64 -t mindiesd:flashgen-a2 \
+#       -f docker/omni/daily/Dockerfile.a2.ubuntu .
+#
+
+# mindiesd wheel version; the source itself comes from the Docker build context.
+ARG MINDIESD_VERSION=3.2.0
+
+# --------------------------------------------------------------------------
+# Build stage: build the mindiesd wheel with Python 3.12 from the current
+# branch's source (the repository root is the build context)
+# --------------------------------------------------------------------------
+FROM quay.io/ascend/vllm-omni:nightly AS omni-base
+
+FROM omni-base AS mindiesd-builder
+
+ARG MINDIESD_VERSION
+
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        cmake build-essential && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY . /tmp/MindIE-SD
+
+RUN cd /tmp/MindIE-SD && \
+    PYTHON_BIN=$(command -v python3.12 || command -v python3) && \
+    "${PYTHON_BIN}" -c "import sys; assert sys.version_info[:2] == (3, 12), 'Python 3.12 required, got %s' % sys.version" && \
+    "${PYTHON_BIN}" -m pip install --no-cache-dir build wheel packaging && \
+    . "${ASCEND_HOME_PATH:-/usr/local/Ascend/ascend-toolkit/latest}/set_env.sh" && \
+    MINDIE_SD_VERSION_OVERRIDE="${MINDIESD_VERSION}" \
+        "${PYTHON_BIN}" -m build --wheel --no-isolation && \
+    mkdir -p /tmp/wheelhouse && \
+    cp dist/mindiesd-*.whl /tmp/wheelhouse/
+
+# --------------------------------------------------------------------------
+# Runtime stage
+# --------------------------------------------------------------------------
+FROM omni-base
+
+# --------------------------------------------------------------------------
+# Metadata labels (OCI image spec)
+# --------------------------------------------------------------------------
+LABEL maintainer="Ascend Container Team"
+LABEL description="MindIE-SD for Stable Diffusion inference on Ascend NPU"
+LABEL org.opencontainers.image.title="mindiesd"
+LABEL org.opencontainers.image.version="v3.2.0"
+LABEL org.opencontainers.image.description="MindIE-SD image with Ascend tuning/debugging tools"
+
+# --------------------------------------------------------------------------
+# Environment variables for banner
+# --------------------------------------------------------------------------
+ENV ASCEND_SOFTWARE_NAME="MindIE-SD"
+ENV ASCEND_SOFTWARE_VERSION="v3.2.0"
+
+# --------------------------------------------------------------------------
+# 1. Install MindIE-SD (wheel built from the current branch's source)
+# --------------------------------------------------------------------------
+COPY --from=mindiesd-builder /tmp/wheelhouse/mindiesd-*.whl /tmp/
+# The base image already ships the PyPI mindiesd of the same version, so pip
+# would treat this wheel as "already satisfied" and skip it. Uninstall first.
+RUN pip uninstall -y mindiesd && \
+    pip install --no-cache-dir --no-deps /tmp/mindiesd-*.whl && \
+    rm -f /tmp/mindiesd-*.whl
+
+# Fetch and apply all Git-tracked patches in the current Modelers revision.
+SHELL ["/bin/bash", "-c"]
+RUN set -eu; \
+    patch_dir="$(mktemp -d)"; \
+    trap 'rm -rf -- "$patch_dir"' EXIT; \
+    GIT_TERMINAL_PROMPT=0 GIT_LFS_SKIP_SMUDGE=1 git -c credential.helper= clone \
+        --branch main --depth=1 --no-tags https://modelers.cn/MindIE/sd_patch.git "$patch_dir"; \
+    printf 'FlashGen patch revision: %s\n' "$(git -C "$patch_dir" rev-parse HEAD)"; \
+    if [ -f "$patch_dir/SHA256SUMS" ]; then (cd "$patch_dir" && sha256sum -c SHA256SUMS); fi; \
+    git -C "$patch_dir" ls-files -z -- '*.patch' > "$patch_dir/.git/flashgen-patches"; \
+    test -s "$patch_dir/.git/flashgen-patches"; \
+    cd /vllm-workspace/vllm-omni; \
+    printf 'Omni revision: %s\n' "$(git rev-parse HEAD)"; \
+    git update-index --refresh; \
+    while IFS= read -r -d '' patch; do \
+        if git apply --index --reverse --check "$patch_dir/$patch" 2>/dev/null; then \
+            printf 'Already applied: %s\n' "$patch"; \
+        else \
+            git apply --index --check "$patch_dir/$patch"; \
+            git apply --index "$patch_dir/$patch"; \
+            printf 'Applied: %s\n' "$patch"; \
+        fi; \
+    done < "$patch_dir/.git/flashgen-patches"; \
+    git diff --cached --check; \
+    printf 'FlashGen Git tree: %s\n' "$(git write-tree)"
+
+ENV VLLM_WORKER_MULTIPROC_METHOD=spawn
+
+# --------------------------------------------------------------------------
+# 2. Install msprobe (precision debugging tool)
+#    --no-deps: base image already provides click, lxml, requests, rich, etc.
+# --------------------------------------------------------------------------
+RUN pip install --no-cache-dir --no-deps msprobe==0.1.4
+
+# --------------------------------------------------------------------------
+# 3. Install msmodelslim (model compression / quantization tool)
+# --------------------------------------------------------------------------
+RUN export PIP_EXTRA_INDEX_URL=https://mirrors.huaweicloud.com/ascend/repos/pypi && \
+    pip install --no-cache-dir msmodelslim==26.1.0
+
+# --------------------------------------------------------------------------
+# 4. Install msprof-analyze (MindStudio Profiler analysis tool)
+#    --no-deps: base image already provides click, tabulate, networkx,
+#    jinja2, PyYaml, tqdm, prettytable, ijson, numpy, pandas, etc.
+# --------------------------------------------------------------------------
+RUN export PIP_EXTRA_INDEX_URL=https://mirrors.huaweicloud.com/ascend/repos/pypi && \
+    pip install --no-cache-dir --no-deps msprof-analyze==26.2.0
+
+# --------------------------------------------------------------------------
+# Copy banner script
+# --------------------------------------------------------------------------
+COPY docker/omni/scripts/banner.sh /usr/local/bin/banner.sh
+RUN chmod +x /usr/local/bin/banner.sh
+
+# --------------------------------------------------------------------------
+# Entrypoint & CMD
+#   Base image sets ENTRYPOINT [] (empty) and CMD ["/bin/bash"].
+#   We override ENTRYPOINT with banner.sh; the banner script uses
+#   exec "$@" to chain into CMD, so the original behavior is preserved.
+# --------------------------------------------------------------------------
+ENTRYPOINT ["/usr/local/bin/banner.sh"]
+CMD ["/bin/bash"]
