@@ -15,9 +15,6 @@
 #include <string_view>
 #include <vector>
 #include <c10/core/DeviceGuard.h>
-#include "acl/acl.h"
-#include "torch_npu/csrc/framework/utils/OpAdapter.h"
-#include "torch_npu/csrc/core/npu/NPUFormat.h"
 #include "pytorch_npu_helper.h"
 #include "eagle_split_norm_rope_concat.h"
 
