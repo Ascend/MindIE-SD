@@ -1,13 +1,12 @@
 /**
- * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
- * MindIE is licensed under Mulan PSL v2.
- * You can use this software according to the terms and conditions of the Mulan PSL v2.
- * You may obtain a copy of Mulan PSL v2 at:
- *          http://license.coscl.org.cn/MulanPSL2
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * This file is a part of the CANN Open Software.
+ * Licensed under CANN Open Software License Agreement Version 2.0 (the "License").
+ * See the upstream license at:
+ * https://github.com/hicann/ops-transformer/blob/f28e18d22509fdb1dfa60f94cff61163198e7f45/LICENSE
  * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
  * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PSL v2 for more details.
+ * MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
  */
 
 /**
@@ -1195,6 +1194,49 @@ void FusedInferAttentionScoreTilingImpl::ApplySinnerSouterOverrides(const FiaTil
     }
 }
 
+void FusedInferAttentionScoreTilingImpl::ApplyKvHeadSchedule(const FiaTilingInfo &fiaInfo) {
+    // One KV head per group; all Q heads sharing it are partitioned together.
+    // Keep the legacy boundary metadata, now relative to each KV-head group.
+    const bool perBlock = fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_FULL_QUANT ||
+        fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D128_FULL_QUANT ||
+        fiaInfo.fullQuantMode == FiaFullQuantMode::QKV_PER_BLOCK_K256_V512_D64_FULL_QUANT;
+    if (!perBlock || fiaInfo.inputLayout != TilingKeyLayout::BNSD || fiaInfo.bSize != 1 || gsMergeFlag_ ||
+        pfaMergeFlag_ || actualSeqLenQFlag_ || actualSeqLenKVFlag_ || fiaInfo.attenMaskFlag || fiaInfo.sysPrefixFlag ||
+        fiaInfo.qPaddingSizeFlag || fiaInfo.kvPaddingSizeFlag ||
+        fiaInfo.kvStorageMode != KvStorageMode::BATCH_CONTINUOUS || platformInfo_.l2Size == 0 ||
+        platformInfo_.aicNum == 0 || platformInfo_.aicNum >= 48) {
+        return;
+    }
+    const uint64_t qBlocks = CeilDivision(fiaInfo.s1Size, sOuterFactor_ * CV_RATIO);
+    const uint64_t groupTasks = qBlocks * fiaInfo.gSize;
+    const uint64_t cores = platformInfo_.aicNum;
+    const uint64_t kvBytes = static_cast<uint64_t>(fiaInfo.s2Size) * (fiaInfo.qkHeadDim + fiaInfo.vHeadDim);
+    // FP8 data plus a conservative FP32 scale estimate for K256 and V256/512.
+    const uint64_t scaleBytes = CeilDivision(fiaInfo.s2Size, 256L) *
+        (CeilDivision(fiaInfo.qkHeadDim, 64U) + CeilDivision(fiaInfo.vHeadDim, 64U)) * sizeof(float);
+    const uint64_t headBytes = kvBytes + scaleBytes;
+    const uint64_t budget = platformInfo_.l2Size / 2;
+    // Reserve room for two independently advancing groups, Q/O and other traffic.
+    // Enough Q blocks are required to amortize imbalance without a global barrier.
+    if (groupTasks < cores * 8 || headBytes > budget / 2 ||
+        headBytes * std::min<uint64_t>(cores, fiaInfo.n2Size) <= budget) {
+        return;
+    }
+    auto &multiCore = faRunTilingAdapter_.multiCoreParamsRegbase;
+    for (uint32_t core = 0; core < cores; ++core) {
+        const uint64_t start = groupTasks * core / cores;
+        multiCore.bnStartIdx[core] = start / qBlocks;
+        multiCore.sparseStartIdx[core] = start % qBlocks;
+    }
+    multiCore.bnStartIdx[cores] = fiaInfo.gSize;
+    multiCore.sparseStartIdx[cores] = 0;
+    multiCore.set_coreNum(cores);
+    pfaTilingData_.promptAttentionSingleCoreParams.set_actualCoreNums(cores * CV_RATIO);
+    tilingKeyInfo_.kvHeadSchedule = true;
+    OP_LOGI(fiaInfo.opName, "KV-head schedule: heads/group=1, tasks/group=%llu, cores=%llu, headBytes=%llu, L2=%llu",
+        groupTasks, cores, headBytes, platformInfo_.l2Size);
+}
+
 void FusedInferAttentionScoreTilingImpl::ApplySplitStrategy(const FiaTilingInfo &fiaInfo) {
     enableS1OutSplit = CheckS1OutSplit(fiaInfo);
     if (enableS1OutSplit) {
@@ -1203,6 +1245,7 @@ void FusedInferAttentionScoreTilingImpl::ApplySplitStrategy(const FiaTilingInfo 
     }
 
     SplitNBSeq(fiaInfo);
+    ApplyKvHeadSchedule(fiaInfo);
     if (isIFAFlag_ && !pfaMergeFlag_ && CheckFlashDecode(fiaInfo)) {
         flashDecodeFlag_ = true;
         OP_LOGI(fiaInfo.opName, "FlashDecode is enable.");
@@ -1490,7 +1533,8 @@ ge::graphStatus FusedInferAttentionScoreTilingImpl::GenTilingKey(
     uint64_t genTilingkey = GET_TPL_TILING_KEY(tilingKeyInfo_.inputLayout, tilingKeyInfo_.config,
         tilingKeyInfo_.pseMode, tilingKeyInfo_.quantMode, tilingKeyInfo_.hasAttenMask, tilingKeyInfo_.hasRope,
         tilingKeyInfo_.KvLayoutType, tilingKeyInfo_.isFd, tilingKeyInfo_.emptyTensor, tilingKeyInfo_.enableKvPrefix,
-        tilingKeyInfo_.enableS1OutSplit, tilingKeyInfo_.isReconstructTemp, tilingKeyInfo_.enableC8V16);
+        tilingKeyInfo_.enableS1OutSplit, tilingKeyInfo_.isReconstructTemp, tilingKeyInfo_.enableC8V16,
+        tilingKeyInfo_.kvHeadSchedule);
     context->SetTilingKey(genTilingkey);
     OP_LOGI(fiaInfo.opName, "The tilingkey is %llu.", genTilingkey);
     OP_LOGI(fiaInfo.opName,

@@ -142,7 +142,9 @@ ASCENDC_TPL_ARGS_DECL(EagleFusedInferAttentionScore,
     //    bit 37 C8V16
     //    0: original FP8 per-block path
     //    1: C8V16 FP8 per-block path
-    ASCENDC_TPL_BOOL_DECL(C8V16, false, true), );
+    ASCENDC_TPL_BOOL_DECL(C8V16, false, true),
+    // bit 38: partition each KV head's Q blocks across cores.
+    ASCENDC_TPL_BOOL_DECL(KvHeadSchedule, false, true), );
 
 ASCENDC_TPL_SEL(
 #if (ORIG_DTYPE_QUERY == DT_FLOAT8_E4M3FN && ORIG_DTYPE_KEY == DT_FLOAT8_E4M3FN && \
@@ -158,7 +160,7 @@ ASCENDC_TPL_SEL(
         ASCENDC_TPL_UINT_SEL(KvLayoutType, ASCENDC_TPL_UI_LIST, KvLayoutType_NO_PA), ASCENDC_TPL_BOOL_SEL(IsFd, 0),
         ASCENDC_TPL_BOOL_SEL(EmptyTensor, 0), ASCENDC_TPL_BOOL_SEL(EnableKVPrefix, false),
         ASCENDC_TPL_BOOL_SEL(EnableS1OutSplit, false), ASCENDC_TPL_BOOL_SEL(IsReconstructTemp, false),
-        ASCENDC_TPL_BOOL_SEL(C8V16, false, true),
+        ASCENDC_TPL_BOOL_SEL(C8V16, false, true), ASCENDC_TPL_BOOL_SEL(KvHeadSchedule, false, true),
         ASCENDC_TPL_TILING_STRUCT_SEL(FlashAttentionScoreSimplifiedTilingData)),
     // Q128/K256/V512; both D64 and D128 V512 paths require C8V16.
     ASCENDC_TPL_ARGS_SEL(
@@ -170,7 +172,8 @@ ASCENDC_TPL_SEL(
         ASCENDC_TPL_UINT_SEL(KvLayoutType, ASCENDC_TPL_UI_LIST, KvLayoutType_NO_PA), ASCENDC_TPL_BOOL_SEL(IsFd, 0),
         ASCENDC_TPL_BOOL_SEL(EmptyTensor, 0), ASCENDC_TPL_BOOL_SEL(EnableKVPrefix, false),
         ASCENDC_TPL_BOOL_SEL(EnableS1OutSplit, false), ASCENDC_TPL_BOOL_SEL(IsReconstructTemp, false),
-        ASCENDC_TPL_BOOL_SEL(C8V16, true), ASCENDC_TPL_TILING_STRUCT_SEL(FlashAttentionScoreSimplifiedTilingData)),
+        ASCENDC_TPL_BOOL_SEL(C8V16, true), ASCENDC_TPL_BOOL_SEL(KvHeadSchedule, false, true),
+        ASCENDC_TPL_TILING_STRUCT_SEL(FlashAttentionScoreSimplifiedTilingData)),
 #endif
 
 #if (ORIG_DTYPE_QUERY == DT_FLOAT8_E4M3FN && ORIG_DTYPE_KEY == DT_FLOAT8_E4M3FN && ORIG_DTYPE_ATTENTION_OUT == DT_BF16)
@@ -185,7 +188,7 @@ ASCENDC_TPL_SEL(
         ASCENDC_TPL_UINT_SEL(KvLayoutType, ASCENDC_TPL_UI_LIST, KvLayoutType_NO_PA), ASCENDC_TPL_BOOL_SEL(IsFd, 0),
         ASCENDC_TPL_BOOL_SEL(EmptyTensor, 0), ASCENDC_TPL_BOOL_SEL(EnableKVPrefix, false),
         ASCENDC_TPL_BOOL_SEL(EnableS1OutSplit, false), ASCENDC_TPL_BOOL_SEL(IsReconstructTemp, false),
-        ASCENDC_TPL_BOOL_SEL(C8V16, false, true),
+        ASCENDC_TPL_BOOL_SEL(C8V16, false, true), ASCENDC_TPL_BOOL_SEL(KvHeadSchedule, false, true),
         ASCENDC_TPL_TILING_STRUCT_SEL(FlashAttentionScoreSimplifiedTilingData)),
     ASCENDC_TPL_ARGS_SEL(
         ASCENDC_TPL_UINT_SEL(InOutLayoutType, ASCENDC_TPL_UI_LIST, InOutLayoutType_BNSD_BNSD, InOutLayoutType_BSH_BSH),
@@ -196,7 +199,8 @@ ASCENDC_TPL_SEL(
         ASCENDC_TPL_UINT_SEL(KvLayoutType, ASCENDC_TPL_UI_LIST, KvLayoutType_NO_PA), ASCENDC_TPL_BOOL_SEL(IsFd, 0),
         ASCENDC_TPL_BOOL_SEL(EmptyTensor, 0), ASCENDC_TPL_BOOL_SEL(EnableKVPrefix, false),
         ASCENDC_TPL_BOOL_SEL(EnableS1OutSplit, false), ASCENDC_TPL_BOOL_SEL(IsReconstructTemp, false),
-        ASCENDC_TPL_BOOL_SEL(C8V16, true), ASCENDC_TPL_TILING_STRUCT_SEL(FlashAttentionScoreSimplifiedTilingData)),
+        ASCENDC_TPL_BOOL_SEL(C8V16, true), ASCENDC_TPL_BOOL_SEL(KvHeadSchedule, false, true),
+        ASCENDC_TPL_TILING_STRUCT_SEL(FlashAttentionScoreSimplifiedTilingData)),
 #endif
     // 空tensor，必须要有一个使得列表不为空，否则会报无法推导模板参数的错误
     ASCENDC_TPL_ARGS_SEL(ASCENDC_TPL_UINT_SEL(InOutLayoutType, ASCENDC_TPL_UI_LIST, 0),
@@ -205,5 +209,6 @@ ASCENDC_TPL_SEL(
         ASCENDC_TPL_BOOL_SEL(HasRope, 0), ASCENDC_TPL_UINT_SEL(KvLayoutType, ASCENDC_TPL_UI_LIST, KvLayoutType_NO_PA),
         ASCENDC_TPL_BOOL_SEL(IsFd, 0), ASCENDC_TPL_BOOL_SEL(EmptyTensor, 1), ASCENDC_TPL_BOOL_SEL(EnableKVPrefix, 0),
         ASCENDC_TPL_BOOL_SEL(EnableS1OutSplit, false), ASCENDC_TPL_BOOL_SEL(IsReconstructTemp, false),
-        ASCENDC_TPL_BOOL_SEL(C8V16, false), ASCENDC_TPL_TILING_STRUCT_SEL(FlashAttentionScoreSimplifiedTilingData)), );
+        ASCENDC_TPL_BOOL_SEL(C8V16, false), ASCENDC_TPL_BOOL_SEL(KvHeadSchedule, false),
+        ASCENDC_TPL_TILING_STRUCT_SEL(FlashAttentionScoreSimplifiedTilingData)), );
 #endif

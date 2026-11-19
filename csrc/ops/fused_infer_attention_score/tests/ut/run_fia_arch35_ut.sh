@@ -11,20 +11,20 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-UT_SOURCE_DIR="${REPO_ROOT}/csrc/ops/fused_infer_attention_score/tests/ut"
+UT_SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${UT_SOURCE_DIR}/../../../../.." && pwd)"
 TARGET_NAME="mindiesd_fia_arch35_tiling_ut"
 
 BUILD_ONLY=0
 BUILD_DIR="${REPO_ROOT}/build/fia_arch35_ut"
-LOG_DIR="${REPO_ROOT}/logs"
+LOG_DIR="${REPO_ROOT}/log/fused_infer_attention_score/host_ut"
 
 usage() {
     cat <<EOF
 Usage: $0 [options]
 
 Options:
+  --schedule-only        Build and run the isolated KV-head scheduling tests.
   --build-only           Configure and build the FIA arch35 tiling UT without running it.
   --build-dir <dir>      CMake build directory. Default: ${BUILD_DIR}
   --log-dir <dir>        Log directory. Default: ${LOG_DIR}
@@ -40,6 +40,10 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --schedule-only)
+            TARGET_NAME="mindiesd_fia_kv_schedule_ut"
+            shift
+            ;;
         --build-only)
             BUILD_ONLY=1
             shift

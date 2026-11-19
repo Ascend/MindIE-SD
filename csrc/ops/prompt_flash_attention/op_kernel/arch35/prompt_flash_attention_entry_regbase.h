@@ -162,7 +162,7 @@ using namespace regbaseutil;
             BaseApi::FABlockCubeGqaFullquant<__VA_ARGS__>, BaseApi::FABlockCubeGqaFullquantDummy<__VA_ARGS__>>::type; \
         using VecBlockType = typename std::conditional<g_coreType == AscendC::AIC, \
             BaseApi::FABlockVecFullquantDummy<__VA_ARGS__>, BaseApi::FABlockVecInferGqaFullquant<__VA_ARGS__>>::type; \
-        templateClass<CubeBlockType, VecBlockType> op; \
+        typename templateClass<CubeBlockType, VecBlockType> op; \
         op.InitBaseAPI(query, key, value, pseShift, nullptr, nullptr, attenMask, nullptr, actualSeqLengths, \
             actualSeqLengthsKV, blocktable, queryPaddingSize, kvPaddingSize, dequantScaleQuery, key_antiquant_scale, \
             value_antiquant_scale, quant_scale1, postQuantScale, postQuantOffset, keySharedPrefix, valueSharedPrefix, \
@@ -284,7 +284,7 @@ using namespace regbaseutil;
             BaseApi::FABlockCubeGqaFullquant<__VA_ARGS__>, BaseApi::FABlockCubeGqaFullquantDummy<__VA_ARGS__>>::type; \
         using VecBlockType = typename std::conditional<g_coreType == AscendC::AIC, \
             BaseApi::FABlockVecFullquantDummy<__VA_ARGS__>, BaseApi::FABlockVecInferGqaFullquant<__VA_ARGS__>>::type; \
-        templateClass<CubeBlockType, VecBlockType> op; \
+        typename templateClass<CubeBlockType, VecBlockType> op; \
         op.InitBaseAPI(query, key, value, pseShift, nullptr, nullptr, attenMask, nullptr, actualSeqLengths, \
             actualSeqLengthsKV, blocktable, queryPaddingSize, kvPaddingSize, dequantScaleQuery, key_antiquant_scale, \
             value_antiquant_scale, quant_scale1, postQuantScale, postQuantOffset, keySharedPrefix, valueSharedPrefix, \
@@ -356,7 +356,7 @@ constexpr uint32_t L1BUFSIZE = 65536; // D最大支持256, 65536: 128 * 256 * 2
 
 template <uint8_t inOutLayoutType, uint16_t config, uint8_t pseMode, uint8_t quantMode, bool hasAttenMask, bool hasRope,
     uint8_t KvLayoutType, bool isFd, bool emptyTensor, bool enableKVPrefix, bool enableS1OutSplit,
-    bool isReconstructTemp, bool c8v16>
+    bool isReconstructTemp, bool c8v16, bool kvHeadSchedule = false>
 inline __aicore__ void prompt_flash_attention_FIAS_regbase(__gm__ uint8_t *query, __gm__ uint8_t *key,
     __gm__ uint8_t *value, __gm__ uint8_t *pseShift, __gm__ uint8_t *attenMask, __gm__ uint8_t *actualSeqLengths,
     __gm__ uint8_t *actualSeqLengthsKV, __gm__ uint8_t *deq_scale1, __gm__ uint8_t *quant_scale1,
@@ -745,10 +745,11 @@ inline __aicore__ void prompt_flash_attention_FIAS_regbase(__gm__ uint8_t *query
                         static_cast<uint64_t>(dTemplateType),
                     static_cast<uint64_t>(s2TemplateType) * static_cast<uint64_t>(dTemplateType)) *
                 2;
-            INVOKE_GQA_FULLQUANT_V_QUANT_DISPATCH(BaseApi::FlashAttentionScoreKernelInferGqaFullquant, vec1ResultSize,
-                qkvSizeRsv2, fp8_e4m3fn_t, float, half, ImplModeEnum::AA_HIGH_PRECISION, inputLayoutType,
-                s1TemplateType, s2TemplateType, dTemplateType, dVTemplateType, static_cast<PseTypeEnum>(pseMode),
-                hasAttenMask, false, hasRope, true, isPa, isFd, enableKVPrefix, enableS1OutSplit, false, c8v16);
+            INVOKE_GQA_FULLQUANT_V_QUANT_DISPATCH(BaseApi::KvHeadScheduleKernel<kvHeadSchedule>::template Kernel,
+                vec1ResultSize, qkvSizeRsv2, fp8_e4m3fn_t, float, half, ImplModeEnum::AA_HIGH_PRECISION,
+                inputLayoutType, s1TemplateType, s2TemplateType, dTemplateType, dVTemplateType,
+                static_cast<PseTypeEnum>(pseMode), hasAttenMask, false, hasRope, true, isPa, isFd, enableKVPrefix,
+                enableS1OutSplit, false, c8v16);
         }
     }
 #endif
@@ -843,10 +844,11 @@ inline __aicore__ void prompt_flash_attention_FIAS_regbase(__gm__ uint8_t *query
                         static_cast<uint64_t>(dTemplateType),
                     static_cast<uint64_t>(s2TemplateType) * static_cast<uint64_t>(dTemplateType)) *
                 2;
-            INVOKE_GQA_FULLQUANT_V_QUANT_DISPATCH(BaseApi::FlashAttentionScoreKernelInferGqaFullquant, vec1ResultSize,
-                qkvSizeRsv2, fp8_e4m3fn_t, float, bfloat16_t, ImplModeEnum::AA_HIGH_PRECISION, inputLayoutType,
-                s1TemplateType, s2TemplateType, dTemplateType, dVTemplateType, static_cast<PseTypeEnum>(pseMode),
-                hasAttenMask, false, hasRope, true, isPa, isFd, enableKVPrefix, false, false, c8v16);
+            INVOKE_GQA_FULLQUANT_V_QUANT_DISPATCH(BaseApi::KvHeadScheduleKernel<kvHeadSchedule>::template Kernel,
+                vec1ResultSize, qkvSizeRsv2, fp8_e4m3fn_t, float, bfloat16_t, ImplModeEnum::AA_HIGH_PRECISION,
+                inputLayoutType, s1TemplateType, s2TemplateType, dTemplateType, dVTemplateType,
+                static_cast<PseTypeEnum>(pseMode), hasAttenMask, false, hasRope, true, isPa, isFd, enableKVPrefix,
+                false, false, c8v16);
         }
     }
 #endif

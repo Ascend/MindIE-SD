@@ -10,34 +10,20 @@
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
-import importlib.util
-import os
-import sys
-import types
-
 import pytest
 import torch
-from mindiesd.utils.exception import ParametersInvalid
 
-from mindiesd.layers.flash_attn.fused_infer_attention_score import (
-    _normalize_dtype_arg,
-    fused_infer_attention_score_v2,
-)
-
-_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
-if _TEST_DIR not in sys.path:
-    sys.path.insert(0, _TEST_DIR)
-
-from fia_accuracy_common import (  # noqa: E402
+from tests.ops.device_support import init_test_device, require_support
+from tests.ops.fused_infer_attention_score.fia_accuracy_common import (
     DEFAULT_ENHANCE_MODE,
     check_mixed_tolerance,
     cosine_metrics,
     cpu_c8v16_fp8_fia_golden,
     synthesize_bf16,
 )
-from fia_quant_common import (  # noqa: E402
+from tests.ops.fused_infer_attention_score.fia_quant_common import (
     D128_CHANNEL_BLOCK,
-    FIA_QUANT_CASES,
+    FIA_QUANT_CASE_BY_NAME,
     K_TOKEN_BLOCK,
     Q_TOKEN_BLOCK,
 )
@@ -70,24 +56,24 @@ MINIMUM_FP8_PERBLOCK_BNSD_CASES = (
 )
 
 
-@pytest.mark.skipif(
-    importlib.util.find_spec("torch_npu") is None,
-    reason="torch_npu is required for NPU fused_infer_attention_score_v2 validation.",
-)
+@pytest.fixture(scope="module", name="fia_device")
+def fixture_fia_device():
+    device = init_test_device()
+    require_support("fused_infer_attention_score")
+    return device
+
+
 @pytest.mark.parametrize(
     "case",
     MINIMUM_FP8_PERBLOCK_BNSD_CASES,
     ids=[case["name"] for case in MINIMUM_FP8_PERBLOCK_BNSD_CASES],
 )
-def test_fused_infer_attention_score_v2_fp8_perblock_bnsd_cases(case):
+def test_fused_infer_attention_score_v2_fp8_perblock_bnsd_cases(case, fia_device):
     import torch_npu
 
+    from mindiesd.layers.flash_attn.fused_infer_attention_score import fused_infer_attention_score_v2
     from mindiesd.layers.quant.block_quant import fa_block_quant_preprocess
 
-    if not torch_npu.npu.is_available():
-        pytest.skip("NPU is not available.")
-
-    torch_npu.npu.set_device(0)
     batch_size = case["batch_size"]
     seq_len = case["seq_len"]
     num_heads = case["num_heads"]
@@ -96,7 +82,7 @@ def test_fused_infer_attention_score_v2_fp8_perblock_bnsd_cases(case):
     query = torch.ones(
         (batch_size, num_heads, seq_len, head_dim),
         dtype=torch.float16,
-        device="npu:0",
+        device=fia_device,
     )
     key = torch.zeros_like(query)
     value = torch.zeros_like(query)
@@ -126,23 +112,30 @@ def test_fused_infer_attention_score_v2_fp8_perblock_bnsd_cases(case):
     assert attention_out.shape == (batch_size, num_heads, seq_len, head_dim)
     assert attention_out.dtype == out_dtype
     assert softmax_lse.numel() == 0
+    assert torch.count_nonzero(attention_out).item() == 0
 
 
-def _run_fp8_small_vs_cpu_golden(case):
+@pytest.mark.parametrize(
+    "path,num_query_heads,num_kv_heads,query_seq_len,kv_seq_len",
+    [
+        pytest.param("original", 2, 2, 127, 255, id="original-mha-q127-kv255"),
+        pytest.param("c8v16", 4, 2, 128, 256, id="c8v16-gqa-q128-kv256"),
+        pytest.param("c8v16", 2, 2, 129, 257, id="c8v16-mha-q129-kv257"),
+        pytest.param("v512", 2, 2, 127, 511, id="v512-mha-q127-kv511"),
+        pytest.param("v512_d64", 4, 2, 129, 512, id="v512-d64-gqa-q129-kv512"),
+        *[pytest.param(path, 8, 2, 128, 513, id=f"{path}-gqa-q128-kv513") for path in FIA_QUANT_CASE_BY_NAME],
+    ],
+)
+def test_fused_infer_attention_score_v2_fp8_small_vs_cpu_golden(
+    path, num_query_heads, num_kv_heads, query_seq_len, kv_seq_len, fia_device
+):
     import torch_npu
 
+    from mindiesd.layers.flash_attn.fused_infer_attention_score import fused_infer_attention_score_v2
     from mindiesd.layers.quant.block_quant import fa_block_quant_preprocess
 
-    if not torch_npu.npu.is_available():
-        pytest.skip("NPU is not available.")
-
-    torch_npu.npu.set_device(0)
-    device = "npu:0"
+    case = FIA_QUANT_CASE_BY_NAME[path]
     batch_size = 1
-    num_query_heads = 8
-    num_kv_heads = 2
-    query_seq_len = 128
-    kv_seq_len = 513
     head_dim = 128
     generator = torch.Generator(device="cpu").manual_seed(20260811)
 
@@ -150,9 +143,9 @@ def _run_fp8_small_vs_cpu_golden(case):
     key = synthesize_bf16("key", (batch_size, num_kv_heads, kv_seq_len, head_dim), generator)
     value = synthesize_bf16("value", (batch_size, num_kv_heads, kv_seq_len, head_dim), generator)
     softmax_scale = 1.0 / (head_dim**0.5)
-    query_npu = query.to(device)
-    key_npu = key.to(device)
-    value_npu = value.to(device)
+    query_npu = query.to(fia_device)
+    key_npu = key.to(fia_device)
+    value_npu = value.to(fia_device)
     q, q_scale = fa_block_quant_preprocess(
         query_npu,
         block_size=Q_TOKEN_BLOCK,
@@ -251,24 +244,3 @@ def _run_fp8_small_vs_cpu_golden(case):
         f"cosine={metrics['cosine']:.8f}  "
         f"max_abs={metrics['max_abs_error']:.6f}"
     )
-
-
-@pytest.mark.skipif(
-    importlib.util.find_spec("torch_npu") is None,
-    reason="torch_npu is required to run MindIE-SD quantized FIA.",
-)
-@pytest.mark.parametrize(
-    "case",
-    FIA_QUANT_CASES,
-    ids=[case.name for case in FIA_QUANT_CASES],
-)
-def test_fused_infer_attention_score_v2_fp8_small_vs_cpu_golden(case):
-    _run_fp8_small_vs_cpu_golden(case)
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _require_fia_native_hardware():
-    from tests.ops.device_support import init_test_device, require_support
-
-    init_test_device()
-    require_support("fused_infer_attention_score")

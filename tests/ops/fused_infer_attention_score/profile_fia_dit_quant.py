@@ -3,199 +3,193 @@
 # Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
 # MindIE is licensed under Mulan PSL v2.
 
-"""Single-forward FIA V-quant workload for ``msprof op``.
-
-The shape and dtype match the large-shape accuracy case. Select exactly one
-kernel path per process so profiling records cannot be mixed across paths.
-"""
-
-from __future__ import annotations
+"""One CPU-prepared FIA forward for hardware profiling or simulation."""
 
 import argparse
-import math
+import importlib.util
 import os
-import sys
+import random
+from pathlib import Path
 
-import torch
+from tests.ops.fused_infer_attention_score.fia_quant_common import FIA_QUANT_CASE_BY_NAME, add_shape_arguments
 
-_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
-if _TEST_DIR not in sys.path:
-    sys.path.insert(0, _TEST_DIR)
 
-from fia_accuracy_common import DEFAULT_ENHANCE_MODE, MAX_TOKENS, synthesize_bf16  # noqa: E402
-from fia_quant_common import (  # noqa: E402
-    D128_CHANNEL_BLOCK,
-    FIA_QUANT_CASE_BY_NAME,
-    K_TOKEN_BLOCK,
-    Q_TOKEN_BLOCK,
-)
+def operator_package_dir():
+    spec = importlib.util.find_spec("mindiesd")
+    if spec is None or not spec.submodule_search_locations:
+        raise RuntimeError("MindIE-SD package is not available")
+    return Path(next(iter(spec.submodule_search_locations))).resolve()
 
-SCENARIO_NAME = "DiT_0825_eaglefia_tiling512_row34_v_quant"
-DEFAULT_BATCH = 1
-DEFAULT_NUM_Q_HEADS = 32
-DEFAULT_NUM_KV_HEADS = 4
-DEFAULT_SEQ_Q = 2304
-DEFAULT_SEQ_KV = 30757
-DEFAULT_HEAD_DIM = 128
+
+def prepare_operator_environment():
+    # CANN reads custom OPP paths on initialization, before MindIE-SD is imported.
+    vendors = operator_package_dir() / "ops/vendors"
+    paths = [str(path) for path in vendors.iterdir() if path.is_dir()]
+    if not (vendors / "aie_ascendc").is_dir():
+        raise RuntimeError(f"Missing built FIA operator package: {vendors}")
+    previous = os.environ.get("ASCEND_CUSTOM_OPP_PATH", "")
+    os.environ["ASCEND_CUSTOM_OPP_PATH"] = os.pathsep.join([*paths, previous])
+
+
+def make_inputs(args):
+    import torch
+
+    from tests.ops.fused_infer_attention_score.fia_accuracy_common import synthesize_bf16
+
+    case = FIA_QUANT_CASE_BY_NAME[args.path]
+    generator = torch.Generator(device="cpu").manual_seed(args.seed)
+    parameter_rng = random.Random(args.seed)
+    shapes = (
+        (args.batch_size, args.num_query_heads, args.query_seq_len, args.head_dim),
+        (args.batch_size, args.num_kv_heads, args.kv_seq_len, args.head_dim),
+        (args.batch_size, args.num_kv_heads, args.kv_seq_len, args.head_dim),
+    )
+    originals, quantized, scales = [], [], []
+    blocks = ((128, 128), (256, 128), (case.value_token_block, case.value_channel_block))
+    for role, shape, block in zip(("query", "key", "value"), shapes, blocks):
+        print(
+            f"stage=cpu_input role={role} shape={shape} distribution={args.distribution} seed={args.seed}", flush=True
+        )
+        if args.distribution == "snapshot":
+            source = synthesize_bf16(role, shape, generator, args.enhance_mode)
+        elif args.distribution == "uniform":
+            source = torch.empty(shape).uniform_(-5, 5, generator=generator).to(torch.bfloat16)
+        else:
+            mean, std = parameter_rng.uniform(-5, 5), parameter_rng.uniform(0.1, 2)
+            print(f"role={role} mean={mean:.9g} std={std:.9g} clamp=none", flush=True)
+            source = torch.empty(shape).normal_(mean, std, generator=generator).to(torch.bfloat16)
+        encoded, scale = quantize_cpu(source, *block)
+        originals.append(source)
+        quantized.append(encoded)
+        scales.append(scale)
+    return originals, quantized, scales
+
+
+def quantize_cpu(source, row_block, column_block):
+    """Encode independent blocks with FP32 max-abs scales and FP8 RNE.
+
+    Slice legal tail blocks directly: the operator sees the requested unpadded
+    physical shape. Process one head at a time to bound CPU temporary memory.
+    """
+    import torch
+
+    batch, heads, rows, columns = source.shape
+    encoded = torch.empty_like(source, dtype=torch.float8_e4m3fn)
+    scales = torch.empty(
+        (batch, heads, (rows + row_block - 1) // row_block, (columns + column_block - 1) // column_block),
+        dtype=torch.float32,
+    )
+    for batch_index in range(batch):
+        for head in range(heads):
+            for row in range(0, rows, row_block):
+                for column in range(0, columns, column_block):
+                    values = source[batch_index, head, row : row + row_block, column : column + column_block].float()
+                    scale = values.abs().amax().clamp_min(torch.finfo(torch.float32).tiny) / 448.0
+                    scales[batch_index, head, row // row_block, column // column_block] = scale
+                    encoded[batch_index, head, row : row + row_block, column : column + column_block] = (
+                        (values / scale).clamp(-448, 448).to(torch.float8_e4m3fn)
+                    )
+    return encoded, scales
+
+
+def call_fia(args, qkv, scales):
+    import torch
+
+    case = FIA_QUANT_CASE_BY_NAME[args.path]
+    return torch.ops.mindiesd.fused_infer_attention_score_v2(
+        *qkv,
+        num_query_heads=args.num_query_heads,
+        num_key_value_heads=args.num_kv_heads,
+        softmax_scale=args.head_dim**-0.5,
+        pre_tokens=2147483647,
+        next_tokens=2147483647,
+        input_layout="BNSD",
+        query_quant_mode=7,
+        key_quant_mode=7,
+        value_quant_mode=case.value_quant_mode,
+        inner_precise=case.inner_precise,
+        dequant_scale_query=scales[0],
+        dequant_scale_key=scales[1],
+        dequant_scale_value=scales[2],
+        out_dtype=torch.bfloat16,
+    )
+
+
+def describe_inputs(qkv, scales):
+    for name, tensor in zip(("Q", "K", "V", "Q_scale", "K_scale", "V_scale"), (*qkv, *scales)):
+        print(
+            f"{name}: shape={tuple(tensor.shape)} dtype={tensor.dtype} device={tensor.device} "
+            f"stride={tensor.stride()} contiguous={tensor.is_contiguous()}",
+            flush=True,
+        )
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Profile one FIA FP8 V-quant path with msprof op.")
-    parser.add_argument("--path", choices=FIA_QUANT_CASE_BY_NAME, required=True)
+    parser = argparse.ArgumentParser(
+        description="Run exactly one FP8 FIA workload; omitted dimensions use the first preset.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--path", choices=FIA_QUANT_CASE_BY_NAME, default="original")
     parser.add_argument("--device-id", type=int, default=0)
-    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH)
-    parser.add_argument("--num-query-heads", type=int, default=DEFAULT_NUM_Q_HEADS)
-    parser.add_argument("--num-kv-heads", type=int, default=DEFAULT_NUM_KV_HEADS)
-    parser.add_argument("--query-seq-len", type=int, default=DEFAULT_SEQ_Q)
-    parser.add_argument("--kv-seq-len", type=int, default=DEFAULT_SEQ_KV)
-    parser.add_argument("--head-dim", type=int, default=DEFAULT_HEAD_DIM)
+    add_shape_arguments(parser, single=True)
     parser.add_argument("--seed", type=int, default=20260811)
-    parser.add_argument("--enhance-mode", type=float, default=DEFAULT_ENHANCE_MODE)
-    parser.add_argument("--msprof-mode", action="store_true")
-    return parser.parse_args()
+    parser.add_argument("--enhance-mode", type=float, default=2.0)
+    parser.add_argument("--distribution", choices=("snapshot", "normal", "uniform"), default="normal")
+    parser.add_argument("--msprof-mode", action="store_true", help="Compatibility flag; always one forward.")
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+    validate_args(args)
+    return args
 
 
 def validate_args(args):
-    if args.device_id < 0:
-        raise ValueError("--device-id must be greater than or equal to 0")
-    if args.batch_size <= 0 or args.query_seq_len <= 0 or args.kv_seq_len <= 0:
-        raise ValueError("batch size and sequence lengths must be greater than 0")
-    if args.num_query_heads <= 0 or args.num_kv_heads <= 0:
-        raise ValueError("head counts must be greater than 0")
-    if args.num_query_heads % args.num_kv_heads != 0:
-        raise ValueError("--num-query-heads must be divisible by --num-kv-heads")
-    if args.head_dim != 128:
-        raise ValueError("FIA V512 V-quant profiling supports --head-dim 128 only")
-    if not math.isfinite(args.enhance_mode) or args.enhance_mode <= 0:
-        raise ValueError("--enhance-mode must be finite and greater than 0")
-
-
-def ceil_div(value, divisor):
-    return (value + divisor - 1) // divisor
-
-
-def expected_scale_shape(tensor, token_block, channel_block):
-    return (
-        tensor.shape[0],
-        tensor.shape[1],
-        ceil_div(tensor.shape[2], token_block),
-        ceil_div(tensor.shape[3], channel_block),
-    )
-
-
-def quantize(tensor, token_block, channel_block, torch_npu):
-    from mindiesd.layers.quant.block_quant import fa_block_quant_preprocess
-
-    quantized, scale = fa_block_quant_preprocess(
-        tensor,
-        block_size=token_block,
-        col_block_size=channel_block,
-        dst_type=torch_npu.float8_e4m3fn,
-        layout="BNSD",
-    )
-    expected = expected_scale_shape(tensor, token_block, channel_block)
-    if tuple(scale.shape) != expected:
-        raise RuntimeError(f"scale shape mismatch: actual={tuple(scale.shape)} expected={expected}")
-    return quantized, scale
+    if args.device_id < 0 or args.batch_size != 1 or args.head_dim != 128:
+        raise ValueError("Require device-id >= 0, batch-size=1 and head-dim=128")
+    if min(args.num_query_heads, args.num_kv_heads, args.query_seq_len, args.kv_seq_len) <= 0:
+        raise ValueError("Head counts and sequence lengths must be positive")
+    if args.num_query_heads % args.num_kv_heads:
+        raise ValueError("Query head count must be divisible by KV head count")
 
 
 def main():
     args = parse_args()
-    validate_args(args)
-    case = FIA_QUANT_CASE_BY_NAME[args.path]
-
-    try:
-        import torch_npu
-    except ImportError as exc:
-        raise SystemExit("ERROR: torch_npu missing; run inside CANN + torch_npu") from exc
-
-    if not torch_npu.npu.is_available():
-        raise SystemExit("ERROR: NPU is not available")
-    visible = os.environ.get("ASCEND_RT_VISIBLE_DEVICES")
-    if visible:
-        raise SystemExit(
-            "ERROR: ASCEND_RT_VISIBLE_DEVICES is set "
-            f"({visible!r}); unset it and select the physical card with --device-id"
-        )
-
-    from mindiesd.layers.flash_attn.fused_infer_attention_score import (
-        fused_infer_attention_score_v2,
-    )
-
-    torch.npu.set_device(args.device_id)
-    device = torch.device(f"npu:{args.device_id}")
-    generator = torch.Generator(device="cpu").manual_seed(args.seed)
-    query = synthesize_bf16(
-        "query",
-        (args.batch_size, args.num_query_heads, args.query_seq_len, args.head_dim),
-        generator,
-        args.enhance_mode,
-    ).to(device)
-    key = synthesize_bf16(
-        "key",
-        (args.batch_size, args.num_kv_heads, args.kv_seq_len, args.head_dim),
-        generator,
-        args.enhance_mode,
-    ).to(device)
-    value = synthesize_bf16(
-        "value",
-        (args.batch_size, args.num_kv_heads, args.kv_seq_len, args.head_dim),
-        generator,
-        args.enhance_mode,
-    ).to(device)
-
-    q, q_scale = quantize(query, Q_TOKEN_BLOCK, D128_CHANNEL_BLOCK, torch_npu)
-    k, k_scale = quantize(key, K_TOKEN_BLOCK, D128_CHANNEL_BLOCK, torch_npu)
-    v, v_scale = quantize(value, case.value_token_block, case.value_channel_block, torch_npu)
-    torch_npu.npu.synchronize()
-
-    print(f"scenario={SCENARIO_NAME}")
-    print(f"path={case.name} description={case.description}")
-    print(f"device_id={args.device_id} msprof_mode={args.msprof_mode}")
     print(
-        f"BNSD Q={tuple(q.shape)} KV={tuple(k.shape)} qkv={case.quant_modes} "
-        f"inner_precise={case.inner_precise} V_block="
-        f"{case.value_token_block}x{case.value_channel_block} out=bf16"
+        f"BNSD Q={(1, args.num_query_heads, args.query_seq_len, 128)} "
+        f"K=V={(1, args.num_kv_heads, args.kv_seq_len, 128)} path={args.path} "
+        "QKV=FP8_E4M3 scales=FP32 output=BF16 calls=1",
+        flush=True,
     )
+    if args.dry_run:
+        return
+    if os.environ.get("ASCEND_RT_VISIBLE_DEVICES"):
+        raise ValueError("Unset ASCEND_RT_VISIBLE_DEVICES; use --device-id")
+    prepare_operator_environment()
+    import torch
+    import torch_npu
 
+    print(f"stage=device_init device_id={args.device_id}", flush=True)
+    torch.npu.set_device(args.device_id)
+    import mindiesd  # noqa: F401 pylint: disable=unused-import
+
+    originals, qkv, scales = make_inputs(args)
+    del originals
+    print("stage=device_copy", flush=True)
+    qkv = [tensor.to(f"npu:{args.device_id}") for tensor in qkv]
+    scales = [tensor.to(f"npu:{args.device_id}") for tensor in scales]
+    torch_npu.npu.synchronize()
+    describe_inputs(qkv, scales)
+    print("stage=target_call kernel=EagleFusedInferAttentionScore", flush=True)
     with torch.inference_mode():
-        output, softmax_lse = fused_infer_attention_score_v2(
-            q,
-            k,
-            v,
-            num_query_heads=args.num_query_heads,
-            num_key_value_heads=args.num_kv_heads,
-            softmax_scale=args.head_dim**-0.5,
-            pre_tokens=MAX_TOKENS,
-            next_tokens=MAX_TOKENS,
-            input_layout="BNSD",
-            query_quant_mode=case.quant_modes[0],
-            key_quant_mode=case.quant_modes[1],
-            value_quant_mode=case.quant_modes[2],
-            inner_precise=case.inner_precise,
-            dequant_scale_query=q_scale,
-            dequant_scale_key=k_scale,
-            dequant_scale_value=v_scale,
-            out_dtype=torch.bfloat16,
-        )
+        output, lse = call_fia(args, qkv, scales)
+        print("stage=target_return", flush=True)
         torch_npu.npu.synchronize()
-
-    expected_output_shape = (
-        args.batch_size,
-        args.num_query_heads,
-        args.query_seq_len,
-        args.head_dim,
-    )
-    if tuple(output.shape) != expected_output_shape or output.dtype != torch.bfloat16:
-        raise RuntimeError(
-            f"output mismatch: shape={tuple(output.shape)} dtype={output.dtype}, "
-            f"expected={expected_output_shape}/torch.bfloat16"
-        )
-    if not torch.isfinite(output.float()).all().item():
-        raise RuntimeError("attention_out contains NaN or Inf")
-    if softmax_lse is not None and softmax_lse.numel() != 0:
-        raise RuntimeError("mode-17 path should return an empty softmax_lse")
-    print("RESULT msprof-mode forward done; use msprof op Duration, not wall-clock")
+    print("stage=target_synchronized", flush=True)
+    expected = (args.batch_size, args.num_query_heads, args.query_seq_len, args.head_dim)
+    if tuple(output.shape) != expected or output.dtype != torch.bfloat16 or not output.is_contiguous():
+        raise RuntimeError(f"Invalid output metadata: {output.shape}, {output.dtype}, {output.stride()}")
+    if lse is not None and lse.numel():
+        raise RuntimeError("Expected empty softmax_lse")
+    print("RESULT forward synchronized; metadata PASS. Numerical accuracy is tested separately.", flush=True)
 
 
 if __name__ == "__main__":

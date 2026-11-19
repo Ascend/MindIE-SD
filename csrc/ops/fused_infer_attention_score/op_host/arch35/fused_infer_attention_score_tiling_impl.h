@@ -51,6 +51,7 @@ struct FiaTilingKeyInfo {
     bool enableS1OutSplit = false;
     bool isReconstructTemp = false;
     bool enableC8V16 = false;
+    bool kvHeadSchedule = false;
 };
 
 struct FiaPlatFormInfo {
@@ -81,6 +82,7 @@ class FusedInferAttentionScoreTilingImpl : public FiaTilingBase {
     ge::graphStatus SplitPolicy(gert::TilingContext *context, const FiaTilingInfo &fiaInfo);
     void ApplySinnerSouterOverrides(const FiaTilingInfo &fiaInfo);
     void ApplySplitStrategy(const FiaTilingInfo &fiaInfo);
+    void ApplyKvHeadSchedule(const FiaTilingInfo &fiaInfo);
     void ApplyRowInvalidCheck(const FiaTilingInfo &fiaInfo);
     bool CheckS1OutSplit(const FiaTilingInfo &fiaInfo);
     int64_t CalcRequiredL2Size(const FiaTilingInfo &fiaInfo);

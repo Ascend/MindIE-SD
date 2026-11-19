@@ -181,3 +181,17 @@ target_link_libraries(mindiesd_fia_arch35_tiling_ut PRIVATE
 
 enable_testing()
 add_test(NAME mindiesd_fia_arch35_tiling_ut COMMAND mindiesd_fia_arch35_tiling_ut)
+
+# Legacy generated tiling classes share names with arch35 POD classes. Keep
+# the scheduling probe in a separate executable to avoid weak-symbol collisions.
+add_executable(mindiesd_fia_kv_schedule_ut
+    "${FIA_HOST_DIR}/arch35/fused_infer_attention_score_tiling_impl.cpp"
+    "${FIA_UT_DIR}/op_host/arch35/test_kv_head_schedule.cpp"
+)
+target_include_directories(mindiesd_fia_kv_schedule_ut PRIVATE ${FIA_INCLUDE_DIRS})
+target_link_directories(mindiesd_fia_kv_schedule_ut PRIVATE ${FIA_LINK_DIRS})
+target_compile_definitions(mindiesd_fia_kv_schedule_ut PRIVATE _GLIBCXX_USE_CXX11_ABI=0 OP_TILING_LIB)
+target_compile_options(mindiesd_fia_kv_schedule_ut PRIVATE -ffunction-sections -fdata-sections)
+target_link_options(mindiesd_fia_kv_schedule_ut PRIVATE -Wl,--gc-sections -Wl,--no-as-needed)
+target_link_libraries(mindiesd_fia_kv_schedule_ut PRIVATE ${FIA_LINK_LIBS})
+add_test(NAME mindiesd_fia_kv_schedule_ut COMMAND mindiesd_fia_kv_schedule_ut)
