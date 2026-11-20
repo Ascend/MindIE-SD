@@ -1,0 +1,206 @@
+name: test_Nightly-MindIE-SD-buildkit
+
+on:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  project: read
+  repository: read
+  id-token: write
+
+jobs:
+  # ============================================================
+  # Prerequisite: original single-lane build (ubuntu / aarch64 / legacy build-environment image)
+  #   Equivalent to the pre-refactor Build_nightly_image; the output tag stays gitcode-action-test-latest.
+  #   The matrix job below depends on this job: run the original build first, then fan out to the matrix.
+  # ============================================================
+  build_run_legacy_ubuntu_aarch64:
+    name: build_run_legacy_ubuntu_aarch64
+    runs-on: [self-hosted, buildkitTest]
+    env:
+      DOCKERFILE_URL: "https://gitcode.com/AscendTest/pytest-infra/blob/main/resources/dockerfile/mindie-sd_Dockerfile_run_abi1.ubuntu"
+      HARBOR_REGISTRY: "swr.cn-north-4.myhuaweicloud.com"
+      HARBOR_IMAGE: "atlas-ci/ascend_mindie_sd"
+      HARBOR_TAG: "gitcode-action-test-latest"
+      TARGET_PLATFORMS: "linux/arm64"
+      BUILD_CONTEXT: "resources/dockerfile"
+      NO_CACHE: "1"
+      BUILD_ARGS: |
+        SWR_REGISTRY_BASE=swr.cn-north-4.myhuaweicloud.com
+        BASE_REPO=ascend_mindie_ubuntu_aarch64
+        BASE_TAG=20260908_ubuntu24_3.2.0_cann9.1.0_torch2.9.0_py311
+        SD_REPO_URL=https://gitcode.com/ascend/MindIE-SD.git
+        SD_BRANCH=master
+        MINDIE_VERSION=3.1.0
+        MINDIE_NEW_VERSION=3.1.0
+        ASCEND_COMPUTE_UNIT=ascend910b
+      OIDC_ACCOUNT_ID: "0d336831568090260fd5c01450729240"
+      # The runner pod environment is not inherited by the step shells, so these two must be declared explicitly.
+      DOCKER_CONFIG: /home/user/.docker
+      PATH: /root/.cache/buildkit/bin/amd64:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    steps:
+      - name: fetch build script
+        run: git clone --depth 1 https://gitcode.com/pipelineascode/buildkit-dev.git /tmp/buildkit-dev
+
+      - name: swr login via oidc
+        uses: pipelineascode/buildkit-dev/.gitcode/actions/swr-login@main
+        with:
+          account_id: "0d336831568090260fd5c01450729240"
+          registry: "swr.cn-north-4.myhuaweicloud.com"
+          region: "cn-north-4"
+          provider_name: "pta_swr_nightly"
+          audience: "pta_swr_nightly"
+          agency_name: "pta_swr_nightly"
+          # Hard cap: the pta_swr_nightly agency allows at most 1h per session (STS5.1102 when asking for more),
+          # so the build+push of a job has to finish within 1h of the login.
+          duration_seconds: "3600"
+
+      - name: build and push
+        run: bash /tmp/buildkit-dev/oidc/build-and-push.sh
+
+  # ============================================================
+  # 12 image cells, one matrix branch each, all running in parallel
+  #   after the legacy job succeeds. fail-fast is off: one cell failing does not stop the rest,
+  #   but the matrix job still ends failed.
+  # ============================================================
+  build_run_all_cells:
+    name: build_run_all_cells
+    needs: [build_run_legacy_ubuntu_aarch64]
+    runs-on: [self-hosted, buildkitTest]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu
+            arch: aarch64
+            device: 910b
+            dockerfile: mindie-sd_Dockerfile_run_abi1.ubuntu
+            platform: linux/arm64
+            base_repo: base-ubuntu24.04-aarch64
+            base_tag: 910b-cann9.2.1_20261027213200_torch2.9.0_v2.0
+            compute_unit: ascend910b
+          - os: ubuntu
+            arch: x86_64
+            device: 910b
+            dockerfile: mindie-sd_Dockerfile_run_abi1.ubuntu
+            platform: linux/amd64
+            base_repo: base-ubuntu24.04-x86_64
+            base_tag: 910b-cann9.2.1_20261027213200_torch2.9.0_v2.0
+            compute_unit: ascend910b
+          - os: ubuntu
+            arch: aarch64
+            device: a3
+            dockerfile: mindie-sd_Dockerfile_run_abi1.ubuntu
+            platform: linux/arm64
+            base_repo: base-ubuntu24.04-aarch64
+            base_tag: a3-cann9.2.1_20261027213200_torch2.9.0_v2.0
+            compute_unit: ascend910_93
+          - os: ubuntu
+            arch: x86_64
+            device: a3
+            dockerfile: mindie-sd_Dockerfile_run_abi1.ubuntu
+            platform: linux/amd64
+            base_repo: base-ubuntu24.04-x86_64
+            base_tag: a3-cann9.2.1_20261027213200_torch2.9.0_v2.0
+            compute_unit: ascend910_93
+          - os: ubuntu
+            arch: aarch64
+            device: a5
+            dockerfile: mindie-sd_Dockerfile_run_abi1.ubuntu
+            platform: linux/arm64
+            base_repo: base-ubuntu24.04-aarch64
+            base_tag: a5-cann9.2.1_20261027213200_torch2.9.0_v2.0
+            compute_unit: ascend950
+          - os: ubuntu
+            arch: x86_64
+            device: a5
+            dockerfile: mindie-sd_Dockerfile_run_abi1.ubuntu
+            platform: linux/amd64
+            base_repo: base-ubuntu24.04-x86_64
+            base_tag: a5-cann9.2.1_20261027213200_torch2.9.0_v2.0
+            compute_unit: ascend950
+          - os: openeuler
+            arch: aarch64
+            device: 910b
+            dockerfile: mindie-sd_Dockerfile_run_abi1.openeuler
+            platform: linux/arm64
+            base_repo: base-openeuler-aarch64
+            base_tag: 910b-cann9.2.1_20261027213200_torch2.9.0_v2.0
+            compute_unit: ascend910b
+          - os: openeuler
+            arch: x86_64
+            device: 910b
+            dockerfile: mindie-sd_Dockerfile_run_abi1.openeuler
+            platform: linux/amd64
+            base_repo: base-openeuler-x86_64
+            base_tag: 910b-cann9.2.1_20261027213200_torch2.9.0_v2.0
+            compute_unit: ascend910b
+          - os: openeuler
+            arch: aarch64
+            device: a3
+            dockerfile: mindie-sd_Dockerfile_run_abi1.openeuler
+            platform: linux/arm64
+            base_repo: base-openeuler-aarch64
+            base_tag: a3-cann9.2.1_20261027213200_torch2.9.0_v2.0
+            compute_unit: ascend910_93
+          - os: openeuler
+            arch: x86_64
+            device: a3
+            dockerfile: mindie-sd_Dockerfile_run_abi1.openeuler
+            platform: linux/amd64
+            base_repo: base-openeuler-x86_64
+            base_tag: a3-cann9.2.1_20261027213200_torch2.9.0_v2.0
+            compute_unit: ascend910_93
+          - os: openeuler
+            arch: aarch64
+            device: a5
+            dockerfile: mindie-sd_Dockerfile_run_abi1.openeuler
+            platform: linux/arm64
+            base_repo: base-openeuler-aarch64
+            base_tag: a5-cann9.2.1_20261027213200_torch2.9.0_v2.0
+            compute_unit: ascend950
+          - os: openeuler
+            arch: x86_64
+            device: a5
+            dockerfile: mindie-sd_Dockerfile_run_abi1.openeuler
+            platform: linux/amd64
+            base_repo: base-openeuler-x86_64
+            base_tag: a5-cann9.2.1_20261027213200_torch2.9.0_v2.0
+            compute_unit: ascend950
+    env:
+      DOCKERFILE_URL: "https://gitcode.com/AscendTest/pytest-infra/blob/main/resources/dockerfile/${{ matrix.dockerfile }}"
+      HARBOR_REGISTRY: "swr.cn-north-4.myhuaweicloud.com"
+      HARBOR_IMAGE: "atlas-ci/ascend_mindie_sd"
+      HARBOR_TAG: "gitcode-action-test-${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.device }}-latest"
+      TARGET_PLATFORMS: ${{ matrix.platform }}
+      BUILD_CONTEXT: "resources/dockerfile"
+      NO_CACHE: "1"
+      BUILD_ARGS: |
+        SWR_REGISTRY_BASE=swr.cn-north-4.myhuaweicloud.com
+        BASE_REPO=${{ matrix.base_repo }}
+        BASE_TAG=${{ matrix.base_tag }}
+        SD_REPO_URL=https://gitcode.com/ascend/MindIE-SD.git
+        SD_BRANCH=master
+        MINDIE_VERSION=3.1.0
+        MINDIE_NEW_VERSION=3.1.0
+        ASCEND_COMPUTE_UNIT=${{ matrix.compute_unit }}
+      OIDC_ACCOUNT_ID: "0d336831568090260fd5c01450729240"
+      DOCKER_CONFIG: /home/user/.docker
+      PATH: /root/.cache/buildkit/bin/amd64:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    steps:
+      - name: fetch build script
+        run: git clone --depth 1 https://gitcode.com/pipelineascode/buildkit-dev.git /tmp/buildkit-dev
+
+      - name: swr login via oidc
+        uses: pipelineascode/buildkit-dev/.gitcode/actions/swr-login@main
+        with:
+          account_id: "0d336831568090260fd5c01450729240"
+          registry: "swr.cn-north-4.myhuaweicloud.com"
+          region: "cn-north-4"
+          provider_name: "pta_swr_nightly"
+          audience: "pta_swr_nightly"
+          agency_name: "pta_swr_nightly"
+          duration_seconds: "3600"
+
+      - name: build and push
+        run: bash /tmp/buildkit-dev/oidc/build-and-push.sh

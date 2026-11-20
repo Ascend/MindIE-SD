@@ -1,0 +1,44 @@
+name: test_Nightly-MindIE-SD
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 8 * * *'
+
+env:
+  # ========== Image SWR info (kept in sync with the buildkit build output) ==========
+  NIGHTLY_IMAGE: "swr.cn-north-4.myhuaweicloud.com/atlas-ci/ascend_mindie_sd"
+  # Output tag consumed by the smoke test: the ubuntu / aarch64 / 910b lane in the buildkit workflow
+  NIGHTLY_IMAGE_TAG: "gitcode-action-test-latest"
+
+permissions:
+  project: read
+  repository: read
+  # Required for OIDC passwordless push to SWR (agency pta_swr_nightly), consumed by the called workflow
+  id-token: write
+
+stages:
+  stage_0:
+    name: image build
+    select: selected_by_default
+    jobs:
+      Build_nightly_image:
+        name: Build_nightly_image
+        # 13 lanes (legacy + 12 cells) and all BuildKit parameters live in the called workflow.
+        uses: .gitcode/workflows/test_Nightly-mindie-sd-buildkit.yml
+
+  stage_1:
+    name: smoke test
+    select: selected_by_default
+    jobs:
+      Test_nightly_smoke:
+        name: Test_nightly_smoke
+        uses: .gitcode/workflows/.test_nightly_smoke.yml
+        with:
+          testcase_config_file: "resources/pytest_mindie_sd.ini"
+          # Hand the image pushed by stage_0 to pytest-orch; the scheduler then creates the NPU test environment.
+          # NIGHTLY_IMAGE_TAG is the fixed output tag of the legacy single lane, not one of the 12 cells.
+          image_label: "${{ env.NIGHTLY_IMAGE }}:${{ env.NIGHTLY_IMAGE_TAG }}"
+        # pytest-orch calls the scheduler, which needs this credential; secrets are not inherited by a called workflow.
+        secrets:
+          SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
