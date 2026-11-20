@@ -39,6 +39,3 @@ stages:
           # Hand the image pushed by stage_0 to pytest-orch; the scheduler then creates the NPU test environment.
           # NIGHTLY_IMAGE_TAG is the fixed output tag of the legacy single lane, not one of the 12 cells.
           image_label: "${{ env.NIGHTLY_IMAGE }}:${{ env.NIGHTLY_IMAGE_TAG }}"
-        # pytest-orch calls the scheduler, which needs this credential; secrets are not inherited by a called workflow.
-        secrets:
-          SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
