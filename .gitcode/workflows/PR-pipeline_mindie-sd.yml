@@ -148,7 +148,7 @@ stages:
         with:
           abi_type: "1"
           arch: "x86_64"
-          CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_x86:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311"
+          CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_x86:20260908_ubuntu24_3.2.0_cann9.1.0_torch2.9.0_py311"
           runs_on_arch: "x86"
           pr_id: "${{ atomgit.event.pull_request.number }}"
 
@@ -159,18 +159,7 @@ stages:
         with:
           abi_type: "1"
           arch: "aarch64"
-          CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_aarch64:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311"
-          runs_on_arch: "arm"
-          pr_id: "${{ atomgit.event.pull_request.number }}"
-
-      Build_linux_arm_abi0:
-        name: Build_linux_arm_abi0
-        if: ${{ jobs.Detect_file_changes.outputs.need_build == 'yes' }}
-        uses: .gitcode/workflows/build_job.yml
-        with:
-          abi_type: "0"
-          arch: "aarch64"
-          CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_aarch64:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311"
+          CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_aarch64:20260908_ubuntu24_3.2.0_cann9.1.0_torch2.9.0_py311"
           runs_on_arch: "arm"
           pr_id: "${{ atomgit.event.pull_request.number }}"
 
@@ -179,7 +168,7 @@ stages:
         if: ${{ jobs.Detect_file_changes.outputs.need_build == 'yes' }}
         uses: .gitcode/workflows/ut_job.yml
         with:
-          CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_aarch64:20260704_ubuntu24_3.1.0_cann9.0.1_torch2.9.0_py311"
+          CP_DOCKER_IMG: "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_aarch64:20260908_ubuntu24_3.2.0_cann9.1.0_torch2.9.0_py311"
           runs_on_arch: "arm"
           pr_id: "${{ atomgit.event.pull_request.number }}"
 

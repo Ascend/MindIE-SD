@@ -1,6 +1,6 @@
 {
   "name": "MindIE-SD Dev Container",
-  "image": "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_x86:20260305_ubuntu24_3.0.0_cann8.5.1_torch2.9.0_py311",
+  "image": "swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_x86:20260908_ubuntu24_3.2.0_cann9.1.0_torch2.9.0_py311",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/MindIE-SD,type=bind,consistency=cached",
   "workspaceFolder": "/workspace/MindIE-SD",
   "containerEnv": {
