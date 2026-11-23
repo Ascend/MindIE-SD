@@ -60,7 +60,7 @@ ENV ASCEND_SOFTWARE_VERSION="v3.2.0"
 # --------------------------------------------------------------------------
 # 1. Install MindIE-SD (Stable Diffusion inference engine)
 # --------------------------------------------------------------------------
-RUN pip install mindiesd==3.2.0 -i https://pypi.org/simple --no-cache-dir
+RUN pip install mindiesd==3.3.0 -i https://pypi.org/simple --no-cache-dir
 
 # --------------------------------------------------------------------------
 # 2. Install msprobe (precision debugging tool)

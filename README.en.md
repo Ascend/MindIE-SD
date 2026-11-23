@@ -37,6 +37,7 @@ For supported models and feature stacking, see [Model/Framework Support](docs/en
 
 ## 📢 Latest News
 
+- 11/18/2026: [MindIE SD quantized attention is now integrated into SGLang main](https://github.com/sgl-project/sglang/pull/46029) 🤝
 - 11/11/2026: Completed [MiniMax-H3-Image Day0 inference adaptation on Ascend](examples/minimax-h3-image/infer.md) 🚀
 - 09/23/2026: [MXAttention paper](docs/tech_report/MXAttention.pdf) has been submitted to ICLR ([arXiv:2607.24377](https://arxiv.org/abs/2607.24377)) 📄
 - 09/20/2026: Completed [high-performance Qwen-Image-2.1 inference adaptation and optimization on Ascend](examples/qwen-image-2.1/infer.md) 🚀
@@ -85,6 +86,7 @@ The following projects have integrated MindIE SD as a multimodal inference backe
 - [vLLM Omni](https://github.com/vllm-project/vllm-omni)
 - [Cache-DiT](https://github.com/vipshop/cache-dit)
 - [Lightx2v](https://github.com/ModelTC/lightx2v)
+- [SGLang](https://github.com/sgl-project/sglang)
 
 ## 🙏 Acknowledgment
 

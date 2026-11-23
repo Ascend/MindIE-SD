@@ -37,6 +37,7 @@
 
 ## 📢 Latest News
 
+- 11/18/2026: [MindIE SD 量化注意力正式接入 SGLang 主仓](https://github.com/sgl-project/sglang/pull/46029) 🤝
 - 11/11/2026: 完成 [MiniMax-H3-Image 昇腾 Day0 推理适配](examples/minimax-h3-image/infer.md) 🚀
 - 09/23/2026: [MXAttention 论文](docs/tech_report/MXAttention.pdf) 已投稿 ICLR（[arXiv:2607.24377](https://arxiv.org/abs/2607.24377)）📄
 - 09/20/2026: 完成 [Qwen-Image-2.1 昇腾高性能推理适配与优化](examples/qwen-image-2.1/infer.md) 🚀
@@ -85,6 +86,7 @@ MindIE SD 架构和关键特性详见[架构介绍](docs/zh/architecture.md)。
 - [vLLM Omni](https://github.com/vllm-project/vllm-omni)
 - [Cache-DiT](https://github.com/vipshop/cache-dit)
 - [Lightx2v](https://github.com/ModelTC/lightx2v)
+- [SGLang](https://github.com/sgl-project/sglang)
 
 ## 🙏 Acknowledgment
 
