@@ -246,38 +246,34 @@ if _HAS_TRITON:
 
             if block_rows == 1:
                 # Process one row or a column chunk of a wide row, using a scalar gate index.
-                index = tl.load(indices_ptr + first_row * stride_indices, care_padding=False)
+                index = tl.load(indices_ptr + first_row * stride_indices)
                 # Mask columns beyond the row width in the final chunk.
                 mask = cols < width
                 # Load x and other from the current row, and gate from the indexed row, all in FP32.
-                x = tl.load(x_ptr + first_row * stride_x_row + cols, mask=mask, care_padding=False).to(tl.float32)
-                gate = tl.load(gate_ptr + index * stride_gate_row + cols, mask=mask, care_padding=False).to(tl.float32)
+                x = tl.load(x_ptr + first_row * stride_x_row + cols, mask=mask).to(tl.float32)
+                gate = tl.load(gate_ptr + index * stride_gate_row + cols, mask=mask).to(tl.float32)
                 other = tl.load(
                     other_ptr + first_row * stride_other_row + cols,
                     mask=mask,
-                    care_padding=False,
                 ).to(tl.float32)
                 # Store valid lanes only; masked lanes need no padding values for this elementwise operation.
                 tl.store(output_ptr + first_row * stride_output_row + cols, x + gate * other, mask=mask)
             else:
                 # Batch narrow rows, broadcasting each row's gate index across its columns.
                 tile_rows = first_row + tl.arange(0, block_rows)
-                indices = tl.load(indices_ptr + tile_rows * stride_indices, mask=tile_rows < rows, care_padding=False)
+                indices = tl.load(indices_ptr + tile_rows * stride_indices, mask=tile_rows < rows)
                 mask = (tile_rows[:, None] < rows) & (cols[None, :] < width)
                 x = tl.load(
                     x_ptr + tile_rows[:, None] * stride_x_row + cols[None, :],
                     mask=mask,
-                    care_padding=False,
                 ).to(tl.float32)
                 gate = tl.load(
                     gate_ptr + indices[:, None] * stride_gate_row + cols[None, :],
                     mask=mask,
-                    care_padding=False,
                 ).to(tl.float32)
                 other = tl.load(
                     other_ptr + tile_rows[:, None] * stride_other_row + cols[None, :],
                     mask=mask,
-                    care_padding=False,
                 ).to(tl.float32)
                 tl.store(
                     output_ptr + tile_rows[:, None] * stride_output_row + cols[None, :],

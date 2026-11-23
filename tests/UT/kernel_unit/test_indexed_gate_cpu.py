@@ -19,6 +19,7 @@ Compiler allocation, device arithmetic and concurrent launches remain NPU tests.
 from contextlib import contextmanager
 import importlib
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 import torch
@@ -234,6 +235,8 @@ def test_gate_original_kernel_math_and_masks(
     dut, monkeypatch, rows, width, block_rows, block_cols, programs, index_dtype
 ):
     language = install(monkeypatch, dut)
+    load = Mock(wraps=language.load)
+    monkeypatch.setattr(language, "load", load)
     # This kernel also needs the scalar minimum primitive, which other vector bodies do not use.
     monkeypatch.setattr(
         language,
@@ -274,6 +277,8 @@ def test_gate_original_kernel_math_and_masks(
         block_rows=block_rows,
         block_cols=block_cols,
     )
+    for call in load.call_args_list:
+        assert "care_padding" not in call.kwargs, "Triton-Ascend 3.6 removed care_padding from tl.load"
     torch.testing.assert_close(output, expected.to(output.dtype), rtol=0, atol=0)
     assert torch.isnan(output_storage[:, :4]).all() and torch.isnan(output_storage[:, width + 4 :]).all()
     for actual, saved in zip((x_storage, gate_storage, other_storage, indices_storage), before):
