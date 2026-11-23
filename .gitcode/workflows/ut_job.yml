@@ -35,6 +35,7 @@ jobs:
           python_3rdparty_path=/opt/buildtools/python-3.11.4/lib/python3.11/site-packages
           source /usr/local/Ascend/ascend-toolkit/set_env.sh
           export PYTHONPATH=${python_3rdparty_path}:$PYTHONPATH
+          export BUILD_JOB_NUM=32
           cd ${WORKSPACE}/build
           sh build.sh
 
