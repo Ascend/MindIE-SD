@@ -16,7 +16,9 @@ from io import StringIO
 import logging
 import stat
 import os
+from unittest import mock
 from mindiesd.utils import file_utils
+from mindiesd.utils.exception import ParametersInvalid
 from mindiesd.utils.logs.logging import logger
 
 TEST_PATH = "./test_file"
@@ -152,6 +154,83 @@ class TestFileUtils(unittest.TestCase):
         self.assertTrue(flag)
 
     # 对于权限/属主等不进行强校验，出现错误进行告警，采用日志捕获的方式进行测试
+
+    def _foreign_identity(self):
+        """Return a uid/gid pair that matches neither the owner nor the group of the test file.
+
+        The test file is created by whoever runs the tests (root or a non-root user), so the
+        identity is derived from the file itself instead of being hard-coded.
+        """
+        path_stat = os.stat(self.path_test_file_permission)
+        return path_stat.st_uid + 4242, path_stat.st_gid + 4242
+
+    def test_check_owner_by_permission_bits(self):
+        """A root-owned, world-readable installation must be usable by a non-root user."""
+        path = self.path_test_file_permission
+        os.chmod(path, 0o644)
+        uid, gid = self._foreign_identity()
+        with (
+            mock.patch("os.geteuid", return_value=uid),
+            mock.patch("os.getgid", return_value=gid),
+            mock.patch("os.getgroups", return_value=[gid]),
+            mock.patch("os.access", return_value=True) as access_mock,
+        ):
+            file_utils.check_owner(path)
+            file_utils.check_file_safety(path, permission_mode=file_utils.BINARY_FILE_PERMISSION)
+        # the owner/group fast path does not apply here, so os.access is consulted
+        access_mock.assert_called()
+
+    def test_check_owner_group_without_permission_bits(self):
+        """Being in the file's group does not help when the group permission bits deny access."""
+        path = self.path_test_file_permission
+        os.chmod(path, 0o600)
+        path_stat = os.stat(path)
+        uid, gid = self._foreign_identity()
+        with (
+            mock.patch("os.geteuid", return_value=uid),
+            mock.patch("os.getgid", return_value=gid),
+            mock.patch("os.getgroups", return_value=[gid, path_stat.st_gid]),
+            mock.patch("os.access", return_value=False),
+        ):
+            with self.assertRaises(ParametersInvalid):
+                file_utils.check_owner(path)
+
+    def test_check_owner_denied(self):
+        """Without owner/group relation nor permission bits the check must still fail."""
+        path = self.path_test_file_permission
+        os.chmod(path, 0o600)
+        uid, gid = self._foreign_identity()
+        with (
+            mock.patch("os.geteuid", return_value=uid),
+            mock.patch("os.getgid", return_value=gid),
+            mock.patch("os.getgroups", return_value=[gid]),
+            mock.patch("os.access", return_value=False),
+        ):
+            with self.assertRaises(ParametersInvalid) as ctx:
+                file_utils.check_owner(path)
+            self.assertIn("Required access: read", str(ctx.exception))
+            with self.assertRaises(ParametersInvalid):
+                file_utils.check_file_safety(path)
+
+    def test_safe_open_access_mode(self):
+        """safe_open probes write permission for writing modes and read for read-only ones."""
+        path = self.path_test_file_permission
+        os.chmod(path, 0o644)
+        checked_modes = []
+
+        def fake_check_file_safety(
+            file_path, max_file_size=None, is_check_file_size=True, permission_mode=0o640, access_mode=os.R_OK
+        ):
+            checked_modes.append(access_mode)
+
+        with mock.patch.object(file_utils, "check_file_safety", side_effect=fake_check_file_safety):
+            with file_utils.safe_open(path, "r"):
+                pass
+            with file_utils.safe_open(path, "r+"):
+                pass
+
+        self.assertEqual(checked_modes[0], os.R_OK)
+        self.assertEqual(checked_modes[1], os.R_OK | os.W_OK)
 
     def test_check_max_permission(self):
         self.enable_log_capture()
