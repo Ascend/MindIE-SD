@@ -167,12 +167,6 @@ class BsaRegularKernelArch35<BsaRegularKernelArch35QMode1, EpilogueMask2Idx, Blo
         coreIdx = AscendC::GetBlockIdx() / AscendC::GetSubBlockNum();
         EpilogueOnlineSoftmax epilogueOnlineSoftmax(resource, scaleValue_, blockShapeY_);
         EpilogueRescaleO epilogueRescaleO(resource, embed_, qHeads_);
-        constexpr bool SAVE_LSE_GM =
-            qFormat == Format::BNSD && DispatchPolicyRescaleO::LSE_MODE == Epilogue::LseMode::OUT_ONLY;
-        __ubuf__ half *lseGmUb = nullptr;
-        if constexpr (SAVE_LSE_GM) {
-            lseGmUb = epilogueRescaleO.GetBnsdLseGmUb();
-        }
         constexpr uint32_t lmUbTensorOffset = 7 * 32 * 1024;
         constexpr uint32_t gmUbTensorOffset = lmUbTensorOffset + 128 * sizeof(float);
         constexpr uint32_t dmUbTensorOffset = gmUbTensorOffset + 128 * sizeof(float);
@@ -478,10 +472,9 @@ class BsaRegularKernelArch35<BsaRegularKernelArch35QMode1, EpilogueMask2Idx, Blo
                             : kvBaseTile_;
                         nextSparseTableStartOffset += kvBaseTile_ / blockShapeY_;
                     }
-                    epilogueOnlineSoftmax.template operator()<SAVE_LSE_GM>(l1PTensorTla, gmQSTensorTla, gmKSTensorTla,
-                        actualBlockShapeQK, (gatheredKvSTileIdx == 0), isLastKvSTile, nextKvSTileSize, ubSBufId,
-                        l1PBufId, mm1ToSmFlag, smToMm2Flag, gSparseIdx[sparseTableStartOffset],
-                        gSparseIdx[nextSparseTableStartOffset], lseGmUb);
+                    epilogueOnlineSoftmax(l1PTensorTla, gmQSTensorTla, gmKSTensorTla, actualBlockShapeQK,
+                        (gatheredKvSTileIdx == 0), isLastKvSTile, nextKvSTileSize, ubSBufId, l1PBufId, mm1ToSmFlag,
+                        smToMm2Flag, gSparseIdx[sparseTableStartOffset], gSparseIdx[nextSparseTableStartOffset]);
                     if (gatheredKvSTileIdx == 0) {
                         static constexpr float fp8MaxReciprocal = 1.0f / 448.0f; // exp((half)ln(448))
                         AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID7);
