@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) Huawei Technologies Co., Ltd. 2024-2025. All rights reserved.
+# Copyright (c) Huawei Technologies Co., Ltd. 2024-2026. All rights reserved.
 # MindIE is licensed under Mulan PSL v2.
 # You can use this software according to the terms and conditions of the Mulan PSL v2.
 # You may obtain a copy of Mulan PSL v2 at:
@@ -25,10 +25,12 @@ __all__ = [
     'attention_forward_varlen',
     'fast_layernorm',
     'frequency_regulator',
+    'fir_resample1d',
     'fused_moe',
     'get_activation_layer',
     'group_norm_silu',
     'indexed_gate_rms_norm_scale_shift_dynamic_mx_quant',
+    'is_fir_resample1d_supported',
     'layernorm_scale_shift',
     'norm_rope_concat',
     'qbmm_swiglu_mxquant',
@@ -62,10 +64,12 @@ from .layers import (  # noqa: E402
     attention_forward_varlen,
     fast_layernorm,
     frequency_regulator,
+    fir_resample1d,
     fused_moe,
     get_activation_layer,
     group_norm_silu,
     indexed_gate_rms_norm_scale_shift_dynamic_mx_quant,
+    is_fir_resample1d_supported,
     layernorm_scale_shift,
     qbmm_swiglu_mxquant,
     quant_attention,

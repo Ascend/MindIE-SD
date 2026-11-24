@@ -16,6 +16,7 @@ from .flash_attn.attention_forward_varlen import attention_forward_varlen
 from .flash_attn.sparse_flash_attn import sparse_attention
 from ._custom_ops import apply_rotary_pos_emb, frequency_regulator
 from .activation import get_activation_layer
+from .fir_resample1d import fir_resample1d, is_fir_resample1d_supported
 from .norm import RMSNorm, add_layer_norm, add_rms_norm, fast_layernorm, group_norm_silu
 from .adalayernorm import layernorm_scale_shift
 from .muls_add import muls_add
@@ -49,10 +50,12 @@ __all__ = [
     "fast_layernorm",
     "eagle_ffn_linear",
     "frequency_regulator",
+    "fir_resample1d",
     "fused_moe",
     "get_activation_layer",
     "group_norm_silu",
     "indexed_gate_rms_norm_scale_shift_dynamic_mx_quant",
+    "is_fir_resample1d_supported",
     "layernorm_scale_shift",
     "muls_add",
     "qbmm_swiglu_mxquant",

@@ -76,6 +76,7 @@ MindIE SD components must be used with matching versions. Do not mix components 
 | 15   | Deployment and ecosystem extension. The vLLM-Omni joint images are aligned to base image v0.28.0 with a new variant for 950PR&950DT products; new inference deployment guides for MiniMax-H3, Qwen-Image-2.1, and DiffSynth-Engine, plus a FLUX.1-dev Cache-DiT example, are added. |
 | 16   | AdaLN indexed modulation MX quantization fused operator. Adds the public API `mindiesd.rms_norm_indexed_scale_shift_dynamic_mx_quant`, which fuses RMSNorm, the indexed AdaLN affine (`x * (1 + scale[idx]) + shift[idx]`) and 32-element dynamic MX quantization (FP8 E4M3/E5M2, FP4 E2M1/E1M2) into a single call, returning the quantized activation and E8M0 block scales for the downstream quantized matmul. |
 | 17   | Indexed gate residual AdaLN MX quantization fused operator. Adds the public API `mindiesd.indexed_gate_rms_norm_scale_shift_dynamic_mx_quant`, which fuses the gate residual (`residual + gate[idx] * branch`), RMSNorm, indexed AdaLN affine (`x * (1 + scale[idx]) + shift[idx]`) and 32-element dynamic MX quantization (FP8 E4M3, MXFP4 E2M1/E1M2) into a single call, returning the quantized result and E8M0 block scales. |
+| 18   | FIR 1D resampling operator. Adds the public API `mindiesd.fir_resample1d` for contiguous FP32 `[B, C, T]` input, a shared 12-tap filter, 2x upsampling, and replicate padding; it uses a polyphase Triton-Ascend kernel on supported Ascend NPUs and falls back to the PyTorch reference path otherwise. |
 
 ## Modified Features
 
@@ -109,6 +110,8 @@ API changes include additions, modifications, deprecations, and removals. API ch
 | def mindiesd.layers.residual_gate_add | New | Residual gate fused operator API |
 | def mindiesd.layers.rms_norm_indexed_scale_shift_dynamic_mx_quant | New | Fused RMSNorm, indexed AdaLN affine and dynamic MX quantization operator; quantization output supports FP8 E4M3/E5M2 and MXFP4 E2M1/E1M2 with E8M0 block scales |
 | def mindiesd.layers.indexed_gate_rms_norm_scale_shift_dynamic_mx_quant | New | Fused indexed gate residual RMSNorm, indexed AdaLN affine and dynamic MX quantization operator; quantization output supports FP8 E4M3 and MXFP4 E2M1/E1M2 with E8M0 block scales |
+| def mindiesd.fir_resample1d | New | FP32 FIR 1D resampling API with a shared 12-tap filter and 2x upsampling, using a Triton-Ascend optimized path with a PyTorch fallback |
+| def mindiesd.is_fir_resample1d_supported | New | Capability query indicating whether given inputs support the FIR Resample1D Triton-Ascend optimized path |
 | def mindiesd.layers.usp.usp_attention | New | USP sequence-parallel attention API (module-level export, not added to the top-level mindiesd namespace) |
 | New torch.ops.mindiesd operators | New | eagle_block_sparse_attention, eagle_quant_block_sparse_attention, quant_four_over_six_a5, mul_add, norm_rope_concat, rms_norm_indexed_scale_shift_dynamic_mx_quant, indexed_gate_rms_norm_scale_shift_dynamic_mx_quant |
 | def mindiesd.fused_moe | Modified | Parameter `tokens_full` renamed to `inputs_sharded` (default value inverted accordingly), `reduce_results` renamed to `reduce_routed_out`; new `return_dispatcher_type` parameter |
