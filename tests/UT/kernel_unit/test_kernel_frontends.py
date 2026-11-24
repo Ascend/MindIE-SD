@@ -17,21 +17,22 @@ def test_public_vector_dispatch_math(monkeypatch, enabled):
     y = x.flip(-1).clone()
     table = torch.linspace(-0.5, 0.5, 21).reshape(3, 7)
     indices = torch.tensor([2, 0, 1, 2])
-    for name in ["muls_add", "scale_shift", "residual_gate_add"]:
+    for name in ["muls_add", "scale_shift"]:
         module = importlib.import_module("mindiesd.layers." + name)
         install(monkeypatch, module)
         monkeypatch.setattr(module, "_TRITON_ON_ASCEND", enabled)
         if name == "muls_add":
             torch.testing.assert_close(module.muls_add(x, y, 0.25), x * 0.25 + y)
-        elif name == "scale_shift":
+        else:
             scale = table[indices]
             torch.testing.assert_close(module.scale_shift(x, scale, -scale), x * (1 + scale) - scale)
             torch.testing.assert_close(module.gather_scale_shift(x, table, -table, indices), x * (1 + scale) - scale)
             torch.testing.assert_close(module.gather_residual_gate(x, y, table, indices), x + y * scale)
             torch.testing.assert_close(module.swiglu(torch.cat((x, y), -1)), x * torch.nn.functional.silu(y))
-        else:
-            gate = table[:1].unsqueeze(0)
-            torch.testing.assert_close(module.residual_gate_add(x, y, gate), x + y * gate)
+
+    residual_module = importlib.import_module("mindiesd.layers.residual_gate_add")
+    gate = table[:1].unsqueeze(0)
+    torch.testing.assert_close(residual_module.residual_gate_add(x, y, gate), x + y * gate)
 
 
 def test_gather_large_width_fallback_and_swiglu_chunks(monkeypatch):
@@ -340,18 +341,15 @@ def test_rms_norm_indexed_mx_public_dispatch_and_fake(monkeypatch):
         )
 
 
-@pytest.mark.parametrize("invalid", ["rank", "branch", "gate", "empty", "device", "dtype", "stride"])
-def test_residual_launch_input_contract(monkeypatch, invalid):
+@pytest.mark.parametrize("invalid", ["rank", "branch", "gate", "empty", "device", "dtype"])
+def test_residual_public_input_contract(invalid):
     module = importlib.import_module("mindiesd.layers.residual_gate_add")
-    install(monkeypatch, module)
     x = torch.ones(2, 3, 7)
     value = x.clone()
     gate = torch.ones(2, 1, 7)
     if invalid == "rank":
         x, value, gate = x[0], value[0], gate[0]
-        torch.testing.assert_close(module._residual_gate_add_triton(x, value, gate), x + value * gate)
-        return
-    if invalid == "branch":
+    elif invalid == "branch":
         value = value[:, :2]
     elif invalid == "gate":
         gate = x.clone()
@@ -361,19 +359,25 @@ def test_residual_launch_input_contract(monkeypatch, invalid):
         gate = torch.empty(gate.shape, device="meta")
     elif invalid == "dtype":
         gate = gate.double()
-    elif invalid == "stride":
-        x, value = x.transpose(0, 1), value.transpose(0, 1)
-        gate = torch.ones(3, 1, 7)
     with pytest.raises(ValueError):
-        module._residual_gate_add_triton(x, value, gate)
+        module.residual_gate_add(x, value, gate)
+
+
+def test_residual_public_op_accepts_noncontiguous_inputs():
+    module = importlib.import_module("mindiesd.layers.residual_gate_add")
+    base = torch.linspace(-2, 3, 42).reshape(2, 7, 3)
+    x = base.transpose(1, 2)
+    value = base.flip(1).transpose(1, 2)
+    gate = torch.linspace(-0.5, 0.5, 14).reshape(2, 1, 7)
+    assert not x.is_contiguous() and not value.is_contiguous()
+    actual = module.residual_gate_add(x, value, gate)
+    torch.testing.assert_close(actual, x + value * gate)
+    assert actual.is_contiguous()
 
 
 @pytest.mark.parametrize("invalid", [None, "rank", "branch", "gate", "dtype"])
-@pytest.mark.parametrize("enabled", [False, True])
-def test_qwen_public_contract_and_math(monkeypatch, invalid, enabled):
+def test_qwen_public_contract_and_math(invalid):
     module = importlib.import_module("mindiesd.layers.residual_gate_add")
-    install(monkeypatch, module)
-    monkeypatch.setattr(module, "_TRITON_ON_ASCEND", enabled)
     x = torch.linspace(-1, 2, 42).reshape(2, 3, 7)
     branch = x.flip(-1).clone()
     gate = torch.full((2, 1, 7), 0.3)

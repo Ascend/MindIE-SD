@@ -15,7 +15,7 @@ from unittest.mock import patch
 import pytest
 import torch
 from mindiesd.layers.activation import GELU
-from mindiesd.layers.residual_gate_add import _normalize_triton_inputs
+from mindiesd.layers.residual_gate_add import _normalize_residual_gate_inputs
 from mindiesd.layers.norm import fast_layernorm
 from mindiesd.layers.moe.moe_dataclass import MoEMlpComputeInput, MoEWeights
 from mindiesd.layers.moe.moe_mlp import w8a8_dynamic_apply_mlp
@@ -87,7 +87,7 @@ def test_gelu_invalid_approximation_is_python_validation():
 def test_residual_full_sized_gate_is_python_validation():
     x = torch.randn(2, 16, 64)
     with pytest.raises(ValueError, match="gate must have shape"):
-        _normalize_triton_inputs(x, torch.randn_like(x), torch.randn_like(x))
+        _normalize_residual_gate_inputs(x, torch.randn_like(x), torch.randn_like(x))
 
 
 def test_layernorm_impl_mode_python_validation():

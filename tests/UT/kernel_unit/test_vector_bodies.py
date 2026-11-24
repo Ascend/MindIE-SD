@@ -1,4 +1,4 @@
-"""Numerical CPU execution of the unchanged Triton vector kernel bodies."""
+"""Numerical CPU execution of Triton vector kernel bodies."""
 
 import importlib
 
@@ -40,17 +40,6 @@ def test_scale_shift_and_gathers(monkeypatch, rows, width):
     torch.testing.assert_close(module._gather_residual_gate_triton(x, value, table, indices), x + value * scale)
     proj = torch.cat((x, value), dim=-1)
     torch.testing.assert_close(module._swiglu_triton(proj), x * torch.nn.functional.silu(value))
-
-
-@pytest.mark.parametrize("batch,seq,width", [(1, 1, 7), (2, 3, 33), (3, 2, 128)])
-def test_residual_gate_body(monkeypatch, batch, seq, width):
-    module = importlib.import_module("mindiesd.layers.residual_gate_add")
-    install(monkeypatch, module)
-    x = torch.linspace(-2, 3, batch * seq * width).reshape(batch, seq, width)
-    value = x.flip(-1).clone()
-    gate = torch.linspace(-0.9, 0.7, batch * width).reshape(batch, 1, width)
-    for left, right in [(value, gate), (gate, value)]:
-        torch.testing.assert_close(module._residual_gate_add_triton(x, left, right), x + value * gate)
 
 
 @pytest.mark.parametrize("rows,width,cores", [(1, 1, 1), (7, 17, 2), (3, 128, 1)])
