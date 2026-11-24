@@ -77,17 +77,34 @@ def _require_pool_headroom(nc, npool):
         )
 
 
-def pack_qk_packet(payload, scales, pool_sums, chunk, *, layout: PacketLayout, chunks: int):
+def pack_qk_packet(payload, scales, pool_sums, chunk, *, layout: PacketLayout, chunks: int, buffer=None):
     """Pack one chunk's payload, scales and live pool rows by destination."""
     W, s_local, hs = layout.world, layout.s_local, layout.hs
     payload_bytes, scale_bytes, pool_bytes = layout.payload_bytes, layout.scale_bytes, layout.pool_bytes
     per_dest, npool = layout.per_dest, layout.npool
     src_dm = payload.view(chunks, W, s_local, hs)[chunk]
+    # pylint: disable=too-many-boolean-expressions  # Complete buffer geometry is one contract.
 
-    buf = torch.empty(W, per_dest, dtype=torch.int8, device=payload.device)
+    if buffer is None:
+        buf = torch.empty(W, per_dest, dtype=torch.int8, device=payload.device)
+    else:
+        if (
+            buffer.shape != (W, per_dest)
+            or buffer.dtype != torch.int8
+            or buffer.device != payload.device
+            or buffer.stride(1) != 1
+            or buffer.stride(0) < per_dest
+            or buffer.stride(0) % 4
+        ):
+            raise ValueError("cached Q/K packet buffer must match its fixed byte layout")
+        buf = buffer
+    # pylint: enable=too-many-boolean-expressions
     bu = buf.view(torch.uint8)
 
-    bu[:, :payload_bytes].copy_(src_dm.contiguous().view(torch.uint8).reshape(W, payload_bytes))
+    destination = bu[:, :payload_bytes].view(W, s_local, hs)
+    aliases_payload = src_dm.data_ptr() == destination.data_ptr() and src_dm.stride() == destination.stride()
+    if not aliases_payload:
+        bu[:, :payload_bytes].copy_(src_dm.contiguous().view(torch.uint8).reshape(W, payload_bytes))
     bu[:, payload_bytes : payload_bytes + scale_bytes].view(torch.float32).copy_(scales[0])
     poolv = bu[:, layout.pool_off : layout.pool_off + pool_bytes].view(torch.float32).reshape(W, npool, hs)
     poolv[:, : int(pool_sums.shape[1])].copy_(pool_sums)

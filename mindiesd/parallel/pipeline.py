@@ -49,14 +49,7 @@ def _record_stream(tensors, stream):
 def _can_use_common_reverse_receive_buffer(
     result_view, mapping, precision, sparse_type, pipeline_optimizations_enabled
 ):
-    return (
-        pipeline_optimizations_enabled
-        and precision == "bf16"
-        and sparse_type == "rf_v3"
-        and mapping.bs == mapping.w == 1
-        and mapping.hs == 128
-        and result_view.device.type == "npu"
-    )
+    return pipeline_optimizations_enabled and result_view.device.type == "npu" and mapping.bs == mapping.w == 1
 
 
 def _head_major_qkv_decision(
@@ -108,6 +101,8 @@ class Chain(MixedProducer, BF16Primitives):
     __slots__ = ()
 
     def __init__(self, reorder_mapping, *, state, precision="mix", sparse_type="rf_v3", pre_rearranged=False):
+        # Initialize common state directly, then select the precision-specific buffers.
+        # pylint: disable=super-init-not-called
         _validate_attention_mode(precision, sparse_type, pre_rearranged)
         self._init_common(reorder_mapping, state, precision, sparse_type, pre_rearranged)
         if precision == "bf16":
@@ -125,20 +120,24 @@ class Chain(MixedProducer, BF16Primitives):
         dist.all_to_all_single(recv, send, group=self.group)
         counts["a2a_calls"] += 1
 
-    def run(self, q, k, v, *, scale, sparsity, inner_precise) -> tuple[torch.Tensor, dict]:
+    def run(self, q, k, v, *, scale, sparsity, inner_precise):
         """Manage execution state and dispatch precision; return output and per-call counts."""
         counts = {"allreduce": 0, "a2a_calls": 0, "fused_stages": 0}
         self._reset_call_stats()
         self.state._last_chain = None
         self.state._last_call_stats = None
         overlap = self.state.overlap_comm  # pylint: disable=no-member  # Caller supplies ParallelState.
+        tracked_execution = overlap or q.device.type == "npu"
         if overlap:
             compute = torch.npu.current_stream(q.device)
             self.state._begin_execution(compute, build=lambda: _create_comm_stream(q.device))  # pylint: disable=no-member  # Caller supplies ParallelState.
+        elif tracked_execution:
+            compute = torch.npu.current_stream(q.device)
+            self.state._begin_serial_execution(compute)
         try:
-            execute = self._run_bf16 if self.precision == "bf16" else self._run_mix
+            execute = self._run_mix if self.precision == "mix" else self._run_bf16
             result = execute(q, k, v, scale=scale, sparsity=sparsity, inner_precise=inner_precise, counts=counts)
-            if overlap:
+            if tracked_execution:
                 tail = torch.npu.Event()
                 tail.record(compute)
                 self.state._finish_execution(tail)  # pylint: disable=no-member  # Caller supplies ParallelState.
@@ -146,18 +145,40 @@ class Chain(MixedProducer, BF16Primitives):
             return result
         except Exception as error:
             error.parallel_call_counts = dict(counts)
-            if overlap:
+            if tracked_execution:
                 self.state._fail_execution()  # pylint: disable=no-member  # Caller supplies ParallelState.
             raise
+
+    def _can_overlap_scale_pool(self):
+        """Pooling reads original rows and has no dependency on the scale MAX."""
+        return self.state.overlap_comm and self.optimize_attention_pipeline
 
     def _run_mix(self, q, k, v, *, scale, sparsity, inner_precise, counts) -> tuple[torch.Tensor, dict]:
         """Quantize/pool, reduce once, repair/pack, then schedule EQBSA chunks."""
         reorder_mapping = self.reorder_mapping
 
-        vec = self.produce(q, k, v)
+        overlap_scale_pool = self._can_overlap_scale_pool()
+        vec = self.produce(q, k, v, defer_pool=overlap_scale_pool)
         counts["fused_stages"] += 1
 
-        self._all_reduce_max(vec, counts)
+        if overlap_scale_pool:
+            compute = torch.npu.current_stream(q.device)
+            comm = self.state._comm_stream
+            produced = torch.npu.Event()
+            produced.record(compute)
+            _record_stream(vec, comm)
+            with torch.npu.stream(comm):
+                comm.wait_event(produced)
+                self._all_reduce_max(vec, counts)
+                reduced = torch.npu.Event()
+                reduced.record(comm)
+            # Only the independent original-value pool sums run here. Final
+            # quantization and all packet reads remain behind the MAX event.
+            _q._pool_sums(self.st_q)
+            _q._pool_sums(self.st_k)
+            compute.wait_event(reduced)
+        else:
+            self._all_reduce_max(vec, counts)
 
         packs, v_scales = self.pack(vec)
         counts["fused_stages"] += 1
@@ -171,9 +192,10 @@ class Chain(MixedProducer, BF16Primitives):
                 gi, rq, rk, rv, v_scales, scale=scale, sparsity=sparsity
             )
             used = reorder_mapping.used_len
-            qq = q8[:, :used].index_select(1, reorder_mapping.reordered_position_to_token)  # (bs, used, 1, hs) int8
-            kk = k8[:, :used].index_select(1, reorder_mapping.reordered_position_to_token)
-            vv8 = v8_g[:, :used].index_select(1, reorder_mapping.reordered_position_to_token)
+            qq, kk, vv8 = q8[:, :used], k8[:, :used], v8_g[:, :used]
+            if not self.pre_rearranged:
+                positions = reorder_mapping.reordered_position_to_token
+                qq, kk, vv8 = (tensor.index_select(1, positions) for tensor in (qq, kk, vv8))
             out = _layers.eagle_quant_block_sparse_attention(
                 query=qq.transpose(1, 2).contiguous(),
                 key=kk.transpose(1, 2).contiguous(),
@@ -188,7 +210,10 @@ class Chain(MixedProducer, BF16Primitives):
                 value_scale=v_scale,
             )
             out = out.permute(0, 2, 1, 3).contiguous()  # BSND (metadata-only at w == 1, re-verified)
-            torch.index_select(out, 1, reorder_mapping.token_to_reordered_position, out=out_dst)
+            if self.pre_rearranged:
+                out_dst.copy_(out)
+            else:
+                torch.index_select(out, 1, reorder_mapping.token_to_reordered_position, out=out_dst)
             return out_dst
 
         bs, world, hs = reorder_mapping.bs, reorder_mapping.world, reorder_mapping.hs
@@ -292,6 +317,11 @@ class Chain(MixedProducer, BF16Primitives):
         bs, world, w, hs = mapping.bs, mapping.world, mapping.w, mapping.hs
         s_global, used = mapping.s_global, mapping.used_len
         chunk_outputs = [None] * mapping.chunking
+        reverse_receive_chunks = None
+        if _can_use_common_reverse_receive_buffer(
+            result_view, mapping, self.precision, self.sparse_type, self.optimize_attention_pipeline
+        ):
+            reverse_receive_chunks = result_view.new_empty(mapping.chunking, world, w, mapping.s_local, bs, hs)
         inputs = []
         if prepare_all is not None:
             for sq, sk, sv in sends:
@@ -316,9 +346,13 @@ class Chain(MixedProducer, BF16Primitives):
             chunk_outputs[gi] = compute_chunk(gi, rq, rk, rv, out_pad[:, :used])
 
             send = split_into_ranks(out_pad, world)
-            recv = torch.empty_like(send)
+            recv = reverse_receive_chunks[gi] if reverse_receive_chunks is not None else torch.empty_like(send)
             self._a2a(recv, send, counts)
-            result_view[:, :, :, gi * w : (gi + 1) * w, :].copy_(merge_ranks(recv))
+            if reverse_receive_chunks is None:
+                result_view[:, :, :, gi * w : (gi + 1) * w, :].copy_(merge_ranks(recv))
+        if reverse_receive_chunks is not None:
+            result_view.copy_(merge_reverse_receive_chunks(reverse_receive_chunks))
+            self.last_common_reverse_buffer_merge_calls += 1
 
     def _run_overlap(self, sends, result_view, compute_chunk, counts):
         """Queue forward transfers, compute ready chunks, then join reverse transfers."""
@@ -346,6 +380,8 @@ class Chain(MixedProducer, BF16Primitives):
                 signature = tuple(
                     (tuple(t.shape), tuple(t.stride()), t.dtype, t.device) for triple in sends for t in triple
                 )
+                # Cached buffers are validated tuple storage from the previous call.
+                # pylint: disable=unsubscriptable-object
                 cached = getattr(self, "_qkv_receive_buffer_cache", None)
                 if cached is None or cached[0] != signature:
                     buffers = [tuple(torch.empty_like(t) for t in triple) for triple in sends]
@@ -354,6 +390,7 @@ class Chain(MixedProducer, BF16Primitives):
                 else:
                     buffers = cached[1]
                     self.last_qkv_receive_reuses += 3 * len(sends)
+                # pylint: enable=unsubscriptable-object
             else:
                 buffers = (tuple(torch.empty_like(t) for t in triple) for triple in sends)
                 self.last_qkv_receive_allocations += 3 * len(sends)

@@ -25,13 +25,13 @@ import torch.distributed as dist
 
 from .flash_attn.attention_forward import attention_forward
 from .flash_attn.fused_infer_attention_score import fused_infer_attention_score_v2
+from mindiesd.comm_quant import block_dequantize, block_quantize
 
 _LAYOUTS = ("BSND", "BNSD")
 _COMM_DTYPES = ("none", "fp8_e4m3", "mxfp8")
 _COMM_TENSORS = frozenset(("q", "k", "v", "out"))
 _COMM_QUANT_SCOPES = ("exposed", "all")
 _BACKENDS = ("auto", "npu_fa", "quant_fa")
-_FP8_MAX = 448.0
 
 
 @dataclass
@@ -190,31 +190,11 @@ def _block_quantize(
     scale_override: torch.Tensor | None,
 ) -> tuple[torch.Tensor, torch.Tensor, int]:
     """Quantize each leading communication chunk independently."""
-    chunks = tensor.shape[0]
-    flat = tensor.float().reshape(chunks, -1)
-    original_width = flat.shape[1]
-    padded_width = math.ceil(original_width / block_size) * block_size
-    if padded_width != original_width:
-        flat = torch.nn.functional.pad(flat, (0, padded_width - original_width))
-    blocks = flat.reshape(chunks, -1, block_size)
-    scales = blocks.abs().amax(dim=-1).clamp_min(torch.finfo(torch.float32).tiny) / _FP8_MAX
-    if comm_dtype == "mxfp8":
-        scales = torch.pow(2.0, torch.ceil(torch.log2(scales)))
-    if scale_override is not None:
-        if not isinstance(scale_override, torch.Tensor):
-            raise USPShapeError("communication scale overrides must be torch.Tensor values.")
-        if scale_override.numel() == 1:
-            scales = scale_override.to(device=tensor.device, dtype=torch.float32).expand_as(scales)
-        elif tuple(scale_override.shape) == tuple(scales.shape):
-            scales = scale_override.to(device=tensor.device, dtype=torch.float32)
-        else:
-            raise USPShapeError(
-                f"scale override must be scalar or have shape {tuple(scales.shape)}, "
-                f"but got {tuple(scale_override.shape)}."
-            )
-    quantized = (blocks / scales.unsqueeze(-1)).clamp(-_FP8_MAX, _FP8_MAX).to(_get_fp8_dtype())
-    quantized = quantized.reshape(chunks, padded_width)
-    return quantized, scales.contiguous(), original_width
+    _get_fp8_dtype()
+    try:
+        return block_quantize(tensor, block_size, comm_dtype, scale_override=scale_override)
+    except ValueError as error:
+        raise USPShapeError(str(error)) from error
 
 
 def _block_dequantize(
@@ -224,9 +204,7 @@ def _block_dequantize(
     shape: torch.Size,
     dtype: torch.dtype,
 ) -> torch.Tensor:
-    block_size = quantized.shape[1] // scales.shape[1]
-    output = quantized.float().reshape(scales.shape[0], -1, block_size) * scales.unsqueeze(-1)
-    return output.reshape(scales.shape[0], -1)[:, :original_width].reshape(shape).to(dtype)
+    return block_dequantize(quantized, scales, original_width, shape, dtype)
 
 
 def _all_to_all(

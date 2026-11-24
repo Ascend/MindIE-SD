@@ -38,8 +38,8 @@ def _validate_attention_mode(precision, sparse_type, pre_rearranged):
         raise ValueError("precision must be 'mix' or 'bf16', got %r" % precision)
     if sparse_type not in ("rf_v2", "rf_v3"):
         raise ValueError("sparse_type must be 'rf_v2' or 'rf_v3', got %r" % sparse_type)
-    if pre_rearranged and (precision != "bf16" or sparse_type != "rf_v3"):
-        raise ValueError("pre_rearranged=True requires precision='bf16' and sparse_type='rf_v3'")
+    if pre_rearranged and (precision not in ("bf16", "mix") or sparse_type != "rf_v3"):
+        raise ValueError("pre_rearranged=True requires BF16/mix RF-v3")
     if precision == "mix" and sparse_type != "rf_v3":
         raise ValueError("precision='mix' requires sparse_type='rf_v3'")
 

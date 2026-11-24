@@ -89,7 +89,8 @@ def test_mixed_producer_builds_one_reduce_operand_and_all_chunk_payloads(produce
         assert torch.equal(value_scale, chain.take_v_scale(v_scales, chunk))
         assert mask.dtype == torch.int8
     retained = chain.retained_blocks["retained"]
-    chain.make_mask(prepared[-1].float(), prepared[-1].float(), scale=1.0, sparsity=0.5)
+    pool_q, pool_k = chain.unpacker.unpack_pair_batched(packs[0][0], packs[0][1])[-2:]
+    chain.make_mask(pool_q, pool_k, scale=1.0, sparsity=0.5)
     assert chain.retained_blocks["retained"] is retained
 
 
@@ -112,3 +113,140 @@ def test_execution_record_stream_helper_covers_nested_tensors_when_available(pro
         pytest.skip("execution dependency is not installed yet")
     value = DeviceTensor.wrap(torch.ones(1))
     producer.modules["pipeline"]._record_stream((value, [value]), object())
+
+
+@pytest.fixture
+def pure(producer):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(packet=producer.modules["packet"], quant=producer.modules["distributed_quant"])
+
+
+@pytest.mark.parametrize("pre_rearranged", [False, True])
+@pytest.mark.parametrize("rank", [0, 1])
+def test_optimized_producer_quantizes_once_after_global_max(producer, monkeypatch, pre_rearranged, rank):
+    """Avoid provisional writes while preserving final scales, payloads and pools."""
+    reference = producer.build(rank=rank, pre_rearranged=pre_rearranged, optimize=False)
+    optimized = producer.build(rank=rank, pre_rearranged=pre_rearranged, optimize=True)
+    torch.manual_seed(42)
+    tensors = [(torch.randn(1, 68, 4, 2) * 3).to(torch.bfloat16) for _ in range(3)]
+    vector = reference.produce(*tensors) * 2
+    reference.pack(vector)
+    quant = producer.modules["distributed_quant"]
+    original = quant._quantize_into
+    calls = []
+
+    def counted(state):
+        calls.append(state)
+        return original(state)
+
+    monkeypatch.setattr(quant, "_quantize_into", counted)
+    actual_vector = optimized.produce(*tensors) * 2
+    assert not calls, "provisional Q/K quantization is overwritten after MAX"
+    assert torch.equal(actual_vector, vector)
+    optimized.pack(actual_vector)
+    assert calls == [optimized.st_q, optimized.st_k]
+    for actual, expected in [(optimized.st_q, reference.st_q), (optimized.st_k, reference.st_k)]:
+        for name in ["payload", "scales", "pool_sum"]:
+            assert torch.equal(getattr(actual, name), getattr(expected, name))
+
+
+def test_mixed_mask_reuses_device_retention_and_two_pool_parts(producer, monkeypatch):
+    from cpu_support import native_rf_functions
+
+    stock = native_rf_functions()["get_multi_span_blockwise_mask"]
+    chain = producer.build(optimize=True)
+    chain.reorder_mapping.token_block_mapping["dense_blocks"] = {2}
+    chain.reorder_mapping.token_block_mapping["first_frame_blocks"] = {5}
+    calls = []
+
+    def observed(*args, **kwargs):
+        calls.append(kwargs)
+        return stock(*args, **kwargs)
+
+    monkeypatch.setattr(producer.layers, "get_multi_span_blockwise_mask", observed)
+    torch.manual_seed(42)
+    q, k = [torch.randn(1, 16, 1, 2).to(torch.bfloat16) for _ in range(2)]
+    expected = stock(torch.cat((q, k, k)), 0.7, 0.25, {2}, {5}, "BSND", return_binary=True)
+    first = chain.make_mask(q, k, scale=0.25, sparsity=0.7)
+    second = chain.make_mask(q, k, scale=0.25, sparsity=0.7)
+    assert torch.equal(first, expected) and torch.equal(second, expected)
+    assert calls[0]["pool_parts"] == 2
+    assert calls[0]["retained_idx"].numel() == 0
+    assert calls[0]["retained_mask"] is calls[1]["retained_mask"]
+
+
+@pytest.mark.parametrize("rank", [0, 1])
+def test_mixed_pack_reuses_buffers_and_updates_valid_fields(producer, rank):
+    actual_chains = [producer.build(rank=source, optimize=True) for source in range(2)]
+    reference_chains = [producer.build(rank=source, optimize=False) for source in range(2)]
+    torch.manual_seed(42)
+    first = [(torch.randn(1, 68, 4, 2) * 3).to(torch.bfloat16) for _ in range(3)]
+    initial = [chain.pack(chain.produce(*first))[0] for chain in actual_chains]
+    pointers = [(q.data_ptr(), k.data_ptr()) for q, k in initial[rank]]
+    second = [tensor * 1.5 for tensor in first]
+    actual_vectors = [chain.produce(*second) for chain in actual_chains]
+    reference_vectors = [chain.produce(*second) for chain in reference_chains]
+    shared_actual = torch.maximum(*actual_vectors)
+    shared_reference = torch.maximum(*reference_vectors)
+    actual = [chain.pack(shared_actual)[0] for chain in actual_chains]
+    expected = [chain.pack(shared_reference)[0] for chain in reference_chains]
+    assert [(q.data_ptr(), k.data_ptr()) for q, k in actual[rank]] == pointers
+    for chunk in range(2):
+        received_actual = [
+            torch.stack([actual[source][chunk][field][rank] for source in range(2)]) for field in range(2)
+        ]
+        received_expected = [
+            torch.stack([expected[source][chunk][field][rank] for source in range(2)]) for field in range(2)
+        ]
+        got = actual_chains[rank].unpacker.unpack_pair_batched(*received_actual)
+        want = reference_chains[rank].unpacker.unpack_pair_batched(*received_expected)
+        assert all(torch.equal(a, b) for a, b in zip(got, want))
+
+
+@pytest.mark.parametrize('rank', [0, 1])
+def test_direct_producer_preserves_all_received_fields_across_calls(producer, monkeypatch, rank):
+    actual = [producer.build(rank=r, optimize=True) for r in range(2)]
+    expected = [producer.build(rank=r, optimize=False) for r in range(2)]
+    monkeypatch.setattr(type(actual[0]), '_can_write_direct_packet', lambda self: self.optimize_attention_pipeline)
+    torch.manual_seed(72)
+    inputs = [(torch.randn(1, 68, 4, 2) * 3).to(torch.bfloat16) for _ in range(3)]
+    pointers = None
+    for repeat in range(2):
+        values = [v * (repeat + 1) for v in inputs]
+        va = [c.produce(*values) for c in actual]
+        ve = [c.produce(*values) for c in expected]
+        pa = [c.pack(torch.maximum(*va)) for c in actual]
+        pe = [c.pack(torch.maximum(*ve)) for c in expected]
+        sends = []
+        for i, chain in enumerate(actual):
+            vbytes = chain.pack_v(values[2], pa[i][1])
+            sends.append([(q, k, vbytes[j]) for j, (q, k) in enumerate(pa[i][0])])
+            assert all(t.is_contiguous() for triple in sends[-1] for t in triple)
+            wire = chain._direct_qkv_send
+            assert wire.ndim == 1
+            q_packet, k_packet = chain._qk_packet_buffers
+            assert k_packet.data_ptr() - q_packet.data_ptr() == q_packet.numel()
+            assert vbytes.data_ptr() - k_packet.data_ptr() == k_packet.numel()
+            assert (
+                chain.st_q.payload.untyped_storage().data_ptr() == chain._direct_qkv_send.untyped_storage().data_ptr()
+            )
+        current = [c._direct_qkv_send.data_ptr() for c in actual]
+        if pointers is not None:
+            assert current == pointers
+        pointers = current
+        for chunk in range(2):
+            got_packets = [torch.stack([sends[src][chunk][field][rank] for src in range(2)]) for field in range(2)]
+            ref_packets = [torch.stack([pe[src][0][chunk][field][rank] for src in range(2)]) for field in range(2)]
+            got = actual[rank].unpacker.unpack_pair_batched(*got_packets)
+            want = expected[rank].unpacker.unpack_pair_batched(*ref_packets)
+            assert all(torch.equal(a, b) for a, b in zip(got, want))
+            expected_v = [expected[src].pack_v(values[2], pe[src][1])[chunk][rank] for src in range(2)]
+            assert torch.equal(torch.stack([sends[src][chunk][2][rank] for src in range(2)]), torch.stack(expected_v))
+
+
+def test_optimized_mix_rejects_old_mask_helper_before_collectives(producer, monkeypatch):
+    monkeypatch.setattr(producer.layers, "get_multi_span_blockwise_mask", lambda pooled, sparsity, scale: pooled)
+    with pytest.raises(RuntimeError, match="matching RF mask helper"):
+        producer.build(optimize=True)
+    assert not producer.events

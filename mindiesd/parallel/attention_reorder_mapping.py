@@ -7,7 +7,6 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-
 """Cache RF token permutation and per-rank quantization/pool ownership."""
 
 from __future__ import annotations
@@ -55,7 +54,11 @@ def _get_cached_reorder_mapping(cache: dict, key: tuple, config: ParallelConfig)
     config_ok = (
         isinstance(getattr(reorder_mapping, "config", None), ParallelConfig) and reorder_mapping.config.key == key[0]
     )
-    mapping_ok = isinstance(token_block_mapping, dict) and token_block_mapping.get("used_len") == int(config.used_len)
+    mapping_ok = (
+        isinstance(token_block_mapping, dict)
+        and token_block_mapping.get("used_len") == int(config.used_len)
+        and token_block_mapping.get("pre_rearranged", False) == (len(key) == 3)
+    )
     device_ok = (
         isinstance(reordered_position_to_token, torch.Tensor) and str(reordered_position_to_token.device) == key[1]
     )
@@ -94,7 +97,7 @@ def _assert_pool_cover(token_to_reordered_position, pool_cell_token_counts, rank
         lo, hi = int(p["tok_lo"]), int(p["tok_hi"])
         if hi <= lo:
             continue
-        toks = torch.arange(lo, hi, device=dev, dtype=torch.int64)
+        toks = torch.arange(lo, max(lo, hi), device=dev, dtype=torch.int64)
         c = torch.div(token_to_reordered_position[toks], P, rounding_mode="floor")
         total += torch.bincount(c, minlength=ncell)
         touched = torch.unique(c)
@@ -113,9 +116,13 @@ def _assert_pool_cover(token_to_reordered_position, pool_cell_token_counts, rank
         )
 
 
-def _build_rank_block_mapping(used_len: int, spans, spans_key, s_local: int, world: int, device, cache=None):
+def _build_rank_block_mapping(
+    used_len: int, spans, spans_key, s_local: int, world: int, device, cache=None, *, pre_rearranged=False
+):
     """Build or reuse token reorder and per-rank block/cell ownership."""
     key = (int(used_len), spans_key, int(s_local), int(world), str(device))
+    if pre_rearranged:
+        key += (True,)
     if cache is not None:
         hit = cache.get(key)
         if hit is not None:
@@ -139,7 +146,10 @@ def _build_rank_block_mapping(used_len: int, spans, spans_key, s_local: int, wor
     if used_len % QUANT_BLOCK:
         blk_len[-1] = used_len % QUANT_BLOCK
     # A boundary block has more than one rank owner and needs a shared scale.
-    owner_of_pos = torch.div(reordered_position_to_token, s_local, rounding_mode="floor")
+    rf_positions = torch.arange(used_len, device=device) if pre_rearranged else None
+    row_at_position = rf_positions if pre_rearranged else reordered_position_to_token
+    position_of_row = rf_positions if pre_rearranged else token_to_reordered_position
+    owner_of_pos = torch.div(row_at_position, s_local, rounding_mode="floor")
     n_pad = nblk * QUANT_BLOCK - used_len
     ob = torch.cat([owner_of_pos, owner_of_pos.new_full((n_pad,), int(owner_of_pos[-1]))])
     ob = ob.reshape(nblk, QUANT_BLOCK)
@@ -158,6 +168,7 @@ def _build_rank_block_mapping(used_len: int, spans, spans_key, s_local: int, wor
 
     token_block_mapping = {
         "used_len": int(used_len),
+        "pre_rearranged": pre_rearranged,
         "reordered_position_to_token": reordered_position_to_token,
         "token_to_reordered_position": token_to_reordered_position,
         "nblk": nblk,
@@ -171,8 +182,8 @@ def _build_rank_block_mapping(used_len: int, spans, spans_key, s_local: int, wor
     rank_mappings = []
     for r in range(world):
         lo, hi, n_tok = topology.derive_rank_window(r, s_local, used_len)
-        toks = torch.arange(lo, hi, device=device, dtype=torch.int64)
-        pos = token_to_reordered_position[toks]
+        toks = torch.arange(lo, max(lo, hi), device=device, dtype=torch.int64)
+        pos = position_of_row[toks]
         b = torch.div(pos, QUANT_BLOCK, rounding_mode="floor")
         c = torch.div(pos, POOL_BLOCK, rounding_mode="floor")
         order = torch.argsort(b, stable=True)
@@ -202,7 +213,7 @@ def _build_rank_block_mapping(used_len: int, spans, spans_key, s_local: int, wor
     for p in rank_mappings:
         _assert_owned_order(p)
     _assert_pool_cover(
-        token_to_reordered_position,
+        position_of_row,
         token_block_mapping["pool_cell_token_counts"],
         rank_mappings,
         token_block_mapping["ncell"],
@@ -257,11 +268,15 @@ def _canonical_spans(spans_norm):
     return [{"start": start, "latent_shape": shape} for start, shape, _length in spans_norm]
 
 
-def get_attention_reorder_mapping(config, device, token_block_mapping_cache=None, reorder_mapping_cache=None):
+def get_attention_reorder_mapping(
+    config, device, token_block_mapping_cache=None, reorder_mapping_cache=None, *, pre_rearranged=False
+):
     """Get a mapping keyed by the full configuration and device."""
     # The complete mapping key includes the parallel configuration and device.  The underlying
     # token/block mapping has a separate key that depends only on the sequence partition and spans.
     key = None if reorder_mapping_cache is None else (config.key, str(device))
+    if key is not None and pre_rearranged:
+        key += (True,)
     if key is not None:
         hit = _get_cached_reorder_mapping(reorder_mapping_cache, key, config)
         if hit is not None:
@@ -276,6 +291,7 @@ def get_attention_reorder_mapping(config, device, token_block_mapping_cache=None
         config.world,
         device,
         cache=token_block_mapping_cache,
+        pre_rearranged=pre_rearranged,
     )
 
     reorder_mapping = AttentionReorderMapping(config=config, token_block_mapping=token_block_mapping)

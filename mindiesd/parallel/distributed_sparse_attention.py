@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-import sys
+import logging
 
 import torch
 
@@ -23,6 +23,8 @@ from .config import (
 from .state import ParallelState, _copy_stats
 
 __all__ = ["distributed_sparse_attention"]
+
+logger = logging.getLogger("mindie-sd")
 
 _CONFIG_STATS_FIELDS = ("used_len", "s_global", "s_local", "hc", "hs", "bs", "world", "chunking", "head_groups", "w")
 
@@ -117,7 +119,7 @@ def distributed_sparse_attention(
 
     if pstate.bsa_backend == "eagle" and sparse_type != "rf_v3":
         raise ValueError("bsa_backend='eagle' requires sparse_type='rf_v3'")
-    if not pstate.optimize_attention_pipeline:
+    if not pstate.optimize_attention_pipeline and precision == "bf16":
         pstate.token_block_mapping_cache.clear()
         pstate.reorder_mapping_cache.clear()
         pstate.chains.clear()
@@ -127,6 +129,7 @@ def distributed_sparse_attention(
         q.device,
         token_block_mapping_cache=pstate.token_block_mapping_cache,
         reorder_mapping_cache=pstate.reorder_mapping_cache,
+        pre_rearranged=precision == "mix" and pre_rearranged,
     )
 
     chain = pstate.chain(
@@ -151,28 +154,14 @@ def distributed_sparse_attention(
         _require_collective_counts(call_counts, precision, config.chunking)
     except RuntimeError:
         pstate._last_chain = None
-        if pstate.overlap_comm:
+        if pstate.overlap_comm or q.device.type == "npu":
             pstate._fail_execution()
         raise
-    allreduce = call_counts["allreduce"]
 
     pstate._record_call(config.key, precision, sparse_type, call_counts)
     if not pstate.marker_printed:
         pstate.marker_printed = True
-        _say(
-            "rank=%d FUSED PRODUCER ENGAGED chunks=%d world=%d s_local=%d "
-            "used_len=%d nboundary=%d consumer=%s allreduce=%d"
-            % (
-                config.rank,
-                config.chunking,
-                config.world,
-                config.s_local,
-                config.used_len,
-                reorder_mapping.num_cross_rank_quant_blocks,
-                consumer,
-                allreduce,
-            )
-        )
+        logger.debug("[parallel] rank=%d world=%d mode=%s/%s", config.rank, config.world, sparse_type, precision)
 
     stats = _build_stats(
         config,
@@ -269,9 +258,3 @@ def _build_actual_stats(pstate, precision, sparse_type):
         "qkv_receive_reuses": getattr(chain, "last_qkv_receive_reuses", 0),
         "qkv_layout_fallback_reason": fallback_reason,
     }
-
-
-def _say(msg):
-    """One diagnostic line on stderr, prefixed with the package name."""
-    sys.stderr.write("[mindiesd.parallel] %s\n" % (msg,))
-    sys.stderr.flush()

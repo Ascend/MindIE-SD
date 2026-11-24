@@ -7,7 +7,6 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-
 """Distributed Q/K INT8 and V FP8 quantization.
 
 One global MAX reduction repairs scales for 64-token blocks split across ranks and also carries
@@ -198,11 +197,15 @@ def make_quant_state(
     )
 
 
-def _gather_into_block_order(x, st):
+def _gather_into_block_order(x, st, *, source_identity=False):
     """``x``: [1, n_tok, hc, hs] bf16 in the rank's token order -> ``st.payload_padded``, zero-padded."""
     m = st.maps
     st.payload_padded.zero_()
-    st.payload_padded.index_copy_(0, m.padded_row, x[0].index_select(0, m.src))
+    if source_identity and x.untyped_storage().data_ptr() != st.payload_padded.untyped_storage().data_ptr():
+        rows = x[0, : m.n_owned]
+    else:
+        rows = x[0].index_select(0, m.src)
+    st.payload_padded.index_copy_(0, m.padded_row, rows)
 
 
 def _block_amax(st):
@@ -256,10 +259,10 @@ def _quantize_into(st):
     return st.payload
 
 
-def _emit_amax(st, x=None):
+def _emit_amax(st, x=None, *, source_identity=False):
     """Emit local amax values only at globally assigned boundary entries."""
     if x is not None:
-        _gather_into_block_order(x, st)
+        _gather_into_block_order(x, st, source_identity=source_identity)
     m = st.maps
     _block_amax(st)
     if m.np_local:
@@ -267,9 +270,9 @@ def _emit_amax(st, x=None):
     return st.boundary_amax
 
 
-def quantize_amax_for_allreduce(x, st):
+def quantize_amax_for_allreduce(x, st, *, source_identity=False):
     """Gather rows and produce this rank's boundary amax reduction operand."""
-    return _emit_amax(st, x)
+    return _emit_amax(st, x, source_identity=source_identity)
 
 
 def quantize_and_pool_for_amax(x, st, emit_amax=True, pool_sums=True, gather=True):
@@ -349,3 +352,45 @@ def from_send(rv):
     world, s_local, bs, _w, hs = rv.shape
     s_global = world * s_local
     return rv.reshape(s_global, bs, hs).transpose(0, 1).contiguous().reshape(bs, s_global, 1, hs)
+
+
+def _quantize_into_fast(st):
+    """Use A5 fusion without changing the eager CPU or other-device contract."""
+    if st.payload.device.type != "npu":
+        return _quantize_into(st)
+    from ._layers import is_a5_device
+
+    if not is_a5_device():
+        return _quantize_into(st)
+    try:
+        from ._quantized_payload_kernels import quantize
+    except ImportError:
+        return _quantize_into(st)
+    return quantize(st)
+
+
+def _to_send_fast(value, divisor, chunks, world, out=None):
+    """Fuse FP8 scaling and layout writes on A5, preserving source strides."""
+    if value.device.type != "npu":
+        result = to_send(value, divisor, chunks, world)
+        if out is not None:
+            out.copy_(result)
+            return out
+        return result
+    from ._layers import is_a5_device
+
+    if not is_a5_device():
+        result = to_send(value, divisor, chunks, world)
+        if out is not None:
+            out.copy_(result)
+            return out
+        return result
+    try:
+        from ._quantized_payload_kernels import v_send
+    except ImportError:
+        result = to_send(value, divisor, chunks, world)
+        if out is not None:
+            out.copy_(result)
+            return out
+        return result
+    return v_send(value, divisor, chunks, world, out=out)

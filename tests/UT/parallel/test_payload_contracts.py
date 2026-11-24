@@ -115,3 +115,22 @@ def test_a_subnormal_v_input_flushes_to_positive_zero(quant):
     divisor = torch.full((1, 1, 2), small, dtype=torch.float32)
     got = quant.to_send(subnormal, divisor, 1, 1).view(torch.uint8).reshape(-1)
     assert got.tolist() == [0x00, 0x00, 0x00, 0x00]
+
+
+def test_fast_helpers_preserve_other_device_fallback(quant, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from cpu_support import DeviceTensor
+
+    x, owner = make_boundary_owner(1.0, 0)
+    state = quant.make_quant_state(owner, 2, 4, 1, 32, torch.device("cpu"), 4, head_row=None)
+    quant.quantize_and_pool_for_amax(x, state)
+    expected = state.payload.clone()
+    state.payload = DeviceTensor.wrap(state.payload)
+    monkeypatch.setitem(sys.modules, quant.__package__ + "._layers", SimpleNamespace(is_a5_device=lambda: False))
+    assert torch.equal(quant._quantize_into_fast(state), expected)
+    divisor = torch.ones(1, 2, 4)
+    expected = quant.to_send(x, divisor, 1, 2)
+    output = torch.empty_like(expected)
+    actual = quant._to_send_fast(DeviceTensor.wrap(x), divisor, 1, 2, out=output)
+    assert actual.data_ptr() == output.data_ptr() and torch.equal(actual, expected)

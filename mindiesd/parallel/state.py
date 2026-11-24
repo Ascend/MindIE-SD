@@ -109,6 +109,14 @@ class ParallelState:
         key = (reorder_mapping.config.key, precision, sparse_type)
         if pre_rearranged:
             key += (True,)
+        # Independent mix baseline retains only the current geometry.
+        if not self.optimize_attention_pipeline and precision == "mix" and key not in self.chains:
+            self._check_execution()
+            if self._last_execution_event is not None:
+                self._last_execution_event.synchronize()
+            self.chains.clear()
+            self.token_block_mapping_cache.clear()
+            self.reorder_mapping_cache.clear()
         chain = self.chains.get(key)
         if chain is None:
             order_kwargs = {"pre_rearranged": True} if pre_rearranged else {}
@@ -213,6 +221,17 @@ class ParallelState:
                 self._execution_active = False
             else:
                 self._fail_execution()
+            raise
+
+    def _begin_serial_execution(self, compute_stream):
+        """Protect cached baseline buffers across compute streams without a comm stream."""
+        self._check_execution()
+        self._execution_active = True
+        try:
+            if self._last_execution_event is not None:
+                compute_stream.wait_event(self._last_execution_event)
+        except Exception:
+            self._fail_execution()
             raise
 
     def _finish_execution(self, event):
