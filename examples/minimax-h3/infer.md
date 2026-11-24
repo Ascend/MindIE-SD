@@ -24,7 +24,7 @@ MiniMax-H3/
 └── model_index.json
 ```
 
-4 步 FlashGen 推理使用在线 LoRA 加载，无需合并权重；LoRA 权重见[FlashGen 4 步在线 LoRA（T2VA）](#flashgen-4-步在线-lorat2va)。
+4 步 FlashGen 推理使用在线 LoRA 加载，无需合并权重；LoRA 权重见[FlashGen 4 步在线 LoRA](#flashgen-4-步在线-lora)。
 
 ### 部署环境
 
@@ -160,7 +160,7 @@ vllm serve "${MODEL}" \
   --vae-patch-parallel-size 8 \
   --enable-distributed-layerwise-offload \
   --enable-diffusion-pipeline-profiler \
-  --diffusion-attention-backend FLASH_ATTN 
+  --diffusion-attention-backend FLASH_ATTN
 ```
 
 #### 推荐有损优化配置
@@ -246,7 +246,7 @@ vllm serve "${MODEL}" \
   --vae-patch-parallel-size 4 \
   --enable-diffusion-pipeline-profiler \
   --enable-distributed-layerwise-offload \
-  --diffusion-attention-backend FLASH_ATTN 
+  --diffusion-attention-backend FLASH_ATTN
 ```
 
 #### 推荐有损优化配置（Ascend 950PR&950DT系列产品）
@@ -276,7 +276,7 @@ vllm serve "${MODEL}" \
   --vae-patch-parallel-size 4 \
   --enable-diffusion-pipeline-profiler \
   --diffusion-attention-config '{"default":{"backend":"RAINFUSION_ATTN","block_sparse":{"sparsity":0.8,"precision":"mix","start_step":8,"end_step":12}}}' \
-  --diffusion-quantization-config '{"transformer":{"method":"mxfp8"}}' 
+  --diffusion-quantization-config '{"transformer":{"method":"mxfp8"}}'
 ```
 
 #### 其他可选性能优化配置（Ascend 950PR&950DT系列产品）
@@ -318,7 +318,7 @@ EQBSA 在块稀疏注意力基础上采用 Q/K INT8 与 V FP8 混合量化。将
 在启动命令末尾追加以下参数，使能Dit的在线mxfp4量化：
 
 ```bash
-  --diffusion-quantization-config '{"transformer":{"method":"mxfp4"}}' 
+  --diffusion-quantization-config '{"transformer":{"method":"mxfp4"}}'
 ```
 
 并且删除以下参数：
@@ -415,22 +415,31 @@ curl -sS -D "$HDR_FILE" -X POST "${API_URL}" \
 | `short_edge` | `int` | 与 `width`/`height` 二选一 | 输出短边长度（像素），FL2VA / Ref2VA 示例采用此方式 |
 | `aspect_ratio` | `str` | 否 | 输出宽高比（如 `16:9`），与 `short_edge` 搭配使用 |
 | `fps` | `int` | 否 | 输出帧率 |
-| `num_inference_steps` | `int` | 否 | 去噪推理步数；基座默认 50 步；FlashGen 在线 LoRA 须为 `4`，见[FlashGen 4 步在线 LoRA（T2VA）](#flashgen-4-步在线-lorat2va) |
+| `num_inference_steps` | `int` | 否 | 去噪推理步数；基座默认 50 步；FlashGen 在线 LoRA 须为 `4`，见[FlashGen 4 步在线 LoRA](#flashgen-4-步在线-lora) |
 | `flow_shift` | `float` | 否 | 视频流偏移参数 |
 | `audio_flow_shift` | `float` | 否 | 音频流偏移参数 |
 | `seed` | `int` | 否 | 随机种子 |
 | `extra_params.task` | `str` | 是 | 任务类型：`t2va` / `fl2va` / `ref2va` |
 | `extra_params.duration` | `float` | 否 | 生成音视频时长（秒），最高 15 秒 |
-| `input_references` | `file` | 否 | 参考输入文件：FL2VA 传首帧图像（`image/png` 等），Ref2VA 传参考视频/音频（`video/mp4` 等） |
-| `lora` | `str` (JSON) | 否 | 在线 LoRA 配置；FlashGen 4 步须传 `name` / `path` / `scale`，见[FlashGen 4 步在线 LoRA（T2VA）](#flashgen-4-步在线-lorat2va) |
+| `extra_params.frame_indices` | `list[int]` | 否 | 仅用于 FL2VA，按上传顺序指定参考图像的位置。单图默认首帧 `[0]`，末帧用 `[-1]`，双图首尾帧用 `[0,-1]` |
+| `input_references` | `file` | FL2VA、Ref2VA 示例必传 | FL2VA 传参考帧图像，Ref2VA 传参考图像、视频或音频。上传多个文件时，重复使用此字段 |
+| `lora` | `str` (JSON) | 否 | 在线 LoRA 配置；FlashGen 4 步须传 `name` / `path` / `scale`，见[FlashGen 4 步在线 LoRA](#flashgen-4-步在线-lora) |
 
-## FlashGen 4 步在线 LoRA（T2VA）
+## FlashGen 4 步在线 LoRA
 
-FlashGen 4 步权重为 native-layout LoRA 单文件（`key_format=minimax-h3-native`），通过 vLLM-Omni **运行时加载**，无需 merge 进基座。
+FlashGen 4 步权重为 native-layout LoRA 单文件（`key_format=minimax-h3-native`），通过 vLLM-Omni **运行时加载**，无需合并到基座。
 
-权重发布于 ModelScope：[FlashGen/Minimax-H3-4step-lora-flashgen](https://modelscope.cn/models/FlashGen/Minimax-H3-4step-lora-flashgen)
+FL2VA 和 Ref2VA（R2VA）需要包含 [vLLM-Omni #10596](https://github.com/vllm-project/vllm-omni/pull/10596) 中 FlashGen 适配代码的版本。T2VA 和 FL2VA 共用基座。每个场景需加载该场景专用的 LoRA 文件。
 
-### 下载 LoRA
+| 场景 | 基座目录（相对于 `MODEL_ROOT`） | 启动参数 `--task-type` | 请求中的 `extra_params.task` | 示例参考输入 |
+| ------ | ------ | ------ | ------ | ------ |
+| T2VA 文生音视频 | `FL2VA/` | `fl2va` | `t2va` | 无 |
+| FL2VA 首帧生成音视频 | `FL2VA/` | `fl2va` | `fl2va` | 一张首帧图像 |
+| Ref2VA（R2VA）参考生成音视频 | `Ref2VA/` | `ref2va` | `ref2va` | 一张参考图像 |
+
+### 准备 LoRA
+
+T2VA 权重可从 ModelScope 的 [FlashGen/Minimax-H3-4step-lora-flashgen](https://modelscope.cn/models/FlashGen/Minimax-H3-4step-lora-flashgen) 下载。
 
 ```bash
 pip install modelscope
@@ -442,7 +451,31 @@ modelscope download FlashGen/Minimax-H3-4step-lora-flashgen \
 export FLASHGEN_LORA="${FLASHGEN_DIR}/${FLASHGEN_FILE}"
 ```
 
-### 启动服务（在推荐配置基础上追加）
+FL2VA 权重从独立的 [FlashGen/Minimax-H3-FL2VA-4step-lora-flashgen](https://modelscope.cn/models/FlashGen/Minimax-H3-FL2VA-4step-lora-flashgen) 仓库下载：
+
+```bash
+export FLASHGEN_FILE=minimax_h3_fl2va_flashgen_4step_v1.0_768p_bf16.safetensors
+modelscope download FlashGen/Minimax-H3-FL2VA-4step-lora-flashgen \
+  --local_dir "${FLASHGEN_DIR}" \
+  --include "${FLASHGEN_FILE}"
+export FLASHGEN_LORA="${FLASHGEN_DIR}/${FLASHGEN_FILE}"
+```
+
+Ref2VA 权重从独立的 [FlashGen/Minimax-H3-Re2VA-4step-lora-flashgen](https://modelscope.cn/models/FlashGen/Minimax-H3-Re2VA-4step-lora-flashgen) 仓库下载。注意仓库名使用 `Re2VA`，权重文件名使用 `ref2va`：
+
+```bash
+export FLASHGEN_FILE=minimax_h3_ref2va_flashgen_4step_v1.0_768p_bf16.safetensors
+modelscope download FlashGen/Minimax-H3-Re2VA-4step-lora-flashgen \
+  --local_dir "${FLASHGEN_DIR}" \
+  --include "${FLASHGEN_FILE}"
+export FLASHGEN_LORA="${FLASHGEN_DIR}/${FLASHGEN_FILE}"
+```
+
+按场景选择对应的下载命令，并将 `FLASHGEN_DIR` 设为服务容器内可访问的绝对路径。下方启动示例使用该目录中的场景专用 LoRA 文件。
+
+在以下启动命令中，将 `MODEL_ROOT` 设为[模型权重](#模型权重)小节下载的 MiniMax-H3 根目录。
+
+### 启动 T2VA 服务
 
 相对 [推荐有损优化配置（Atlas 800I A2推理服务器 / Atlas 800I A3超节点服务器）](#推荐有损优化配置)，在 `--trust-remote-code` 之后追加 LoRA 参数，并将该配置中的
 
@@ -478,6 +511,7 @@ export TRANSFORMERS_OFFLINE=1
 export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
 export MINDIE_SD_FA_TYPE="ascend_laser_attention"
 export HCCL_NPU_SOCKET_PORT_RANGE="auto"
+export MODEL_ROOT=/path/to/MiniMax-H3
 export MODEL="${MODEL_ROOT}/FL2VA"
 
 vllm serve "${MODEL}" \
@@ -503,8 +537,27 @@ vllm serve "${MODEL}" \
 说明：
 
 - `--lora-backend peft` 启用运行时 LoRA manager；native 布局由 LoRA 文件 metadata 自动识别，无需单独 backend。
-- 仅支持 **T2VA**；不支持 FL2VA / Ref2VA。
 - 不支持 `--enable-cpu-offload` 或 `--enable-layerwise-offload`（普通逐层卸载）。
+
+### 启动 FL2VA 或 Ref2VA 服务
+
+以 [Ascend 950PR 四卡推荐无损优化配置](#推荐无损优化配置ascend-950pr950dt系列产品) 为基础。先按场景设置以下变量，再将原启动命令中的 `--task-type fl2va` 替换为 `--task-type "${TASK_TYPE}"`，并在命令末尾追加 `--lora-backend peft --lora-path "${FLASHGEN_LORA}"`。
+
+下方 768p、5 秒的四卡预检使用 `MINDIE_SD_FA_TYPE=fused_attn_score`，并省略 `--enable-distributed-layerwise-offload` 和 `--enable-diffusion-pipeline-profiler`。生成更长的视频时，保留推荐配置中的 DLO，以降低激活内存不足的风险。
+
+```bash
+export MODEL_ROOT=/path/to/MiniMax-H3
+
+# FL2VA
+export MODEL="${MODEL_ROOT}/FL2VA"
+export TASK_TYPE=fl2va
+export FLASHGEN_LORA="${FLASHGEN_DIR}/minimax_h3_fl2va_flashgen_4step_v1.0_768p_bf16.safetensors"
+
+# 启动 Ref2VA 时，使用下面三行替换 FL2VA 配置
+# export MODEL="${MODEL_ROOT}/Ref2VA"
+# export TASK_TYPE=ref2va
+# export FLASHGEN_LORA="${FLASHGEN_DIR}/minimax_h3_ref2va_flashgen_4step_v1.0_768p_bf16.safetensors"
+```
 
 ### 发送 4 步 T2VA 请求
 
@@ -528,14 +581,58 @@ curl -sS -D "$HDR_FILE" -X POST "${API_URL}" \
   -o "t2va_4step.mp4"
 ```
 
-参数要点：
+### 发送 4 步 FL2VA 请求
+
+上传首帧图像，使用 `extra_params.frame_indices=[0]` 指定首帧位置。`FLASHGEN_LORA` 使用 FL2VA 服务启动时的路径。
+
+```bash
+export API_URL="http://127.0.0.1:${PORT}/v1/videos/sync"
+export PROMPT="镜头缓慢向前推进，保留首帧构图，背景有轻微风声。"
+export FIRST_FRAME=/path/to/first_frame.png
+
+curl --fail-with-body -sS "${API_URL}" \
+  --form-string "prompt=${PROMPT}" \
+  -F 'short_edge=768' \
+  -F 'aspect_ratio=16:9' \
+  -F 'fps=24' \
+  -F 'num_inference_steps=4' \
+  -F 'seed=1101' \
+  -F 'extra_params={"task":"fl2va","duration":5.0,"frame_indices":[0]}' \
+  -F "input_references=@${FIRST_FRAME};type=image/png" \
+  --form-string "lora={\"name\":\"h3-flashgen-fl2va\",\"path\":\"${FLASHGEN_LORA}\",\"scale\":1.0}" \
+  -o fl2va_4step.mp4
+```
+
+### 发送 4 步 Ref2VA（R2VA）请求
+
+上传一张参考图像。`FLASHGEN_LORA` 使用 Ref2VA 服务启动时的路径，请求任务名为 `ref2va`。
+
+```bash
+export API_URL="http://127.0.0.1:${PORT}/v1/videos/sync"
+export PROMPT="以参考图像中的主体为中心，生成环绕镜头，并加入轻微的环境声。"
+export REF_IMAGE=/path/to/reference.png
+
+curl --fail-with-body -sS "${API_URL}" \
+  --form-string "prompt=${PROMPT}" \
+  -F 'short_edge=768' \
+  -F 'aspect_ratio=16:9' \
+  -F 'fps=24' \
+  -F 'num_inference_steps=4' \
+  -F 'seed=2101' \
+  -F 'extra_params={"task":"ref2va","duration":5.0}' \
+  -F "input_references=@${REF_IMAGE};type=image/png" \
+  --form-string "lora={\"name\":\"h3-flashgen-ref2va\",\"path\":\"${FLASHGEN_LORA}\",\"scale\":1.0}" \
+  -o ref2va_4step.mp4
+```
+
+### 三个场景的请求参数
 
 | 参数 | 取值 | 说明 |
 | ------ | ------ | ------ |
-| `extra_params.task` | `t2va` | native LoRA 仅支持 T2VA |
-| `num_inference_steps` | `4` | interval 数（4 次 denoise），不是 5 |
-| `lora.scale` | `1.0` | 激活 LoRA；`0.0` 可对比基座输出 |
-| `flow_shift` / `audio_flow_shift` | 可省略 | 调度由 LoRA metadata 中的 `base_schedule` 提供 |
+| `extra_params.task` | `t2va` / `fl2va` / `ref2va` | 必须与请求加载的 LoRA 对应 |
+| `num_inference_steps` | `4` | 调度包含 5 个边界点，对应 4 次去噪 |
+| `lora.scale` | `1.0` | 按原始强度应用 LoRA |
+| `flow_shift` / `audio_flow_shift` | 可省略 | 音视频调度由 LoRA 元数据提供 |
 
 ## 当前已适配的优化点
 
@@ -579,7 +676,7 @@ curl -sS -D "$HDR_FILE" -X POST "${API_URL}" \
 <!-- end id4 -->
 
 <!-- npu="950" id5 -->
-### Ascend 950PR&950DT系列产品
+### Ascend 950PR&950DT系列产品性能数据
 
 | 任务类型 | 输出分辨率 | 输出帧数 | 输出时长（s） | 优化配置 | E2E总时延(s) | Dit总时延(s) | Dit单步时延(s) | Dit实际执行步数 | 文本编码时延(s) | 参考视频编码时延(s) | 参考音频编码时延(s) | 解码时延(s) | 参考视频预处理(s) | 后处理(s) | CPU MP4(s) | 常驻权重显存占用（GB） | 推理过程峰值显存占用（GB） |
 | -------- | -------- | ---- | --------- | ------------ | ------------ | ------------ | -------------- | -------------- | ------------- | ------------- | ----------- | ------------------------ | ------------ | ----------------------- | ----------------------- | ----------------------- | ----------------------- |
