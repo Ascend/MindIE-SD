@@ -56,7 +56,7 @@ template <> struct CopyGmToL1IntervalDataCopy<Arch::AtlasA2, Gemm::GemmType<half
 
     static constexpr uint32_t ELE_NUM_PER_C0_zN = BYTE_PER_C0 / sizeof(Element);
 
-    // Mehtods
+    // Methods
 
     __aicore__ inline CopyGmToL1IntervalDataCopy(){};
 
@@ -82,7 +82,7 @@ template <> struct CopyGmToL1IntervalDataCopy<Arch::AtlasA2, Gemm::GemmType<half
 
     static constexpr uint32_t ELE_NUM_PER_C0_zN = BYTE_PER_C0 / sizeof(Element);
 
-    // Mehtods
+    // Methods
 
     __aicore__ inline CopyGmToL1IntervalDataCopy(){};
 
@@ -108,7 +108,7 @@ template <> struct CopyGmToL1IntervalDataCopy<Arch::AtlasA2, Gemm::GemmType<half
 
     static constexpr uint32_t ELE_NUM_PER_C0_nZ = BYTE_PER_C0 / sizeof(Element);
 
-    // Mehtods
+    // Methods
 
     __aicore__ inline CopyGmToL1IntervalDataCopy(){};
 
@@ -134,7 +134,7 @@ template <> struct CopyGmToL1IntervalDataCopy<Arch::AtlasA2, Gemm::GemmType<half
 
     static constexpr uint32_t ELE_NUM_PER_C0_nZ_PAD = BYTE_PER_C0 / sizeof(Element);
 
-    // Mehtods
+    // Methods
 
     __aicore__ inline CopyGmToL1IntervalDataCopy(){};
 
@@ -159,7 +159,7 @@ struct CopyGmToL1<ArchTag, Gemm::GemmType<Element, layout::RowMajor>,
 
     static constexpr uint32_t ELE_NUM_PER_C0_zN = BYTE_PER_C0 / sizeof(Element);
 
-    // Mehtods
+    // Methods
 
     __aicore__ inline CopyGmToL1(){};
 
@@ -197,7 +197,7 @@ struct CopyGmToL1<ArchTag, Gemm::GemmType<Element, layout::RowMajor>,
 
     static constexpr uint32_t ELE_NUM_PER_C0_zZ = BYTE_PER_C0 / sizeof(Element);
 
-    // Mehtods
+    // Methods
 
     __aicore__ inline CopyGmToL1(){};
 
@@ -298,7 +298,7 @@ struct CopyGmToL1<ArchTag, Gemm::GemmType<Element, layout::ColumnMajor>,
 
     static constexpr uint32_t ELE_NUM_PER_C0_nN = BYTE_PER_C0 / sizeof(Element);
 
-    // Mehtods
+    // Methods
 
     __aicore__ inline CopyGmToL1(){};
 
@@ -399,7 +399,7 @@ struct CopyGmToL1<ArchTag, Gemm::GemmType<Element, layout::ColumnMajor>,
 
     static constexpr uint32_t ELE_NUM_PER_C0_nZ = BYTE_PER_C0 / sizeof(Element);
 
-    // Mehtods
+    // Methods
 
     __aicore__ inline CopyGmToL1(){};
 
@@ -437,7 +437,7 @@ struct CopyGmToL1<ArchTag, Gemm::GemmType<Element, layout::ColumnMajor>,
 
     static constexpr uint32_t ELE_NUM_PER_C0_nZ = BYTE_PER_C0 / sizeof(Element);
 
-    // Mehtods
+    // Methods
 
     __aicore__ inline CopyGmToL1(){};
 
@@ -647,7 +647,7 @@ template <class Element> struct CopyGmToL1<Arch::AtlasA2, Gemm::GemmType<Element
 
     static constexpr uint32_t ELE_NUM_PER_C0_zN = BYTE_PER_C0 / sizeof(Element);
 
-    // Mehtods
+    // Methods
 
     __aicore__ inline CopyGmToL1(){};
 
@@ -711,7 +711,7 @@ template <class Element> struct CopyGmToL1<Arch::AtlasA2, Gemm::GemmType<Element
 
     static constexpr uint32_t ELE_NUM_PER_C0_nZ = BYTE_PER_C0 / sizeof(Element);
 
-    // Mehtods
+    // Methods
 
     __aicore__ inline CopyGmToL1(){};
 
@@ -748,7 +748,7 @@ template <class ArchTag, class Element> struct CopyGmToL1<ArchTag, Gemm::GemmTyp
 
     static constexpr uint32_t ELE_NUM_PER_C0_zN = BYTE_PER_C0 / sizeof(Element);
 
-    // Mehtods
+    // Methods
 
     __aicore__ inline CopyGmToL1(){};
 
@@ -786,7 +786,7 @@ template <class ArchTag, class Element> struct CopyGmToL1<ArchTag, Gemm::GemmTyp
 
     static constexpr uint32_t ELE_NUM_PER_C0_nZ = BYTE_PER_C0 / sizeof(Element);
 
-    // Mehtods
+    // Methods
 
     __aicore__ inline CopyGmToL1(){};
 
@@ -824,7 +824,7 @@ template <class Element> struct CopyGmToL1<Arch::AtlasA2, Gemm::GemmType<Element
 
     static constexpr uint32_t ELE_NUM_PER_C0_zN = BYTE_PER_C0 / sizeof(Element);
 
-    // Mehtods
+    // Methods
 
     __aicore__ inline CopyGmToL1(){};
 
@@ -852,7 +852,7 @@ template <class Element> struct CopyGmToL1<Arch::AtlasA2, Gemm::GemmType<Element
 
     static constexpr uint32_t ELE_NUM_PER_C0_nZ = BYTE_PER_C0 / sizeof(Element);
 
-    // Mehtods
+    // Methods
 
     __aicore__ inline CopyGmToL1(){};
 
@@ -884,7 +884,7 @@ struct CopyGmToL1<Arch::AtlasA2, Gemm::GemmType<Element, layout::RowMajor>,
     static constexpr uint32_t BLOCK_LEN_LIMIT = 65536;
     static constexpr uint32_t MAX_REPEAT = 4095;
 
-    // Mehtods
+    // Methods
 
     __aicore__ inline CopyGmToL1(){};
 
@@ -921,7 +921,7 @@ struct CopyGmToL1<ArchTag, Gemm::GemmType<Element, layout::VectorLayout, AscendC
 
     static constexpr uint32_t ELE_NUM_PER_C0_VEC = BYTE_PER_C0 / sizeof(Element);
 
-    // Mehtods
+    // Methods
 
     __aicore__ inline CopyGmToL1(){};
 
