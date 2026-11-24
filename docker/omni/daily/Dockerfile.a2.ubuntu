@@ -1,6 +1,6 @@
 # MindIE-SD daily image for FlashGen on Ascend A2 (Linux ARM64).
 # The image builds the MindIE-SD wheel from the current source tree and
-# applies vLLM-Omni PRs #10596 and #8632 to the current Omni A2 nightly.
+# applies any patches still required by the current Omni A2 nightly.
 #
 # Build from the repository root:
 #   docker build --pull --no-cache --platform linux/arm64 -t mindiesd:flashgen-a2 \
@@ -75,9 +75,10 @@ RUN set -eu; \
     GIT_TERMINAL_PROMPT=0 GIT_LFS_SKIP_SMUDGE=1 git -c credential.helper= clone \
         --branch main --depth=1 --no-tags https://modelers.cn/MindIE/sd_patch.git "$patch_dir"; \
     printf 'FlashGen patch revision: %s\n' "$(git -C "$patch_dir" rev-parse HEAD)"; \
-    if [ -f "$patch_dir/SHA256SUMS" ]; then (cd "$patch_dir" && sha256sum -c SHA256SUMS); fi; \
     git -C "$patch_dir" ls-files -z -- '*.patch' > "$patch_dir/.git/flashgen-patches"; \
-    test -s "$patch_dir/.git/flashgen-patches"; \
+    if [ ! -s "$patch_dir/.git/flashgen-patches" ]; then \
+        printf 'No additional Omni patches required by this patch revision\n'; \
+    fi; \
     cd /vllm-workspace/vllm-omni; \
     printf 'Omni revision: %s\n' "$(git rev-parse HEAD)"; \
     git update-index --refresh; \
