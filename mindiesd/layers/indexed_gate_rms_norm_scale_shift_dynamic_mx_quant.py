@@ -703,17 +703,19 @@ if _HAS_TRITON:
         eps: tl.constexpr,
         scale_stride: tl.constexpr,
     ):
-        """H == 1 edge path: scalar per row, no 2-D reshape/stride folding."""
+        """H == 1 edge path with a masked vector for FP8 conversion."""
         row = (tl.program_id(0) + row_offset).to(tl.int64)
+        lanes = tl.arange(0, 32)
+        valid = lanes == 0
         index = tl.load(indices_ptr + row)
-        residual = tl.load(residual_ptr + row).to(tl.float32)
-        gate = tl.load(gate_ptr + index).to(tl.float32)
-        branch = tl.load(branch_ptr + row).to(tl.float32)
+        residual = tl.load(residual_ptr + row + lanes, mask=valid, other=0.0).to(tl.float32)
+        gate = tl.load(gate_ptr + index + lanes, mask=valid, other=0.0).to(tl.float32)
+        branch = tl.load(branch_ptr + row + lanes, mask=valid, other=0.0).to(tl.float32)
         xv = (residual + gate * branch).to(residual_ptr.dtype.element_ty).to(tl.float32)
-        wv = tl.load(weight_ptr).to(tl.float32)
+        wv = tl.load(weight_ptr + lanes, mask=valid, other=0.0).to(tl.float32)
         rstd = tl.rsqrt(xv * xv + eps)
-        sv = tl.load(shift_ptr + index).to(tl.float32)
-        cv = tl.load(scale_ptr + index).to(tl.float32)
+        sv = tl.load(shift_ptr + index + lanes, mask=valid, other=0.0).to(tl.float32)
+        cv = tl.load(scale_ptr + index + lanes, mask=valid, other=0.0).to(tl.float32)
         mod = (xv * rstd * wv * (1.0 + cv) + sv).to(tl.bfloat16)
 
         bits = mod.to(tl.uint16, bitcast=True)
@@ -730,11 +732,11 @@ if _HAS_TRITON:
         yv = yb.to(tl.bfloat16, bitcast=True)
         yv = tl.where(special, 0.0, yv)
         yf = yv.to(tl.float32)
-        # Force an fp32 op so the compiler does not fold this into the unsupported
-        # scalar bf16 -> fp8 vcast (hivm.hir.vcast rintmode).
+        # Ascend cannot lower the scalar FP8 conversion. Keep a vector value
+        # through the cast and mask every memory access to the single element.
         yf = tl.maximum(tl.minimum(yf, 1.0e30), -1.0e30)
-        tl.store(out_y_ptr + row, yf.to(tl.float8e4nv))
-        tl.store(out_scale_ptr + row * scale_stride, byte.to(tl.uint8))
+        tl.store(out_y_ptr + row + lanes, yf.to(tl.float8e4nv), mask=valid)
+        tl.store(out_scale_ptr + row * scale_stride + lanes, byte.to(tl.uint8), mask=valid)
 
     @triton.jit
     def _gate_modulation_kernel(
@@ -1757,7 +1759,10 @@ if _HAS_TRITON:
                 elif tiny_block_n <= 32:
                     rows_per_prog = 256
                 else:
-                    rows_per_prog = 128
+                    # The FP16 path keeps more fp32 temporaries live than BF16:
+                    # 128 rows of a 64-wide block overflow UB on A5 (1938432 bits
+                    # required, 1769472 available).
+                    rows_per_prog = 64 if in_fp16 else 128
                 if out_fp4:
                     # The MXFP4 tail needs more UB than the FP8 tail: the FP8 row
                     # counts overflow UB and fail to compile for these shapes.

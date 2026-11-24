@@ -18,7 +18,7 @@ class RMSNormPatternModel(torch.nn.Module):
         return F.rms_norm(hidden_states, normalized_shape=(self.hidden_size,), weight=weight, eps=self.eps)
 
 
-@unittest.skipIf(torch.__version__.startswith("2.1"), "")
+@unittest.skipIf(torch.__version__.split(".")[:2] == ["2", "1"], "Requires PyTorch newer than 2.1")
 class TestRMSNormCompilationCase(unittest.TestCase):
     def _run_test_and_measure_time(self, model, x, weight):
         compiled_model = torch.compile(model, backend=MindieSDBackend())

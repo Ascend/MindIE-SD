@@ -59,6 +59,9 @@ MiniMax-H3 额外参数（见 [MiniMax-H3](#minimax-h3) 小节）：`--height`�
 配置文件（JSON、tokenizer，KB 级）首次运行时自动下载到 HuggingFace Hub 缓存，后续运行免联网。
 通过 `--config_cache /path/to/config` 可指定离线缓存目录。
 
+无法直连 `huggingface.co` 时（典型表现为下载配置阶段返回 504 或连接超时），可设置
+`HF_ENDPOINT=https://hf-mirror.com` 改用镜像；下载仍失败时脚本会提示该选项和离线模式。
+
 对于 **gated model**（如 FLUX.1-dev），设 `HF_TOKEN` 或从 modelscope 下载后
 通过 `--config_cache` 加载。
 

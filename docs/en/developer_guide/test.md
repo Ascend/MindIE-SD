@@ -47,6 +47,18 @@ python -m pip install -r requirements-test.txt
 | `--no-staged` / `--no-unstaged` | Ignore staged / unstaged changes in the incremental analysis |
 | `--dry-run` | Prints the incremental selection without running it (requires `--incremental`) |
 
+### Test Device Selection
+
+NPU cases pick their device with `MINDIE_TEST_DEVICE_ID`:
+
+- When unset, the current device is used (`torch_npu.npu.current_device()`).
+- When set, it is a **logical** ordinal — the index after `ASCEND_RT_VISIBLE_DEVICES` is applied, and identical to the physical card number when no mask is set.
+- The test framework never changes or clears `ASCEND_RT_VISIBLE_DEVICES`; set it yourself when you need to restrict visible devices.
+
+Exception: the checkpointed batch in `tests/ops/eagle_quant_batch_matmul_swiglu/` records the device in each checkpoint identity, so it requires `MINDIE_TEST_DEVICE_ID` to be a nonnegative **physical** id and rejects `ASCEND_RT_VISIBLE_DEVICES` with a `UsageError` during collection. On a shared host, isolate through container device mappings rather than a visibility mask.
+
+Running NPU cases in a container requires the container to initialize the Ascend driver. On some hosts a non-privileged container cannot do so even with `/dev/davinciN`, `/dev/davinci_manager` and `/dev/hisi_hdc` mapped: `aclInit` returns 507899 `Resource_Busy` and `torch_npu.npu.device_count()` is 0. Such hosts need the same privileged mode their existing NPU workloads use.
+
 ### Artifacts and Coverage Gate
 
 Artifacts go to the directory named by `MINDIE_TEST_RESULTS`, or to `mindiesd-test-results/` under the system temp directory when it is unset. Each run creates a `run-*` subdirectory containing:

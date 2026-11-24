@@ -8,13 +8,8 @@ MindIE SD is a Python package built on PyTorch that can be easily integrated int
 
 * OS: Linux
 * Python: >=3.10
-* PyTorch: 2.6, 2.7, 2.8, 2.9, 2.10
-* TorchNPU: 2.6, 2.7, 2.8, 2.9, 2.10
-* CANN: 9.0.0
-* triton: 3.5.0
-* triton-ascend: 3.2.1
-
-> **Note**: `triton-ascend 3.2.1` is not published on PyPI. Download the wheel matching your Python version and architecture from the [GitCode release page](https://gitcode.com/Ascend/triton-ascend/releases) and install it (it pins `triton==3.5.0`). Without 3.2.1, the SparseLinearAttention (FA sparse) feature is disabled.
+* Python dependencies: see `requirements.txt` at the repository root
+* CANN: 9.0.0, 9.0.1, 9.1.0
 
 #### CANN Installation
 
@@ -77,7 +72,7 @@ Follow these steps to install MindIE SD from source:
 >
 > Dependencies are split by purpose in the repository; install the ones you need:
 >
-> * `requirements.txt`: core runtime dependencies (minimal install; only torch/TorchNPU pinned, others loose).
+> * `requirements.txt`: core runtime dependencies (minimal install).
 > * `examples/dummy_run/requirements.txt`: dependencies for the `dummy_run` model inference example (diffusers/transformers/etc.).
 > * `examples/service/requirements.txt`: serving-example dependencies (ray, fastapi, uvicorn, pydantic, Pillow).
 > * Testing, linting, and docs-build dependencies are in `requirements-test.txt`, `requirements-lint.txt`, and `docs/requirements-docs.txt` respectively (see the developer guide).

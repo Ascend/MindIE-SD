@@ -99,7 +99,14 @@ def _invalid_index_worker(rows, hidden, dst_type, bad_index, workdir):
         message = str(error)
         with open("invalid_index_result.txt", "w", encoding="utf-8") as stream:
             stream.write(message)
-        expected = "507035" in message or "device error type 3" in message or "NPU function error" in message
+        # Newer runtimes report the device_assert trap without the old PTA code.
+        # Require both the trap diagnostic and its specific error number.
+        assert_trap = "The trap instruction reports an error." in message and (
+            "errcode:(286)" in message or "error code = 286" in message
+        )
+        expected = (
+            "507035" in message or "device error type 3" in message or "NPU function error" in message or assert_trap
+        )
         os._exit(0 if expected else 2)
     os._exit(1)
 

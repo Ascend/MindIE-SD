@@ -212,7 +212,17 @@ class TestQuantDescription(unittest.TestCase):
                 self.assert_invalid('{"model_quant_type":"W8A8","layer":' + value + '}', "JSON constant")
 
     def test_deeply_nested_input(self):
-        self.assert_invalid('[' * 2000 + '0' + ']' * 2000, "JSON.*nesting")
+        # Python parsers differ in their nesting limit; both paths must reject
+        # this array before config construction or any weight access.
+        self.assert_invalid(
+            '[' * 2000 + '0' + ']' * 2000,
+            r"JSON.*nesting|Quantization description must be a JSON object",
+        )
+
+    def test_json_recursion_error_is_translated(self):
+        description = importlib.import_module("mindiesd.quantization.description")
+        with mock.patch.object(description.json, "loads", side_effect=RecursionError):
+            self.assert_invalid("{}", "JSON.*nesting")
 
     @unittest.skipUnless(hasattr(sys, "get_int_max_str_digits"), "Python has no integer string length limit")
     def test_integer_parser_limit(self):

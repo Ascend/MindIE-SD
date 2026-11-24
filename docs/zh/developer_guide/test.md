@@ -47,6 +47,18 @@ python -m pip install -r requirements-test.txt
 | `--no-staged` / `--no-unstaged` | 增量分析时忽略已暂存 / 未暂存改动 |
 | `--dry-run` | 只输出增量选中的用例，不执行（需与 `--incremental` 同用） |
 
+### 测试设备选择
+
+NPU 用例用 `MINDIE_TEST_DEVICE_ID` 指定设备：
+
+- 不设置时使用当前设备（`torch_npu.npu.current_device()`）。
+- 设置时按**逻辑序号**解释，即 `ASCEND_RT_VISIBLE_DEVICES` 生效后的序号；未设置可见性掩码时与物理卡号一致。
+- 测试框架不会修改或清除 `ASCEND_RT_VISIBLE_DEVICES`，需要限制可见设备时由调用方自行设置。
+
+例外：`tests/ops/eagle_quant_batch_matmul_swiglu/` 的检查点批次会把设备号写入检查点身份，要求 `MINDIE_TEST_DEVICE_ID` 为非负**物理**编号且不得设置 `ASCEND_RT_VISIBLE_DEVICES`，否则 pytest 在收集阶段报 `UsageError`。共享宿主机上请用容器的设备映射隔离，不要用可见性掩码。
+
+在容器中运行 NPU 用例时，容器必须能初始化昇腾驱动。部分宿主机上非特权容器即使映射了 `/dev/davinciN`、`/dev/davinci_manager`、`/dev/hisi_hdc` 等节点，`aclInit` 仍会返回 507899 `Resource_Busy`、`torch_npu.npu.device_count()` 为 0；此时需要与宿主机上既有 NPU 业务容器一样以特权模式运行。
+
 ### 测试产物与覆盖率门禁
 
 产物目录由环境变量 `MINDIE_TEST_RESULTS` 指定，未设置时位于系统临时目录下的 `mindiesd-test-results/`，每次运行生成一个 `run-*` 子目录，包含：

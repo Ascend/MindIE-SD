@@ -10,9 +10,8 @@ Python 包安装适用于大多数使用场景，但需要手动安装 CANN。�
 
 * OS: Linux
 * Python: >=3.10
-* Pytorch：2.6, 2.7, 2.8, 2.9, 2.10
-* TorchNPU: 7.3.0, 26.0.0, 26.1.0
-* CANN: 9.0.1, 9.1.0
+* Python 依赖：以仓库根目录 `requirements.txt` 为准
+* CANN: 9.0.0, 9.0.1, 9.1.0
 
 #### CANN 安装
 
@@ -70,8 +69,6 @@ pip install mindiesd
    ```bash
    pip install -r requirements.txt --extra-index-url https://triton-ascend.osinfra.cn/pypi/simple --trusted-host triton-ascend.osinfra.cn
    ```
-
-   说明：MindIE SD 的部分算子依赖triton-ascend==3.2.1，该版本目前仅在 <https://triton-ascend.osinfra.cn/pypi/simple> 中提供。
 
 3. 编译并安装：
 

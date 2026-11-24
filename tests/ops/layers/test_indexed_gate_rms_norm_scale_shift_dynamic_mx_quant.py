@@ -180,6 +180,8 @@ class TestIndexedGateRmsNormScaleShiftDynamicMxQuant(unittest.TestCase):
     def test_precision_matrix_bf16_fp8(self):
         cases = (
             (1, 32, 1, "randn", 0),
+            (1, 1, 1, "randn", 24),
+            (5, 1, 3, "randn", 25),
             (2, 33, 3, "randn", 1),
             (64, 32, 9, "randn", 15),
             (65, 33, 9, "randn", 16),
