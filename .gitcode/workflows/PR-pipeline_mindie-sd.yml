@@ -1,6 +1,9 @@
 name: PR-pipeline_mindie-sd
 
 on:
+  pr_comment:
+    types: [ created ]
+    keyword: '^(?:\/)?compile*'
   pull_request_comment:
     types: [ created ]
     branches: [ "dev", "master", "v*.*.*" ]
