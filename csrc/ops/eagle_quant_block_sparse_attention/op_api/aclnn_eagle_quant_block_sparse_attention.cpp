@@ -231,6 +231,18 @@ __attribute__((visibility("default"))) aclnnStatus aclnnEagleQuantBlockSparseAtt
     if (ret != ACLNN_SUCCESS) {
         return ret;
     }
+    CHECK_RET(softmaxLseFlag == 0 || softmaxLseFlag == 1, ACLNN_ERR_PARAM_INVALID);
+    if (softmaxLseFlag == LSE_OUT) {
+        CHECK_RET(softmaxLseOptional != nullptr, ACLNN_ERR_PARAM_NULLPTR);
+        CHECK_RET(softmaxLseOptional->GetDataType() == DataType::DT_FLOAT, ACLNN_ERR_PARAM_INVALID);
+        const auto &qShape = query->GetViewShape();
+        const auto &lseShape = softmaxLseOptional->GetViewShape();
+        CHECK_RET(lseShape.GetDimNum() == qShape.GetDimNum(), ACLNN_ERR_PARAM_INVALID);
+        for (size_t dim = 0; dim < qShape.GetDimNum(); ++dim) {
+            const auto expected = dim + 1 == qShape.GetDimNum() ? 1 : qShape.GetDim(dim);
+            CHECK_RET(lseShape.GetDim(dim) == expected, ACLNN_ERR_PARAM_INVALID);
+        }
+    }
     //去掉了idx ,idxnums
     L2_DFX_PHASE_1(aclnnEagleQuantBlockSparseAttention,
         DFX_IN(query, key, value, blockSparseMask, attenMaskOptional, blockShape, actualSeqLengthsOptional,

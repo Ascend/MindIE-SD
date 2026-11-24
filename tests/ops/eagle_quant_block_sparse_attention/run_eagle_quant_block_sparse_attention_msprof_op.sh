@@ -1,218 +1,289 @@
 #!/usr/bin/env bash
-# Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+# Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
 # MindIE is licensed under Mulan PSL v2.
-# You can use this software according to the terms and conditions of the Mulan PSL v2.
-# You may obtain a copy of Mulan PSL v2 at:
-#          http://license.coscl.org.cn/MulanPSL2
-# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
-# EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
-# MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
-# See the Mulan PSL v2 for more details.
-
-# Capture CANN FP8 BlockSparseAttention first, then EagleQuantBlockSparseAttention.
-# Default case: Q [1, 32, 2304, 128], KV [1, 4, 30757, 128].
-# cann_fp8_bsa: Hadamard + block FP8 Q/K/V, block_shape [128, 256].
-# eqbsa: mix INT8 Q/K + FP8 V, block_shape [128, 128].
-#
-# Must run inside CANN + torch_npu + NPU.
-# Do NOT set ASCEND_RT_VISIBLE_DEVICES (incompatible with msprof / msprof op).
-#
-# Usage:
-#   bash tests/ops/eagle_quant_block_sparse_attention/run_eagle_quant_block_sparse_attention_msprof_op.sh
-#   bash tests/ops/eagle_quant_block_sparse_attention/run_eagle_quant_block_sparse_attention_msprof_op.sh --device-id 3
 set -euo pipefail
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-BENCH_SCRIPT="${SCRIPT_DIR}/profile_eagle_quant_block_sparse_attention_prod.py"
-SELECT_SCRIPT="${REPO_ROOT}/tests/tools/select_npu_device.py"
-STAMP="$(date +%Y%m%d_%H%M%S)"
-OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/logs/msprof_eagle_quant_block_sparse_attention_${STAMP}}"
-DEVICE_ID="${DEVICE_ID:-}"
-CANN_BSA_KERNEL_NAME="${CANN_BSA_KERNEL_NAME:-BlockSparseAttention}"
-EQBSA_KERNEL_NAME="${EQBSA_KERNEL_NAME:-${KERNEL_NAME:-EagleQuantBlockSparseAttention}}"
-MSPROF_WARMUP="${MSPROF_WARMUP:-10}"
-MSPROF_LAUNCH_COUNT="${MSPROF_LAUNCH_COUNT:-5}"
-IMPLS="${IMPLS:-cann_fp8_bsa,eqbsa}"
-
-usage() {
-    cat <<EOF
-Usage: $0 [options] [-- extra python args]
-
-Options:
-  --output-dir <dir>     msprof op output directory (absolute path recommended).
-  --device-id <id>       Physical NPU ID from npu-smi info. Default: auto-pick idle card.
-  --impls <csv>          Capture order. Default: cann_fp8_bsa,eqbsa (baseline first).
-  -h, --help             Show this help.
-
-Environment:
-  ASCEND_ENV_SH          Explicit Ascend set_env.sh path.
-  ASCEND_TOOLKIT_HOME    Ascend toolkit root, used to locate set_env.sh.
-  DEVICE_ID              Same as --device-id if the flag is omitted.
-  OUTPUT_DIR / MSPROF_WARMUP / MSPROF_LAUNCH_COUNT
-  IMPLS                  Same as --impls if the flag is omitted.
-  CANN_BSA_KERNEL_NAME   Default BlockSparseAttention
-  EQBSA_KERNEL_NAME / KERNEL_NAME   Default EagleQuantBlockSparseAttention
-
-Do not set ASCEND_RT_VISIBLE_DEVICES; this script unsets it.
-EOF
-}
-
-EXTRA_PY_ARGS=()
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --output-dir)
-            OUTPUT_DIR="$2"
-            shift 2
-            ;;
-        --device-id)
-            DEVICE_ID="$2"
-            shift 2
-            ;;
-        --impls)
-            IMPLS="$2"
-            shift 2
-            ;;
-        -h|--help)
-            usage
-            exit 0
-            ;;
-        --)
-            shift
-            EXTRA_PY_ARGS+=("$@")
-            break
-            ;;
-        *)
-            EXTRA_PY_ARGS+=("$1")
-            shift
-            ;;
-    esac
-done
-
-if [[ -n "${ASCEND_RT_VISIBLE_DEVICES:-}" ]]; then
-    echo "warning: unsetting ASCEND_RT_VISIBLE_DEVICES=${ASCEND_RT_VISIBLE_DEVICES} (unsupported with msprof / msprof op)"
-    unset ASCEND_RT_VISIBLE_DEVICES
+# Source an explicitly requested environment; otherwise use the caller's CANN environment.
+if [[ -n "${ASCEND_ENV_SH:-}" ]]; then
+    source "${ASCEND_ENV_SH}"
 fi
-
-source_ascend_env() {
-    local candidates=()
-    if [[ -n "${ASCEND_ENV_SH:-}" ]]; then
-        candidates+=("${ASCEND_ENV_SH}")
-    fi
-    if [[ -n "${ASCEND_TOOLKIT_HOME:-}" ]]; then
-        candidates+=("${ASCEND_TOOLKIT_HOME}/set_env.sh")
-    fi
-    candidates+=(
-        "/usr/local/Ascend/ascend-toolkit/set_env.sh"
-        "/usr/local/Ascend/ascend-toolkit/latest/set_env.sh"
-    )
-    local env_file
-    for env_file in "${candidates[@]}"; do
-        if [[ -f "${env_file}" ]]; then
-            # shellcheck disable=SC1090
-            source "${env_file}"
-            echo "ascend_env=${env_file}"
-            return 0
-        fi
-    done
-    echo "warning=no Ascend set_env.sh found; continuing with current environment"
-}
-
-source_ascend_env
-
-if ! command -v msprof >/dev/null 2>&1; then
-    echo "ERROR: msprof not found; source CANN set_env.sh first" >&2
-    exit 1
-fi
-
-python3 - <<'PY'
-import importlib.util
+unset ASCEND_RT_VISIBLE_DEVICES
+cd "${REPO_ROOT}"
+# Keep the batch process in charge of the lock, signals and per-capture commits.
+# msprof runs the standalone profile script once per capture.
+exec python3 -u - "${BASH_SOURCE[0]##*/}" "$@" <<'PYTHON'
+import os
+import re
+import shutil
+import signal
+import subprocess
 import sys
-if importlib.util.find_spec("torch_npu") is None:
-    sys.exit("ERROR: torch_npu missing — run inside CANN/torch_npu container")
-if importlib.util.find_spec("mindiesd") is None:
-    sys.exit("ERROR: mindiesd missing — install the current MindIE-SD tree first")
-print("python", sys.executable)
-PY
+import traceback
 
-mkdir -p "${OUTPUT_DIR}" "${REPO_ROOT}/logs"
-OUTPUT_DIR="$(cd "${OUTPUT_DIR}" && pwd)"
+from tests.ops.eagle_quant_block_sparse_attention.eqbsa_cases import (
+    KERNELS,
+    parse,
+    print_preview,
+    scene_name,
+    selections,
+    warmup,
+)
+from tests.ops.eagle_quant_block_sparse_attention.eqbsa_state import (
+    Batch,
+    HERE,
+    ROOT,
+    digest,
+    duration,
+    identity,
+    read,
+    save,
+    select_device,
+    table,
+    tee_log,
+)
+from tests.ops.eagle_quant_block_sparse_attention.eagle_quant_block_sparse_attention_accuracy_common import (
+    PRODUCTION,
+)
 
-if [[ -n "${ASCEND_RT_VISIBLE_DEVICES:-}" ]]; then
-    echo "warning: unsetting ASCEND_RT_VISIBLE_DEVICES=${ASCEND_RT_VISIBLE_DEVICES} (unsupported with msprof / msprof op)"
-    unset ASCEND_RT_VISIBLE_DEVICES
-fi
 
-if [[ -z "${DEVICE_ID}" ]]; then
-    if [[ ! -f "${SELECT_SCRIPT}" ]]; then
-        echo "ERROR: missing ${SELECT_SCRIPT}" >&2
-        exit 1
-    fi
-    if ! command -v npu-smi >/dev/null 2>&1; then
-        echo "ERROR: npu-smi not found in PATH" >&2
-        exit 1
-    fi
-    echo "=== Selecting idle NPU (npu-smi) ==="
-    python3 "${SELECT_SCRIPT}" --format=report | tee "${OUTPUT_DIR}/npu_select.log"
-    DEVICE_ID="$(python3 "${SELECT_SCRIPT}" --format=id)"
-    if [[ -z "${DEVICE_ID}" ]]; then
-        echo "ERROR: failed to select NPU id" >&2
-        exit 1
-    fi
-else
-    echo "=== Using user-specified device_id=${DEVICE_ID} ===" | tee "${OUTPUT_DIR}/npu_select.log"
-fi
+def units(plan):
+    return [(s, i) for s in selections(plan, perf=True) for i in range(1, plan["test_count"] + 1)]
 
-echo "=== cann_fp8_bsa then eagle_quant_block_sparse_attention msprof op (Q 2304 / KV 30757) ==="
-echo "REPO_ROOT=${REPO_ROOT}"
-echo "OUTPUT_DIR=${OUTPUT_DIR}"
-echo "CANN_BSA_KERNEL_NAME=${CANN_BSA_KERNEL_NAME}"
-echo "EQBSA_KERNEL_NAME=${EQBSA_KERNEL_NAME}"
-echo "ASCEND_RT_VISIBLE_DEVICES=${ASCEND_RT_VISIBLE_DEVICES-}"
-echo "device_id=${DEVICE_ID}"
-echo "impls=${IMPLS}"
 
-IFS=',' read -r -a IMPL_LIST <<< "${IMPLS}"
-for impl_name in "${IMPL_LIST[@]}"; do
-    impl_name="${impl_name//[[:space:]]/}"
-    if [[ -z "${impl_name}" ]]; then
-        continue
-    fi
-    case "${impl_name}" in
-        cann_fp8_bsa)
-            KERNEL_THIS="${CANN_BSA_KERNEL_NAME}"
-            ;;
-        eqbsa)
-            KERNEL_THIS="${EQBSA_KERNEL_NAME}"
-            ;;
-        *)
-            echo "ERROR: unknown impl ${impl_name} (use cann_fp8_bsa or eqbsa)" >&2
-            exit 1
-            ;;
-    esac
-    IMPL_OUTPUT_DIR="${OUTPUT_DIR}/${impl_name}"
-    mkdir -p "${IMPL_OUTPUT_DIR}"
-    IMPL_OUTPUT_DIR="$(cd "${IMPL_OUTPUT_DIR}" && pwd)"
-    echo "=== impl=${impl_name} kernel=${KERNEL_THIS} output=${IMPL_OUTPUT_DIR} ==="
+def raw_artifacts(folder, kernel):
+    basic = list(folder.rglob("OpBasicInfo*.csv"))
+    if len(basic) != 1:
+        raise RuntimeError("expected one target OpBasicInfo CSV")
+    text = basic[0].read_text(encoding="utf-8-sig", errors="replace")
+    # The CANN kernel name is also a suffix of the Eagle and EagleQuant names.
+    matches = re.findall(r"(?:eagle[_ -]?(?:quant[_ -]?)?)?block[_ -]?sparse[_ -]?attention", text, re.IGNORECASE)
+    if {re.sub(r"[_ -]", "", match).lower() for match in matches} != {kernel.lower()}:
+        raise RuntimeError(f"OpBasicInfo does not uniquely identify {kernel}")
+    raw = [p for p in folder.rglob("*") if p.is_file() and p.stat().st_size and "dump" in p.relative_to(folder).parts]
+    if not raw:
+        raise RuntimeError("missing nonempty raw profiler dump")
+    return [basic[0], *raw]
 
-    PY_CMD=(
-        python3 "${BENCH_SCRIPT}"
-        --device-id "${DEVICE_ID}"
-        --impl "${impl_name}"
-        --msprof-mode
+
+def summary(batch, reason):
+    plan = batch.plan["parameters"]
+    rows = [("Scenario", "Test", "Metric", "Duration(us)", "DataDir")]
+    minima = [("Scenario", "Metric", "Min(us)", "Samples")]
+    progress = [("Scenario", "Completed/Planned", "Status")]
+    groups = {}
+    completed = {}
+    for s in selections(plan, perf=True):
+        label = scene_name(s)
+        values = []
+        for i in range(1, plan["test_count"] + 1):
+            r = batch.get(f"{label}/{i}")
+            if r and r["status"] == "PASS":
+                values.append(r["duration_us"])
+                rows.append((label, i, "Task Duration", f"{r['duration_us']:.9g}", str(batch.path / r["directory"])))
+        count = len(values)
+        progress.append(
+            (label, f"{count}/{plan['test_count']}", "COMPLETE" if count == plan["test_count"] else "PARTIAL")
+        )
+        if values:
+            groups[label] = values
+            minima.append((label, "Task Duration", f"{min(values):.9g}", count))
+            if count == plan["test_count"]:
+                completed[s["impl"], s["softmax_lse_flag"]] = min(values)
+    # One uninterrupted round table immediately followed by the single minimum table.
+    lines = [reason] + table(progress) + [""] + table(rows) + [""] + table(minima)
+    if len(rows) == 1:
+        lines.append("No completed results")
+    for label, values in groups.items():
+        low, high = min(values), max(values)
+        spread = (high - low) / low * 100
+        lines.append(
+            f"{label}: warm-up={plan['warm_up']}; max={high:.9g}us; spread={spread:.2f}%; samples={len(values)}"
+        )
+        if len(values) < 2:
+            lines.append("Insufficient samples to assess variation")
+        elif spread > 10:
+            lines.append(
+                "WARNING spread >10%; consider more warmups on the same card, then a fresh batch "
+                f"of {plan['test_count']} captures per scene."
+            )
+    eq0, eq1 = completed.get(("eqbsa", 0)), completed.get(("eqbsa", 1))
+    cann = completed.get(("cann_fp8_bsa", 0))
+    if cann is not None and eq0 is not None:
+        lines.append(
+            f"Implementation comparison (LSE off): CANN FP8 BSA / EQBSA = {cann:.9g} / {eq0:.9g} = {cann / eq0:.4f}x"
+        )
+    if eq0 is not None and eq1 is not None:
+        lines.append(
+            f"EQBSA LSE overhead (LSE on vs off): {eq1:.9g} - {eq0:.9g} = {eq1 - eq0:+.9g} us "
+            f"({(eq1 / eq0 - 1) * 100:+.2f}%)"
+        )
+    lines.append(
+        "Note: Some hardware models may show increased latency across runs. The minimum across all groups for each scenario is reported as the best performance observed under the current test conditions; this does not mean the variation has been eliminated."
     )
-    if [[ ${#EXTRA_PY_ARGS[@]} -gt 0 ]]; then
-        PY_CMD+=("${EXTRA_PY_ARGS[@]}")
-    fi
+    text = "\n".join(lines) + "\n"
+    print(text, flush=True)
+    for filename in ("final_summary.txt", "task_duration_summary.txt"):
+        (batch.path / filename).write_text(text, encoding="utf-8")
 
-    msprof op \
-        --kernel-name="${KERNEL_THIS}" \
-        --warm-up="${MSPROF_WARMUP}" \
-        --launch-count="${MSPROF_LAUNCH_COUNT}" \
-        --kill=on \
-        --output="${IMPL_OUTPUT_DIR}" \
-        "${PY_CMD[@]}"
-done
 
-echo "${OUTPUT_DIR}" > "${REPO_ROOT}/logs/last_eagle_quant_block_sparse_attention_msprof.path"
-echo "RESULT captured; cann_fp8_bsa Duration is the performance baseline"
+def capture(batch, folder, command):
+    save(folder / "command.json", {"argv": command})
+    env = dict(os.environ, PYTHONPATH=str(ROOT) + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    active_path = batch.path / "active_capture.json"
+    with (
+        (folder / "msprof.log").open("w", encoding="utf-8") as log,
+        subprocess.Popen(
+            command,
+            cwd=ROOT,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+            start_new_session=True,
+            pass_fds=(batch.lock.fileno(),),
+        ) as child,
+    ):
+        try:
+            save(active_path, {"pgid": child.pid})
+            for line in child.stdout:
+                print(line, end="", flush=True)
+                log.write(line)
+                log.flush()
+            code = child.wait()
+        finally:
+            # Kill the entire owned group, including tool descendants, before releasing its lease.
+            try:
+                os.killpg(child.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            if child.poll() is None:
+                try:
+                    child.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    os.killpg(child.pid, signal.SIGKILL)
+                    child.wait()
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            active_path.unlink(missing_ok=True)
+    if code:
+        raise RuntimeError(f"msprof exit={code}; see {folder / 'msprof.log'}")
+
+
+def run_batch(batch, args, plan):
+    reason, code = "PARTIAL", 1
+
+    def stop(sig, frame):
+        raise SystemExit(128 + sig)
+
+    previous_handler = signal.signal(signal.SIGTERM, stop)
+    try:
+        batch.ensure_no_failures()
+        device_file = batch.path / "device.json"
+        previous = read(device_file) if device_file.exists() else None
+        if previous and args.device_id is not None and args.device_id != previous["identity"]["device"]:
+            raise ValueError("performance resume must keep the original physical card")
+        for s in selections(plan, perf=True):
+            complete = sum(batch.get(f"{scene_name(s)}/{i}") is not None for i in range(1, plan["test_count"] + 1))
+            print(f"SAVED {scene_name(s)} captures={complete}/{plan['test_count']}", flush=True)
+        if all(batch.get(f"{scene_name(s)}/{i}") for s, i in units(plan)):
+            reason, code = "COMPLETE (saved results; no device access)", 0
+            return code
+        device = previous["identity"]["device"] if previous else args.device_id
+        if device is None:
+            device = select_device()
+        profiler = shutil.which("msprof")
+        if not profiler:
+            raise RuntimeError("msprof not found; source CANN set_env.sh")
+        current = {"identity": identity(device), "profiler_path": profiler, "profiler_sha256": digest(profiler)}
+        if previous and previous != current:
+            raise RuntimeError("original physical device or profiler changed")
+        if not previous:
+            save(device_file, current)
+        batch.history([device])
+        print(
+            f"PLAN impls={plan['impls']} physical_device={device} warm-up={plan['warm_up']} "
+            f"independent_captures={plan['test_count']} launch-count=1; report each sample and minimum",
+            flush=True,
+        )
+        for s, i in units(plan):
+            key = f"{scene_name(s)}/{i}"
+            if batch.get(key):
+                continue
+            folder = batch.attempt(key)
+            kernel = KERNELS[s["impl"]]
+            command = [
+                profiler,
+                "op",
+                f"--kernel-name={kernel}",
+                f"--warm-up={plan['warm_up']}",
+                "--launch-count=1",
+                "--kill=off",
+                f"--output={folder}",
+                sys.executable,
+                "-u",
+                str(HERE / "profile_eagle_quant_block_sparse_attention_prod.py"),
+                "--impl",
+                s["impl"],
+                "--device-id",
+                str(device),
+                "--softmax-lse-flag",
+                str(s["softmax_lse_flag"]),
+                "--msprof-mode",
+            ]
+            for key_name in PRODUCTION:
+                command += ["--" + key_name.replace("_", "-"), str(s[key_name])]
+            print(f"START {key} DataDir={folder}", flush=True)
+            capture(batch, folder, command)
+            value = duration(folder / "msprof.log")
+            artifacts = raw_artifacts(folder, kernel)
+            batch.commit(
+                key,
+                device=device,
+                impl=s["impl"],
+                kernel=kernel,
+                identity=current["identity"],
+                duration_us=value,
+                directory=str(folder.relative_to(batch.path)),
+                artifacts=[device_file, folder / "command.json", folder / "msprof.log", *artifacts],
+            )
+            print(f"COMMITTED {key} Task Duration(us)={value}", flush=True)
+        reason, code = "COMPLETE", 0
+    except KeyboardInterrupt:
+        reason, code = "PARTIAL SIGINT", 130
+    except SystemExit as error:
+        reason, code = "PARTIAL signal", int(error.code)
+    except Exception:  # noqa: BLE001 - preserve every committed result on scheduler/tool errors.
+        traceback.print_exc()
+        reason, code = "PARTIAL error", 1
+    finally:
+        signal.signal(signal.SIGTERM, previous_handler)
+        summary(batch, reason)
+    return code
+
+
+def main(argv=None):
+    args, plan = parse("perf", argv)
+    if plan["warm_up"] is None:
+        plan["warm_up"] = warmup(selections(plan, perf=True)[0])
+    if args.dry_run:
+        print_preview(args, plan, perf=True)
+        return 0
+    if os.environ.get("ASCEND_RT_VISIBLE_DEVICES"):
+        raise ValueError("unset ASCEND_RT_VISIBLE_DEVICES")
+    batch = Batch("perf", plan, args.resume, args.output_dir)
+    try:
+        with tee_log(batch.path / "performance.log", stderr=True):
+            return run_batch(batch, args, plan)
+    finally:
+        batch.close()
+
+
+sys.argv = sys.argv[1:]  # Show the shell entry point in argparse help and errors.
+sys.exit(main())
+PYTHON

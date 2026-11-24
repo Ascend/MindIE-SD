@@ -7,10 +7,10 @@
 
 namespace NpuArch::Epilogue::Block {
 
-template <typename T2, typename T>
+template <typename T2, typename T, bool SAVE_LSE_GM>
 __simd_vf__ inline void DnSoftmaxQuantBlock_fused_2x512x32_vf(__ubuf__ T2 *dstUbStart, __ubuf__ T *srcUbStart,
     __ubuf__ T *maxUbStart, __ubuf__ T *inMaxUbStart, __ubuf__ float *expMaxUbStart, __ubuf__ float *expSumUbStart,
-    __ubuf__ float *inSumUbStart, __ubuf__ T *scaleUb) {
+    __ubuf__ float *inSumUbStart, __ubuf__ T *scaleUb, __ubuf__ T *lseGmUb, bool isLastKvSTile) {
 #define MAX_0 REG_A0
 #define MAX_1 REG_A1
 #define MAX_2 REG_A2
@@ -218,6 +218,14 @@ __simd_vf__ inline void DnSoftmaxQuantBlock_fused_2x512x32_vf(__ubuf__ T2 *dstUb
 
     DeInterleave(halfReg[IN_MAX_B0], halfReg[TMP_1_B0], halfReg[TMP_0_B0], halfReg[TMP_0_B0]);
     DeInterleave(halfReg[IN_MAX_B1], halfReg[TMP_1_B1], halfReg[TMP_0_B1], halfReg[TMP_0_B1]);
+
+    if constexpr (SAVE_LSE_GM) {
+        if (isLastKvSTile) {
+            MaskReg first32 = CreateMask<T, MaskPattern::VL32>();
+            StoreAlign<T>(lseGmUb, halfReg[IN_MAX_B0], first32);
+            StoreAlign<T>(lseGmUb + 32, halfReg[IN_MAX_B1], first32);
+        }
+    }
 
     LocalMemBar<MemType::VEC_STORE, MemType::VEC_LOAD>();
 

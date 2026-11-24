@@ -188,7 +188,8 @@ class BlockEpilogue<EpilogueOnlineSoftmaxBsaQMode1, OutputType_, Gemm::GemmType<
             uint32_t index = sparseIndex.GetValue(i);
             uint32_t jLoops = n - i * blockSizeK <= QUANT_BLOCK_SIZE ? 1U : subNLoops;
             for (uint32_t j = 0; j < jLoops; ++j) {
-                float kScale = gmKSTensorTla.data().GetValue(index * subNLoops + j);
+                auto kOffset = gmKSTensorTla.layout()(tla::MakeCoord(index * subNLoops + j, uint32_t{0}));
+                float kScale = gmKSTensorTla.data().GetValue(kOffset);
                 scaleTensor[producerBufId].SetValue(i * subNLoops + j, static_cast<ElementInput>(kScale * qScale_));
             }
         }
@@ -196,12 +197,12 @@ class BlockEpilogue<EpilogueOnlineSoftmaxBsaQMode1, OutputType_, Gemm::GemmType<
         scaleBufId_ = (scaleBufId_ + 1U) % SCALE_BUFFER_COUNT;
     }
 
-    template <class TensorP, class TensorQS, class TensorKS, typename ElementIndex>
+    template <bool SAVE_LSE_GM, class TensorP, class TensorQS, class TensorKS, typename ElementIndex>
     __aicore__ inline void operator()(TensorP &l1PTensorTla, TensorQS &gmQSTensorTla, TensorKS &gmKSTensorTla,
         GemmCoord actualBlockShape, uint32_t isFirstKvSTile, uint32_t isLastKvSTile, uint32_t nextKvSTileSize,
         uint32_t ubSBufId, uint32_t l1PBufId, Arch::CrossCoreFlag mm1ToSmFlag, Arch::CrossCoreFlag smToMm2Flag,
         const AscendC::GlobalTensor<ElementIndex> &sparseIndex,
-        const AscendC::GlobalTensor<ElementIndex> &nextSparseIndex) {
+        const AscendC::GlobalTensor<ElementIndex> &nextSparseIndex, __ubuf__ ElementInput *lseGmUb) {
         constexpr int16_t vlSize = static_cast<int16_t>(AscendC::GetVecLen() / sizeof(ElementInput));
         uint32_t m;
         uint16_t mRound;
@@ -268,15 +269,21 @@ class BlockEpilogue<EpilogueOnlineSoftmaxBsaQMode1, OutputType_, Gemm::GemmType<
         AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(ubSBufId + 2); // alloc P
         AscendC::WaitFlag<AscendC::HardEvent::S_V>(currentScaleBufId);
         auto lpUbOutTensor = lpUbTensor[ubSBufId * MAX_UB_S_ELEM_NUM].template ReinterpretCast<float8_e4m3_t>();
-        if ((mRound == 64) && (nRound == 512)) {
-            DnSoftmaxQuantBlock_fused_2x512x32<float8_e4m3_t, half>(lpUbOutTensor,
+        if (unlikely(n < nRound)) {
+            DnSoftmaxQuantBlock<float8_e4m3_t, half, SAVE_LSE_GM, true>(lpUbOutTensor,
                 lsUbTensor[ubSBufId * MAX_UB_S_ELEM_NUM], gmUbTensor, gmUbTensor,
                 dmUbTensor[l1PBufId * DM_UB_GLOBAL_ELEM_NUM], glUbTensor, glUbTensor, scaleTensor[currentScaleBufId],
-                tmpTensor, nRound);
+                tmpTensor, nRound, mRound / 32, lseGmUb, isLastKvSTile, n);
+        } else if ((mRound == 64) && (nRound == 512)) {
+            DnSoftmaxQuantBlock_fused_2x512x32<float8_e4m3_t, half, SAVE_LSE_GM>(lpUbOutTensor,
+                lsUbTensor[ubSBufId * MAX_UB_S_ELEM_NUM], gmUbTensor, gmUbTensor,
+                dmUbTensor[l1PBufId * DM_UB_GLOBAL_ELEM_NUM], glUbTensor, glUbTensor, scaleTensor[currentScaleBufId],
+                tmpTensor, nRound, lseGmUb, isLastKvSTile);
         } else {
-            DnSoftmaxQuantBlock<float8_e4m3_t, half>(lpUbOutTensor, lsUbTensor[ubSBufId * MAX_UB_S_ELEM_NUM],
-                gmUbTensor, gmUbTensor, dmUbTensor[l1PBufId * DM_UB_GLOBAL_ELEM_NUM], glUbTensor, glUbTensor,
-                scaleTensor[currentScaleBufId], tmpTensor, nRound, mRound / 32);
+            DnSoftmaxQuantBlock<float8_e4m3_t, half, SAVE_LSE_GM>(lpUbOutTensor,
+                lsUbTensor[ubSBufId * MAX_UB_S_ELEM_NUM], gmUbTensor, gmUbTensor,
+                dmUbTensor[l1PBufId * DM_UB_GLOBAL_ELEM_NUM], glUbTensor, glUbTensor, scaleTensor[currentScaleBufId],
+                tmpTensor, nRound, mRound / 32, lseGmUb, isLastKvSTile);
         }
         AscendC::SetFlag<AscendC::HardEvent::V_S>(currentScaleBufId);
 
@@ -321,12 +328,13 @@ class BlockEpilogue<EpilogueOnlineSoftmaxBsaQMode1, OutputType_, Gemm::GemmType<
     uint32_t subBlockIdx_, blockSizeK;
     uint32_t scaleBufId_ = 0U;
     float qScale_ = 0.0f;
-    template <typename T2, typename T>
+    template <typename T2, typename T, bool SAVE_LSE_GM>
     __aicore__ inline void DnSoftmaxQuantBlock_fused_2x512x32(const AscendC::LocalTensor<T2> &dstTensor,
         const AscendC::LocalTensor<T> &srcDnTensor, const AscendC::LocalTensor<T> &maxTensor,
         const AscendC::LocalTensor<T> &inMaxTensor, const AscendC::LocalTensor<float> &expMaxTensor,
         const AscendC::LocalTensor<float> &expSumTensor, const AscendC::LocalTensor<float> &inSumTensor,
-        const AscendC::LocalTensor<T> &scaleTensor, const AscendC::LocalTensor<uint8_t> &tmpTensor, uint32_t n_dummy) {
+        const AscendC::LocalTensor<T> &scaleTensor, const AscendC::LocalTensor<uint8_t> &tmpTensor, uint32_t n_dummy,
+        __ubuf__ T *lseGmUb, bool isLastKvSTile) {
         __ubuf__ T *srcUbStart = (__ubuf__ T *)srcDnTensor.GetPhyAddr();
         __ubuf__ T2 *dstUbStart = (__ubuf__ T2 *)dstTensor.GetPhyAddr();
         __ubuf__ T *inMaxUbStart = (__ubuf__ T *)inMaxTensor.GetPhyAddr();
@@ -336,17 +344,18 @@ class BlockEpilogue<EpilogueOnlineSoftmaxBsaQMode1, OutputType_, Gemm::GemmType<
         __ubuf__ float *expSumUbStart = (__ubuf__ float *)expSumTensor.GetPhyAddr();
         __ubuf__ T *scaleUb = (__ubuf__ T *)scaleTensor.GetPhyAddr();
 
-        DnSoftmaxQuantBlock_fused_2x512x32_vf<T2, T>(
-            dstUbStart, srcUbStart, maxUbStart, inMaxUbStart, expMaxUbStart, expSumUbStart, inSumUbStart, scaleUb);
+        DnSoftmaxQuantBlock_fused_2x512x32_vf<T2, T, SAVE_LSE_GM>(dstUbStart, srcUbStart, maxUbStart, inMaxUbStart,
+            expMaxUbStart, expSumUbStart, inSumUbStart, scaleUb, lseGmUb, isLastKvSTile);
     }
 
-    template <typename T2, typename T, uint16_t m = 32, bool DEQ = true, uint16_t DEQ_BLK = 64>
+    template <typename T2, typename T, bool SAVE_LSE_GM, bool HAS_PADDING = false, uint16_t m = 32, bool DEQ = true,
+        uint16_t DEQ_BLK = 64>
     __aicore__ inline void DnSoftmaxQuantBlock(const AscendC::LocalTensor<T2> &dstTensor,
         const AscendC::LocalTensor<T> &srcDnTensor, const AscendC::LocalTensor<T> &maxTensor,
         const AscendC::LocalTensor<T> &inMaxTensor, const AscendC::LocalTensor<float> &expMaxTensor,
         const AscendC::LocalTensor<float> &expSumTensor, const AscendC::LocalTensor<float> &inSumTensor,
         const AscendC::LocalTensor<T> &scaleTensor, const AscendC::LocalTensor<uint8_t> &tmpTensor, const uint32_t n,
-        uint16_t NUM_BLOCKS) {
+        uint16_t NUM_BLOCKS, __ubuf__ T *lseGmUb, bool isLastKvSTile, const uint32_t actualN = 0) {
         using namespace AscendC::Reg;
 
         constexpr static CastTrait castTraitFp32Zero = {
@@ -408,6 +417,11 @@ class BlockEpilogue<EpilogueOnlineSoftmaxBsaQMode1, OutputType_, Gemm::GemmType<
             MaskReg pregAllB8 = CreateMask<T2, MaskPattern::ALL>();
             MaskReg pregHalfFp8 = CreateMask<T2, MaskPattern::VL128>();
 
+            RegTensor<T> vregPadding;
+            if constexpr (HAS_PADDING) {
+                Duplicate<T, T>(vregPadding, (T)-__builtin_inff());
+            }
+
             for (uint16_t blockIdx = 0; blockIdx < NUM_BLOCKS; ++blockIdx) {
                 __ubuf__ T *srcUb = srcUbStart + blockIdx * m * n;
                 __ubuf__ T2 *dstUb = dstUbStart + blockIdx * m * n;
@@ -443,6 +457,24 @@ class BlockEpilogue<EpilogueOnlineSoftmaxBsaQMode1, OutputType_, Gemm::GemmType<
                         Mul(vregSrc2, vregSrc2, vregScale, pregAll);
                         Mul(vregSrc3, vregSrc3, vregScale, pregAll);
 
+                        if constexpr (HAS_PADDING) {
+                            uint32_t colOffset = k * DEQ_BLK + j * R * UNROLL;
+                            if (colOffset + R * UNROLL > actualN) {
+                                // DN32: each key occupies 32 consecutive query lanes.
+                                // Mask after dequantization: a finite raw sentinel can exceed real logits,
+                                // while multiplying a raw -inf sentinel by a zero scale produces NaN.
+                                uint32_t validElements = (actualN - colOffset) * m;
+                                MaskReg pregTail0 = UpdateMask<T>(validElements);
+                                MaskReg pregTail1 = UpdateMask<T>(validElements);
+                                MaskReg pregTail2 = UpdateMask<T>(validElements);
+                                MaskReg pregTail3 = UpdateMask<T>(validElements);
+                                Select(vregSrc0, vregSrc0, vregPadding, pregTail0);
+                                Select(vregSrc1, vregSrc1, vregPadding, pregTail1);
+                                Select(vregSrc2, vregSrc2, vregPadding, pregTail2);
+                                Select(vregSrc3, vregSrc3, vregPadding, pregTail3);
+                            }
+                        }
+
                         Max(vregMax0, vregMax0, vregSrc0, pregAll);
                         StoreAlign<T, PostLiteral::POST_MODE_UPDATE>(src_wr_ptr1, vregSrc0, VL_ELE_B16, pregAll);
                         Max(vregMax1, vregMax1, vregSrc1, pregAll);
@@ -470,6 +502,12 @@ class BlockEpilogue<EpilogueOnlineSoftmaxBsaQMode1, OutputType_, Gemm::GemmType<
 
                 DeInterleave(vregTmp0, vregTmp1, vregGlobalMax, vregGlobalMax);
                 DeInterleave(vregInMax, vregTmp1, vregTmp0, vregTmp0);
+                if constexpr (SAVE_LSE_GM) {
+                    if (isLastKvSTile) {
+                        // The first 32 lanes contain one maximum per local Query row.
+                        StoreAlign<T>(lseGmUb + blockIdx * m, vregInMax, preg32);
+                    }
+                }
 
                 LocalMemBar<MemType::VEC_STORE, MemType::VEC_LOAD>();
                 Duplicate<T, T>(vregAcc0, (T)0.0f);

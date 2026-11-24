@@ -572,10 +572,6 @@ ge::graphStatus BSATiling::ParseAttrs(gert::TilingContext *bsaContext) {
         OP_LOGE(bsaContext->GetNodeName(), "Attr softmaxLseFlag is nullptr.");
         return ge::GRAPH_FAILED;
     } else if (*softmaxLsePtr == LSE_OUT) {
-        if (socVer_ == SOC_VER_950_CODE) {
-            OP_LOGE(bsaContext->GetNodeName(), "Attr softmaxLseFlag must be 0 on chip 950.");
-            return ge::GRAPH_FAILED;
-        }
         softmaxLseFlag_ = true;
     } else if (*softmaxLsePtr == LSE_NO_OUT) {
         softmaxLseFlag_ = false;
@@ -798,8 +794,9 @@ ge::graphStatus BSATiling::FillTilingData(gert::TilingContext *bsaContext) {
 
     // 生成tilingKey（按照开发规范：在tiling层生成）
     uint64_t tilingKey = GenerateTilingKey(bsaContext);
-    if (tilingKey != 9050010030444442ULL && tilingKey != 9050010050444443ULL && tilingKey != 9050010030455552ULL &&
-        tilingKey != 9050010050455553ULL) {
+    const uint64_t baseKey = softmaxLseFlag_ ? tilingKey - 100000000ULL : tilingKey;
+    if (baseKey != 9050010030444442ULL && baseKey != 9050010050444443ULL && baseKey != 9050010030455552ULL &&
+        baseKey != 9050010050455553ULL) {
         OP_LOGE(bsaContext->GetNodeName(), "Unsupported qmode1 tiling key: %lu.", tilingKey);
         return ge::GRAPH_FAILED;
     }

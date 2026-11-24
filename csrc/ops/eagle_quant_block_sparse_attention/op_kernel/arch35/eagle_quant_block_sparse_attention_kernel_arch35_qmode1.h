@@ -46,6 +46,8 @@ class BsaRegularKernelArch35<BsaRegularKernelArch35QMode1, EpilogueMask2Idx, Blo
     using ElementV = typename BlockMmadPV::ElementB;
     using ElementOTmp = typename BlockMmadPV::ElementC;
     using ElementO = typename EpilogueRescaleO::ElementO;
+    using ElementLse = typename EpilogueRescaleO::ElementLse;
+    using DispatchPolicyRescaleO = typename EpilogueRescaleO::DispatchPolicy;
     using ElementSparseMask = typename EpilogueMask2Idx::ElementSparseMask;
     using ElementSparseIdx = typename EpilogueMask2Idx::ElementSparseIdx;
     using ElementSparseCount = typename EpilogueMask2Idx::ElementSparseCount;
@@ -57,6 +59,7 @@ class BsaRegularKernelArch35<BsaRegularKernelArch35QMode1, EpilogueMask2Idx, Blo
     using LayoutP = layout::RowMajor;
     using LayoutV = layout::RowMajor;
     using LayoutO = layout::RowMajor;
+    using LayoutLse = layout::RowMajor;
     using LayoutOTmp = layout::RowMajor;
     using LayoutSparseIdx = layout::RowMajor;
     using LayoutSparseCount = layout::RowMajor;
@@ -111,6 +114,10 @@ class BsaRegularKernelArch35<BsaRegularKernelArch35QMode1, EpilogueMask2Idx, Blo
         gBlockSparseMask.SetGlobalBuffer((__gm__ uint8_t *)params.blockSparseMask);
         AscendC::GlobalTensor<ElementO> gO;
         gO.SetGlobalBuffer((__gm__ ElementO *)params.o);
+        AscendC::GlobalTensor<ElementLse> gLse;
+        if constexpr (DispatchPolicyRescaleO::LSE_MODE == Epilogue::LseMode::OUT_ONLY) {
+            gLse.SetGlobalBuffer((__gm__ ElementLse *)params.lse);
+        }
         AscendC::GlobalTensor<ElementSparseIdx> gSparseIdx;
         if (bsaTilingData->sparsePatternMode == SPARSE_PATTERN_MODE_TABLE) {
             gSparseIdx.SetGlobalBuffer((__gm__ ElementSparseIdx *)params.blockSparseMask);
@@ -159,7 +166,13 @@ class BsaRegularKernelArch35<BsaRegularKernelArch35QMode1, EpilogueMask2Idx, Blo
 #ifdef __DAV_VEC__
         coreIdx = AscendC::GetBlockIdx() / AscendC::GetSubBlockNum();
         EpilogueOnlineSoftmax epilogueOnlineSoftmax(resource, scaleValue_, blockShapeY_);
-        EpilogueRescaleO epilogueRescaleO(resource, embed_);
+        EpilogueRescaleO epilogueRescaleO(resource, embed_, qHeads_);
+        constexpr bool SAVE_LSE_GM =
+            qFormat == Format::BNSD && DispatchPolicyRescaleO::LSE_MODE == Epilogue::LseMode::OUT_ONLY;
+        __ubuf__ half *lseGmUb = nullptr;
+        if constexpr (SAVE_LSE_GM) {
+            lseGmUb = epilogueRescaleO.GetBnsdLseGmUb();
+        }
         constexpr uint32_t lmUbTensorOffset = 7 * 32 * 1024;
         constexpr uint32_t gmUbTensorOffset = lmUbTensorOffset + 128 * sizeof(float);
         constexpr uint32_t dmUbTensorOffset = gmUbTensorOffset + 128 * sizeof(float);
@@ -176,6 +189,10 @@ class BsaRegularKernelArch35<BsaRegularKernelArch35QMode1, EpilogueMask2Idx, Blo
         // For BNSD: [B, N, S, D], strideB = N * S * D, strideN = S * D, strideS = D
         int64_t strideQO = 0;
         int64_t strideKV = 0;
+        int64_t strideLse = 0;
+        int64_t strideLseB = 0;
+        int64_t strideLseN = 0;
+        int64_t strideLseS = 0;
         int64_t strideQOB = 0; // BNSD batch_ stride for Q
         int64_t strideQON = 0; // BNSD head stride for Q
         int64_t strideQOS = 0; // BNSD seq stride for Q
@@ -196,6 +213,15 @@ class BsaRegularKernelArch35<BsaRegularKernelArch35QMode1, EpilogueMask2Idx, Blo
         } else if constexpr (kvFormat == Format::TND) {
             strideKV = kvHeads_ * embed_;
         }
+        if constexpr (DispatchPolicyRescaleO::LSE_MODE == Epilogue::LseMode::OUT_ONLY) {
+            if constexpr (qFormat == Format::TND) {
+                strideLse = qHeads_;
+            } else if constexpr (qFormat == Format::BNSD) {
+                strideLseB = qHeads_ * qSeqlenAligned_;
+                strideLseN = qSeqlenAligned_;
+                strideLseS = 1;
+            }
+        }
         uint32_t embedRound = RoundUp(embed_, 16);
         uint32_t groupSize = qHeads_ / kvHeads_;
         int qkStaticLoopNum = GetQkStaticLoopNum();
@@ -204,6 +230,9 @@ class BsaRegularKernelArch35<BsaRegularKernelArch35QMode1, EpilogueMask2Idx, Blo
         int64_t kBOffset = 0;
         int64_t vBOffset = 0;
         int64_t oBOffset = 0;
+        int64_t lseBOffset = 0;
+        int64_t qScaleBOffset = 0;
+        int64_t kScaleBOffset = 0;
         uint32_t preTotalTaskNum = 0;
         uint32_t curBatch = 0;
         int64_t qSeqlen = actSeqAval_ ? gActualQseqlen.GetValue(curBatch) : qSeqlenAligned_;
@@ -211,17 +240,23 @@ class BsaRegularKernelArch35<BsaRegularKernelArch35QMode1, EpilogueMask2Idx, Blo
         uint32_t curQSTileNum = GetCurQSTileNum(qSeqlen, blockShapeX_, qBaseTile_);
         uint32_t curTotalTaskNum = firstBatchTaskNum_;
         // Go through each task
-        for (uint32_t taskIdx = coreIdx; taskIdx < totalTaskNum_; taskIdx += coreNum) {
+        uint32_t rowsDoneInQTile = 0;
+        for (uint32_t taskIdx = coreIdx; taskIdx < totalTaskNum_;) {
             while (taskIdx >= curTotalTaskNum) {
                 ++curBatch;
                 preTotalTaskNum = curTotalTaskNum;
                 if constexpr (qFormat == Format::TND) {
                     qBOffset += qSeqlen * strideQO;
                     oBOffset += qSeqlen * strideQO;
+                    qScaleBOffset += CeilDiv(qSeqlen, static_cast<int64_t>(QUANT_BLOCK_SIZE)) * qHeads_;
+                    if constexpr (DispatchPolicyRescaleO::LSE_MODE == Epilogue::LseMode::OUT_ONLY) {
+                        lseBOffset += qSeqlen * strideLse;
+                    }
                 }
                 if constexpr (kvFormat == Format::TND) {
                     kBOffset += kvSeqlen * strideKV;
                     vBOffset += kvSeqlen * strideKV;
+                    kScaleBOffset += CeilDiv(kvSeqlen, static_cast<int64_t>(QUANT_BLOCK_SIZE)) * kvHeads_;
                 }
                 qSeqlen = actSeqAval_ ? gActualQseqlen.GetValue(curBatch) : qSeqlenAligned_;
                 kvSeqlen = actSeqAval_ ? gActualKvseqlen.GetValue(curBatch) : kvSeqlenAligned_;
@@ -243,12 +278,27 @@ class BsaRegularKernelArch35<BsaRegularKernelArch35QMode1, EpilogueMask2Idx, Blo
             int64_t sparseMaskNOffset = qHeadIdx * xBlockNumAligned_ * yBlockNumAligned_;
             int64_t sparseMaskXOffset = xBlockIdx * yBlockNumAligned_;
             int64_t gmOffsetSparseMask = sparseMaskBOffset + sparseMaskNOffset + sparseMaskXOffset;
-            // corresponding Q/K/V/O gm offset of cur task
+            // corresponding Q/K/V/O/Lse gm offset of cur task
             int64_t gmOffsetQ = 0;
             int64_t gmOffsetK = 0;
             int64_t gmOffsetV = 0;
             int64_t gmOffsetO = 0;
-            int64_t qSOffset = xBlockIdx * blockShapeX_ + qSTileIdxCurXBlock * qBaseTile_;
+            int64_t gmOffsetLse = 0;
+            int64_t xBlockStart = static_cast<int64_t>(xBlockIdx) * blockShapeX_;
+            int64_t tileStart = xBlockStart + qSTileIdxCurXBlock * qBaseTile_;
+            int64_t xBlockEnd = tla::min(xBlockStart + blockShapeX_, qSeqlen);
+            int64_t qSOffset = tileStart + rowsDoneInQTile;
+            uint32_t qSTileSizeAct = tla::min(tileStart + qBaseTile_, xBlockEnd) - qSOffset;
+            // An AIV broadcasts one query scale. Peel only a leading partial 64-token
+            // group; the aligned remainder fits the regular one- or two-AIV split.
+            uint32_t rowInQuantGroup = qSOffset % QUANT_BLOCK_SIZE;
+            if (unlikely(rowInQuantGroup != 0 && qSTileSizeAct > QUANT_BLOCK_SIZE - rowInQuantGroup)) {
+                qSTileSizeAct = QUANT_BLOCK_SIZE - rowInQuantGroup;
+                rowsDoneInQTile += qSTileSizeAct;
+            } else {
+                rowsDoneInQTile = 0;
+                taskIdx += coreNum;
+            }
             if constexpr (qFormat == Format::BNSD) {
                 qBOffset = curBatch * strideQOB;
                 oBOffset = curBatch * strideQOB;
@@ -267,19 +317,34 @@ class BsaRegularKernelArch35<BsaRegularKernelArch35QMode1, EpilogueMask2Idx, Blo
                 gmOffsetK = kBOffset + kvHeadIdx * embed_;
                 gmOffsetV = vBOffset + kvHeadIdx * embed_;
             }
-            // the actual x block num of cur batch_, calc by actual qseqlen
-            uint32_t xBlockNumAval = static_cast<uint32_t>(CeilDiv(qSeqlen, static_cast<int64_t>(blockShapeX_)));
-            uint32_t xBlockSize =
-                (xBlockIdx == xBlockNumAval - 1) ? (qSeqlen - xBlockIdx * blockShapeX_) : blockShapeX_;
-            uint32_t qSTileNumCurXBlock = CeilDiv(xBlockSize, qBaseTile_);
-            uint32_t qSTileSizeAct = (qSTileIdxCurXBlock == qSTileNumCurXBlock - 1)
-                ? (xBlockSize - qSTileIdxCurXBlock * qBaseTile_)
-                : qBaseTile_;
+            if constexpr (DispatchPolicyRescaleO::LSE_MODE == Epilogue::LseMode::OUT_ONLY) {
+                if constexpr (qFormat == Format::TND) {
+                    gmOffsetLse = lseBOffset + qSOffset * strideLse + qHeadIdx;
+                } else if constexpr (qFormat == Format::BNSD) {
+                    lseBOffset = curBatch * strideLseB;
+                    gmOffsetLse = lseBOffset + qHeadIdx * strideLseN + qSOffset * strideLseS;
+                }
+            }
             // calc the gathered kvS from sparse mask
             uint32_t gmOffsetSparseCount =
                 curBatch * qHeads_ * xBlockNumAligned_ + qHeadIdx * xBlockNumAligned_ + xBlockIdx;
             uint32_t yBlockNumRsvd = gSparseCount.GetValue(gmOffsetSparseCount);
             if (yBlockNumRsvd == 0) {
+#ifdef __DAV_VEC__
+                // Empty rows must define O in both modes; LSE is independently optional.
+                epilogueRescaleO.WriteEmptyO(gO[gmOffsetO], qSTileSizeAct, embed_);
+                if constexpr (DispatchPolicyRescaleO::LSE_MODE == Epilogue::LseMode::OUT_ONLY) {
+                    uint32_t lseShapeCol = 0;
+                    if constexpr (qFormat == Format::TND) {
+                        lseShapeCol = strideLse;
+                    } else if constexpr (qFormat == Format::BNSD) {
+                        lseShapeCol = strideLseS;
+                    }
+                    auto gmLseLayoutTla = tla::MakeLayout<ElementLse, LayoutLse>(qBaseTile_, lseShapeCol);
+                    auto gmLseTensorTla = tla::MakeTensor(gLse[gmOffsetLse], gmLseLayoutTla, Arch::PositionGM{});
+                    epilogueRescaleO.WriteEmptyLse(gmLseTensorTla, qSTileSizeAct);
+                }
+#endif
                 continue;
             }
             uint32_t gmOffsetSparseIdx = gmOffsetSparseCount * yBlockNumAligned_;
@@ -382,17 +447,16 @@ class BsaRegularKernelArch35<BsaRegularKernelArch35QMode1, EpilogueMask2Idx, Blo
                     }
                     if constexpr (qFormat == Format::BNSD) {
                         uint32_t qScaleSeqNum = CeilDiv(qSeqlenAligned_, QUANT_BLOCK_SIZE);
-                        qsOffset = curBatch * qHeads_ * qScaleSeqNum + qHeadIdx * qScaleSeqNum +
-                            CeilDiv(qSOffset, QUANT_BLOCK_SIZE);
+                        qsOffset =
+                            curBatch * qHeads_ * qScaleSeqNum + qHeadIdx * qScaleSeqNum + qSOffset / QUANT_BLOCK_SIZE;
                     } else if constexpr (qFormat == Format::TND) {
-                        qsOffset = CeilDiv((qBOffset / embed_), QUANT_BLOCK_SIZE) +
-                            CeilDiv(qSOffset, QUANT_BLOCK_SIZE) * qHeads_ + qHeadIdx;
+                        qsOffset = qScaleBOffset + (qSOffset / QUANT_BLOCK_SIZE) * qHeads_ + qHeadIdx;
                     }
                     if constexpr (kvFormat == Format::BNSD) {
                         uint32_t kScaleSeqNum = CeilDiv(kvSeqlenAligned_, QUANT_BLOCK_SIZE);
                         ksOffset = curBatch * kvHeads_ * kScaleSeqNum + kvHeadIdx * kScaleSeqNum;
                     } else if constexpr (kvFormat == Format::TND) {
-                        ksOffset = CeilDiv(kBOffset / embed_, QUANT_BLOCK_SIZE) + kvHeadIdx;
+                        ksOffset = kScaleBOffset + kvHeadIdx;
                     }
                     uint32_t qScaleStride = (qFormat == Format::BNSD) ? 1 : qHeads_;
                     uint32_t kScaleStride = (kvFormat == Format::BNSD) ? 1 : kvHeads_;
@@ -414,9 +478,10 @@ class BsaRegularKernelArch35<BsaRegularKernelArch35QMode1, EpilogueMask2Idx, Blo
                             : kvBaseTile_;
                         nextSparseTableStartOffset += kvBaseTile_ / blockShapeY_;
                     }
-                    epilogueOnlineSoftmax(l1PTensorTla, gmQSTensorTla, gmKSTensorTla, actualBlockShapeQK,
-                        (gatheredKvSTileIdx == 0), isLastKvSTile, nextKvSTileSize, ubSBufId, l1PBufId, mm1ToSmFlag,
-                        smToMm2Flag, gSparseIdx[sparseTableStartOffset], gSparseIdx[nextSparseTableStartOffset]);
+                    epilogueOnlineSoftmax.template operator()<SAVE_LSE_GM>(l1PTensorTla, gmQSTensorTla, gmKSTensorTla,
+                        actualBlockShapeQK, (gatheredKvSTileIdx == 0), isLastKvSTile, nextKvSTileSize, ubSBufId,
+                        l1PBufId, mm1ToSmFlag, smToMm2Flag, gSparseIdx[sparseTableStartOffset],
+                        gSparseIdx[nextSparseTableStartOffset], lseGmUb);
                     if (gatheredKvSTileIdx == 0) {
                         static constexpr float fp8MaxReciprocal = 1.0f / 448.0f; // exp((half)ln(448))
                         AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(EVENT_ID7);
@@ -472,9 +537,23 @@ class BsaRegularKernelArch35<BsaRegularKernelArch35QMode1, EpilogueMask2Idx, Blo
                     // rescale O
                     Arch::CrossCoreFlag mm2ToReFlag(Mm2ToReFlagId);
                     uint32_t curTileMod = gatheredKvSTileIdxDe % (PRE_LAUNCH + 1);
-                    epilogueRescaleO(gO[gmOffsetO], (GemmCoord){rowNum, embed_, kvSTileSizeAct}, curTileMod,
-                        gatheredKvSTileIdxDe, (gatheredKvSTileIdxDe == 0), (gatheredKvSTileIdxDe == kvSLoopNum - 1),
-                        mm2ToReFlag);
+                    if constexpr (DispatchPolicyRescaleO::LSE_MODE == Epilogue::LseMode::OUT_ONLY) {
+                        uint32_t lseShapeCol = 0;
+                        if constexpr (qFormat == Format::TND) {
+                            lseShapeCol = strideLse;
+                        } else if constexpr (qFormat == Format::BNSD) {
+                            lseShapeCol = strideLseS;
+                        }
+                        auto gmLseLayoutTla = tla::MakeLayout<ElementLse, LayoutLse>(qBaseTile_, lseShapeCol);
+                        auto gmLseTensorTla = tla::MakeTensor(gLse[gmOffsetLse], gmLseLayoutTla, Arch::PositionGM{});
+                        epilogueRescaleO(gO[gmOffsetO], gmLseTensorTla, (GemmCoord){rowNum, embed_, kvSTileSizeAct},
+                            curTileMod, gatheredKvSTileIdxDe, (gatheredKvSTileIdxDe == 0),
+                            (gatheredKvSTileIdxDe == kvSLoopNum - 1), mm2ToReFlag);
+                    } else {
+                        epilogueRescaleO(gO[gmOffsetO], (GemmCoord){rowNum, embed_, kvSTileSizeAct}, curTileMod,
+                            gatheredKvSTileIdxDe, (gatheredKvSTileIdxDe == 0), (gatheredKvSTileIdxDe == kvSLoopNum - 1),
+                            mm2ToReFlag);
+                    }
 #endif
                 }
             }

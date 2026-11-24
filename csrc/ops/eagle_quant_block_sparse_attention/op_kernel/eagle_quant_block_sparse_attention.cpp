@@ -44,22 +44,50 @@ extern "C" __global__ __aicore__ void eagle_quant_block_sparse_attention(__gm__ 
         TILING_KEY_IS(QKINT8_VFP8E4M3_QBNSD_KVBNSD_NOCACHE_SMF16_REF32_NOMASK_KEY);
         TILING_KEY_IS(QKINT8_VFP8E4M3_QTND_KVTND_NOCACHE_SMF16_REF32_OBF16_NOMASK_KEY);
         TILING_KEY_IS(QKINT8_VFP8E4M3_QBNSD_KVBNSD_NOCACHE_SMF16_REF32_OBF16_NOMASK_KEY);
+        TILING_KEY_IS(QKINT8_VFP8E4M3_QTND_KVTND_NOCACHE_SMF16_REF32_NOMASK_LSE_OUT_KEY);
+        TILING_KEY_IS(QKINT8_VFP8E4M3_QBNSD_KVBNSD_NOCACHE_SMF16_REF32_NOMASK_LSE_OUT_KEY);
+        TILING_KEY_IS(QKINT8_VFP8E4M3_QTND_KVTND_NOCACHE_SMF16_REF32_OBF16_NOMASK_LSE_OUT_KEY);
+        TILING_KEY_IS(QKINT8_VFP8E4M3_QBNSD_KVBNSD_NOCACHE_SMF16_REF32_OBF16_NOMASK_LSE_OUT_KEY);
 #if TILING_KEY_VAR == QKINT8_VFP8E4M3_QTND_KVTND_NOCACHE_SMF16_REF32_NOMASK_KEY
         BsaInferIntfRegular<int8_t, float8_e4m3_t, half, half, float, BsaKernelArch35::Format::TND,
-            BsaKernelArch35::Format::TND, 1>(query, key, value, mask, blockTable, query_scale, key_scale, value_scale,
-            attentionOut, actualSeqLengths, actualSeqLengthsKv, blockSparseMask, user, tiling);
+            BsaKernelArch35::Format::TND, 1, Epilogue::LseMode::NONE, Epilogue::LseFormat::TN1>(query, key, value, mask,
+            blockTable, query_scale, key_scale, value_scale, attentionOut, actualSeqLengths, actualSeqLengthsKv,
+            blockSparseMask, user, softmaxLse, tiling);
 #elif TILING_KEY_VAR == QKINT8_VFP8E4M3_QBNSD_KVBNSD_NOCACHE_SMF16_REF32_NOMASK_KEY
         BsaInferIntfRegular<int8_t, float8_e4m3_t, half, half, float, BsaKernelArch35::Format::BNSD,
-            BsaKernelArch35::Format::BNSD, 1>(query, key, value, mask, blockTable, query_scale, key_scale, value_scale,
-            attentionOut, actualSeqLengths, actualSeqLengthsKv, blockSparseMask, user, tiling);
+            BsaKernelArch35::Format::BNSD, 1, Epilogue::LseMode::NONE, Epilogue::LseFormat::BNS1>(query, key, value,
+            mask, blockTable, query_scale, key_scale, value_scale, attentionOut, actualSeqLengths, actualSeqLengthsKv,
+            blockSparseMask, user, softmaxLse, tiling);
 #elif TILING_KEY_VAR == QKINT8_VFP8E4M3_QTND_KVTND_NOCACHE_SMF16_REF32_OBF16_NOMASK_KEY
         BsaInferIntfRegular<int8_t, float8_e4m3_t, bfloat16_t, half, float, BsaKernelArch35::Format::TND,
-            BsaKernelArch35::Format::TND, 1>(query, key, value, mask, blockTable, query_scale, key_scale, value_scale,
-            attentionOut, actualSeqLengths, actualSeqLengthsKv, blockSparseMask, user, tiling);
+            BsaKernelArch35::Format::TND, 1, Epilogue::LseMode::NONE, Epilogue::LseFormat::TN1>(query, key, value, mask,
+            blockTable, query_scale, key_scale, value_scale, attentionOut, actualSeqLengths, actualSeqLengthsKv,
+            blockSparseMask, user, softmaxLse, tiling);
 #elif TILING_KEY_VAR == QKINT8_VFP8E4M3_QBNSD_KVBNSD_NOCACHE_SMF16_REF32_OBF16_NOMASK_KEY
         BsaInferIntfRegular<int8_t, float8_e4m3_t, bfloat16_t, half, float, BsaKernelArch35::Format::BNSD,
-            BsaKernelArch35::Format::BNSD, 1>(query, key, value, mask, blockTable, query_scale, key_scale, value_scale,
-            attentionOut, actualSeqLengths, actualSeqLengthsKv, blockSparseMask, user, tiling);
+            BsaKernelArch35::Format::BNSD, 1, Epilogue::LseMode::NONE, Epilogue::LseFormat::BNS1>(query, key, value,
+            mask, blockTable, query_scale, key_scale, value_scale, attentionOut, actualSeqLengths, actualSeqLengthsKv,
+            blockSparseMask, user, softmaxLse, tiling);
+#elif TILING_KEY_VAR == QKINT8_VFP8E4M3_QTND_KVTND_NOCACHE_SMF16_REF32_NOMASK_LSE_OUT_KEY
+        BsaInferIntfRegular<int8_t, float8_e4m3_t, half, half, float, BsaKernelArch35::Format::TND,
+            BsaKernelArch35::Format::TND, 1, Epilogue::LseMode::OUT_ONLY, Epilogue::LseFormat::TN1>(query, key, value,
+            mask, blockTable, query_scale, key_scale, value_scale, attentionOut, actualSeqLengths, actualSeqLengthsKv,
+            blockSparseMask, user, softmaxLse, tiling);
+#elif TILING_KEY_VAR == QKINT8_VFP8E4M3_QBNSD_KVBNSD_NOCACHE_SMF16_REF32_NOMASK_LSE_OUT_KEY
+        BsaInferIntfRegular<int8_t, float8_e4m3_t, half, half, float, BsaKernelArch35::Format::BNSD,
+            BsaKernelArch35::Format::BNSD, 1, Epilogue::LseMode::OUT_ONLY, Epilogue::LseFormat::BNS1>(query, key, value,
+            mask, blockTable, query_scale, key_scale, value_scale, attentionOut, actualSeqLengths, actualSeqLengthsKv,
+            blockSparseMask, user, softmaxLse, tiling);
+#elif TILING_KEY_VAR == QKINT8_VFP8E4M3_QTND_KVTND_NOCACHE_SMF16_REF32_OBF16_NOMASK_LSE_OUT_KEY
+        BsaInferIntfRegular<int8_t, float8_e4m3_t, bfloat16_t, half, float, BsaKernelArch35::Format::TND,
+            BsaKernelArch35::Format::TND, 1, Epilogue::LseMode::OUT_ONLY, Epilogue::LseFormat::TN1>(query, key, value,
+            mask, blockTable, query_scale, key_scale, value_scale, attentionOut, actualSeqLengths, actualSeqLengthsKv,
+            blockSparseMask, user, softmaxLse, tiling);
+#elif TILING_KEY_VAR == QKINT8_VFP8E4M3_QBNSD_KVBNSD_NOCACHE_SMF16_REF32_OBF16_NOMASK_LSE_OUT_KEY
+        BsaInferIntfRegular<int8_t, float8_e4m3_t, bfloat16_t, half, float, BsaKernelArch35::Format::BNSD,
+            BsaKernelArch35::Format::BNSD, 1, Epilogue::LseMode::OUT_ONLY, Epilogue::LseFormat::BNS1>(query, key, value,
+            mask, blockTable, query_scale, key_scale, value_scale, attentionOut, actualSeqLengths, actualSeqLengthsKv,
+            blockSparseMask, user, softmaxLse, tiling);
 #endif
 #endif
     }

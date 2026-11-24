@@ -59,16 +59,17 @@ struct BsaKernelParamsArch35 {
     GM_ADDR blockSparseMask;
     GM_ADDR o;
     GM_ADDR workSpace;
+    GM_ADDR lse;
     GM_ADDR tiling;
 
     // Methods
     __aicore__ inline BsaKernelParamsArch35() {}
     __aicore__ inline BsaKernelParamsArch35(GM_ADDR q_, GM_ADDR k_, GM_ADDR v_, GM_ADDR mask_, GM_ADDR blockTables_,
         GM_ADDR query_scale_, GM_ADDR key_scale_, GM_ADDR value_scale_, GM_ADDR actualQseqlen_, GM_ADDR actualKvseqlen_,
-        GM_ADDR blockSparseMask_, GM_ADDR o_, GM_ADDR workSpace_, GM_ADDR tiling_)
+        GM_ADDR blockSparseMask_, GM_ADDR o_, GM_ADDR workSpace_, GM_ADDR lse_, GM_ADDR tiling_)
         : q(q_), k(k_), v(v_), mask(mask_), blockTables(blockTables_), actualQseqlen(actualQseqlen_),
           query_scale(query_scale_), key_scale(key_scale_), value_scale(value_scale_), actualKvseqlen(actualKvseqlen_),
-          blockSparseMask(blockSparseMask_), o(o_), workSpace(workSpace_), tiling(tiling_) {}
+          blockSparseMask(blockSparseMask_), o(o_), workSpace(workSpace_), lse(lse_), tiling(tiling_) {}
 };
 
 constexpr uint32_t SPARSE_PATTERN_MODE_TABLE = 1;

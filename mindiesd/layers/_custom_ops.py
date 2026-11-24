@@ -923,6 +923,8 @@ def eagle_quant_block_sparse_attention_fake(
     value_dtype: Optional[torch.dtype] = None,
     output_dtype: Optional[torch.dtype] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
+    if softmax_lse_flag not in (0, 1):
+        raise RuntimeError("eagle_quant_block_sparse_attention: softmax_lse_flag must be 0 or 1")
     if output_dtype is not None:
         out_dtype = output_dtype
     elif query_scale is not None:

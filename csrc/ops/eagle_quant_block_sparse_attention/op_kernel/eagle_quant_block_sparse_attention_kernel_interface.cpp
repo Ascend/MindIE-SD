@@ -37,10 +37,11 @@ using namespace NpuArch;
 using namespace BsaKernelArch35;
 
 template <class InQKDtype, class InVDtype, class OUTPODType, class SMDtype, class REDtype, Format qFormat,
-    Format kvFormat, int quantMode = 1, std::enable_if_t<quantMode == 1, int> = 0>
+    Format kvFormat, int quantMode, Epilogue::LseMode lseMode, Epilogue::LseFormat lseFormat,
+    std::enable_if_t<quantMode == 1, int> = 0>
 __global__ __aicore__ void BsaInferIntfRegular(GM_ADDR q, GM_ADDR k, GM_ADDR v, GM_ADDR mask, GM_ADDR blockTables,
     GM_ADDR query_scale, GM_ADDR key_scale, GM_ADDR value_scale, GM_ADDR o, GM_ADDR actualQseqlen,
-    GM_ADDR actualKvseqlen, GM_ADDR blockSparseMask, GM_ADDR workspace, GM_ADDR tiling) {
+    GM_ADDR actualKvseqlen, GM_ADDR blockSparseMask, GM_ADDR workspace, GM_ADDR lse, GM_ADDR tiling) {
     using ArchTag = Arch::AtlasA5;
     using ElementSparseMask = uint8_t;
     using ElementSparseIdx = int32_t;
@@ -93,7 +94,8 @@ __global__ __aicore__ void BsaInferIntfRegular(GM_ADDR q, GM_ADDR k, GM_ADDR v, 
     using BlockMmadPV = Gemm::Block::BlockMmadTla<DispatchPolicyPV, L1TileShapePV, L0TileShapePV, ElementP, ElementV,
         ElementOTmp, void, TileCopyPV>;
     // rescale O
-    using DispatchPolicyRescaleO = Epilogue::EpilogueAtlasA5BsaQMode1RescaleO;
+    using DispatchPolicyRescaleO =
+        Epilogue::EpilogueAtlasA5BsaQMode1RescaleO<lseMode, lseFormat, qFormat == Format::TND>;
     using TileCopyRescaleO = Epilogue::Tile::TileCopyRescaleO<ArchTag, ElementO, LayoutO, LayoutOTmp>;
     using EpilogueRescaleO = Epilogue::Block::BlockEpilogue<DispatchPolicyRescaleO, ElementO, ElementOTmp, ElementS,
         TileCopyRescaleO, Arch::PositionL0C>;
@@ -101,7 +103,7 @@ __global__ __aicore__ void BsaInferIntfRegular(GM_ADDR q, GM_ADDR k, GM_ADDR v, 
     using BsaRegularKernelArch35 = BsaRegularKernelArch35<BsaRegularKernelArch35QMode1, EpilogueMask2Idx, BlockMmadQK,
         EpilogueOnlineSoftmax, BlockMmadPV, EpilogueRescaleO, qFormat, kvFormat>;
     BsaKernelParamsArch35 params{q, k, v, mask, blockTables, query_scale, key_scale, value_scale, actualQseqlen,
-        actualKvseqlen, blockSparseMask, o, workspace, tiling};
+        actualKvseqlen, blockSparseMask, o, workspace, lse, tiling};
     BsaRegularKernelArch35 bsaRegularKernelArch35;
     bsaRegularKernelArch35(params);
 }
