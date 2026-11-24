@@ -15,6 +15,7 @@ from .attention_forward import attention_forward
 from .quant_flash_attn import quant_attention
 from .attention_forward_varlen import attention_forward_varlen
 from .sparse_flash_attn import sparse_attention
+from .flex_attention import FlexAttentionMask, check_flex_attention_device, flex_attention, make_block_causal_mask
 from ..triton_utils import _HAS_TRITON, _extension_module
 
 if _HAS_TRITON and _extension_module is not None:
@@ -36,4 +37,8 @@ __all__ = [
     "attention_forward_varlen",
     "sparse_attention",
     "SparseLinearAttention",
+    "check_flex_attention_device",
+    "flex_attention",
+    "make_block_causal_mask",
+    "FlexAttentionMask",
 ]
