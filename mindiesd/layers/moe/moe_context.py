@@ -11,6 +11,7 @@
 # See the Mulan PSL v2 for more details.
 
 from collections.abc import Callable
+from dataclasses import dataclass, replace
 from enum import Enum
 
 import torch
@@ -224,39 +225,75 @@ class MoECommType(Enum):
     EP = "ep"
 
 
-_TP_GROUP = None
-_EP_GROUP = None
-_MOE_COMM_TYPE = MoECommType.NONE
-_MOE_QUANT_ALGO = QuantAlgorithm.NO_QUANT
+@dataclass(frozen=True)
+class MoECommContext:
+    """Communicator state of one MoE invocation.
+
+    Kept as one value instead of three independent globals: the process groups, the
+    resolved communication mode and the quantization algorithm always belong to the
+    same invocation, and a half-updated set is how "the group says EP but the mode
+    says TP" bugs appear. `moe()` installs a fresh context per call, dispatchers read
+    it through the accessors below, and tests reset it explicitly.
+    """
+
+    tp_group: object | None = None
+    ep_group: object | None = None
+    comm_type: MoECommType = MoECommType.NONE
+    quant_algo: QuantAlgorithm = QuantAlgorithm.NO_QUANT
+
+    def group(self):
+        """Return the process group selected for MoE communication."""
+        if self.comm_type == MoECommType.EP:
+            return self.ep_group
+        if self.comm_type == MoECommType.TP:
+            return self.tp_group
+        return None
+
+
+_MOE_CONTEXT = MoECommContext()
+
+
+def current_moe_context() -> MoECommContext:
+    """Return the context of the running MoE invocation."""
+    return _MOE_CONTEXT
+
+
+def reset_moe_context() -> None:
+    """Forget the running context.
+
+    Used by tests and teardown between cases; the forward path always overwrites it at
+    the next `moe()` call, so no production caller resets it.
+    """
+    global _MOE_CONTEXT
+    _MOE_CONTEXT = MoECommContext()
 
 
 def set_moe_comm_context(tp_group=None, ep_group=None) -> None:
     """Set process-group context for the current MoE invocation."""
-    global _TP_GROUP, _EP_GROUP, _MOE_COMM_TYPE
-    _TP_GROUP = tp_group
-    _EP_GROUP = ep_group
+    global _MOE_CONTEXT
     if ep_group is not None and dist.get_world_size(ep_group) > 1:
-        _MOE_COMM_TYPE = MoECommType.EP
+        comm_type = MoECommType.EP
     elif tp_group is not None and dist.get_world_size(tp_group) > 1:
-        _MOE_COMM_TYPE = MoECommType.TP
+        comm_type = MoECommType.TP
     else:
-        _MOE_COMM_TYPE = MoECommType.NONE
+        comm_type = MoECommType.NONE
+    _MOE_CONTEXT = replace(_MOE_CONTEXT, tp_group=tp_group, ep_group=ep_group, comm_type=comm_type)
 
 
 def get_moe_comm_type() -> MoECommType:
     """Return the resolved MoE communication mode."""
-    return _MOE_COMM_TYPE
+    return _MOE_CONTEXT.comm_type
 
 
 def set_moe_quant_algo(quant_algo: QuantAlgorithm = QuantAlgorithm.NO_QUANT) -> None:
     """Store the current MoE quantization algorithm."""
-    global _MOE_QUANT_ALGO
-    _MOE_QUANT_ALGO = quant_algo
+    global _MOE_CONTEXT
+    _MOE_CONTEXT = replace(_MOE_CONTEXT, quant_algo=quant_algo)
 
 
 def get_moe_quant_algo() -> QuantAlgorithm:
     """Return the current MoE quantization algorithm."""
-    return _MOE_QUANT_ALGO
+    return _MOE_CONTEXT.quant_algo
 
 
 def should_use_gmm_finalize_routing(dispatcher_type: str) -> bool:
@@ -266,37 +303,39 @@ def should_use_gmm_finalize_routing(dispatcher_type: str) -> bool:
 
 def dynamic_quant(hidden_states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Apply dynamic quantization according to the current MoE quantization algorithm."""
-    if _MOE_QUANT_ALGO == QuantAlgorithm.W8A8_DYNAMIC:
+    quant_algo = _MOE_CONTEXT.quant_algo
+    if quant_algo == QuantAlgorithm.W8A8_DYNAMIC:
         return torch_npu.npu_dynamic_quant(hidden_states, dst_type=torch.int8)
-    if _MOE_QUANT_ALGO == QuantAlgorithm.W8A8_MXFP8:
+    if quant_algo == QuantAlgorithm.W8A8_MXFP8:
         return torch_npu.npu_dynamic_mx_quant(hidden_states, dst_type=torch.float8_e4m3fn)
-    raise ParametersInvalid(f"Unsupported MoE quantization algorithm: {_MOE_QUANT_ALGO}.")
+    raise ParametersInvalid(f"Unsupported MoE quantization algorithm: {quant_algo}.")
 
 
 def get_init_routing_quant_mode(dynamic_scale: torch.Tensor | None) -> int:
     """Return npu_moe_init_routing_v2 quant mode: -1 no quant, 1 dynamic INT8, 3 MXFP8."""
     if not is_moe_quant() or dynamic_scale is not None:
         return -1
-    if _MOE_QUANT_ALGO == QuantAlgorithm.W8A8_DYNAMIC:
+    quant_algo = _MOE_CONTEXT.quant_algo
+    if quant_algo == QuantAlgorithm.W8A8_DYNAMIC:
         return 1
-    if _MOE_QUANT_ALGO == QuantAlgorithm.W8A8_MXFP8:
+    if quant_algo == QuantAlgorithm.W8A8_MXFP8:
         return 3
-    raise ParametersInvalid(f"Unsupported MoE quantization algorithm: {_MOE_QUANT_ALGO}.")
+    raise ParametersInvalid(f"Unsupported MoE quantization algorithm: {quant_algo}.")
 
 
 def is_moe_quant() -> bool:
     """Return whether the current MoE path uses quantization."""
-    return _MOE_QUANT_ALGO != QuantAlgorithm.NO_QUANT
+    return _MOE_CONTEXT.quant_algo != QuantAlgorithm.NO_QUANT
 
 
 def is_moe_int_quant() -> bool:
     """Return whether the current MoE path uses integer quantization."""
-    return _MOE_QUANT_ALGO in MOE_INT_QUANT_ALGOS
+    return _MOE_CONTEXT.quant_algo in MOE_INT_QUANT_ALGOS
 
 
 def is_moe_mxfp_quant() -> bool:
     """Return whether the current MoE path uses MXFP quantization."""
-    return _MOE_QUANT_ALGO in MOE_MXFP_QUANT_ALGOS
+    return _MOE_CONTEXT.quant_algo in MOE_MXFP_QUANT_ALGOS
 
 
 def set_moe_context(tp_group=None, ep_group=None, quant_algo: QuantAlgorithm = QuantAlgorithm.NO_QUANT) -> None:
@@ -307,11 +346,7 @@ def set_moe_context(tp_group=None, ep_group=None, quant_algo: QuantAlgorithm = Q
 
 def get_moe_group():
     """Return the process group selected for MoE communication."""
-    if _MOE_COMM_TYPE == MoECommType.EP:
-        return _EP_GROUP
-    if _MOE_COMM_TYPE == MoECommType.TP:
-        return _TP_GROUP
-    return None
+    return _MOE_CONTEXT.group()
 
 
 def build_prepare_input(
@@ -382,8 +417,14 @@ def build_token_dispatch_input(
     weights: MoEWeights,
     dynamic_scale: torch.Tensor | None = None,
     use_gmm_finalize_routing: bool = False,
+    device_indices_map: torch.Tensor | None = None,
 ) -> MoETokenDispatchInput:
-    """Build the token-dispatch input wrapper."""
+    """Build the token-dispatch input wrapper.
+
+    `device_indices_map` carries the expert layout published by an EPLB
+    re-placement. It stays `None` on the legacy path, where the dispatcher derives
+    the layout from the even expert partition.
+    """
     return MoETokenDispatchInput(
         hidden_states=hidden_states,
         topk_weights=topk_weights,
@@ -393,6 +434,7 @@ def build_token_dispatch_input(
         local_num_experts=weights.w13_weight.shape[0],
         dynamic_scale=dynamic_scale,
         use_gmm_finalize_routing=use_gmm_finalize_routing,
+        device_indices_map=device_indices_map,
     )
 
 

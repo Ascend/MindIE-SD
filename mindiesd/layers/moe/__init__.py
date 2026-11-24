@@ -10,6 +10,7 @@
 # MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
 
+from .eplb_hook import EplbWeightUpdate, MoEEplbHook
 from .moe import moe
 
-__all__ = ["moe"]
+__all__ = ["EplbWeightUpdate", "MoEEplbHook", "moe"]

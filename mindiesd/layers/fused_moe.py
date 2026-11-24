@@ -18,6 +18,7 @@ import torch.distributed as dist
 from ..quantization.config import QuantConfig
 from ..utils import ParametersInvalid
 from .moe import moe
+from .moe.eplb_hook import MoEEplbHook
 
 
 def fused_moe(
@@ -46,6 +47,7 @@ def fused_moe(
     reduce_routed_out: bool = True,
     return_dispatcher_type: bool = False,
     use_fused_op: bool = False,
+    eplb_hook: MoEEplbHook | None = None,
 ) -> torch.Tensor | tuple[torch.Tensor, str]:
     """Run MoE through the public fused-MoE entry.
 
@@ -115,6 +117,11 @@ def fused_moe(
         use_fused_op (bool, optional):
             Whether to use the real fused MoE op. The current version does not
             support this path and falls back to the non-fused MoE implementation.
+        eplb_hook (MoEEplbHook, optional):
+            Dynamic expert load balancing hook. ``None`` (default) keeps the
+            legacy forward path unchanged. A re-placement is applied when every
+            rank keeps the same expert count; the owned expert set may change.
+            Biased or quantized layers are skipped.
 
     Returns:
         torch.Tensor: Output activations with the same shape as ``hidden_states``.
@@ -149,5 +156,6 @@ def fused_moe(
         "custom_routing_function": custom_routing_function,
         "reduce_routed_out": reduce_routed_out,
         "return_dispatcher_type": return_dispatcher_type,
+        "eplb_hook": eplb_hook,
     }
     return moe(**moe_kwargs)

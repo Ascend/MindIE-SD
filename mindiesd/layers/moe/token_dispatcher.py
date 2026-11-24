@@ -18,6 +18,7 @@ import torch.nn.functional as F
 import torch_npu
 
 from ...utils import ParametersInvalid
+from .expert_layout import owned_columns, within_rank_positions
 from .comm_ops import (
     all_gather,
     all_reduce,
@@ -258,17 +259,21 @@ class DynamicDispatcher(TokenDispatcher):
             num_experts=token_dispatch_input.num_experts,
             local_num_experts=token_dispatch_input.local_num_experts,
             ep_group=moe_group,
+            device_indices_map=getattr(token_dispatch_input, "device_indices_map", None),
         )
 
         tokens_per_expert = global_token_counts_per_local_expert.sum(dim=0)
         expert_ids_per_ep_rank = None
         if token_dispatch_input.local_num_experts > 1:
+            # The received blocks are ordered by (source rank, ascending global expert
+            # id inside that rank), so repeating the local row range once per rank
+            # lines the ids up with the received tokens. This holds for the legacy
+            # contiguous partition and for a re-placed layout alike.
             expert_ids_per_ep_rank = torch.arange(
-                token_dispatch_input.num_experts,
+                token_dispatch_input.local_num_experts,
                 dtype=torch.int32,
                 device=topk_ids.device,
-            )
-            expert_ids_per_ep_rank = expert_ids_per_ep_rank % token_dispatch_input.local_num_experts
+            ).repeat(dist.get_world_size(moe_group))
 
         split_copy_event.synchronize()
         input_splits = input_splits.tolist()
@@ -336,7 +341,15 @@ class DynamicDispatcher(TokenDispatcher):
         return output.view(metadata.hidden_shape)
 
     @classmethod
-    def _dispatch_preprocess(cls, hidden_states, topk_ids, num_experts, local_num_experts, ep_group):
+    def _dispatch_preprocess(
+        cls,
+        hidden_states,
+        topk_ids,
+        num_experts,
+        local_num_experts,
+        ep_group,
+        device_indices_map=None,
+    ):
         hidden_shape = hidden_states.shape
         (
             input_splits,
@@ -349,10 +362,23 @@ class DynamicDispatcher(TokenDispatcher):
             num_experts=num_experts,
             local_num_experts=local_num_experts,
             ep_group=ep_group,
+            device_indices_map=device_indices_map,
         )
+        if device_indices_map is not None:
+            # The all-to-all below chunks the permuted tokens by destination rank, so
+            # tokens must be ordered by (destination rank, position of the expert in
+            # that rank's ascending-id list). That position is derived from the device
+            # map alone, which every rank knows: the per-rank row map is useless here
+            # because it stores -1 for experts owned by the other ranks.
+            device_map = device_indices_map.to(topk_ids.device).long()
+            within = within_rank_positions(device_map)
+            ids = topk_ids.long()
+            permute_indices = (device_map[ids] * local_num_experts + within[ids]).to(topk_ids.dtype)
+        else:
+            permute_indices = topk_ids
         permuted_tokens, reversed_local_mapping = torch_npu.npu_moe_token_permute(
             tokens=hidden_states,
-            indices=topk_ids,
+            indices=permute_indices,
             num_out_tokens=num_out_tokens,
         )
         dynamic_scale = None
@@ -370,10 +396,17 @@ class DynamicDispatcher(TokenDispatcher):
         )
 
     @classmethod
-    def _preprocess(cls, topk_ids, num_experts, local_num_experts, ep_group):
+    def _preprocess(
+        cls,
+        topk_ids,
+        num_experts,
+        local_num_experts,
+        ep_group,
+        device_indices_map=None,
+    ):
         ep_size = dist.get_world_size(ep_group)
         ep_rank = dist.get_rank(ep_group)
-        if local_num_experts * ep_size != num_experts:
+        if device_indices_map is None and local_num_experts * ep_size != num_experts:
             raise ParametersInvalid(
                 "Dynamic MoE currently requires evenly partitioned experts, "
                 f"but got num_experts={num_experts}, local_num_experts={local_num_experts}, ep_size={ep_size}."
@@ -385,16 +418,32 @@ class DynamicDispatcher(TokenDispatcher):
             min=0,
             max=num_experts,
         )
-        input_splits = num_local_tokens_per_expert.reshape(ep_size, local_num_experts).sum(dim=1)
+        if device_indices_map is not None:
+            # Re-placed layout: every global expert knows which rank holds it.
+            ranks = device_indices_map.to(device=num_local_tokens_per_expert.device, dtype=torch.long)
+            input_splits = torch.zeros(
+                ep_size, dtype=num_local_tokens_per_expert.dtype, device=num_local_tokens_per_expert.device
+            )
+            input_splits.scatter_add_(0, ranks, num_local_tokens_per_expert)
+        else:
+            input_splits = num_local_tokens_per_expert.reshape(ep_size, local_num_experts).sum(dim=1)
         input_splits_cpu = cls._copy_split_sizes_to_cpu(input_splits, ep_size, "input")
         num_global_tokens_per_expert = all_gather(
             num_local_tokens_per_expert,
             ep_group,
         ).reshape(ep_size, num_experts)
 
-        local_start = ep_rank * local_num_experts
-        local_end = local_start + local_num_experts
-        num_global_tokens_per_local_expert = num_global_tokens_per_expert[:, local_start:local_end]
+        if device_indices_map is not None:
+            # Sender order, receiver columns and weight rows all follow ascending
+            # global expert id, so an owned expert's row is its position in the
+            # ascending id list. The per-rank row map cannot be used: it only knows
+            # its own experts and stores -1 for every other rank's experts.
+            columns = owned_columns(device_indices_map.to(num_global_tokens_per_expert.device), ep_rank)
+            num_global_tokens_per_local_expert = num_global_tokens_per_expert.index_select(1, columns)
+        else:
+            local_start = ep_rank * local_num_experts
+            local_end = local_start + local_num_experts
+            num_global_tokens_per_local_expert = num_global_tokens_per_expert[:, local_start:local_end]
         output_splits = num_global_tokens_per_local_expert.sum(dim=-1)
         output_splits_cpu = cls._copy_split_sizes_to_cpu(output_splits, ep_size, "output")
         split_copy_event = cls._get_split_copy_event(topk_ids.device)
@@ -414,6 +463,18 @@ class DynamicDispatcher(TokenDispatcher):
         buffer = cls._get_split_cpu_buffer(ep_size, name)
         buffer.copy_(split_sizes, non_blocking=True)
         return buffer
+
+    @classmethod
+    def clear_split_cache(cls):
+        """Drop the cached pinned buffers and events.
+
+        The caches are process-wide (keyed by split name and rank count), which is
+        what makes them reusable across layers, but it also means a test that
+        changes the rank count inherits state from the previous one. Tests call this
+        instead of reaching into the private dicts.
+        """
+        cls._split_cpu_buffers.clear()
+        cls._split_copy_events.clear()
 
     @classmethod
     def _get_split_cpu_buffer(cls, ep_size, name):

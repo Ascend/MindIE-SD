@@ -17,6 +17,10 @@ from torch import nn
 
 
 class ExpertLoadCollector(nn.Module):
+    def forward(self, *args, **kwargs):
+        """Not a forward module: it is an ``nn.Module`` only so ``.npu()`` works."""
+        raise NotImplementedError(f"{type(self).__name__} has no forward pass")
+
     def __init__(self, routed_expert_num, lb_interval: int = 1) -> None:
         super().__init__()
         self.routed_expert_num = routed_expert_num
@@ -39,6 +43,26 @@ class ExpertLoadCollector(nn.Module):
         expanded_buffer = torch_npu.npu_moe_compute_expert_tokens(indices_expert, self.routed_expert_num)
         with self.buffer_lock:
             self.expert_group_list.add_(expanded_buffer)
+
+        if self.task_transfer:
+            self.task_transfer.profile_emit_task()
+
+    def collect_expert_counts(self, cumulative_counts: torch.Tensor):
+        """Accumulate a cumulative per-expert histogram directly.
+
+        Equivalent to :meth:`collect_expert_load`, but for callers that already
+        have the histogram. `npu_moe_compute_expert_tokens` requires sorted expert
+        indices, and sorting a large routing tensor costs more than the rest of the
+        hook bookkeeping combined, so the hot path feeds counts computed with a
+        single `torch.histc` instead.
+
+        Args:
+            cumulative_counts (torch.Tensor):
+                `[routed_expert_num]` cumulative per-expert counts, that is
+                `torch.cumsum(counts, 0)` of the per-expert histogram.
+        """
+        with self.buffer_lock:
+            self.expert_group_list.add_(cumulative_counts.to(self.expert_group_list.dtype))
 
         if self.task_transfer:
             self.task_transfer.profile_emit_task()

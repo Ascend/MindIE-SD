@@ -98,6 +98,7 @@ class MoETokenDispatchInput:
     local_num_experts: int
     dynamic_scale: torch.Tensor | None = None
     use_gmm_finalize_routing: bool = False
+    device_indices_map: torch.Tensor | None = None
 
 
 @dataclass(frozen=True)

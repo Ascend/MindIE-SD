@@ -15,8 +15,13 @@ import torch
 import torch.distributed as dist
 from torch import nn
 
+from ..utils.expert_update import ExpertUpdate
+
 
 class DispatcherBase(nn.Module):
+    def forward(self, *args, **kwargs):
+        """Not a forward module: it is an ``nn.Module`` only so ``.npu()`` works."""
+        raise NotImplementedError(f"{type(self).__name__} has no forward pass")
 
     def __init__(self, routed_expert_num, weight1, weight2, ep_rank, ep_size):
         super().__init__()
@@ -34,12 +39,13 @@ class DispatcherBase(nn.Module):
         self.init_expert_map()
 
     def init_expert_map(self):
-        device_indices_map = torch.arange(
-            self.routed_expert_num, dtype=torch.int32) // (self.routed_expert_num // self.ep_size
+        device_indices_map = torch.arange(self.routed_expert_num, dtype=torch.int32) // (
+            self.routed_expert_num // self.ep_size
         )
-        local_expert_indices_map = torch.arange(
-            self.routed_expert_num, dtype=torch.int32) - (self.routed_expert_num // self.ep_size
-        ) * self.ep_rank
+        local_expert_indices_map = (
+            torch.arange(self.routed_expert_num, dtype=torch.int32)
+            - (self.routed_expert_num // self.ep_size) * self.ep_rank
+        )
         self.set_device_and_local_expert_map(device_indices_map, local_expert_indices_map)
 
     def set_device_and_local_expert_map(self, device_indices_map: torch.Tensor, local_expert_indices_map: torch.Tensor):
@@ -60,6 +66,10 @@ class DispatcherBase(nn.Module):
 
 
 class DynamicDispatcher(DispatcherBase):
+    def forward(self, *args, **kwargs):
+        """Not a forward module: it is an ``nn.Module`` only so ``.npu()`` works."""
+        raise NotImplementedError(f"{type(self).__name__} has no forward pass")
+
     def __init__(self, routed_expert_num, weight1, weight2, ep_rank, ep_size):
         super().__init__(routed_expert_num, weight1, weight2, ep_rank, ep_size)
 
@@ -84,7 +94,7 @@ class DynamicDispatcher(DispatcherBase):
     def check_consistency(self):
         check_tensor = self.update_valid_tensor.clone()
         dist.all_reduce(check_tensor, op=dist.ReduceOp.MIN)
-        self.update_flag = (check_tensor.item() == 1)
+        self.update_flag = check_tensor.item() == 1
         return self.update_flag
 
     def copy_module_weight_and_map(self, **kwargs):
@@ -116,12 +126,11 @@ class DynamicDispatcher(DispatcherBase):
             self.local_expert_list = self.module_state['local_expert_list']
             self.local_expert_num = len(self.module_state['weight1'])
             self.update_flag = False
-        result = (
-            self.module_state['weight1'],
-            self.module_state['weight2'],
-            self.local_expert_num,
-            self.device_indices_map,
-            self.local_expert_indices_map,
-            self.local_expert_list
+        return ExpertUpdate(
+            weight1=self.module_state['weight1'],
+            weight2=self.module_state['weight2'],
+            local_expert_num=self.local_expert_num,
+            device_indices_map=self.device_indices_map,
+            local_expert_indices_map=self.local_expert_indices_map,
+            local_expert_list=self.local_expert_list,
         )
-        return result
