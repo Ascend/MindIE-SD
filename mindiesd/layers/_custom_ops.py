@@ -1136,6 +1136,33 @@ def adaln_fake(
     return torch.empty_like(x)
 
 
+def indexed_adaln(
+    x: torch.Tensor,
+    scale_table: torch.Tensor,
+    shift_table: torch.Tensor,
+    mod_index: torch.Tensor,
+    epsilon: float = 1e-06,
+) -> torch.Tensor:
+    return getattr(torch.ops.mindiesd, "indexed_adaln")(
+        x=x,
+        scale_table=scale_table,
+        shift_table=shift_table,
+        mod_index=mod_index,
+        epsilon=epsilon,
+    )
+
+
+@register_ops.register_mindie_fake_op("indexed_adaln")
+def indexed_adaln_fake(
+    x: torch.Tensor,
+    scale_table: torch.Tensor,
+    shift_table: torch.Tensor,
+    mod_index: torch.Tensor,
+    epsilon: float = 1e-06,
+) -> torch.Tensor:
+    return torch.empty_like(x)
+
+
 def layernorm(
     x: torch.Tensor,
     normalized_shape: List[int],

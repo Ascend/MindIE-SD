@@ -57,6 +57,7 @@ add_library(PTAExtensionOPS SHARED
     ./plugin/register_ops.cpp
     ./plugin/la.cpp
     ./plugin/adalayernorm.cpp
+    ./plugin/indexed_adaln.cpp
     ./plugin/find_op_path.cpp
     ./plugin/la_preprocess.cpp
     ./plugin/rainfusionattention.cpp

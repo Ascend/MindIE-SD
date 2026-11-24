@@ -19,6 +19,7 @@ from .activation import get_activation_layer
 from .fir_resample1d import fir_resample1d, is_fir_resample1d_supported
 from .norm import RMSNorm, add_layer_norm, add_rms_norm, fast_layernorm, group_norm_silu
 from .adalayernorm import layernorm_scale_shift
+from .indexed_adaln import layernorm_scale_shift_indexed
 from .muls_add import muls_add
 from .residual_gate_add import qwen_residual_gate_add, residual_gate_add
 from .rms_norm_indexed_scale_shift_dynamic_mx_quant import (
@@ -63,6 +64,7 @@ __all__ = [
     "indexed_gate_rms_norm_scale_shift_dynamic_mx_quant",
     "is_fir_resample1d_supported",
     "layernorm_scale_shift",
+    "layernorm_scale_shift_indexed",
     "muls_add",
     "qbmm_swiglu_mxquant",
     "qwen_residual_gate_add",
