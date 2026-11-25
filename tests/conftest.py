@@ -49,6 +49,7 @@ if "aie_ascendc" not in _old_custom_op_path:
 
 
 def pytest_addoption(parser):
+    parser.addoption("--resume", default=None, help="Resume an operator's existing small-shape test batch")
     parser.addoption(
         "--test-mode",
         choices=("CPU", "NPU"),

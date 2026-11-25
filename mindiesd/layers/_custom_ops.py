@@ -1342,6 +1342,27 @@ def quant_four_over_six_a5(
     )
 
 
+def sigmoid_mul_dynamic_mx_quant(x: torch.Tensor, gate: torch.Tensor, precision_mode: int = 0, scale_alg: int = 0):
+    """Quantize x * sigmoid(gate) with max-exponent (0) or ceiling (1) E8M0 scales per 32 columns."""
+    return torch.ops.mindiesd.sigmoid_mul_dynamic_mx_quant(x, gate, precision_mode, scale_alg)
+
+
+@register_ops.register_mindie_fake_op("sigmoid_mul_dynamic_mx_quant")
+def sigmoid_mul_dynamic_mx_quant_fake(x: torch.Tensor, gate: torch.Tensor, precision_mode: int = 0, scale_alg: int = 0):
+    torch._check(precision_mode in (0, 1))
+    torch._check(scale_alg in (0, 1))
+    torch._check(x.dim() == 2 and gate.dim() == 2)
+    torch._check(x.dtype == torch.bfloat16 and gate.dtype == torch.bfloat16)
+    torch._check(x.device == gate.device)
+    torch._check(x.size(0) == gate.size(0))
+    torch._check(x.size(1) == gate.size(1))
+    rows, cols = x.shape
+    return (
+        x.new_empty((rows, cols), dtype=torch.float8_e4m3fn),
+        x.new_empty((rows, (cols + 63) // 64, 2), dtype=torch.uint8),
+    )
+
+
 @register_ops.register_mindie_fake_op("quant_four_over_six_a5")
 def quant_four_over_six_a5_fake(
     x: torch.Tensor,

@@ -79,7 +79,8 @@ add_library(PTAExtensionOPS SHARED
     ./plugin/eagle_split_norm_rope_concat.cpp
     ./plugin/eagle_ffn_linear.cpp
     ./plugin/eagle_quant_batch_matmul_swiglu.cpp
-    ./plugin/quant_four_over_six_a5.cpp)
+    ./plugin/quant_four_over_six_a5.cpp
+    ./plugin/sigmoid_mul_dynamic_mx_quant.cpp)
 
 target_compile_features(PTAExtensionOPS PRIVATE cxx_std_17)
 if(DEFINED ENV{USER_ABI_VERSION})

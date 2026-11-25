@@ -7,10 +7,6 @@ import pytest
 from tests.ops.eagle_quant_batch_matmul_swiglu.qbmm_state import Batch
 
 
-def pytest_addoption(parser):
-    parser.addoption("--resume", default=None, help="Resume this operator's immutable small-shape batch")
-
-
 def pytest_collection_modifyitems(session, config, items):
     if config.option.collectonly:
         return

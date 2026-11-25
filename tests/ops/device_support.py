@@ -24,6 +24,7 @@ REGISTRATIONS = {
     "sparse_block_estimate": ("ascend910b", "ascend910_93", "ascend950"),
     "eagle_ffn": ("ascend950",),
     "quant_four_over_six_a5": ("ascend950",),
+    "sigmoid_mul_dynamic_mx_quant": ("ascend950",),
     "quant_flash_attn": ("ascend950",),
     "quant_flash_attn_metadata": ("ascend950",),
     "eagle_quant_block_sparse_attention": ("ascend950",),

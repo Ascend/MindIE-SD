@@ -34,8 +34,11 @@
 #include "eagle_ffn_linear.h"
 #include "eagle_quant_batch_matmul_swiglu.h"
 #include "quant_four_over_six_a5.h"
+#include "sigmoid_mul_dynamic_mx_quant.h"
 
 TORCH_LIBRARY(mindiesd, m) {
+    m.def("sigmoid_mul_dynamic_mx_quant(Tensor x, Tensor gate, int precision_mode=0, int scale_alg=0) -> "
+          "(Tensor, Tensor)");
     m.def("eagle_quant_batch_matmul_swiglu(Tensor x1, Tensor x2, Tensor scale, "
           "Tensor? offset=None, Tensor? bias=None, Tensor? pertoken_scale=None, "
           "ScalarType? output_dtype=None, bool transpose_x1=False, bool transpose_x2=False, "
@@ -193,6 +196,7 @@ TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m) {
     m.impl("eagle_indexed_gate_norm_modulate", &eagle_indexed_gate_norm_modulate_impl_npu);
     m.impl("eagle_ffn_linear", &eagle_ffn_linear_mindie_sd_impl_npu);
     m.impl("quant_four_over_six_a5", &quant_four_over_six_a5_mindie_sd_impl_npu);
+    m.impl("sigmoid_mul_dynamic_mx_quant", &sigmoid_mul_dynamic_mx_quant_impl_npu);
     m.impl("norm_rope_concat", &norm_rope_concat_mindie_sd_impl_npu);
     m.impl("eagle_split_norm_rope_concat", &eagle_split_norm_rope_concat_impl_npu);
 }
