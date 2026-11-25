@@ -202,7 +202,7 @@ def eagle_split_norm_rope_concat(
 
     qkv is contiguous FP16/BF16 [S,Hq+Hk+Hv,D] or [B,S,Hq+Hk+Hv,D].
     head_counts is [Hq,Hk,Hv] with positive counts summing to qkv's head dimension.
-    Ascend 950 accepts independent counts in [1,128]; 910B requires Hk=Hv and Hq%Hk=0.
+    Ascend 950 accepts independent counts in [1,128]; 910B/910C require Hk=Hv and Hq%Hk=0.
     D must be 128; rotary_dim is a multiple of 32 in [32,128], or None (the full D).
     norm_type is required: 2=RMSNorm, 3=RMSNorm with weights; other modes, including skipping norm, are unsupported.
     Weights are [D], required for type 3 and unused for type 2 (pass None).

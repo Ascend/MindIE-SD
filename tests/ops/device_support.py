@@ -14,7 +14,7 @@ FAMILIES = frozenset(("A2", "A3", "A5", "Duo"))
 REGISTRATIONS = {
     "eagle_quant_batch_matmul_swiglu": ("ascend910b",),
     "eagle_indexed_gate_norm_modulate": ("ascend910b",),
-    "eagle_split_norm_rope_concat": ("ascend910b", "ascend950"),
+    "eagle_split_norm_rope_concat": ("ascend910b", "ascend910_93", "ascend950"),
     "eagle_block_sparse_attention": ("ascend910b", "ascend910_93"),
     "ada_block_sparse_attention": ("ascend910b", "ascend910_93"),
     "la_preprocess": ("ascend910b", "ascend910_93"),

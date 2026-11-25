@@ -10,6 +10,7 @@
  * See the Mulan PSL v2 for more details.
  */
 
+#include <cstdlib>
 #include <string>
 #include "register/op_def_registry.h"
 
@@ -50,7 +51,13 @@ class EagleSplitNormRopeConcat : public OpDef {
         this->Attr("eps").AttrType(OPTIONAL).Float(1e-5);
         this->Attr("output_bnsd").AttrType(OPTIONAL).Bool(true);
         this->AICore().AddConfig("ascend910b");
-        this->AICore().AddConfig("ascend950");
+        this->AICore().AddConfig("ascend910_93");
+        // Older A2/A3 toolkits cannot load an OpDef that requests an unknown SoC.
+        const char *units = std::getenv("ASCEND_COMPUTE_UNIT");
+        if (units == nullptr || units[0] == '\0' ||
+            (";" + std::string(units) + ";").find(";ascend950;") != std::string::npos) {
+            this->AICore().AddConfig("ascend950");
+        }
     }
 };
 OP_ADD(EagleSplitNormRopeConcat);

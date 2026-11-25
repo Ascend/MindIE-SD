@@ -103,14 +103,23 @@ inline bool Build950Plan(
     return false;
 }
 
-inline UbBudget GetUbBudget(bool is950, uint64_t queriedUb, int64_t ropeType, bool compactCache) {
+inline uint32_t GetHeadTile910(int64_t qHeads) {
+    // Brcb consumes groups of eight sums; keep its padding and every UB slice aligned.
+    const uint32_t heads = static_cast<uint32_t>(std::min<int64_t>(qHeads, HEAD_TILE));
+    return (heads + 7) / 8 * 8;
+}
+
+inline UbBudget GetUbBudget(bool is950, uint64_t queriedUb, int64_t ropeType, bool compactCache,
+    uint32_t headTile = HEAD_TILE, uint32_t outputQueues = 1) {
     if (is950) {
         // The head-dependent required size is supplied by Build950Plan.
         return {0, Get950UbLimit(queriedUb)};
     }
-    // Keep the 910B allocation, bank gaps and reserve exactly as before.
-    const uint64_t head128Ub = 20 * HEAD_TILE * HEAD_DIM + 28 * HEAD_DIM + 40 * HEAD_TILE + 2 * 256;
-    const uint64_t required = head128Ub + (ropeType == 0 ? (16 * HEAD_DIM + HEAD_DIM) * sizeof(uint32_t) : 0) +
+    // Single-token input double buffer and FP32 x/tmp. V reserves two tokens.
+    // Each output queue reserves two tokens: one paired buffer, or two single buffers.
+    // Preserve the original bank gaps and API/system reserve.
+    const uint64_t headUb = (16 + 4 * outputQueues) * headTile * HEAD_DIM + 28 * HEAD_DIM + 40 * headTile + 2 * 256;
+    const uint64_t required = headUb + (ropeType == 0 ? (16 * HEAD_DIM + HEAD_DIM) * sizeof(uint32_t) : 0) +
         (compactCache ? HEAD_DIM * sizeof(uint32_t) : 0);
     constexpr uint64_t reserved = 8 * 1024 + 256;
     const uint64_t physical = std::min<uint64_t>(queriedUb, 192 * 1024);
@@ -118,8 +127,9 @@ inline UbBudget GetUbBudget(bool is950, uint64_t queriedUb, int64_t ropeType, bo
 }
 
 // ParseShape has already bounded the complete packed tensor to INT32_MAX.
-inline int64_t GetHeadTaskCount(int64_t batch, int64_t seq, int64_t heads) {
-    return batch * seq * ((heads + HEAD_TILE - 1) / HEAD_TILE);
+inline int64_t GetHeadTaskCount(
+    int64_t batch, int64_t seq, int64_t heads, uint32_t headTile = HEAD_TILE, uint32_t tokenTile = 1) {
+    return batch * ((seq + tokenTile - 1) / tokenTile) * ((heads + headTile - 1) / headTile);
 }
 
 inline int64_t Get950TaskCount(int64_t batch, int64_t seq) { return batch * seq; }

@@ -14,7 +14,7 @@
 import io
 import os
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -91,14 +91,24 @@ def test_file_and_directory_safety(tmp_path):
         files.safe_readlines(io.StringIO("a\nb\n"), max_line_num=1)
 
 
-@pytest.mark.parametrize("uid,gid,allowed", [(0, 3, True), (11, 3, True), (12, 22, True), (12, 3, False)])
-def test_owner_policy(uid, gid, allowed):
-    metadata = SimpleNamespace(st_uid=11, st_gid=22)
-    with patch.object(
-        files, "os", SimpleNamespace(stat=lambda path: metadata, geteuid=lambda: uid, getgid=lambda: gid)
-    ):
+@pytest.mark.parametrize("uid", [0, 11], ids=["root", "owner"])
+def test_owner_policy_fast_path(uid):
+    metadata = SimpleNamespace(st_uid=11)
+    access = Mock(return_value=False)
+    with patch.object(files, "os", SimpleNamespace(stat=lambda path: metadata, geteuid=lambda: uid, access=access)):
+        files.check_owner("/input")
+    access.assert_not_called()
+
+
+@pytest.mark.parametrize("gid,allowed", [(3, True), (22, False)], ids=["other-readable", "group-unreadable"])
+def test_owner_policy_access(gid, allowed):
+    metadata = SimpleNamespace(st_uid=11, st_gid=22, st_mode=0o604)
+    access = Mock(return_value=allowed)
+    identity = SimpleNamespace(stat=lambda path: metadata, geteuid=lambda: 12, getgid=lambda: gid, access=access)
+    with patch.object(files, "os", identity):
         if allowed:
             files.check_owner("/input")
         else:
             with pytest.raises(ParametersInvalid, match="permission"):
                 files.check_owner("/input")
+    access.assert_called_once_with("/input", os.R_OK)

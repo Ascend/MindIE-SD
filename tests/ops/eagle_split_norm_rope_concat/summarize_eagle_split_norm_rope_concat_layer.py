@@ -32,6 +32,25 @@ def positive(value):
     return value
 
 
+def capture_device(report):
+    requested = report["device_id"]
+    if isinstance(requested, bool) or not isinstance(requested, int) or requested < 0:
+        raise ValueError("Invalid requested device ID")
+    # Older captures stored the runtime ordinal directly in device_id.
+    if "device_binding" not in report:
+        return f"npu:{requested}"
+    binding = report["device_binding"]
+    ordinal = binding["runtime_ordinal"]
+    if (
+        isinstance(ordinal, bool)
+        or not isinstance(ordinal, int)
+        or ordinal < 0
+        or binding.get("chip_logic_id", ordinal) != requested
+    ):
+        raise ValueError(f"Invalid device binding for requested device {requested}: {binding}")
+    return f"npu:{ordinal}"
+
+
 def validate(report, path, case_id, reference, profiled):
     if report["protocol"] != PROTOCOL or not isinstance(report["profiled"], bool) or report["profiled"] is not profiled:
         raise ValueError("Timing protocol/profiling mode mismatch")
@@ -50,8 +69,9 @@ def validate(report, path, case_id, reference, profiled):
     iterations = report["iterations"]
     if isinstance(iterations, bool) or not isinstance(iterations, int) or iterations <= 0:
         raise ValueError("iterations must be a positive integer")
-    if isinstance(report["device_id"], bool) or not isinstance(report["device_id"], int) or report["device_id"] < 0:
-        raise ValueError("Invalid physical device ID")
+    device = capture_device(report)
+    if report.get("device_binding") != reference.get("device_binding"):
+        raise ValueError("Inconsistent device binding across captures")
     if isinstance(report["seed"], bool) or not isinstance(report["seed"], int) or not 0 <= report["seed"] < 2**32:
         raise ValueError("Invalid seed")
     # Input shape/stride vary by cache width and are validated against this case below.
@@ -78,7 +98,7 @@ def validate(report, path, case_id, reference, profiled):
                 "shape": shape,
                 "dtype": dtype,
                 "stride": stride,
-                "device": f"npu:{report['device_id']}",
+                "device": device,
                 "contiguous": True,
             }
         if state != expected_state:
@@ -184,7 +204,7 @@ def main():
     mode = "under msprof" if result["profiled"] else "without msprof"
     width = max(len(row["scenario"]) for row in result["rows"])
     lines = [
-        f"Complete-call NPU Event timings {mode}; physical NPU={result['device_id']}",
+        f"Complete-call NPU Event timings {mode}; requested device ID={result['device_id']}",
         f"Fixed warmup=5; {result['iterations']} samples per capture; {args.runs} captures per scenario; hot cache.",
         f"{'Scenario':{width}} Test  Layer Duration(us)  DataDir",
     ]

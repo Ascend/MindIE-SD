@@ -19,6 +19,7 @@ import sys
 import pytest
 import torch
 
+from tests.ops.a3_device import verify_selected_die
 from tests.ops.device_support import current_device_family, init_test_device, require_support
 
 from tests.ops.eagle_split_norm_rope_concat.eagle_split_norm_rope_concat_accuracy_common import (
@@ -35,6 +36,8 @@ def device_fixture():
     if os.environ.get("MINDIE_TEST_MODE", "ALL") == "CPU":
         pytest.skip("eagle_split_norm_rope_concat requires an NPU")
     selected = init_test_device()
+    if current_device_family() == "A3":
+        verify_selected_die(selected.index)
     import mindiesd  # noqa: F401
 
     print(f"selected={selected} ASCEND_RT_VISIBLE_DEVICES={os.environ.get('ASCEND_RT_VISIBLE_DEVICES')!r}")
@@ -52,6 +55,14 @@ def device_950_fixture(device):
 @pytest.fixture(scope="module", name="supported_soc")
 def supported_soc_fixture(device):
     require_support("eagle_split_norm_rope_concat", kind="positive")
+
+
+@pytest.fixture(scope="module", name="device_910b")
+def device_910b_fixture(device):
+    family = require_support("eagle_split_norm_rope_concat")
+    if family not in ("A2", "A3"):
+        pytest.skip(f"Paired-store tests require A2 or A3, selected {family}")
+    return device
 
 
 @pytest.fixture(scope="module", name="registered_op")
@@ -314,6 +325,50 @@ def test_pipeline_reuse(device, distribution, rope_type, dtype, seq, heads, rota
             assert torch.equal(first.view(torch.int16), second.view(torch.int16)), (
                 "Repeated outputs must be bitwise equal"
             )
+
+
+@pytest.mark.parametrize(
+    "dtype,heads,rotary,rope,layout,compact,distribution",
+    [
+        (torch.bfloat16, (56, 56, 56), 96, 1, False, False, "normal"),
+        (torch.bfloat16, (56, 56, 56), 96, 0, True, True, "uniform"),
+        (torch.float16, (56, 56, 56), 128, 0, False, False, "normal"),
+        (torch.float16, (56, 56, 56), 32, 1, True, True, "uniform"),
+        (torch.bfloat16, (55, 55, 55), 64, 0, True, True, "normal"),
+        (torch.float16, (57, 57, 57), 96, 0, True, True, "uniform"),
+        (torch.bfloat16, (112, 56, 56), 96, 1, False, False, "normal"),
+        (torch.float16, (7, 1, 1), 32, 0, False, True, "uniform"),
+    ],
+)
+@pytest.mark.parametrize("seq", [1, 2, 3, 128, 129])
+def test_910b_paired_output_rotation(device_910b, dtype, heads, rotary, rope, layout, compact, distribution, seq):
+    # 55 heads need Brcb padding; 57+ heads retain the original 64-head capacity.
+    # S=1/3/129 exercises per-batch tails; S=2/128 exercises complete 512-byte BNSD bursts.
+    inputs = make_inputs(
+        (2, seq, sum(heads), 128),
+        heads,
+        rotary,
+        dtype,
+        "cpu",
+        distribution,
+        rope_rank=4 if seq in (3, 129) else 2,
+        compact=compact,
+    )
+    value = inputs[0][:, :, sum(heads[:2]) :, :]
+    value[..., 0] = -0.0
+    value[..., 1] = 0.0
+    attrs = dict(norm_type=3, rope_type=rope, rotary_dim=rotary, output_bnsd=layout)
+    expected = golden(inputs, **attrs)
+    device_inputs = _to_device(inputs, device_910b)
+    first = None
+    for _ in range(3):
+        actual = tuple(output.cpu() for output in call_dut(device_inputs, **attrs))
+        compare(actual, expected)
+        assert torch.equal(actual[2].view(torch.int16), expected[2].view(torch.int16)), "V bits must be preserved"
+        if first is not None:
+            for previous, current in zip(first, actual):
+                assert torch.equal(previous.view(torch.int16), current.view(torch.int16)), "Output reuse changed bits"
+        first = actual
 
 
 @pytest.mark.parametrize("output_bnsd", [False, True])

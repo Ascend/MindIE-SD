@@ -11,7 +11,6 @@
 # See the Mulan PSL v2 for more details.
 
 import argparse
-import os
 
 import torch
 
@@ -42,9 +41,7 @@ def main():
         parser.error("seed must be in [0,2^32)")
     if args.device_id < 0:
         parser.error("--device-id must be nonnegative")
-    if os.environ.get("ASCEND_RT_VISIBLE_DEVICES"):
-        parser.error("Unset ASCEND_RT_VISIBLE_DEVICES and pass --device-id as the physical NPU ID")
-    print(f"[1] Initializing device npu:{args.device_id}", flush=True)
+    print(f"[1] Selecting allocated device {args.device_id}", flush=True)
     device = init_device(args.device_id)
     attrs = case_attrs(args.case)
     shape, heads = case_geometry(args.case)

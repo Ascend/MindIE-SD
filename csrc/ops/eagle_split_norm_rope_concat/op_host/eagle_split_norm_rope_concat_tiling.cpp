@@ -84,7 +84,17 @@ static ge::graphStatus TilingEagleSplitNormRopeConcat(gert::TilingContext *ctx) 
     }
     uint64_t ubBytes = 0;
     platform.GetCoreMemSize(platform_ascendc::CoreMemType::UB, ubBytes);
-    auto ub = eagle_snrc::GetUbBudget(is950, ubBytes, *rope, info.ropeWidth != info.rotaryDim);
+    const uint32_t headTile = is950 ? eagle_snrc::MAX_HEADS_950 : eagle_snrc::GetHeadTile910(info.heads[0]);
+    uint32_t outputQueues910 = is950 ? 0 : 1;
+    auto ub = eagle_snrc::GetUbBudget(is950, ubBytes, *rope, info.ropeWidth != info.rotaryDim, headTile);
+    if (!is950) {
+        const auto dualOutput =
+            eagle_snrc::GetUbBudget(false, ubBytes, *rope, info.ropeWidth != info.rotaryDim, headTile, 2);
+        if (dualOutput.required <= dualOutput.available) {
+            ub = dualOutput;
+            outputQueues910 = 2;
+        }
+    }
     eagle_snrc::TilePlan950 plan{};
     if (is950) {
         if (!eagle_snrc::Build950Plan(info.heads[0], info.heads[1], info.heads[2], info.ropeWidth, ubBytes, plan)) {
@@ -122,14 +132,18 @@ static ge::graphStatus TilingEagleSplitNormRopeConcat(gert::TilingContext *ctx) 
     data.set_ropeBatch(info.ropeBatch);
     data.set_outputBnsd(*bnsd ? 1 : 0);
     data.set_eps(*eps);
-    data.set_headTile(is950 ? eagle_snrc::MAX_HEADS_950 : eagle_snrc::HEAD_TILE);
+    data.set_headTile(headTile);
     data.set_tokenTileQ(plan.qTokens);
     data.set_tokenTileK(plan.kTokens);
     data.set_tokenTileV(plan.vTokens);
     data.set_ropeCacheTokens(plan.cacheTokens);
     data.set_targetRows(plan.targetRows);
-    const int64_t tasks = is950 ? eagle_snrc::Get950TaskCount(info.batch, info.seq)
-                                : eagle_snrc::GetHeadTaskCount(info.batch, info.seq, info.heads[0]);
+    data.set_outputQueues910(outputQueues910);
+    const uint32_t tokenTile910 = is950 ? 0 : outputQueues910;
+    data.set_tokenTile910(tokenTile910);
+    const int64_t tasks = is950
+        ? eagle_snrc::Get950TaskCount(info.batch, info.seq)
+        : eagle_snrc::GetHeadTaskCount(info.batch, info.seq, info.heads[0], headTile, tokenTile910);
     const uint32_t blockDim = eagle_snrc::GetBlockDim(cores, tasks);
     OP_LOGD(ctx->GetNodeName(),
         "is950=%u, UB query=%llu, required=%llu, available=%llu, AIV=%u, tasks=%lld, blockDim=%u.",
@@ -145,6 +159,14 @@ static ge::graphStatus TilingEagleSplitNormRopeConcat(gert::TilingContext *ctx) 
     workspace[0] = 0;
     data.SaveToBuffer(ctx->GetRawTilingData()->GetData(), ctx->GetRawTilingData()->GetCapacity());
     ctx->GetRawTilingData()->SetDataSize(data.GetDataSize());
+    if (!is950) {
+        OP_LOGD(ctx->GetNodeName(),
+            "EAGLE910_TILE heads=%u tokenTile=%u outputQueues=%u buffersPerQueue=%u tokensPerBuffer=%u "
+            "bnsdBlockBytes=%u UB=%llu/%llu.",
+            headTile, tokenTile910, outputQueues910, 2 / tokenTile910, tokenTile910,
+            tokenTile910 * 128 * static_cast<uint32_t>(sizeof(uint16_t)), static_cast<unsigned long long>(ub.required),
+            static_cast<unsigned long long>(ub.available));
+    }
     if (is950) {
         OP_LOGD(ctx->GetNodeName(), "EAGLE950_TILE C=%u Tq=%u Tk=%u Tv=%u cacheTokens=%u cacheSlots=2 UB=%llu/%llu.",
             plan.targetRows, plan.qTokens, plan.kTokens, plan.vTokens, plan.cacheTokens,

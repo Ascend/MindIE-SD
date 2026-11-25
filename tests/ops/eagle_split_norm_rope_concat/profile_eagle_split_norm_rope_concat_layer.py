@@ -16,7 +16,6 @@ import argparse
 import csv
 import json
 import math
-import os
 from pathlib import Path
 
 from tests.ops.eagle_split_norm_rope_concat.eagle_split_norm_rope_concat_cases import (
@@ -51,12 +50,13 @@ def main():
         parser.error("Require nonnegative device ID, positive iterations and seed in [0,2^32)")
     if not args.output.is_absolute() or args.output.exists():
         parser.error("--output must be an absolute path to a new timing JSON")
-    if os.environ.get("ASCEND_RT_VISIBLE_DEVICES"):
-        parser.error("Unset ASCEND_RT_VISIBLE_DEVICES and pass --device-id as the physical NPU ID")
     import torch
     import torch_npu  # noqa: F401
 
-    torch.npu.set_device(args.device_id)
+    from tests.ops.a3_device import bind_production_device
+
+    binding = bind_production_device(args.device_id)
+    ordinal = binding["runtime_ordinal"]
     torch.npu.set_compile_mode(jit_compile=False)
     import mindiesd  # noqa: F401
 
@@ -79,7 +79,7 @@ def main():
         compact=is_compact(args.case),
     )
     # Match the fused profile's CPU RNG backend, seed and input order exactly.
-    inputs = tuple(x.to(f"npu:{args.device_id}") if isinstance(x, torch.Tensor) else x for x in inputs)
+    inputs = tuple(x.to(f"npu:{ordinal}") if isinstance(x, torch.Tensor) else x for x in inputs)
     torch.npu.synchronize()
     log_inputs(inputs, **attrs)
     states = [tensor_state(x) if isinstance(x, torch.Tensor) else {"type": "int[]", "value": list(x)} for x in inputs]
@@ -128,6 +128,7 @@ def main():
         "distribution": "normal",
         "seed": args.seed,
         "device_id": args.device_id,
+        "device_binding": binding,
         "warmup": 5,
         "iterations": args.iterations,
         "samples": len(values),
@@ -140,7 +141,7 @@ def main():
         "runtime": {
             "torch": str(torch.__version__),
             "torch_npu": str(torch_npu.__version__),
-            "device_name": torch.npu.get_device_name(args.device_id),
+            "device_name": torch.npu.get_device_name(ordinal),
         },
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)

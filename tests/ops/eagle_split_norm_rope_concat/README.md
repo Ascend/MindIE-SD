@@ -1,6 +1,6 @@
 # EagleSplitNormRopeConcat
 
-`eagle_split_norm_rope_concat` 面向 Ascend 910B 和 Ascend 950，将 packed QKV 拆分、Q/K RMSNorm、全维或部分维度 RoPE 和输出布局变换融合为一个算子。Q、K、V 已完成投影，输入沿头轴依次排列为全部 Q 头、全部 K 头、全部 V 头。
+`eagle_split_norm_rope_concat` 面向 Ascend 910B、910C（Atlas A3）和 Ascend 950，将 packed QKV 拆分、Q/K RMSNorm、全维或部分维度 RoPE 和输出布局变换融合为一个算子。Q、K、V 已完成投影，输入沿头轴依次排列为全部 Q 头、全部 K 头、全部 V 头。
 
 ## 接口
 
@@ -18,7 +18,7 @@ query, key, value = torch.ops.mindiesd.eagle_split_norm_rope_concat(
 | qkv | 连续 ND，FP16 或 BF16，[S,Nq+Nk+Nv,D] 或 [B,S,Nq+Nk+Nv,D] |
 | `norm_query_weight`、`norm_key_weight` | `norm_type=3` 时两者必需，连续 `[D]`，与 qkv 同 dtype、同 NPU；`norm_type=2` 时不参与计算，可传 `None`，若提供 Tensor 仍须满足上述约束 |
 | `rope_cos`、`rope_sin` | 两者同形状，连续，与 qkv 同 dtype、同 NPU；形状为 `[S,W]`、`[Bc,S,W]` 或 `[Bc,S,1,W]`；Bc 为 1 或 B，W 为 R 或 R/2，R 为实际参与 RoPE 的维数 |
-| head_counts | int[] 参数，长度为 3，值为 [Nq,Nk,Nv]；依次表示 Q/K/V 头数，均为正且和等于输入头轴。910B 保留 Nk=Nv、Nq 是 Nk 的整数倍；950 三路独立，各自不超过 128，总和可以超过 128 |
+| head_counts | int[] 参数，长度为 3，值为 [Nq,Nk,Nv]；依次表示 Q/K/V 头数，均为正且和等于输入头轴。910B/910C 要求 Nk=Nv、Nq 是 Nk 的整数倍；950 三路独立，各自不超过 128，总和可以超过 128 |
 | `norm_type` | 必填，无默认值；当前仅支持 2：RMSNorm、3：带权重 RMSNorm，其余模式报错 |
 | `rope_type` | 必填，无默认值；0：INTERLEAVE，相邻偶奇位置配对；1：HALF，前 R/2 与后 R/2 配对；不提供跳过 RoPE 的模式 |
 | `rotary_dim` | 参与 RoPE 的前缀长度 R，默认 `None` 表示完整 D；显式值须为 32 的倍数，32 ≤ R ≤ D |
@@ -55,19 +55,36 @@ rotary_dim 省略时仍取 D=128，不从 cache 宽度推断。例如末维 64 �
 
 输出形状由 qkv 的 shape 和整数列表 `head_counts` 直接推导，FakeTensor/Meta 无需读取 Tensor 数据，也不需要数据依赖输出形状的 `dynamic_output_shape` 标记或 `capture_dynamic_output_shape_ops` 开关。B/S 维继续由输入 shape 传递。Plugin 通过 `at::IntArrayRef` 将头数传入现有的 CANN `aclIntArray` 接口；CANN Host 继续按值依赖元数据读取头数并写入 tiling，设备内核使用 tiling 中的头数。
 
-## 实现与 910B 边界
+## 实现与 910B/910C 边界
 
 Host 注册、形状推导、tiling 和内核位于 `csrc/ops/eagle_split_norm_rope_concat/`；CANN OpType 为 `EagleSplitNormRopeConcat`，入口为 `aclnnEagleSplitNormRopeConcat`。内核在 AIV 间划分独立任务，直接写入目标布局，不使用 Cube 或核间同步。
 
 CANN 层的 `norm_type`、`rope_type` 同样为必填属性，`output_bnsd` 默认 true。CANN 整数属性用 `rotary_dim=0` 表示未指定；PyTorch 接口用 `None` 表示未指定，并在调用 CANN 前解析为实际 D。PyTorch 显式传入 0 会报错。
 
-HALF 与 INTERLEAVE 均使用批处理，每个任务处理同一 token 的最多 64 个连续 head，覆盖 R=32/64/96/128。Q/K 权重在核内缓存；相邻任务命中同一 RoPE token 时复用有效的 cos/sin 及 FP32 转换结果。平方、按行归约、倒数、广播和 RoPE 均在 Vector 完成，输入、输出和 V 使用双缓冲。Nk=Nv，V 与 K 使用相同的任务划分。FP16/BF16 分别显式匹配 tiling key 11/12。
+HALF 与 INTERLEAVE 的数学计算仍按单 token 的连续 head 分块，容量上限64。Host 按 `align_up(min(Hq,64),8)` 选择实际容量：56-head 场景分配56，55-head 分配56以满足 Brcb 的8行读取与对齐要求，57及以上仍使用64容量。输入双缓冲、FP32 x/tmp 和 reduction 按单 token 的该容量分配。Nk=Nv，V 与 K 保持相同任务归属和尾块；权重、Cos/Sin 语义和数学逻辑不变。
 
-INTERLEAVE 复用 16×128 个 uint32 字节偏移，将每行相邻元素通过 Gather 交换到已有临时区。每批最多四次 Gather，最后一组按实际 head 数处理；随后使用 repeats 跨 head 执行乘加。R=96 的两个列段分别使用 mask=64 和 mask=32，仅更新前 96 维，后 32 维保留 FP32 归一化结果，最后整行收窄。
+UB 足够时，同一 batch 的相邻两个 token 分到同一核。Q/K 使用两个独立输出队列，每个队列容纳一对 token，两个槽跨 Q/K 阶段轮换。56-head 下每槽 28 KiB，两槽共 56 KiB。原 64-head 单 token 双缓冲的输出区共 32 KiB。每对完成后提交一次 Store，各槽独立保留 Vector→MTE3 同步和 MTE3→Vector 复用保护。
 
-HALF 单核 UB 分配为 170496 B（166.5 KiB）；INTERLEAVE 额外分配 8192 B 索引和 512 B 符号向量，共 179200 B（175 KiB）。两者均包含 FP32 工作区及参数区各 256 B 的间隔；间隔改变相对 bank 位置，性能作用需实测。Host 从至多 192 KiB 物理容量中扣除 8 KiB API 预留和 256 B 系统预留，默认预算为 188160 B；资源不足直接报错，没有逐 head 回退路径。BNSD 输出还检查 DMA 目标步长的 uint32 范围。UB 分区基址及 GM 行长度按 32 B 对齐，Gather 表内的 FP32 元素偏移按 4 B 对齐；队列承担流水间同步，显式事件通过 TPipe 获取。
+BNSD 在最后一次 FP32→FP16/BF16 Cast 时通过 repeat stride 直接形成 `[head,token,128]`，无需额外转置区。完整对的搬出参数为 `blockCount=有效head数`、`blockLen=512B`、GM段间空隙 `(S-2)*256B`；单 token 尾组使用256B和 `(S-1)*256B`，每个batch单独收尾。BSND 保持 `[token,head,128]`，一次多段DMA提交本对的有效行，兼容head尾块。
 
-上述 UB 数字对应全宽 cache。半宽模式额外常驻 128 个 uint32 展开索引（512 B），HALF/INTERLEAVE 总量分别为 171008/179712 B，均在预算内。cache 更新时，先将半宽 cos/sin Cast 到暂未用于平方的 tmp 区，再 Gather 到现有 FP32 参数区；后续复用展开结果，不按 head 重复展开。Host tiling 显式传递实际 cache 宽度，GM token 步长使用该宽度。
+V 将原两个单 token buffer重组为一个双 token绑定队列buffer，总空间不变。BSND 一次多段MTE2搬入本对V；BNSD 分别对两个token进行多段MTE2搬入，UB目标行间距为 `有效token数*256B`，直接得到 `[head,token,128]`。V 每对只提交一次Store，仍先于本对K计算提交；绑定队列保留 MTE2→MTE3 和 MTE3→MTE2 复用保护。V不再跨对预取，BNSD的MTE2分段方式也发生变化，需与Task Duration一起实测。
+
+若实际 UB 不能容纳两个双 token输出槽，保留原单 token任务、一个双缓冲输出队列和V双缓冲，不拒绝原先可运行的64容量场景。输入一直保持单 token双缓冲，逐token计算时预取下一token，包括跨token对的预取。
+
+Host 从查询到的物理 UB（至多192 KiB）扣除8 KiB API预留和256 B系统预留，标准可用预算为188160 B。保留 x/tmp、参数区的256 B bank 间隔；各缓冲尺寸按32 B对齐，BNSD仅改变写回地址和步长，不额外分配 UB。
+
+56-head 相对原64容量，input、原output、V、x、tmp各省4096 B，合计20480 B；reduction再省320 B，总计20800 B。双 token输出双槽相对原单 token双缓冲output增加 `2*56*128*2=28672 B`。标准物理 UB=192 KiB 时：
+
+| RoPE/cache | 原64容量、单 token UB | 新56容量、双 token输出双槽 UB | 可用预算剩余 |
+| --- | --- | --- | --- |
+| HALF Full | 170496 B | 178368 B | 9792 B |
+| HALF Compact | 171008 B | 178880 B | 9280 B |
+| INTERLEAVE Full | 179200 B | 187072 B | 1088 B |
+| INTERLEAVE Compact | 179712 B | 187584 B | 576 B |
+
+INTERLEAVE 继续使用16×128个uint32字节偏移和128个FP32符号值；Gather按最多16个head分组，最后一组只处理有效行。R=96的64/32列mask、归一化尾部和最终dtype收窄保持不变。Compact额外使用128个uint32展开索引；先在tmp中转换系数，再Gather到参数区，继续按实际cache宽度寻址GM。
+
+Host 日志 `EAGLE910_TILE` 记录head容量、tokenTile、独立输出队列数、每队列buffer数、每buffer的token数、完整组BNSD blockLen及UB占用。56-head应显示 `tokenTile=2 outputQueues=2 buffersPerQueue=1 tokensPerBuffer=2 bnsdBlockBytes=512`；该Host日志不是设备执行证据。B=1、S=5672、Q/K/V均56-head时，源码搬出调用总数由17016降为8508，每路2836次；实际设备指令数、MTE3/Vector重叠及性能收益仍须通过编译产物、simulator和同卡实测确认。
 
 构建环境就绪后，在仓根通过 whl 构建并安装。安装命令中的文件名须替换为本次生成的 whl 文件名：
 
@@ -77,11 +94,35 @@ python setup.py bdist_wheel
 python -m pip install --force-reinstall --no-deps "dist/本次生成的文件名.whl"
 ```
 
-`setup.py` 会调用仓内构建脚本，将算子及对应 plugin 一并打入 whl；安装该 whl 即完成部署。`--force-reinstall` 用于替换已安装的同版本包，`--no-deps` 保留现有依赖环境。910B 注册不代表其它架构可用。
+`setup.py` 会调用仓内构建脚本，将算子及对应 plugin 一并打入 whl；安装该 whl 即完成部署。`--force-reinstall` 用于替换已安装的同版本包，`--no-deps` 保留现有依赖环境。A3 的构建目标为 `ascend910_93`。
+
+## Ascend 910C（Atlas A3）构建与选卡
+
+在已加载 CANN 和 torch_npu 的环境中，从仓库根目录执行。A3 复用 910B 的 D=128 向量内核和运行时 UB 规划。56-head 客户场景走双 Token 写回，950 专属的独立 Head 场景只在 950 上运行。
+
+```bash
+export ASCEND_COMPUTE_UNIT=ascend910_93
+unset MINDIESD_SKIP_OPS_BUILD SKIP_ALL_OPS_PLUGIN_BUILD
+python3 setup.py bdist_wheel
+# 安装本次生成的 wheel 后再运行下列命令
+suite=tests/ops/eagle_split_norm_rope_concat
+python3 -m pytest "$suite/test_eagle_split_norm_rope_concat.py" --test-mode=NPU -s
+npu-smi info -m
+# A3_LOGIC_ID 设为实际已分配且健康的 Chip Logic ID
+bash "$suite/run_eagle_split_norm_rope_concat_prod_accuracy.sh" --device-id "${A3_LOGIC_ID:?}" --mode accuracy
+# msprof 采集需在可直接寻址该已分配 die、且未设置 ASCEND_RT_VISIBLE_DEVICES 的环境中执行
+bash "$suite/run_eagle_split_norm_rope_concat_msprof_op.sh" --device-id "$A3_LOGIC_ID" --path fused --runs 2
+```
+
+小 shape pytest 默认使用当前进程的设备，`MINDIE_TEST_DEVICE_ID` 可显式指定进程内可见序号。生产脚本的 `--device-id` 在 A3 上表示驱动的 Chip Logic ID。pytest、大 shape 精度与压测、`--path composed --no-msprof` 的 Event 计时均保留可见性映射。例如已分配设备的可见列表为 `8,12` 时，pytest 的可见序号 1 和生产脚本的 `--device-id 12` 选中同一 die。实际 NPU ID 和 Chip ID 可从 `npu-smi info -m` 查询，并用 `npu-smi info -t board -i <NPU ID> -c <Chip ID>` 核对。
+
+未设置 `ASCEND_RT_VISIBLE_DEVICES` 时，A3 入口用 CANN 查询进程序号对应的物理设备 ID，再用 `npu-smi info -t phyid-remap -p <物理设备 ID>` 查询 Chip Logic ID，并与 `npu-smi info -m` 的 NPU ID、Chip ID 核对。生产脚本据此将分配的 Chip Logic ID 反查为进程序号，再执行选卡。例如驱动号为 8、12 的两个 die，即使管理表调整行序，`--device-id 12` 仍绑定逻辑号 12。若无法核对唯一映射，入口报错。精度和 Event 计时可使用管理员已确认对应关系的可见性掩码，msprof 采集需修复无掩码环境的映射。[CANN 设备 ID 转换](https://www.hiascend.com/document/detail/en/CANNCommunityEdition/910/API/runtimeapi/aclcppdevg_03_2286.html) · [A3 驱动映射查询](https://www.hiascend.com/doc_center/source/zh/HDK/2610/A3/A3npu/npusmia3_0062.html)
+
+A3 大 shape 精度和压测可传多个已分配逻辑号（`--device-id ID1 ID2`），按完整场景并行。`accuracy.log` 的批次结论由父进程在所有设备结束后输出。只要一个分片失败，脚本就返回非零，并按设备、阶段、场景和输入分布列出失败或未完成的项。性能批次使用一个逻辑号，`device.json` 记录应用选中的设备。设置上述构建目标后，两个脚本均可用 `--dry-run` 离线预览 A3 的 8 个场景。
 
 ## 三层测试
 
-910B 大 shape 测试使用 BSND packed QKV `[1,5672,168,128]`、头数 `[56,56,56]`、BF16，固定 `norm_type=3`、`eps=1e-5`。权重各为 `[128]`，cos/sin 为 `[1,5672,1,W]`。场景表交叉选择 RoPE、输出布局、cache 宽度与 R=96/128，共 8 组；不展开 16 组笛卡尔积。每个 R 均覆盖两种 RoPE 与全宽/半宽。
+910B/910C 大 shape 测试使用 BSND packed QKV `[1,5672,168,128]`、头数 `[56,56,56]`、BF16，固定 `norm_type=3`、`eps=1e-5`。权重各为 `[128]`，cos/sin 为 `[1,5672,1,W]`。场景表交叉选择 RoPE、输出布局、cache 宽度与 R=96/128，共 8 组；不展开 16 组笛卡尔积。每个 R 均覆盖两种 RoPE 与全宽/半宽。
 
 | 内部场景键 | RoPE | 输出布局 | R | W | 精度/压测分布 |
 | --- | --- | --- | --- | --- | --- |
@@ -162,7 +203,7 @@ bash tests/ops/eagle_split_norm_rope_concat/run_eagle_split_norm_rope_concat_pro
 生产精度入口默认 `--mode all`：950 按分配表执行 10 条单次精度测试，再对这 10 组固定输入分别压测 1000 轮；910B 保留原 8 条。使用 `--shape B S Htotal D`、`--heads Q K V`、`--rope-type all|half|interleave`、`--cache-width all|full|half` 、`--output-layout all|bsnd|bnsd` 和 `--rotary-dim all|96|128` 直接选择，无需查场景 ID。默认逐场景选择 shape/heads，原八场景为 `1 5672 168 128` / `56 56 56`，新增场景为 `1 5672 257 128` / `1 128 128`；四个语义选择项默认 all，指定多项时取交集。每组压测在循环外固定输入，以独立 CPU 副本保存首次输出；1000 轮不包含基线调用。每轮同步后检查全部 Q/K/V 的 shape、dtype、设备、连续性及原始 BF16 位模式，包含正负零；首次输出必须有限，输入摘要在基线前后、结束及输出异常时复核。循环内释放当轮结果，每 100 轮和最后一轮打印进度，不重新计算 golden。
 
 ```bash
-# 只跑单次精度（950 十条，910B 八条）
+# 只跑单次精度（950 十条，910B/910C 八条）
 bash tests/ops/eagle_split_norm_rope_concat/run_eagle_split_norm_rope_concat_prod_accuracy.sh --device-id "${ALLOCATED_LOGICAL_ID:?set allocated logical device ID}" --mode accuracy
 
 # 只测相邻旋转、BNSD 全宽 cache 场景（分配表为 uniform）
@@ -183,13 +224,14 @@ bash tests/ops/eagle_split_norm_rope_concat/run_eagle_split_norm_rope_concat_pro
 bash tests/ops/eagle_split_norm_rope_concat/run_eagle_split_norm_rope_concat_prod_accuracy.sh --device-id "${ALLOCATED_LOGICAL_ID:?set allocated logical device ID}" --mode stress --stress-runs 2000
 ```
 
-精度 Python 入口接受相同的 shape、heads 和四个语义选择参数；`--dry-run` 由 shell 提供，不启动 Python/NPU、不创建输出目录。自定义 shape 用于真实输入和输出契约，要求各维为正 int32、输入总元素数不超过 2147483647、D=128、Q+K+V=Htotal；950 每路 Head 在 1～128 内，910B 保留 K=V、Q 能被 K 整除。当前大 shape 精度固定 BF16、norm_type=3、eps=1e-5；R 按代表场景取 96 或 128，cos/sin 为 `[B,S,1,R]`（full）或 `[B,S,1,R/2]`（half）。R=32/64 及 FP16 由小 shape 覆盖；小 shape 已包含 R=128 的两种 RoPE 半宽/全宽逐位等价与默认 R 回归。自定义 shape 与 heads 须匹配。shell 须同时传入两者；直接 Python 对 257-head 的生产 shape 默认使用 [1,128,128]。一般自定义 shape 运行原八个组合，精确选择新增 shape/heads 时运行该场景的 normal 和 uniform 两条用例。选择项只过滤表内代表配置，未匹配时报错，不自动补齐未列组合。`--stress-runs` 必须为正整数；`--help` 查看参数。精度与压测默认在脚本所属仓库创建 `log/eagle_split_norm_rope_concat/accuracy_YYYYMMDD_HHMMSS/`，实时输出同时保存为该批次的 `accuracy.log`；`--output DIR` 可指定空目录。同秒批次重名时拒绝覆盖，可稍后重试或指定新目录，不依赖启动目录。压测遵循本算子的逐位确定性要求，任意一位变化即失败，同时报告轮次、分布、输出、差异数量、最大绝对/相对误差和差异位置。异常输出与基线保存到本次批次的 `stress-*/mismatch.pt`。直接运行 Python 精度入口时，`--output` 指定失败张量目录，未指定则使用同样的时间戳默认路径。只跑压测通过仅表示重复执行稳定，不表示已通过 golden 精度验收。
+精度 Python 入口接受相同的 shape、heads 和四个语义选择参数；`--dry-run` 由 shell 提供，不启动 Python/NPU、不创建输出目录。自定义 shape 用于真实输入和输出契约，要求各维为正 int32、输入总元素数不超过 2147483647、D=128、Q+K+V=Htotal；950 每路 Head 在 1～128 内，910B/910C 要求 K=V、Q 能被 K 整除。当前大 shape 精度固定 BF16、norm_type=3、eps=1e-5；R 按代表场景取 96 或 128，cos/sin 为 `[B,S,1,R]`（full）或 `[B,S,1,R/2]`（half）。R=32/64 及 FP16 由小 shape 覆盖；小 shape 已包含 R=128 的两种 RoPE 半宽/全宽逐位等价与默认 R 回归。自定义 shape 与 heads 须匹配。shell 须同时传入两者；直接 Python 对 257-head 的生产 shape 默认使用 [1,128,128]。一般自定义 shape 运行原八个组合，精确选择新增 shape/heads 时运行该场景的 normal 和 uniform 两条用例。选择项只过滤表内代表配置，未匹配时报错，不自动补齐未列组合。`--stress-runs` 必须为正整数；`--help` 查看参数。精度与压测默认在脚本所属仓库创建 `log/eagle_split_norm_rope_concat/accuracy_YYYYMMDD_HHMMSS/`，实时输出同时保存为该批次的 `accuracy.log`；`--output DIR` 可指定空目录。同秒批次重名时拒绝覆盖，可稍后重试或指定新目录，不依赖启动目录。压测遵循本算子的逐位确定性要求，任意一位变化即失败，同时报告轮次、分布、输出、差异数量、最大绝对/相对误差和差异位置。异常输出与基线保存到本次批次的 `stress-*/mismatch.pt`。直接运行 Python 精度入口时，`--output` 指定失败张量目录，未指定则使用同样的时间戳默认路径。只跑压测通过仅表示重复执行稳定，不表示已通过 golden 精度验收。
 
-任一测试失败，shell 立即非零退出。全部所选项目通过后，脚本末尾逐项汇总；默认 950 模式为 10 行精度与 10 行压测结果，910B 为 8+8 行。以下只展示原 HALF、BSND 全宽场景的结果，压测轮数按实际参数显示，单选测试类型仅显示所选项目：
+某个测试失败时，该设备的分片停止，其余分片继续。日志末尾汇总每项结果和整个批次的结论。默认 950 模式为 10 项精度与 10 项压测，910B/910C 为 8+8 项。以下是两个 A3 设备并行时的部分汇总行：
 
 ```text
-PASS accuracy shape=1 5672 168 128 heads=56 56 56 rope=half output=bsnd cache_width=full R=96 dtype=bf16 distribution=uniform outputs=q,k,v (mixed tolerance diagnostic only)
-PASS stress shape=1 5672 168 128 heads=56 56 56 rope=half output=bsnd cache_width=full R=96 dtype=bf16 distribution=uniform runs=1000 outputs=q,k,v bit_exact
+FAIL device=8 mode=accuracy case=half-bsnd distribution=uniform exit=1
+PASS device=12 mode=accuracy case=half-bnsd-r128 distribution=normal
+NOT RUN device=8 mode=accuracy case=interleave-bsnd-r128 distribution=normal
 ```
 
 在 910B 检查 BF16、S=129、头数 [130,65,65]、R=32 的流水用例和负零复制时，可运行以下命令（选中的流水场景为 HALF、SND 输出、全宽 cache、均匀分布）：
@@ -202,12 +244,14 @@ python -m pytest --test-mode=NPU tests/ops/eagle_split_norm_rope_concat/test_eag
 
 性能入口为 `run_eagle_split_norm_rope_concat_msprof_op.sh`，默认运行 fused 与 composed 两条路径。950 使用九组输入配置，两条路径均为每组独立采集 3 轮，各 27 条记录，完整默认计划共 54 次采集；910B 使用原八组，两条路径均为每组 20 轮，各 160 条记录，共 320 次采集。所有性能输入为 normal，默认 seed=20261017。
 
-性能入口先清除 ASCEND_RT_VISIBLE_DEVICES，再使用物理 NPU ID；可通过 `--device-id` 或 DEVICE_ID 显式指定，未指定时由仓内 `tests/tools/select_npu_device.py` 自动选卡一次。选卡后查询架构、确定场景及默认轮数，同一批次固定使用该卡。`--runs N` 显式覆盖所有所选路径的轮数；`--path fused` 或 `--path composed` 只采集对应路径。
+调用 `msprof op`（fused）或 `msprof`（composed）前，launcher 检查 `ASCEND_RT_VISIBLE_DEVICES`。设置了该变量时采集入口报错退出。请在可直接寻址已分配目标卡或 die 的环境中采集；仅有掩码环境时，可运行 `--path composed --no-msprof` 测量完整调用的 Event 耗时。[CANN 9.1 环境变量说明](https://www.hiascend.com/doc_center/source/en/CANNCommunityEdition/910/maintenref/envvar/envref_07_0028.html)
+
+910B 和 950 在未设掩码时可用 `--device-id` 或 `DEVICE_ID` 指定物理 NPU ID，省略时由 `tests/tools/select_npu_device.py` 自动选卡一次。在有掩码的 Event 计时中，显式传入进程内可见序号。A3 始终传已分配的 Chip Logic ID。`--runs N` 指定所有所选路径的采集轮数，`--path fused` 或 `--path composed` 只采集对应路径。
 
 融合 profile 在 CPU 上生成 BF16 输入，再复制到目标卡；进程只提交一次目标算子调用，由 `msprof op --kernel-name=EagleSplitNormRopeConcat --warm-up=100 --launch-count=1 --kill=off` 负责预热与采集，并让程序自然完成同步及元数据检查。数值精度由精度入口验收。每轮提取唯一正 Task Duration，输出所有采集记录、最小值、最大值和波动比例；波动超过 10% 时保留警告，可通过 MSPROF_WARMUP 调整预热，并使用全新的结果目录采集完整轮数。最小值表示当前条件下观测到的最佳性能。
 
 ```bash
-# 显式使用物理卡 3，默认采集融合及组合路径；省略 device-id 时自动选卡
+# 910B/950 显式使用物理卡 3，默认采集融合及组合路径；省略 device-id 时自动选卡
 bash tests/ops/eagle_split_norm_rope_concat/run_eagle_split_norm_rope_concat_msprof_op.sh \
   --device-id 3
 
@@ -233,7 +277,7 @@ bash tests/ops/eagle_split_norm_rope_concat/run_eagle_split_norm_rope_concat_msp
 
 ## Ascend 950 实现与测试
 
-950 使用按 Head 数动态规划 Token Tile 的内核；910B 内核、UB 公式及 GQA 校验保持原行为。共享的形状推导允许独立头数进入 Host Tiling，由 950 的每路 1～128 限制或 910B 的原限制最终校验。新增 tiling 字段追加在原字段之后，仅 950 消费。
+950 按 Head 数动态规划 Token Tile。共享的形状推导允许独立头数进入 Host Tiling，由 950 的每路 1～128 限制或 910B 的 GQA 约束最终校验。910B 调度字段 `outputQueues910`、`tokenTile910` 追加在 950 字段之后，950 路径将两者置 0。部署时用同一提交重建 Host、kernel 和完整 wheel。
 
 Host 按 C=128、127……98 降序搜索，分别计算 Q/K/V 的 `T=max(1,round(C/H))`（正数半整数向上取整），各分支单独增加 T 直到 `100*T*H >= 55*C`。选择满足完整队列和至少一个缓存 token 的最大 C；不能容纳则报错。正常 Tile 不统一，batch/核区间尾部以及缓存子窗口按有效数量缩小。
 
@@ -254,7 +298,9 @@ RoPE 有两个独立 VECIN 缓存槽，cos、sin 在各槽中分别连续。每�
 
 输出仍按三个独立单槽队列 1→2→3→1 轮转，每次 Q/K 子任务占一槽。三路 Tile 不同时，Q/K 任务数量可能不同；某一路耗尽后继续处理另一路，不强行补齐或统一 Tile。V 使用自己的 Tv 和 Hv，沿用 BSND 多段搬入或 BNSD 按 token 搬入布局变换，以及 MTE2→MTE3 的绑定队列。K 轮先预取首个 V Tile，再计算并提交 K 写回，随后提交 V；当 V Tile 更小时，继续搬运本轮 K 已推进范围内的其余 V Tile。V 单槽重用仍等待 MTE3。
 
-小 shape 和接口仍只有 `test_eagle_split_norm_rope_concat.py` 一个 pytest 入口，共 **175 项**：原 156 项加 16 项独立 Head/Tile 数值检查和 3 项逐分支超过 128 的真实入口及 Fake 检查。原 950 流水场景改用 [1,128,128] 和 [128,65,43]，检查不对称 Tile、系数更换和 V 位模式。共用用例中的 130/512/4096-head 配置在 910B 继续执行原数值检查，在 950 检查超限错误；原有 Q/K 混合容差、cosine、模长比及 V 位模式门禁不变。R=32/64/96/128 的 HALF/INTERLEAVE、BSND/BNSD、Full/Compact 覆盖保留。
+小 shape 和接口测试共用 `test_eagle_split_norm_rope_concat.py` 一个 pytest 入口，共 **215 项**。在原有 175 项基础上，910B 增加 40 项成对输出轮转回归，将 8 组参数与序列长度 1、2、3、128、129 组合。覆盖 56-head、55-head 对齐、57-head 回退、GQA/MQA、R=32/64/96/128、batch 内双 token 与尾组、共享和独立 batch 系数、重复调用及 V 位模式。910B 生产精度沿用八个大 shape 场景。
+
+950 流水场景使用 [1,128,128] 和 [128,65,43]，检查不对称 Tile、系数更换和 V 位模式。共用用例中的 130/512/4096-head 配置在 910B 做数值检查，在 950 检查超限错误。HALF/INTERLEAVE、BSND/BNSD、Full/Compact 均覆盖 R=32/64/96/128，并检查 Q/K 混合容差、cosine、模长比及 V 位模式。
 
 ```bash
 pytest test_eagle_split_norm_rope_concat.py --test-mode=NPU

@@ -5,6 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 DEVICE_ID="${DEVICE_ID:-}"
+DEVICE_IDS=()
 MODE="all"
 ROTARY_DIM="all"
 ROPE_TYPE="all"
@@ -17,7 +18,8 @@ CUSTOM_GEOMETRY=0
 STRESS_RUNS=1000
 OUTPUT_DIR=""
 usage() {
-    echo "Usage: $0 [--device-id ID] [--mode all|accuracy|stress] [--stress-runs N] [--output DIR]"
+    echo "Usage: $0 [--device-id ID [ID ...]] [--mode all|accuracy|stress] [--stress-runs N] [--output DIR]"
+    echo "  A3 IDs are allocated Chip Logic IDs; each resolves to an NPU ID and Chip ID."
     echo "  --shape B S Htotal D       Actual BSND input (default: 1 5672 168 128; D=128 only)"
     echo "  --heads Q K V             Head counts (default: 56 56 56; sum=Htotal; Ascend950 each branch 1..128)"
     echo "  --rope-type all|half|interleave   (default: all)"
@@ -41,7 +43,10 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --device-id)
             [[ $# -ge 2 ]] || { echo "Missing device ID" >&2; exit 1; }
-            DEVICE_ID="$2"; shift 2 ;;
+            DEVICE_IDS=(); shift
+            while (($#)) && [[ "$1" != --* ]]; do DEVICE_IDS+=("$1"); shift; done
+            ((${#DEVICE_IDS[@]})) || { echo "Missing device ID" >&2; exit 1; }
+            DEVICE_ID="${DEVICE_IDS[0]}" ;;
         --mode)
             [[ $# -ge 2 ]] || { echo "Missing mode" >&2; exit 1; }
             MODE="$2"; shift 2 ;;
@@ -112,15 +117,36 @@ for scenario in half-bsnd half-bnsd-r128 interleave-bsnd-r128 interleave-bnsd ha
     CASES+=("$scenario")
 done
 ((${#CASES[@]})) || { echo "No selected representative scenario; relax RoPE/layout/cache/R filters" >&2; exit 1; }
+((${#DEVICE_IDS[@]})) || DEVICE_IDS=("$DEVICE_ID")
+if [[ -n "$DEVICE_ID" || ${#DEVICE_IDS[@]} -gt 1 ]]; then
+    declare -A seen_ids=()
+    for id in "${DEVICE_IDS[@]}"; do
+        [[ "$id" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "Invalid device ID: $id" >&2; exit 1; }
+        [[ -z "${seen_ids[$id]:-}" ]] || { echo "Duplicate device ID: $id" >&2; exit 1; }
+        seen_ids[$id]=1
+    done
+fi
 [[ -z "$DEVICE_ID" || "$DEVICE_ID" =~ ^[0-9]+$ ]] || { echo "Invalid device ID" >&2; exit 1; }
 if (( DRY_RUN )); then
+    if [[ "${ASCEND_COMPUTE_UNIT:-}" == ascend910_93 ]]; then
+        filtered=()
+        for scenario in "${CASES[@]}"; do [[ "$scenario" == half-bsnd-asymmetric ]] || filtered+=("$scenario"); done
+        CASES=("${filtered[@]}")
+        ((${#CASES[@]})) || { echo "No selected A3 scenario" >&2; exit 1; }
+        echo "A3 Chip Logic ID -> NPU ID / Chip ID pending hardware lookup"
+    fi
     selected=0
     for scenario in "${CASES[@]}"; do
         set_case_distributions "$scenario"
         selected=$((selected + ${#DISTRIBUTIONS[@]}))
     done
     echo "shape=${SHAPE[*]} heads=${HEADS[*]} dtype=bf16 norm_type=3 eps=1e-5 mode=$MODE selected=$selected"
+    case_index=0
     for scenario in "${CASES[@]}"; do
+        if [[ -n "$DEVICE_ID" ]]; then
+            echo "planned device=${DEVICE_IDS[case_index % ${#DEVICE_IDS[@]}]} case=$scenario"
+        fi
+        case_index=$((case_index + 1))
         rope="${scenario%%-*}"
         layout="${scenario#*-}"; layout="${layout%%-*}"
         rotary=96; [[ "$scenario" != *-r128 ]] || rotary=128
@@ -135,7 +161,14 @@ if (( DRY_RUN )); then
     exit 0
 fi
 [[ "$DEVICE_ID" =~ ^[0-9]+$ ]] || { echo "Supply --device-id for an allocated healthy logical NPU" >&2; exit 1; }
-soc_version="$(python3 -c 'import sys, torch_npu; torch_npu.npu.set_device(int(sys.argv[1])); print(torch_npu.npu.get_soc_version())' "$DEVICE_ID")"
+declare -A records=()
+for id in "${DEVICE_IDS[@]}"; do
+    records[$id]="$(python3 "$REPO_ROOT/tests/ops/a3_device.py" --device-id "$id")"
+    soc_version="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["soc_version"])' <<<"${records[$id]}")"
+    if ((${#DEVICE_IDS[@]} > 1 && (soc_version < 250 || soc_version > 256))); then
+        echo "Multiple allocated logic IDs require A3" >&2; exit 1
+    fi
+done
 if [[ "$soc_version" != 260 ]]; then
     FILTERED_CASES=()
     for scenario in "${CASES[@]}"; do [[ "$scenario" == half-bsnd-asymmetric ]] || FILTERED_CASES+=("$scenario"); done
@@ -153,32 +186,83 @@ fi
 OUTPUT_DIR="$(cd -- "$OUTPUT_DIR" && pwd)"
 cd "$REPO_ROOT"
 {
-echo "Logical NPU ID=$DEVICE_ID; log=${OUTPUT_DIR}/accuracy.log"
-RESULTS=()
+echo "Selected device IDs=${DEVICE_IDS[*]}; log=${OUTPUT_DIR}/accuracy.log"
+# Index each selected call before launching workers so missing results have a device and case.
+tasks=()
 for stage in accuracy stress; do
-    [[ "${MODE}" == all || "${MODE}" == "${stage}" ]] || continue
-    for scenario in "${CASES[@]}"; do
+    [[ "$MODE" == all || "$MODE" == "$stage" ]] || continue
+    for i in "${!CASES[@]}"; do
+        scenario="${CASES[i]}"
+        id="${DEVICE_IDS[i % ${#DEVICE_IDS[@]}]}"
+        set_case_distributions "$scenario"
+        for distribution in "${DISTRIBUTIONS[@]}"; do
+            tasks+=("$id $stage $scenario $distribution")
+        done
+    done
+done
+run_shard() {
+    local DEVICE_ID="$1" index id stage scenario distribution rope layout width rotary exit_code
+    local journal="$OUTPUT_DIR/device_${DEVICE_ID}.status"
+    local -a case_shape case_heads
+    export EAGLE_TEST_DEVICE_RECORD="${records[$DEVICE_ID]}"
+    echo "Device binding: $EAGLE_TEST_DEVICE_RECORD"
+    for index in "${!tasks[@]}"; do
+        read -r id stage scenario distribution <<< "${tasks[index]}"
+        [[ "$id" == "$DEVICE_ID" ]] || continue
         rope="${scenario%%-*}"
         layout="${scenario#*-}"; layout="${layout%%-*}"
         width=full; [[ "$scenario" != *-compact* ]] || width=half
         rotary=96; [[ "$scenario" != *-r128 ]] || rotary=128
-        CASE_SHAPE=("${SHAPE[@]}"); CASE_HEADS=("${HEADS[@]}")
-        if ((!CUSTOM_GEOMETRY)) && [[ "$scenario" == half-bsnd-asymmetric ]]; then CASE_SHAPE=(1 5672 257 128); CASE_HEADS=(1 128 128); fi
-        description="shape=${CASE_SHAPE[*]} heads=${CASE_HEADS[*]} rope=$rope output=$layout cache_width=$width R=$rotary dtype=bf16"
-        set_case_distributions "$scenario"
-        for distribution in "${DISTRIBUTIONS[@]}"; do
-            python3 -u -m tests.ops.eagle_split_norm_rope_concat.check_eagle_split_norm_rope_concat_prod_accuracy \
-                --device-id "${DEVICE_ID}" --mode "${stage}" --rope-type "$rope" --cache-width "$width" \
-                --output-layout "$layout" --rotary-dim "$rotary" --case "$scenario" --shape "${CASE_SHAPE[@]}" --heads "${CASE_HEADS[@]}" --distribution "${distribution}" \
-                --stress-runs "${STRESS_RUNS}" --output "$OUTPUT_DIR"
-            if [[ "${stage}" == stress ]]; then
-                RESULTS+=("PASS stress $description distribution=${distribution} runs=${STRESS_RUNS} outputs=q,k,v bit_exact")
-            else
-                RESULTS+=("PASS accuracy $description distribution=${distribution} outputs=q,k,v (mixed tolerance diagnostic only)")
-            fi
-        done
+        case_shape=("${SHAPE[@]}"); case_heads=("${HEADS[@]}")
+        if ((!CUSTOM_GEOMETRY)) && [[ "$scenario" == half-bsnd-asymmetric ]]; then
+            case_shape=(1 5672 257 128); case_heads=(1 128 128)
+        fi
+        # A missing terminal record distinguishes an interrupted call from an unstarted one.
+        printf '%s START\n' "$index" >> "$journal"
+        if python3 -u -m tests.ops.eagle_split_norm_rope_concat.check_eagle_split_norm_rope_concat_prod_accuracy \
+            --device-id "$DEVICE_ID" --mode "$stage" --rope-type "$rope" --cache-width "$width" \
+            --output-layout "$layout" --rotary-dim "$rotary" --case "$scenario" --shape "${case_shape[@]}" \
+            --heads "${case_heads[@]}" --distribution "$distribution" --stress-runs "$STRESS_RUNS" --output "$OUTPUT_DIR"; then
+            printf '%s PASS\n' "$index" >> "$journal"
+        else
+            exit_code=$?
+            printf '%s FAIL %s\n' "$index" "$exit_code" >> "$journal"
+            return "$exit_code"
+        fi
     done
+}
+pids=()
+for id in "${DEVICE_IDS[@]}"; do
+    : > "$OUTPUT_DIR/device_${id}.status"
+    run_shard "$id" & pids+=("$!")
 done
-echo "=== Selected tests passed ==="
-printf '%s\n' "${RESULTS[@]}"
+rc=0
+statuses=()
+for worker in "${!pids[@]}"; do
+    id="${DEVICE_IDS[worker]}"
+    wait "${pids[worker]}" || { echo "Worker device=$id exit=$?"; rc=1; }
+    while read -r index state exit_code; do
+        case "$state" in
+            START) statuses[index]=INCOMPLETE ;;
+            PASS) statuses[index]=PASS ;;
+            FAIL) statuses[index]="FAIL $exit_code" ;;
+        esac
+    done < "$OUTPUT_DIR/device_${id}.status"
+done
+for index in "${!tasks[@]}"; do
+    read -r id stage scenario distribution <<< "${tasks[index]}"
+    result="device=$id mode=$stage case=$scenario distribution=$distribution"
+    status="${statuses[index]:-NOT RUN}"
+    case "$status" in
+        PASS) echo "PASS $result" ;;
+        FAIL\ *) echo "FAIL $result exit=${status#FAIL }"; rc=1 ;;
+        *) echo "$status $result"; rc=1 ;;
+    esac
+done
+if ((rc)); then
+    echo "=== Selected tests failed ==="
+else
+    echo "=== Selected tests passed ==="
+fi
+exit "$rc"
 } 2>&1 | tee "${OUTPUT_DIR}/accuracy.log"

@@ -98,7 +98,7 @@ def test_split_retains_unique_regression_matrix():
         name: prod(len(mark.args[1]) for mark in marks if mark.name == "parametrize")
         for name, marks in functions.items()
     }
-    legacy = {name for name in counts if not name.startswith("test_950_")}
+    legacy = {name for name in counts if not name.startswith(("test_950_", "test_910b_"))}
     assert sum(counts[name] for name in legacy) == 100
     native = {
         name
@@ -109,7 +109,14 @@ def test_split_retains_unique_regression_matrix():
     assert counts["test_950_rotary_boundaries"] == 32
     assert counts["test_950_independent_head_tiles"] == 16
     assert counts["test_950_rejects_each_head_above_128"] == 3
-    assert sum(counts.values()) == 100 + 24 + 16 + 3 + 32
+    assert counts["test_910b_paired_output_rotation"] == 40
+    assert sum(counts.values()) == 100 + 24 + 32 + 16 + 3 + 40
+    paired_axes = {
+        mark.args[0]: mark.args[1]
+        for mark in functions["test_910b_paired_output_rotation"]
+        if mark.name == "parametrize"
+    }
+    assert set(paired_axes["seq"]) == {1, 2, 3, 128, 129}
     axes = {
         mark.args[0]: mark.args[1] for mark in functions["test_950_rotary_boundaries"] if mark.name == "parametrize"
     }
@@ -144,11 +151,15 @@ def test_fixture_selects_logical_device_and_actual_registered_family(monkeypatch
     select = Mock(return_value="npu:1")
     monkeypatch.setattr(module, "init_test_device", select)
     monkeypatch.setattr(device_support, "current_device_family", lambda: family)
+    if "split" in name:
+        monkeypatch.setattr(module, "current_device_family", lambda: family)
+        monkeypatch.setattr(module, "verify_selected_die", Mock())
+        select.return_value = Mock(index=1)
     fixture = module.npu_device if "indexed" in name else module.device_fixture
-    assert fixture.__wrapped__() == "npu:1"
+    assert fixture.__wrapped__() == select.return_value
     select.assert_called_once_with()
     assert os.environ["ASCEND_RT_VISIBLE_DEVICES"] == "1,2"
-    if family == "A2" or (family == "A5" and name == "eagle_split_norm_rope_concat"):
+    if family == "A2" or (family in ("A3", "A5") and name == "eagle_split_norm_rope_concat"):
         module.supported_soc_fixture.__wrapped__("npu:1")
     else:
         with pytest.raises(unittest.SkipTest):

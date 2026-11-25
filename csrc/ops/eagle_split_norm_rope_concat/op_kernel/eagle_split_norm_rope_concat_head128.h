@@ -36,8 +36,10 @@ template <typename T> class EagleSplitNormRopeConcatHead128 {
         key_.SetGlobalBuffer((__gm__ T *)key);
         value_.SetGlobalBuffer((__gm__ T *)value);
         pipe_.InitBuffer(input_, 2, (tileElements_ + 2 * DIM) * sizeof(T));
-        pipe_.InitBuffer(output_, 2, tileElements_ * sizeof(T));
-        pipe_.InitBuffer(valueQueue_, 2, tileElements_ * sizeof(T));
+        for (uint32_t slot = 0; slot < data_.outputQueues910; ++slot) {
+            pipe_.InitBuffer(output_[slot], 2 / data_.tokenTile910, data_.tokenTile910 * tileElements_ * sizeof(T));
+        }
+        pipe_.InitBuffer(valueQueue_, 2 / data_.tokenTile910, data_.tokenTile910 * tileElements_ * sizeof(T));
         pipe_.InitBuffer(weightQueue_, 1, 2 * DIM * sizeof(T));
         // Shift tmp, weights and cosine by eight bank groups (256 bytes) relative to x.
         pipe_.InitBuffer(work_, (2 * tileElements_ + BANK_PADDING_FLOATS) * sizeof(float));
@@ -91,8 +93,13 @@ template <typename T> class EagleSplitNormRopeConcatHead128 {
     }
 
     __aicore__ inline void Process() {
-        ProcessNorm<false>(query_, data_.qHeads, 0, 0);
-        ProcessNorm<true>(key_, data_.kHeads, data_.qHeads, DIM);
+        if (data_.tokenTile910 == 2) {
+            ProcessPairs<false>(query_, data_.qHeads, 0, 0);
+            ProcessPairs<true>(key_, data_.kHeads, data_.qHeads, DIM);
+        } else {
+            ProcessNorm<false>(query_, data_.qHeads, 0, 0);
+            ProcessNorm<true>(key_, data_.kHeads, data_.qHeads, DIM);
+        }
     }
 
   private:
@@ -155,9 +162,69 @@ template <typename T> class EagleSplitNormRopeConcatHead128 {
             }
             const int64_t token = task / tilesPerToken;
             Compute(rows, weightOffset, data_.ropeBatch == 1 ? token % data_.seq : token);
-            auto output = output_.DeQue<T>();
+            auto &queue = output_[outputSlot_];
+            auto output = queue.AllocTensor<T>();
+            CastOutput(output, rows, 1);
+            queue.EnQue(output);
+            output = queue.DeQue<T>();
             Store(destination, output, task, heads, tilesPerToken, rows);
-            output_.FreeTensor(output);
+            queue.FreeTensor(output); // MTE3 -> Vector protection stays local to this queue.
+            outputSlot_ = (outputSlot_ + 1) % data_.outputQueues910;
+        }
+    }
+
+    __aicore__ inline int64_t FirstTaskInPair(int64_t group, int64_t tilesPerToken) {
+        const int64_t pairsPerBatch = (data_.seq + 1) / 2;
+        const int64_t pair = group / tilesPerToken;
+        const int64_t token = pair / pairsPerBatch * data_.seq + pair % pairsPerBatch * 2;
+        return token * tilesPerToken + group % tilesPerToken;
+    }
+
+    template <bool copyValue>
+    __aicore__ inline void ProcessPairs(
+        const GlobalTensor<T> &destination, int64_t heads, int64_t firstHead, uint32_t weightOffset) {
+        const int64_t tilesPerToken = (heads + tileHeads_ - 1) / tileHeads_;
+        const int64_t groups = data_.batch * ((data_.seq + 1) / 2) * tilesPerToken;
+        const int64_t step = GetBlockNum();
+        const int64_t begin = GetBlockIdx();
+        if (begin >= groups) {
+            return;
+        }
+        CopyInNorm(FirstTaskInPair(begin, tilesPerToken), heads, firstHead, tilesPerToken);
+        for (int64_t group = begin; group < groups; group += step) {
+            const int64_t task = FirstTaskInPair(group, tilesPerToken);
+            const int64_t token = task / tilesPerToken;
+            const uint32_t tokens = token % data_.seq + 1 < data_.seq ? 2 : 1;
+            const uint32_t rows = HeadsInTile(task, heads, tilesPerToken);
+            auto &queue = output_[outputSlot_];
+            LocalTensor<T> output;
+            for (uint32_t t = 0; t < tokens; ++t) {
+                // Keep two single-token inputs in flight, including across pair boundaries.
+                if (t + 1 < tokens) {
+                    CopyInNorm(task + tilesPerToken, heads, firstHead, tilesPerToken);
+                } else if (group + step < groups) {
+                    CopyInNorm(FirstTaskInPair(group + step, tilesPerToken), heads, firstHead, tilesPerToken);
+                }
+                if constexpr (copyValue) {
+                    if (t == 0) {
+                        CopyValuePair(task, tilesPerToken, rows, tokens);
+                    }
+                }
+                Compute(rows, weightOffset, data_.ropeBatch == 1 ? (token + t) % data_.seq : token + t);
+                if (t == 0) {
+                    // Wait for this slot's previous MTE3 only before writing its first token.
+                    output = queue.AllocTensor<T>();
+                }
+                const uint32_t offset = data_.outputBnsd == 0 ? t * rows * DIM : t * DIM;
+                CastOutput(output[offset], rows, tokens);
+            }
+            // Publish only after BOTH tokens are ready. The other independent slot can
+            // be filled by Vector while MTE3 consumes this pair.
+            queue.EnQue(output);
+            output = queue.DeQue<T>();
+            StorePair(destination, output, task, heads, tilesPerToken, rows, tokens);
+            queue.FreeTensor(output);
+            outputSlot_ = (outputSlot_ + 1) % data_.outputQueues910;
         }
     }
 
@@ -230,11 +297,20 @@ template <typename T> class EagleSplitNormRopeConcatHead128 {
         } else {
             Half(x, tmp, cosine, sine, repeats);
         }
-        // Norm and RoPE remain FP32. Cast each complete row only at the final output boundary.
-        auto output = output_.AllocTensor<T>();
-        Cast(output, x, RoundMode::CAST_RINT, count);
+    }
+
+    __aicore__ inline void CastOutput(const LocalTensor<T> &output, uint32_t rows, uint32_t tokens) {
+        const auto x = work_.Get<float>();
+        if (data_.outputBnsd != 0 && tokens == 2) {
+            // Write directly to [head, token, DIM]; no UB transpose or extra buffer.
+            const UnaryRepeatParams repeat{1, 1, static_cast<uint8_t>(2 * DIM * sizeof(T) / 32), ROW_BLOCKS};
+            for (uint32_t column = 0; column < DIM; column += LANES) {
+                Cast(output[column], x[column], RoundMode::CAST_RINT, LANES, static_cast<uint8_t>(rows), repeat);
+            }
+        } else {
+            Cast(output, x, RoundMode::CAST_RINT, rows * DIM);
+        }
         PipeBarrier<PIPE_V>();
-        output_.EnQue(output);
     }
 
     __aicore__ inline void Half(const LocalTensor<float> &x, const LocalTensor<float> &tmp,
@@ -303,9 +379,50 @@ template <typename T> class EagleSplitNormRopeConcatHead128 {
         valueQueue_.EnQue(input);
     }
 
+    __aicore__ inline void StorePair(const GlobalTensor<T> &destination, const LocalTensor<T> &output, int64_t task,
+        int64_t heads, int64_t tilesPerToken, uint32_t rows, uint32_t tokens) {
+        const int64_t token = task / tilesPerToken;
+        const int64_t head = task % tilesPerToken * tileHeads_;
+        if (data_.outputBnsd == 0) {
+            const DataCopyExtParams copy{static_cast<uint16_t>(tokens), rows * DIM * static_cast<uint32_t>(sizeof(T)),
+                0, static_cast<uint32_t>((heads - rows) * DIM * sizeof(T)), 0};
+            DataCopyPad(destination[(token * heads + head) * DIM], output, copy);
+        } else {
+            const int64_t offset = ((token / data_.seq * heads + head) * data_.seq + token % data_.seq) * DIM;
+            const DataCopyExtParams copy{static_cast<uint16_t>(rows), tokens * DIM * static_cast<uint32_t>(sizeof(T)),
+                0, static_cast<uint32_t>((data_.seq - tokens) * DIM * sizeof(T)), 0};
+            DataCopyPad(destination[offset], output, copy);
+        }
+    }
+
+    __aicore__ inline void CopyValuePair(int64_t task, int64_t tilesPerToken, uint32_t rows, uint32_t tokens) {
+        const int64_t token = task / tilesPerToken;
+        const int64_t head = task % tilesPerToken * tileHeads_;
+        auto value = valueQueue_.AllocTensor<T>();
+        const int64_t first = (token * totalHeads_ + data_.qHeads + data_.kHeads + head) * DIM;
+        if (data_.outputBnsd == 0) {
+            const DataCopyExtParams copy{static_cast<uint16_t>(tokens), rows * DIM * static_cast<uint32_t>(sizeof(T)),
+                static_cast<uint32_t>((totalHeads_ - rows) * DIM * sizeof(T)), 0, 0};
+            DataCopyPad(value, packed_[first], copy, DataCopyPadExtParams<T>{false, 0, 0, static_cast<T>(0)});
+        } else {
+            // GM heads are contiguous; interleave the two token rows in UB during MTE2.
+            const DataCopyExtParams copy{static_cast<uint16_t>(rows), DIM * sizeof(T), 0,
+                static_cast<uint32_t>((tokens - 1) * DIM * sizeof(T) / 32), 0};
+            for (uint32_t t = 0; t < tokens; ++t) {
+                DataCopyPad(value[t * DIM], packed_[first + t * totalHeads_ * DIM], copy,
+                    DataCopyPadExtParams<T>{false, 0, 0, static_cast<T>(0)});
+            }
+        }
+        valueQueue_.EnQue(value);
+        value = valueQueue_.DeQue<T>();
+        // Preserve the 910B V-before-K store order and MTE2 -> MTE3 synchronization.
+        StorePair(value_, value, task, data_.vHeads, tilesPerToken, rows, tokens);
+        valueQueue_.FreeTensor(value); // The bound queue protects reuse by the next V load.
+    }
+
     TPipe pipe_;
     TQue<QuePosition::VECIN, 2> input_;
-    TQue<QuePosition::VECOUT, 2> output_;
+    TQue<QuePosition::VECOUT, 2> output_[2];
     TQue<QuePosition::VECIN, 1> weightQueue_;
     TQueBind<QuePosition::VECIN, QuePosition::VECOUT, 2> valueQueue_;
     TBuf<QuePosition::VECCALC> work_, params_, reduction_;
@@ -316,6 +433,7 @@ template <typename T> class EagleSplitNormRopeConcatHead128 {
     int64_t queuedRopeToken_ = -1;
     int64_t computedRopeToken_ = -1;
     uint32_t tileHeads_, tileElements_;
+    uint32_t outputSlot_ = 0;
 };
 } // namespace eagle_snrc
 #endif

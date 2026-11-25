@@ -31,12 +31,19 @@ _QK_TOLERANCES = {
 def init_device(device_id):
     if device_id < 0:
         raise ValueError("Use a nonnegative logical device ID inside the existing visibility allocation")
-    import torch_npu  # noqa: F401
+    import sys
+    from pathlib import Path
 
-    torch.npu.set_device(device_id)
+    if __package__:
+        from tests.ops.a3_device import bind_production_device
+    else:
+        sys.path.append(str(Path(__file__).resolve().parents[1]))
+        from a3_device import bind_production_device
+
+    ordinal = bind_production_device(device_id)["runtime_ordinal"]
     import mindiesd  # noqa: F401
 
-    return f"npu:{device_id}"
+    return f"npu:{ordinal}"
 
 
 def make_inputs(shape, heads, rotary_dim, dtype, device, distribution, seed=SEED, rope_rank=2, compact=False):

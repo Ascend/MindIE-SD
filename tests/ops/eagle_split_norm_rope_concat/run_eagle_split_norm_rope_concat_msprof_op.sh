@@ -52,15 +52,17 @@ while (($#)); do
             shift 2 ;;
         -h|--help)
             echo "Usage: $0 [--device-id N] [--path fused|composed] [--shape B S Htotal D] [--dry-run]"
-            echo "Shapes: 1 5672 168 128, heads 56 56 56 (910B/950); 1 5672 257 128, heads 1 128 128 (950 only). BF16 BSND input."
+            echo "Shapes: 1 5672 168 128, heads 56 56 56 (910B/A3/950); 1 5672 257 128, heads 1 128 128 (950 only). BF16 BSND input."
             echo "Selectors: --rope-type all|half|interleave --cache-width all|full|half --output-layout all|bsnd|bnsd --rotary-dim all|96|128"
-            echo "Default: fused + composed. Captures per case for both paths: Ascend950=3, 910B=20."
+            echo "Default: fused + composed. Captures per case for both paths: Ascend950=3, A3=2, 910B=20."
             echo "--runs N overrides captures for every selected path; --seed 20261017 --output DIR; MSPROF_WARMUP=100."
-            echo "910B selects the original eight. Explicit --shape selects one input geometry."
+            echo "A3 and 910B select the original eight. Explicit --shape selects one input geometry."
             echo "Every capture uses normal inputs and one target call; msprof performs warmup/replay."
             echo "Composed uses five Event warmups and --iterations 10 samples; --no-msprof requires --path composed."
-            echo "--device-id is a physical NPU ID; omitted: auto-select once via tests/tools/select_npu_device.py."
-            echo "Profiling clears ASCEND_RT_VISIBLE_DEVICES. --dry-run previews both architectures without device access or files."
+            echo "A3 requires --device-id with the allocated Chip Logic ID. On unmasked A2/950, omitting it selects an idle NPU."
+            echo "msprof op and msprof require an environment with ASCEND_RT_VISIBLE_DEVICES unset and a directly addressable allocated device."
+            echo "With a visibility mask, use --path composed --no-msprof and supply --device-id (A3 Chip Logic ID, A2/950 visible ordinal)."
+            echo "--dry-run previews all three architectures without device access or files."
             exit 0 ;;
         *) echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -112,6 +114,7 @@ resolve_plan() {
     done
     FUSED_RUNS="${RUNS:-$FUSED_RUNS_910B}"
     [[ "$architecture" != ascend950 ]] || FUSED_RUNS="${RUNS:-$FUSED_RUNS_950}"
+    [[ "$architecture" != ascend910_93 ]] || FUSED_RUNS="${RUNS:-2}"
     COMPOSED_RUNS="$FUSED_RUNS"
     PERFORMANCE_RECORDS=0
     for path in "${SELECTED_PATHS[@]}"; do
@@ -132,11 +135,21 @@ print_plan() {
     done
 }
 if ((DRY_RUN)); then
-    for architecture in ascend910b ascend950; do
+    for architecture in ascend910b ascend910_93 ascend950; do
+        [[ "$architecture" != ascend910_93 ]] || echo "A3 Chip Logic ID -> NPU ID / Chip ID pending hardware lookup"
         resolve_plan "$architecture"
         print_plan "$architecture"
     done
     exit 0
+fi
+if [[ -n "${ASCEND_RT_VISIBLE_DEVICES+x}" ]]; then
+    if ((USE_MSPROF)); then
+        echo "CANN profiling (msprof op and msprof) requires ASCEND_RT_VISIBLE_DEVICES to be unset." >&2
+        echo "Use a profiling environment with a directly addressable allocated device/die, or use --path composed --no-msprof for Event timing." >&2
+        exit 2
+    fi
+    [[ -n "$ASCEND_RT_VISIBLE_DEVICES" ]] || { echo "Empty ASCEND_RT_VISIBLE_DEVICES; expected a list of visible IDs." >&2; exit 2; }
+    [[ -n "$DEVICE_ID" ]] || { echo "With a visibility mask, supply --device-id for the allocated A3 Chip Logic ID or A2/950 visible ordinal." >&2; exit 2; }
 fi
 command -v "$PYTHON" >/dev/null
 if ((USE_MSPROF)); then
@@ -146,7 +159,6 @@ else
     TIMING_FILE=timing.json
     SUMMARY_ARGS=(--no-msprof)
 fi
-unset ASCEND_RT_VISIBLE_DEVICES
 if [[ -z "$OUTPUT_DIR" ]]; then
     mkdir -p "${REPO_ROOT}/log/eagle_split_norm_rope_concat"
     OUTPUT_DIR="${REPO_ROOT}/log/eagle_split_norm_rope_concat/perf_$(date +%Y%m%d_%H%M%S)"
@@ -157,15 +169,25 @@ else
 fi
 OUTPUT_DIR="$(cd -- "$OUTPUT_DIR" && pwd)"
 if [[ -z "$DEVICE_ID" ]]; then
+    soc_version="$("$PYTHON" -c 'import torch_npu; print(torch_npu._C._npu_get_soc_version())')"
+    case "$soc_version" in
+        22[0-5]|260) ;;
+        25[0-6]) echo "A3 requires --device-id for the allocated Chip Logic ID" >&2; exit 2 ;;
+        *) echo "Unsupported SoC version for automatic device selection: $soc_version" >&2; exit 2 ;;
+    esac
     "$PYTHON" "${REPO_ROOT}/tests/tools/select_npu_device.py" --format=report | tee "${OUTPUT_DIR}/npu_select.log"
     DEVICE_ID="$(sed -n 's/^Selected NPU: //p' "${OUTPUT_DIR}/npu_select.log")"
 fi
 [[ "$DEVICE_ID" =~ ^[0-9]+$ ]] || { echo "No valid physical device selected" >&2; exit 2; }
-soc_version="$("$PYTHON" -c 'import sys, torch_npu; torch_npu.npu.set_device(int(sys.argv[1])); print(torch_npu.npu.get_soc_version())' "$DEVICE_ID")"
+EAGLE_TEST_DEVICE_RECORD="$("$PYTHON" "$REPO_ROOT/tests/ops/a3_device.py" --device-id "$DEVICE_ID")"
+export EAGLE_TEST_DEVICE_RECORD
+printf '%s\n' "$EAGLE_TEST_DEVICE_RECORD" > "$OUTPUT_DIR/device.json"
+soc_version="$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["soc_version"])' <<<"$EAGLE_TEST_DEVICE_RECORD")"
 case "$soc_version" in
+    25[0-6]) architecture=ascend910_93 ;;
     260) architecture=ascend950 ;;
     22[0-5]) architecture=ascend910b ;;
-    *) echo "Unsupported SoC version: $soc_version; expected 910B or Ascend950" >&2; exit 2 ;;
+    *) echo "Unsupported SoC version: $soc_version; expected A2, A3 or A5" >&2; exit 2 ;;
 esac
 resolve_plan "$architecture"
 ((${#SELECTED_CASES[@]})) || { echo "The asymmetric case requires Ascend950" >&2; exit 2; }
@@ -173,7 +195,7 @@ print_plan "$architecture"
 cd "$REPO_ROOT"
 export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:$PYTHONPATH}"
 COMMON=(--device-id "$DEVICE_ID" --iterations "$ITERATIONS" --seed "$SEED")
-echo "Physical NPU=$DEVICE_ID distribution=normal; composed warmup=5 iterations=$ITERATIONS; output=$OUTPUT_DIR"
+echo "Selected device=$DEVICE_ID distribution=normal; composed warmup=5 iterations=$ITERATIONS; output=$OUTPUT_DIR"
 # Complete all scenarios of one path before starting the next path.
 for path in "${SELECTED_PATHS[@]}"; do
     PATH_RUNS="$FUSED_RUNS"; [[ "$path" == fused ]] || PATH_RUNS="$COMPOSED_RUNS"
@@ -230,7 +252,7 @@ for path in "${SELECTED_PATHS[@]}"; do
                 NR == 1 { minimum=$1; maximum=$1 }
                 { print NR, $1; if ($1 < minimum) minimum=$1; if ($1 > maximum) maximum=$1 }
                 END {
-                    printf "Warmup=%s (default 100); captures=%d (Ascend950 default 3; 910B default 20)\n", warmup, NR
+                        printf "Warmup=%s (default 100); captures=%d (Ascend950 default 3; A3 default 2; 910B default 20)\n", warmup, NR
                     printf "Min Task Duration(us): %s; Max Task Duration(us): %s\n", minimum, maximum
                     print "NOTICE: if spread exceeds 10%, consider more warmups and a fresh complete set in a new directory on the same device/inputs; retain warnings if variation persists."
                     if (NR < 2) {
@@ -325,7 +347,7 @@ format_table() {
     fi
     } | format_table
     echo "=== Measurement notes ==="
-    echo "Physical NPU=$DEVICE_ID; fused captures=$FUSED_RUNS; composed captures=$COMPOSED_RUNS; fused warmup=$MSPROF_WARMUP; composed warmup=5 samples=$ITERATIONS; msprof=$USE_MSPROF"
+    echo "Selected device=$DEVICE_ID; fused captures=$FUSED_RUNS; composed captures=$COMPOSED_RUNS; fused warmup=$MSPROF_WARMUP; composed warmup=5 samples=$ITERATIONS; msprof=$USE_MSPROF"
     for path in "${SELECTED_PATHS[@]}"; do
         if [[ "$path" == fused ]]; then
             for case_id in "${SELECTED_CASES[@]}"; do
