@@ -1,9 +1,9 @@
-# MindIE-SD daily image for FlashGen on Ascend A3 (Linux ARM64).
+# MindIE-SD daily Omni image on Ascend A3 (Linux ARM64).
 # The image builds the MindIE-SD wheel from the current source tree and
-# applies any patches still required by the current Omni A3 nightly.
+# applies any patches still required by the selected Omni A3 nightly.
 #
 # Build from the repository root:
-#   docker build --pull --no-cache --platform linux/arm64 -t mindiesd:flashgen-a3 \
+#   docker build --pull --no-cache --platform linux/arm64 -t mindiesd:omni-a3 \
 #       -f docker/omni/daily/Dockerfile.a3.ubuntu .
 #
 
@@ -14,7 +14,9 @@ ARG MINDIESD_VERSION=3.2.0
 # Build stage: build the mindiesd wheel with Python 3.12 from the current
 # branch's source (the repository root is the build context)
 # --------------------------------------------------------------------------
-FROM quay.io/ascend/vllm-omni:nightly-a3 AS omni-base
+# Override at build time with --build-arg OMNI_BASE_IMAGE="$OMNI_BASE_IMAGE".
+ARG OMNI_BASE_IMAGE=quay.io/ascend/vllm-omni:nightly-20261125-574fb73-a3
+FROM ${OMNI_BASE_IMAGE} AS omni-base
 
 FROM omni-base AS mindiesd-builder
 
@@ -74,25 +76,19 @@ RUN set -eu; \
     trap 'rm -rf -- "$patch_dir"' EXIT; \
     GIT_TERMINAL_PROMPT=0 GIT_LFS_SKIP_SMUDGE=1 git -c credential.helper= clone \
         --branch main --depth=1 --no-tags https://modelers.cn/MindIE/sd_patch.git "$patch_dir"; \
-    printf 'FlashGen patch revision: %s\n' "$(git -C "$patch_dir" rev-parse HEAD)"; \
-    git -C "$patch_dir" ls-files -z -- '*.patch' > "$patch_dir/.git/flashgen-patches"; \
-    if [ ! -s "$patch_dir/.git/flashgen-patches" ]; then \
+    printf 'Omni patch revision: %s\n' "$(git -C "$patch_dir" rev-parse HEAD)"; \
+    git -C "$patch_dir" ls-files -z -- '*.patch' > "$patch_dir/.git/omni-patches"; \
+    if [ ! -s "$patch_dir/.git/omni-patches" ]; then \
         printf 'No additional Omni patches required by this patch revision\n'; \
     fi; \
     cd /vllm-workspace/vllm-omni; \
     printf 'Omni revision: %s\n' "$(git rev-parse HEAD)"; \
     git update-index --refresh; \
     while IFS= read -r -d '' patch; do \
-        if git apply --index --reverse --check "$patch_dir/$patch" 2>/dev/null; then \
-            printf 'Already applied: %s\n' "$patch"; \
-        else \
-            git apply --index --check "$patch_dir/$patch"; \
-            git apply --index "$patch_dir/$patch"; \
-            printf 'Applied: %s\n' "$patch"; \
-        fi; \
-    done < "$patch_dir/.git/flashgen-patches"; \
-    git diff --cached --check; \
-    printf 'FlashGen Git tree: %s\n' "$(git write-tree)"
+        git apply --index "$patch_dir/$patch"; \
+        printf 'Applied: %s\n' "$patch"; \
+    done < "$patch_dir/.git/omni-patches"; \
+    printf 'Patched Omni Git tree: %s\n' "$(git write-tree)"
 
 ENV VLLM_WORKER_MULTIPROC_METHOD=spawn
 
