@@ -24,7 +24,7 @@ MiniMax-H3/
 └── model_index.json
 ```
 
-4 步 FlashGen 推理使用在线 LoRA 加载，无需合并权重；LoRA 权重见[FlashGen 4 步在线 LoRA](#flashgen-4-步在线-lora)。
+4 步 FlashGen 可使用在线 LoRA 加载，LoRA 权重见[FlashGen 4 步在线 LoRA](#flashgen-4-步在线-lora)。原生 C7 W4A4 路径使用离线合并的 transformer，见[SLA 与 QAT 推理](#sla-与-qat-推理)。
 
 ### 部署环境
 
@@ -633,6 +633,248 @@ curl --fail-with-body -sS "${API_URL}" \
 | `num_inference_steps` | `4` | 调度包含 5 个边界点，对应 4 次去噪 |
 | `lora.scale` | `1.0` | 按原始强度应用 LoRA |
 | `flow_shift` / `audio_flow_shift` | 可省略 | 音视频调度由 LoRA 元数据提供 |
+
+## SLA 与 QAT 推理
+
+本节面向 Ascend 950（A5），介绍四步模型、原生 C7 W4A4 与 FP8 SLA 的组合推理。SLA 与 QAT 可分别启用：SLA 选择注意力后端，QAT 配置线性层的权重和激活量化。
+
+### 环境要求
+
+- vLLM-Omni 需包含 [SLA 接入 #11089](https://github.com/vllm-project/vllm-omni/pull/11089) 与 [QAT/C7 接入 #11137](https://github.com/vllm-project/vllm-omni/pull/11137)。仅设置量化参数或安装 MindIE SD 不会自动补齐框架侧接入。
+- MindIE SD 需提供 `mindiesd.layers.SparseLinearAttention`；使用 FP8 SLA 时，还需支持 FP8 `BlockSparseAttention` 及其反量化 scale 参数，并安装配套 triton-ascend。
+- 原生 C7 使用支持 FP4 `npu_quant_matmul` 的 torch-npu/CANN。每个量化线性层的本地 K 维必须能被 64 整除。
+- 示例使用八卡、USP8、Ring1、文本编码器 TP8 和 VAE tile 并行8，不开启 DLO、CPU offload 或普通逐层 offload。
+
+固定版本的 A5 基础镜像可从 Quay 拉取：
+
+```bash
+docker pull --platform linux/arm64 \
+  quay.io/ascend/vllm-omni:nightly-20261125-574fb73-a5
+```
+
+该固定版本基础镜像尚不包含上述 SLA 与 QAT/C7 PR。使用前需引入 [vLLM-Omni #11089](https://github.com/vllm-project/vllm-omni/pull/11089) 和 [#11137](https://github.com/vllm-project/vllm-omni/pull/11137)，并安装配套 MindIE SD。
+
+### 准备离线合并的 transformer
+
+先使用权重交付方提供的合并工具准备完整的 BF16 transformer：
+
+1. 选择任务对应的官方分区：T2VA/FL2VA 使用 `FL2VA`，Ref2VA 使用 `Ref2VA`。
+2. 合并该任务的四步 LoRA；若基座已包含该 LoRA，则跳过，避免重复合并。
+3. 若交付 QAT LoRA，将其按交付的 rank、alpha 和 merge scale 合并到匹配的四步基座。若交付完整 QAT transformer，则直接使用交付产物。
+4. SLA 的 `proj_l` 参数随最终 transformer 一起打包，并更新 safetensors 索引。若 SLA 训练同时修改了主干，最终主干的选择或合并方式应由权重交付方明确，不能只复制 `proj_l` 后视为完整 SLA 模型。
+
+LoRA 合并与量化是两步操作。BF16 合并产物没有预先打包的 FP4 张量或离线 scale；原生 C7 在加载时编码权重，在每次线性层调用时编码激活，再执行 FP4 矩阵乘。`mxfp4_fake` 则是浮点 QDQ 参考路径，不能用来替代原生 FP4 执行。
+
+产物目录应为：
+
+```text
+h3-fl2va-merged/
+├── model_index.json
+└── transformer/
+    ├── config.json
+    ├── model.safetensors.index.json
+    └── model-*.safetensors
+```
+
+`transformer/config.json` 的架构需与官方分区一致。父目录 `model_index.json` 的 `_minimax_h3` 需保留交付模型的 `partition`、`tasks`、`base_schedule` 和 `sigma_shift_scales`。例如，下面只适用于明确交付该调度的 FL2VA 四步模型：
+
+```json
+{
+  "_minimax_h3": {
+    "partition": "fl2va",
+    "tasks": ["fl2va"],
+    "base_schedule": [1.0, 0.7, 0.4, 0.15, 0.0],
+    "sigma_shift_scales": {"video": 12.0, "audio": 3.0}
+  }
+}
+```
+
+请保留原 `model_index.json` 的其余字段，不要用上面的片段覆盖整个文件。T2VA 的任务声明应为 `t2va`；Ref2VA 的分区和任务均为 `ref2va`。仅把请求的 `num_inference_steps` 改成 `4`，不能替代四步权重及调度元数据。
+
+通过 `transformer_checkpoint` 指定此目录后，文本编码器、tokenizer 和音视频 VAE 仍从官方模型加载。该路径不接受启动时或请求时 LoRA：应删除服务的 `--lora-*` 参数，并且不在请求中发送 `lora` 字段。
+
+### 配置 SLA
+
+在运行推理服务的容器内设置下列变量：
+
+```bash
+export ATTENTION_CONFIG='{
+  "default": {"backend": "FLASH_ATTN"},
+  "per_role": {
+    "self": {
+      "backend": "SLA_ATTN",
+      "sla": {
+        "topk": 0.05,
+        "blkq": 64,
+        "blkk": 64,
+        "feature_map": "softmax",
+        "precision": "fp8",
+        "zero_init": false
+      }
+    },
+    "minimax_h3.token_refiner": {"backend": "FLASH_ATTN"}
+  }
+}'
+```
+
+主干 self-attention 使用 SLA，token refiner 保留普通注意力。不要把全局默认后端直接设为 `SLA_ATTN`。`precision=fp8` 表示稀疏分支 Q/K/V 使用块缩放 E4M3；输入、输出及线性修正仍为 BF16。将其改为 `bf16` 可使用 BF16 稀疏分支，默认值也是 `bf16`。
+
+每个主干 block 需要以下参数，参数名是 checkpoint 中的 native 名称：
+
+```text
+blocks.<层号>.attn.sla_module.proj_l.weight
+blocks.<层号>.attn.sla_module.proj_l.bias
+```
+
+正式 SLA 权重使用 `zero_init=false`，缺少参数应报错。仅检查推理链路时，可以使用不含 `proj_l` 的官方基座及四步合并权重，并将 `zero_init` 改为 `true`；缺失的投影会置零，已有投影仍正常加载。
+
+`topk=0.05` 表示稀疏分支名义上保留 5% 的 KV 块，不等于测得整个模型达到 95% 稀疏率；线性修正分支仍执行。特征映射和块大小应与权重交付的推理配置一致。本路径使用 `ring=1`，不支持 Ring/AllGather-KV、任意 attention mask 或 reference-KV 复用等组合。
+
+### 配置原生 C7 W4A4
+
+将路径替换为容器内可访问的模型与合并产物：
+
+```bash
+export MODEL_ROOT=/path/to/MiniMax-H3
+export MODEL="${MODEL_ROOT}/FL2VA"
+export TASK_TYPE=fl2va
+export TRANSFORMER_DIR=/path/to/h3-fl2va-merged/transformer
+```
+
+下面的示例仅量化主干 attention 和 MLP 线性层，保留输入输出、时间嵌入、AdaLN 与 token refiner 为 BF16。如果 checkpoint 定义了 `ignored_layers`，直接使用交付清单，运行时清单必须与其一致；没有清单时，使用以下显式示例策略，并由交付方确认是否适用于目标 QAT 权重：
+
+```bash
+export QUANTIZATION_CONFIG="$(python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+config = json.loads((Path(os.environ["TRANSFORMER_DIR"]) / "config.json").read_text())
+disk_quant = config.get("quantization_config") or {}
+ignored = disk_quant.get("ignored_layers") if isinstance(disk_quant, dict) else None
+if ignored is None:
+    ignored = [
+        "time_embedder.proj_in", "time_embedder.proj_out",
+        "video_patch_proj", "audio_patch_proj", "condition_proj",
+        "final_layer.video_out", "final_layer.audio_out",
+        "final_layer.adaln_proj.linear",
+    ]
+    ignored += [f"blocks.{i}.adaln_proj.linear" for i in range(config.get("num_layers", 50))]
+    refiner_layers = config.get("token_refiner_num_layers", config.get("num_refiner_layers", 2))
+    ignored += [
+        f"token_refiner.blocks.{i}.{name}"
+        for i in range(refiner_layers)
+        for name in ("attn.qkv_proj", "attn.out_proj", "mlp.fc1", "mlp.fc2")
+    ]
+print(json.dumps({
+    "transformer": {
+        "method": "mxfp4",
+        "mxfp4_recipe": "mxfp4_c7",
+        "ignored_layers": ignored,
+    },
+    "default": None,
+}))
+PY
+)"
+```
+
+`--diffusion-quantization-config` 的 CLI 配置同时接受 `method` 和 `quant_method`，两者是合法别名；本文统一使用 `method`，与前文示例保持一致。此约定仅针对 CLI 示例，不要求修改 checkpoint 中的 `quantization_config.quant_method` 字段。
+
+`mxfp4_recipe=mxfp4_c7` 是显式选择训练匹配的 C7 规则，不能只写 `method=mxfp4` 就认为等价。该原生路径要求浮点合并权重，不接受预序列化低比特权重或 W4A8 fallback。SLA 的 `proj_l` 保持浮点，不参与线性层 W4A4 量化。
+
+### 启动组合推理服务
+
+在容器内、设置完上述变量后执行。此示例不修改镜像源码，不启用运行时 LoRA 或 DLO：
+
+```bash
+export PORT=9098
+export VLLM_WORKER_MULTIPROC_METHOD=spawn
+export VLLM_OMNI_VIDEO_SYNC_TIMEOUT=4000
+export PYTHONDONTWRITEBYTECODE=1
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+export HCCL_NPU_SOCKET_PORT_RANGE=auto
+export HCCL_ALGO=mesh
+
+python -m vllm_omni.entrypoints.cli.main serve "${MODEL}" \
+  --omni \
+  --host 0.0.0.0 \
+  --port "${PORT}" \
+  --trust-remote-code \
+  --task-type "${TASK_TYPE}" \
+  --num-gpus 8 \
+  --usp 8 \
+  --ring 1 \
+  --text-encoder-tp-size 8 \
+  --vae-parallel-mode tile \
+  --vae-use-tiling \
+  --vae-patch-parallel-size 8 \
+  --diffusion-attention-config "${ATTENTION_CONFIG}" \
+  --diffusion-quantization-config "${QUANTIZATION_CONFIG}" \
+  --additional-config "{\"transformer_checkpoint\":\"${TRANSFORMER_DIR}\"}" \
+  --init-timeout 1800 \
+  --stage-init-timeout 1800
+```
+
+如需单独启用一个特性，在启动前替换对应变量：
+
+| 模式 | `ATTENTION_CONFIG` | `QUANTIZATION_CONFIG` |
+| --- | --- | --- |
+| SLA，不量化线性层 | 保留 SLA 配置 | `{"default":null}`，并使用浮点 checkpoint |
+| 原生 C7 W4A4，不使用 SLA | `{"default":{"backend":"FLASH_ATTN"}}`，checkpoint 不含 SLA 投影 | 保留 C7 配置 |
+| 原生 W4A4 + FP8 SLA | 保留 `precision=fp8` 的 SLA 配置 | 保留 C7 配置 |
+
+Ref2VA 启动时，将 `MODEL` 改为 `${MODEL_ROOT}/Ref2VA`、`TASK_TYPE` 改为 `ref2va`，并使用对应 Ref2VA 合并产物。T2VA 仍使用 `FL2VA` 分区和 `TASK_TYPE=fl2va`，但 transformer 及其元数据应对应 T2VA 四步权重。
+
+### 发送四步请求与检查结果
+
+服务前台保持运行，在另一个容器终端设置相同的 `PORT`，先检查服务状态：
+
+```bash
+export PORT=9098
+export API_URL="http://127.0.0.1:${PORT}/v1/videos/sync"
+curl --fail -sS "http://127.0.0.1:${PORT}/health"
+```
+
+FL2VA 示例上传首帧图像，不发送 `lora` 字段：
+
+```bash
+export FIRST_FRAME=/path/to/first_frame.png
+curl --fail-with-body -sS "${API_URL}" \
+  --form-string 'prompt=镜头缓慢向前推进，保留首帧构图，背景有轻微风声。' \
+  -F 'width=1344' -F 'height=768' -F 'aspect_ratio=16:9' \
+  -F 'fps=24' -F 'num_inference_steps=4' -F 'seed=42' \
+  -F 'flow_shift=12.0' -F 'audio_flow_shift=3.0' \
+  -F 'extra_params={"task":"fl2va","duration":4.0,"frame_indices":[0],"preencode_mp4":true}' \
+  -F "input_references=@${FIRST_FRAME};type=image/png" \
+  -o fl2va_w4a4_fp8_sla.mp4
+```
+
+T2VA 使用该任务的合并产物启动服务后，删除 `input_references`，将 `extra_params` 改为：
+
+```json
+{"task":"t2va","duration":4.0,"preencode_mp4":true}
+```
+
+Ref2VA 使用其独立服务，上传参考图像，并将 `extra_params` 改为：
+
+```json
+{"task":"ref2va","duration":4.0,"preencode_mp4":true}
+```
+
+示例的音视频 shift 需与目标四步权重的元数据一致。确认请求 HTTP 200 后，使用已安装的 FFmpeg 完整解码输出：
+
+```bash
+ffprobe -v error -show_entries stream=codec_type,codec_name,width,height,avg_frame_rate,sample_rate,channels \
+  -of json fl2va_w4a4_fp8_sla.mp4
+ffmpeg -v error -xerror -i fl2va_w4a4_fp8_sla.mp4 \
+  -map 0:v:0 -map 0:a:0 -f null -
+```
+
+服务日志应出现 `Executed MindIE-SD SparseLinearAttention` 和 `Executed native C7 MXFP4 W4A4 npu_quant_matmul`。这两条日志在首次成功执行对应路径后打印；仅有 `mxfp4` 配置字符串或服务就绪信息不能证明两个后端都已执行。测试结束后，在服务前台终端按 `Ctrl+C` 停止服务。
+
+本节的 W4A4F8 指线性层 W4A4 与 SLA 稀疏分支 FP8 的组合，线性修正及其他保留模块仍使用 BF16。`proj=0`、普通四步 LoRA 或合成算子用例可以检查功能链路，但不能替代正式 QAT/SLA 权重的效果验证。
 
 ## 当前已适配的优化点
 
