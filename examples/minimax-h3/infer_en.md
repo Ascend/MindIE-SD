@@ -41,7 +41,6 @@ export IMAGE=quay.io/ascend/vllm-omni:v0.28.0-a3
 export CONTAINER_NAME=h3
 
 docker run -it -u root --name ${CONTAINER_NAME} \
-  --privileged=true \
   --shm-size=2000g \
   --net=host \
   --device /dev/davinci0 \
@@ -65,6 +64,10 @@ docker run -it -u root --name ${CONTAINER_NAME} \
   ${IMAGE} \
   /bin/bash
 ```
+
+>[!NOTE] Note
+>
+> Add the `--privileged` flag to the `docker run` command above for NPU access.
 
 In the Ascend 950 scenario, add `-v /usr/local/Ascend/driver/topo:/usr/local/Ascend/driver/topo` when creating the container to mount the host driver topology directory to the same path in the container.
 

@@ -31,13 +31,16 @@ Run example:
 ```bash
 docker run -itd \
   --name mindiesd-910b-test \
-  --privileged \
   --ipc=host \
   --net=host \
   -v /usr/local/Ascend/driver:/usr/local/Ascend/driver:ro \
   -v /usr/local/sbin:/usr/local/sbin:ro \
   mindiesd:910b-aarch64-head
 ```
+
+>[!NOTE] Note
+>
+> Add the `--privileged=true` flag to the `docker run` command above for NPU access.
 
 Run test:
 

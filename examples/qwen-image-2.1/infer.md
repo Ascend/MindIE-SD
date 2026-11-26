@@ -39,7 +39,6 @@ docker pull "${IMAGE}"
 export CONTAINER_NAME=qwen21
 docker run -it -u root --name ${CONTAINER_NAME} \
   -e MODEL="${MODEL}" \
-  --privileged=true \
   --shm-size=200g \
   --net=host \
   --device /dev/davinci0 \
@@ -54,6 +53,10 @@ docker run -it -u root --name ${CONTAINER_NAME} \
   ${IMAGE} \
   /bin/bash
 ```
+
+>[!NOTE] 说明
+>
+> 启动容器时需添加 `--privileged=true` 参数以获取 NPU 访问权限。
 
 8 卡场景在创建容器时追加以下设备参数，后续通过 `ASCEND_RT_VISIBLE_DEVICES` 指定可见卡：
 

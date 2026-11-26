@@ -41,7 +41,6 @@ export IMAGE=quay.io/ascend/vllm-omni:v0.28.0-a3
 export CONTAINER_NAME=h3
 
 docker run -it -u root --name ${CONTAINER_NAME} \
-  --privileged=true \
   --shm-size=2000g \
   --net=host \
   --device /dev/davinci0 \
@@ -65,6 +64,10 @@ docker run -it -u root --name ${CONTAINER_NAME} \
   ${IMAGE} \
   /bin/bash
 ```
+
+>[!NOTE] 说明
+>
+> 启动容器时需添加 `--privileged=true` 参数以获取 NPU 访问权限。
 
 Ascend 950 场景下，创建容器时需增加 `-v /usr/local/Ascend/driver/topo:/usr/local/Ascend/driver/topo`，将宿主机的驱动拓扑目录挂载到容器内的相同路径。
 
@@ -160,7 +163,7 @@ vllm serve "${MODEL}" \
   --vae-patch-parallel-size 8 \
   --enable-distributed-layerwise-offload \
   --enable-diffusion-pipeline-profiler \
-  --diffusion-attention-backend FLASH_ATTN 
+  --diffusion-attention-backend FLASH_ATTN
 ```
 
 #### 推荐有损优化配置
@@ -246,7 +249,7 @@ vllm serve "${MODEL}" \
   --vae-patch-parallel-size 4 \
   --enable-diffusion-pipeline-profiler \
   --enable-distributed-layerwise-offload \
-  --diffusion-attention-backend FLASH_ATTN 
+  --diffusion-attention-backend FLASH_ATTN
 ```
 
 #### 推荐有损优化配置（Ascend 950PR&950DT系列产品）
@@ -276,7 +279,7 @@ vllm serve "${MODEL}" \
   --vae-patch-parallel-size 4 \
   --enable-diffusion-pipeline-profiler \
   --diffusion-attention-config '{"default":{"backend":"RAINFUSION_ATTN","block_sparse":{"sparsity":0.8,"precision":"mix","start_step":8,"end_step":12}}}' \
-  --diffusion-quantization-config '{"transformer":{"method":"mxfp8"}}' 
+  --diffusion-quantization-config '{"transformer":{"method":"mxfp8"}}'
 ```
 
 #### 其他可选性能优化配置（Ascend 950PR&950DT系列产品）
@@ -318,7 +321,7 @@ EQBSA 在块稀疏注意力基础上采用 Q/K INT8 与 V FP8 混合量化。将
 在启动命令末尾追加以下参数，使能Dit的在线mxfp4量化：
 
 ```bash
-  --diffusion-quantization-config '{"transformer":{"method":"mxfp4"}}' 
+  --diffusion-quantization-config '{"transformer":{"method":"mxfp4"}}'
 ```
 
 并且删除以下参数：

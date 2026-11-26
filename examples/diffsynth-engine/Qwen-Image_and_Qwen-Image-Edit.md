@@ -78,7 +78,6 @@ test -s /etc/hccl_rootinfo.json
 docker run -it \
   --name "${CONTAINER_NAME}" \
   --runtime=ascend \
-  --privileged \
   --network host \
   --shm-size=256g \
   --device /dev/davinci0 \
@@ -104,6 +103,10 @@ docker run -it \
   quay.io/ascend/mindie:3.1.0-cann9.1.0-torch_npu2.9.0.post6-950-openeuler24.03_lts_sp4-py3.11 \
   bash
 ```
+
+>[!NOTE] 说明
+>
+> 启动容器时需添加 `--privileged=true` 参数以获取 NPU 访问权限。
 
 退出后可从宿主机重新进入同一个容器：
 

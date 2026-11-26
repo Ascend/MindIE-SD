@@ -114,7 +114,6 @@ Atlas 800I A2推理服务器：
 
 ```bash
 docker run -it --rm --name=mindiesd \
-    --privileged \
     --shm-size=1g \
     --device /dev/davinci0 \
     --device /dev/davinci1 \
@@ -139,7 +138,6 @@ Atlas 800I A3超节点服务器：
 
 ```bash
 docker run -it --rm --name=mindiesd \
-    --privileged \
     --shm-size=1g \
     --device /dev/davinci0 \
     --device /dev/davinci1 \
@@ -164,7 +162,6 @@ Ascend 950PR&950DT系列产品：
 
 ```bash
 docker run -it --rm --name=mindiesd \
-    --privileged \
     --shm-size=1g \
     --device /dev/davinci0 \
     --device /dev/davinci1 \
@@ -184,7 +181,9 @@ docker run -it --rm --name=mindiesd \
 ```
 <!-- end id6 -->
 
-> **注意：** `--privileged` 和设备映射是访问 NPU 的必要条件。需要将宿主机的驱动库（`/usr/local/Ascend/driver/lib64`）、驱动版本信息、DCMI、`npu-smi` 及昇腾安装信息挂载到容器中。
+>[!NOTE] 说明
+>
+> 上述容器启动命令需添加 `--privileged=true` 参数以获取 NPU 访问权限，设备映射同样是必要条件。需要将宿主机的驱动库（`/usr/local/Ascend/driver/lib64`）、驱动版本信息、DCMI、`npu-smi` 及昇腾安装信息挂载到容器中。
 
 ### 本地构建
 

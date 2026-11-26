@@ -39,7 +39,6 @@ docker pull "${IMAGE}"
 export CONTAINER_NAME=qwen21
 docker run -it -u root --name ${CONTAINER_NAME} \
   -e MODEL="${MODEL}" \
-  --privileged=true \
   --shm-size=200g \
   --net=host \
   --device /dev/davinci0 \
@@ -54,6 +53,10 @@ docker run -it -u root --name ${CONTAINER_NAME} \
   ${IMAGE} \
   /bin/bash
 ```
+
+>[!NOTE] Note
+>
+> Add the `--privileged` flag to the `docker run` command above for NPU access.
 
 In the 8-card scenario, add the following device parameters when creating the container, and use `ASCEND_RT_VISIBLE_DEVICES` to specify the visible cards:
 
