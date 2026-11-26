@@ -53,15 +53,17 @@ const std::array<const aclTensor *, 2> EagleQuantBlockSparseAttention(const aclT
     const aclIntArray *blockShapeOptional, const aclIntArray *actualSeqLengthsOptional,
     const aclIntArray *actualSeqLengthsKvOptional, const aclTensor *blockTableOptional,
     const aclTensor *queryScaleOptional, const aclTensor *keyScaleOptional, const aclTensor *valueScaleOptional,
-    const char *qInputLayout, const char *kvInputLayout, int64_t numKeyValueHeads, int64_t maskType, double scaleValue,
-    int64_t innerPrecise, int64_t blockSize, int64_t preTokens, int64_t nextTokens, int64_t softmaxLseFlag,
-    aclOpExecutor *executor, DataType outDType) {
+    const aclTensor *queryLevel0ScaleOptional, const aclTensor *keyLevel0ScaleOptional,
+    const aclTensor *valueLevel0ScaleOptional, const char *qInputLayout, const char *kvInputLayout,
+    int64_t numKeyValueHeads, int64_t maskType, double scaleValue, int64_t innerPrecise, int64_t blockSize,
+    int64_t preTokens, int64_t nextTokens, int64_t softmaxLseFlag, aclOpExecutor *executor, DataType outDType) {
     const char *safeKvInputLayout = (kvInputLayout != nullptr) ? kvInputLayout : qInputLayout;
 
     L0_DFX(EagleQuantBlockSparseAttention, query, key, value, blockSparseMaskOptional, attenMaskOptional,
         blockShapeOptional, actualSeqLengthsOptional, actualSeqLengthsKvOptional, blockTableOptional,
-        queryScaleOptional, keyScaleOptional, valueScaleOptional, qInputLayout, safeKvInputLayout, numKeyValueHeads,
-        maskType, scaleValue, innerPrecise, blockSize, preTokens, nextTokens, softmaxLseFlag);
+        queryScaleOptional, keyScaleOptional, valueScaleOptional, queryLevel0ScaleOptional, keyLevel0ScaleOptional,
+        valueLevel0ScaleOptional, qInputLayout, safeKvInputLayout, numKeyValueHeads, maskType, scaleValue, innerPrecise,
+        blockSize, preTokens, nextTokens, softmaxLseFlag);
 
     const aclTensor *blockShapeOptionalTensor = nullptr;
     if (blockShapeOptional) {
@@ -83,7 +85,7 @@ const std::array<const aclTensor *, 2> EagleQuantBlockSparseAttention(const aclT
     auto ret = INFER_SHAPE(EagleQuantBlockSparseAttention,
         OP_INPUT(query, key, value, blockSparseMaskOptional, attenMaskOptional, blockShapeOptionalTensor,
             actualSeqTensor, actualSeqKvTensor, blockTableOptional, queryScaleOptional, keyScaleOptional,
-            valueScaleOptional),
+            valueScaleOptional, queryLevel0ScaleOptional, keyLevel0ScaleOptional, valueLevel0ScaleOptional),
         OP_OUTPUT(attentionOutTensor, softmaxLseTensor),
         OP_ATTR(qInputLayout, safeKvInputLayout, static_cast<int64_t>(numKeyValueHeads), static_cast<int64_t>(maskType),
             static_cast<float>(scaleValue), static_cast<int64_t>(innerPrecise), static_cast<int64_t>(blockSize),
@@ -97,7 +99,7 @@ const std::array<const aclTensor *, 2> EagleQuantBlockSparseAttention(const aclT
     ADD_TO_LAUNCHER_LIST_AICORE(EagleQuantBlockSparseAttention,
         OP_INPUT(query, key, value, blockSparseMaskOptional, attenMaskOptional, blockShapeOptionalTensor,
             actualSeqTensor, actualSeqKvTensor, blockTableOptional, queryScaleOptional, keyScaleOptional,
-            valueScaleOptional),
+            valueScaleOptional, queryLevel0ScaleOptional, keyLevel0ScaleOptional, valueLevel0ScaleOptional),
         OP_OUTPUT(attentionOutTensor, softmaxLseTensor),
         OP_ATTR(qInputLayout, safeKvInputLayout, static_cast<int64_t>(numKeyValueHeads), static_cast<int64_t>(maskType),
             static_cast<float>(scaleValue), static_cast<int64_t>(innerPrecise), static_cast<int64_t>(blockSize),

@@ -109,8 +109,10 @@ TORCH_LIBRARY(mindiesd, m) {
         int softmax_lse_flag=0, \
         Tensor? query_scale=None, Tensor? key_scale=None, \
         Tensor? value_scale=None, \
-        ScalarType? query_dtype=None, ScalarType? key_dtype=None, \
-        ScalarType? value_dtype=None, ScalarType? output_dtype=None) -> (Tensor, Tensor)");
+        int? query_dtype=None, int? key_dtype=None, \
+        int? value_dtype=None, ScalarType? output_dtype=None, \
+        Tensor? query_dtype_scale=None, Tensor? key_dtype_scale=None, \
+        Tensor? value_dtype_scale=None) -> (Tensor, Tensor)");
     m.def("quant_flash_attn(Tensor query, Tensor key, Tensor value, \
         Tensor q_descale, Tensor k_descale, Tensor v_descale, \
         int q_quant_mode, int k_quant_mode, int v_quant_mode, \

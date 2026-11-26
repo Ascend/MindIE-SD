@@ -64,6 +64,8 @@ template <class BuiltinTensor, class Layout_, class Coord_, AscendC::TPosition P
 
     HOST_DEVICE constexpr decltype(auto) stride() const { return layout().stride(); }
 
+    HOST_DEVICE constexpr decltype(auto) originShape() const { return layout().originShape(); }
+
     tla::tuple<BuiltinTensor, Layout, Coord> rep_;
 };
 
@@ -83,7 +85,7 @@ template <class Tensor, class Coord, class Shape>
 __aicore__ inline constexpr auto GetTile(Tensor const &tensor, Coord const &coord, Shape const &shape) {
     auto layout = tensor.layout();
     auto builtinTensor = tensor.data();
-    auto layoutNew = MakeLayoutTile(layout, shape);
+    auto layoutNew = GetTileLayout(layout, shape, coord);
     auto coordNew = Add(tensor.coord(), coord);
     return MakeTensor(builtinTensor, layoutNew, coordNew, NpuArch::Arch::PositionType<Tensor::position>{});
 }

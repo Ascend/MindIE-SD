@@ -50,7 +50,17 @@ struct EpilogueBsaMask2Idx {
     using ArchTag = Arch::AtlasA5;
 };
 
+// Legacy mask2idx implementation retained for comparison and fallback.
+struct EpilogueBsaMask2IdxV1 : EpilogueBsaMask2Idx {};
+
 struct EpilogueOnlineSoftmaxBsaQMode1 {
+    using ArchTag = Arch::AtlasA5;
+};
+
+enum class QMode2SoftmaxAlgo { APPROX, EXP };
+
+template <QMode2SoftmaxAlgo ALGO = QMode2SoftmaxAlgo::APPROX> struct EpilogueOnlineSoftmaxBsaQMode2 {
+    static constexpr QMode2SoftmaxAlgo SOFTMAX_ALGO = ALGO;
     using ArchTag = Arch::AtlasA5;
 };
 
@@ -59,6 +69,10 @@ struct EpilogueAtlasA5BsaQMode1RescaleO {
     static constexpr LseMode LSE_MODE = LSE_MODE_;
     static constexpr LseFormat LSE_FORMAT = LSE_FORMAT_;
     static constexpr bool Q_IS_TND = Q_IS_TND_;
+    using ArchTag = Arch::AtlasA5;
+};
+
+struct EpilogueAtlasA5BsaQMode2RescaleO {
     using ArchTag = Arch::AtlasA5;
 };
 

@@ -65,6 +65,17 @@ struct MmadAtlasA5BsaPV : public MmadAtlasA5 {
     static constexpr uint32_t L0_STAGES = 2;
 };
 
+struct MmadAtlasA5BsaQKQMode2 : public MmadAtlasA5 {
+    static constexpr uint32_t L0A_STAGES = 2;
+    static constexpr uint32_t L0B_STAGES = 2;
+    static constexpr uint32_t L0C_STAGES = 2;
+};
+
+struct MmadAtlasA5BsaPVQMode2 : public MmadAtlasA5 {
+    static constexpr uint32_t L0A_STAGES = 2;
+    static constexpr uint32_t L0B_STAGES = 2;
+    static constexpr uint32_t L0C_STAGES = 1;
+};
 } // namespace NpuArch::Gemm
 
 #endif // GEMM_DISPATCH_POLICY_HPP

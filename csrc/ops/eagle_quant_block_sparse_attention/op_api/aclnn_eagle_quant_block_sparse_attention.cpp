@@ -52,7 +52,8 @@ static bool CheckDataType(const aclTensor *query, const aclTensor *key, const ac
 
     static const std::unordered_map<DataType, std::vector<DataType>> validKvType = {
         {DataType::DT_FLOAT16, {DataType::DT_FLOAT16}}, {DataType::DT_BF16, {DataType::DT_BF16}},
-        {DataType::DT_INT8, {DataType::DT_INT8, DataType::DT_FLOAT8_E4M3FN}}};
+        {DataType::DT_INT8, {DataType::DT_INT8, DataType::DT_FLOAT8_E4M3FN}},
+        {DataType::DT_FLOAT4_E2M1, {DataType::DT_FLOAT4_E2M1}}};
 
     auto iter = validKvType.find(qDtype);
     if (iter == validKvType.end()) {
@@ -66,6 +67,40 @@ static bool CheckDataType(const aclTensor *query, const aclTensor *key, const ac
         return false;
     }
 
+    return true;
+}
+
+static bool CheckMxfp4Params(const aclTensor *query, const aclTensor *queryScale, const aclTensor *keyScale,
+    const aclTensor *valueScale, const aclTensor *attentionOut) {
+    if (query->GetDataType() != DataType::DT_FLOAT4_E2M1) {
+        return true;
+    }
+
+    if (queryScale == nullptr || keyScale == nullptr || valueScale == nullptr) {
+        OP_LOGE(ACLNN_ERR_PARAM_NULLPTR, "queryScale/keyScale/valueScale are required for MXFP4 inputs.");
+        return false;
+    }
+    if (queryScale->GetDataType() != DataType::DT_FLOAT8_E8M0 || keyScale->GetDataType() != DataType::DT_FLOAT8_E8M0 ||
+        valueScale->GetDataType() != DataType::DT_FLOAT8_E8M0) {
+        OP_LOGE(ACLNN_ERR_PARAM_INVALID, "MXFP4 scales must use DT_FLOAT8_E8M0.");
+        return false;
+    }
+    if (attentionOut == nullptr ||
+        (attentionOut->GetDataType() != DataType::DT_FLOAT16 && attentionOut->GetDataType() != DataType::DT_BF16)) {
+        OP_LOGE(ACLNN_ERR_PARAM_INVALID, "MXFP4 attentionOut must use DT_FLOAT16 or DT_BF16.");
+        return false;
+    }
+    return true;
+}
+
+static bool CheckLevel0ScaleDataType(
+    const aclTensor *queryLevel0Scale, const aclTensor *keyLevel0Scale, const aclTensor *valueLevel0Scale) {
+    if ((queryLevel0Scale != nullptr && queryLevel0Scale->GetDataType() != DataType::DT_FLOAT) ||
+        (keyLevel0Scale != nullptr && keyLevel0Scale->GetDataType() != DataType::DT_FLOAT) ||
+        (valueLevel0Scale != nullptr && valueLevel0Scale->GetDataType() != DataType::DT_FLOAT)) {
+        OP_LOGE(ACLNN_ERR_PARAM_INVALID, "queryLevel0Scale/keyLevel0Scale/valueLevel0Scale must use DT_FLOAT.");
+        return false;
+    }
     return true;
 }
 
@@ -104,10 +139,18 @@ static aclnnStatus ParseblockShapeOptional(const aclIntArray *blockShapeOptional
 }
 
 static aclnnStatus ValidateParams(const aclTensor *query, const aclTensor *key, const aclTensor *value,
-    char *qInputLayout, char *kvInputLayout, const aclIntArray *blockShapeOptional) {
+    const aclTensor *queryScale, const aclTensor *keyScale, const aclTensor *valueScale,
+    const aclTensor *queryLevel0Scale, const aclTensor *keyLevel0Scale, const aclTensor *valueLevel0Scale,
+    const aclTensor *attentionOut, char *qInputLayout, char *kvInputLayout, const aclIntArray *blockShapeOptional) {
     CHECK_RET(CheckMandatoryTensors(query, key, value) == ACLNN_SUCCESS, ACLNN_ERR_PARAM_NULLPTR);
 
     if (!CheckDataType(query, key, value)) {
+        return ACLNN_ERR_PARAM_INVALID;
+    }
+    if (!CheckMxfp4Params(query, queryScale, keyScale, valueScale, attentionOut)) {
+        return ACLNN_ERR_PARAM_INVALID;
+    }
+    if (!CheckLevel0ScaleDataType(queryLevel0Scale, keyLevel0Scale, valueLevel0Scale)) {
         return ACLNN_ERR_PARAM_INVALID;
     }
 
@@ -147,7 +190,8 @@ static aclnnStatus ValidateParams(const aclTensor *query, const aclTensor *key, 
 static aclnnStatus MakeContiguous(const aclTensor *&query, const aclTensor *&key, const aclTensor *&value,
     const aclTensor *&blockSparseMaskOptional, const aclTensor *&attenMaskOptional,
     const aclTensor *&blockTableOptional, const aclTensor *&queryScaleOptional, const aclTensor *&keyScaleOptional,
-    const aclTensor *&valueScaleOptional, aclOpExecutor *executor) {
+    const aclTensor *&valueScaleOptional, const aclTensor *&queryLevel0ScaleOptional,
+    const aclTensor *&keyLevel0ScaleOptional, const aclTensor *&valueLevel0ScaleOptional, aclOpExecutor *executor) {
     query = l0op::Contiguous(query, executor);
     CHECK_RET(query != nullptr, ACLNN_ERR_PARAM_NULLPTR);
 
@@ -193,13 +237,29 @@ static aclnnStatus MakeContiguous(const aclTensor *&query, const aclTensor *&key
         CHECK_RET(valueScaleOptional != nullptr, ACLNN_ERR_INNER_NULLPTR);
     }
 
+    if (queryLevel0ScaleOptional != nullptr) {
+        queryLevel0ScaleOptional = l0op::Contiguous(queryLevel0ScaleOptional, executor);
+        CHECK_RET(queryLevel0ScaleOptional != nullptr, ACLNN_ERR_INNER_NULLPTR);
+    }
+
+    if (keyLevel0ScaleOptional != nullptr) {
+        keyLevel0ScaleOptional = l0op::Contiguous(keyLevel0ScaleOptional, executor);
+        CHECK_RET(keyLevel0ScaleOptional != nullptr, ACLNN_ERR_INNER_NULLPTR);
+    }
+
+    if (valueLevel0ScaleOptional != nullptr) {
+        valueLevel0ScaleOptional = l0op::Contiguous(valueLevel0ScaleOptional, executor);
+        CHECK_RET(valueLevel0ScaleOptional != nullptr, ACLNN_ERR_INNER_NULLPTR);
+    }
+
     return ACLNN_SUCCESS;
 }
 
 static aclnnStatus ValidateAdditionalParams(
     int64_t innerPrecise, const aclTensor *attentionOut, uint64_t *workspaceSize, aclOpExecutor **executor) {
-    if (innerPrecise != 0 && innerPrecise != 1 && innerPrecise != 4) {
-        OP_LOGE(ACLNN_ERR_PARAM_INVALID, "innerPrecise must be 0 or 1 or 4, got %ld.", innerPrecise);
+    if (innerPrecise != 0 && innerPrecise != 1 && innerPrecise != 4 && innerPrecise != 5) {
+        OP_LOGE(ACLNN_ERR_PARAM_INVALID,
+            "innerPrecise must be 0, 1, 4 or 5 (5 requires Ascend 950 MXFP4 qmode2), got %ld.", innerPrecise);
         return ACLNN_ERR_PARAM_INVALID;
     }
 
@@ -219,10 +279,14 @@ __attribute__((visibility("default"))) aclnnStatus aclnnEagleQuantBlockSparseAtt
     const aclTensor *attenMaskOptional, const aclIntArray *blockShape, const aclIntArray *actualSeqLengthsOptional,
     const aclIntArray *actualSeqLengthsKvOptional, const aclTensor *blockTableOptional,
     const aclTensor *queryScaleOptional, const aclTensor *keyScaleOptional, const aclTensor *valueScaleOptional,
-    char *qInputLayout, char *kvInputLayout, int64_t numKeyValueHeads, int64_t maskType, double scaleValue,
-    int64_t innerPrecise, int64_t blockSize, int64_t preTokens, int64_t nextTokens, int64_t softmaxLseFlag,
-    aclTensor *attentionOut, aclTensor *softmaxLseOptional, uint64_t *workspaceSize, aclOpExecutor **executor) {
-    aclnnStatus ret = ValidateParams(query, key, value, qInputLayout, kvInputLayout, blockShape);
+    const aclTensor *queryLevel0ScaleOptional, const aclTensor *keyLevel0ScaleOptional,
+    const aclTensor *valueLevel0ScaleOptional, char *qInputLayout, char *kvInputLayout, int64_t numKeyValueHeads,
+    int64_t maskType, double scaleValue, int64_t innerPrecise, int64_t blockSize, int64_t preTokens, int64_t nextTokens,
+    int64_t softmaxLseFlag, aclTensor *attentionOut, aclTensor *softmaxLseOptional, uint64_t *workspaceSize,
+    aclOpExecutor **executor) {
+    aclnnStatus ret = ValidateParams(query, key, value, queryScaleOptional, keyScaleOptional, valueScaleOptional,
+        queryLevel0ScaleOptional, keyLevel0ScaleOptional, valueLevel0ScaleOptional, attentionOut, qInputLayout,
+        kvInputLayout, blockShape);
     if (ret != ACLNN_SUCCESS) {
         return ret;
     }
@@ -246,9 +310,9 @@ __attribute__((visibility("default"))) aclnnStatus aclnnEagleQuantBlockSparseAtt
     //去掉了idx ,idxnums
     L2_DFX_PHASE_1(aclnnEagleQuantBlockSparseAttention,
         DFX_IN(query, key, value, blockSparseMask, attenMaskOptional, blockShape, actualSeqLengthsOptional,
-            queryScaleOptional, keyScaleOptional, valueScaleOptional, actualSeqLengthsKvOptional, blockTableOptional,
-            qInputLayout, qInputLayout, numKeyValueHeads, maskType, scaleValue, innerPrecise, blockSize, preTokens,
-            nextTokens, softmaxLseFlag),
+            actualSeqLengthsKvOptional, blockTableOptional, queryScaleOptional, keyScaleOptional, valueScaleOptional,
+            queryLevel0ScaleOptional, keyLevel0ScaleOptional, valueLevel0ScaleOptional, qInputLayout, kvInputLayout,
+            numKeyValueHeads, maskType, scaleValue, innerPrecise, blockSize, preTokens, nextTokens, softmaxLseFlag),
         DFX_OUT(attentionOut, softmaxLseOptional));
 
     auto uniqueExecutor = CREATE_EXECUTOR();
@@ -256,7 +320,8 @@ __attribute__((visibility("default"))) aclnnStatus aclnnEagleQuantBlockSparseAtt
     auto *executorImpl = uniqueExecutor.get();
     //新增blockSparseMaskOptional参数
     ret = MakeContiguous(query, key, value, blockSparseMask, attenMaskOptional, blockTableOptional, queryScaleOptional,
-        keyScaleOptional, valueScaleOptional, executorImpl);
+        keyScaleOptional, valueScaleOptional, queryLevel0ScaleOptional, keyLevel0ScaleOptional,
+        valueLevel0ScaleOptional, executorImpl);
     if (ret != ACLNN_SUCCESS) {
         return ret;
     }
@@ -266,8 +331,9 @@ __attribute__((visibility("default"))) aclnnStatus aclnnEagleQuantBlockSparseAtt
     //新增blockSparseMaskOptional参数
     auto outputs = l0op::EagleQuantBlockSparseAttention(query, key, value, blockSparseMask, attenMaskOptional,
         blockShape, actualSeqLengthsOptional, actualSeqLengthsKvOptional, blockTableOptional, queryScaleOptional,
-        keyScaleOptional, valueScaleOptional, qInputLayoutStr.c_str(), kvInputLayoutStr.c_str(), numKeyValueHeads,
-        maskType, scaleValue, innerPrecise, blockSize, preTokens, nextTokens, softmaxLseFlag, executorImpl,
+        keyScaleOptional, valueScaleOptional, queryLevel0ScaleOptional, keyLevel0ScaleOptional,
+        valueLevel0ScaleOptional, qInputLayoutStr.c_str(), kvInputLayoutStr.c_str(), numKeyValueHeads, maskType,
+        scaleValue, innerPrecise, blockSize, preTokens, nextTokens, softmaxLseFlag, executorImpl,
         attentionOut->GetDataType());
     if (outputs[0] == nullptr || outputs[1] == nullptr) {
         OP_LOGE(ACLNN_ERR_INNER_NULLPTR, "EagleQuantBlockSparseAttention returned nullptr outputs.");

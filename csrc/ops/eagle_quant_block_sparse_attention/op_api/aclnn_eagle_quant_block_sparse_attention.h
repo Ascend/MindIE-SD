@@ -34,10 +34,12 @@ __attribute__((visibility("default"))) aclnnStatus aclnnEagleQuantBlockSparseAtt
     const aclTensor *attenMaskOptional, const aclIntArray *blockShapeOptional,
     const aclIntArray *actualSeqLengthsOptional, const aclIntArray *actualSeqLengthsKvOptional,
     const aclTensor *blockTableOptional, const aclTensor *queryScaleOptional, const aclTensor *keyScaleOptional,
-    const aclTensor *valueSclaleOptional, char *qInputLayout, char *kvInputLayout, int64_t numKeyValueHeads,
-    int64_t maskType, double scaleValue, int64_t innerPrecise, int64_t blockSize, int64_t preTokens, int64_t nextTokens,
-    int64_t softmaxLseFlag, aclTensor *attentionOut, aclTensor *softmaxLseOptional, uint64_t *workspaceSize,
-    aclOpExecutor **executor);
+    const aclTensor *valueSclaleOptional, const aclTensor *queryLevel0ScaleOptional,
+    const aclTensor *keyLevel0ScaleOptional, const aclTensor *valueLevel0ScaleOptional, char *qInputLayout,
+    char *kvInputLayout, int64_t numKeyValueHeads, int64_t maskType, double scaleValue,
+    int64_t innerPrecise, // Ascend 950 MXFP4 qmode2: 4=APPROX (default), 5=EXP.
+    int64_t blockSize, int64_t preTokens, int64_t nextTokens, int64_t softmaxLseFlag, aclTensor *attentionOut,
+    aclTensor *softmaxLseOptional, uint64_t *workspaceSize, aclOpExecutor **executor);
 
 __attribute__((visibility("default"))) aclnnStatus aclnnEagleQuantBlockSparseAttention(
     void *workspace, uint64_t workspaceSize, aclOpExecutor *executor, aclrtStream stream);

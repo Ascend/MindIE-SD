@@ -156,7 +156,12 @@ enum RFAQInputLayout : uint32_t {
 };
 
 // inner prec 枚举
-enum BsaInnerCalcPrec : uint32_t { ALL_HIGH = 0, ALL_LOW = 1, LOW_HIGH_MIXED = 4 };
+enum BsaInnerCalcPrec : uint32_t {
+    ALL_HIGH = 0,
+    ALL_LOW = 1,
+    LOW_HIGH_MIXED = 4, // qmode2 APPROX
+    LOW_HIGH_MIXED_EXP = 5 // MXFP4 qmode2 EXP, Ascend 950 only
+};
 
 // Tiling类
 class BSATiling {
@@ -214,7 +219,7 @@ class BSATiling {
     float scaleValue_ = 0.0f;
     uint32_t maskType_ = 0;
     uint32_t sparsePatternMode_ = 0;
-    uint32_t innerPrecise_ = 1; // 0=float32 softmax, 1=fp16 softmax
+    uint32_t innerPrecise_ = 1; // 0=FP32, 1=FP16, 4=qmode2 APPROX, 5=qmode2 EXP
     bool softmaxLseFlag_ = false;
 
     uint32_t totalQBlocks_ = 0;

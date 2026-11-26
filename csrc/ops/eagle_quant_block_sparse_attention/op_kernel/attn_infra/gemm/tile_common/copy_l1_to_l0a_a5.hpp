@@ -26,6 +26,7 @@
 #include "../../../attn_infra/base_defs.hpp"
 #include "../../../attn_infra/arch/arch.hpp"
 #include "../../../attn_infra/gemm/tile_common/tile_copy_tla.hpp"
+#include "../../../attn_infra/numeric_size.hpp"
 #include "../../../tla/tensor.hpp"
 
 namespace NpuArch::Gemm::Tile {
@@ -37,8 +38,8 @@ struct TileCopyTla<Arch::AtlasA5,
     tla::Tensor<AscendC::LocalTensor<ElementDst>, LayoutDst, CoordDst, AscendC::TPosition::A2>,
     std::enable_if_t<tla::detail::iszN<ElementSrc, LayoutSrc>::value &&
         tla::detail::iszN<ElementDst, LayoutDst>::value>> {
-    static constexpr uint32_t ELE_NUM_PER_C0 = BYTE_PER_C0 / sizeof(ElementSrc);
-    static constexpr uint32_t ELE_NUM_PER_FRACTAL = BYTE_PER_FRACTAL / sizeof(ElementSrc);
+    static constexpr uint32_t ELE_NUM_PER_C0 = BytesToBits(BYTE_PER_C0) / SizeOfBits<ElementSrc>::value;
+    static constexpr uint32_t ELE_NUM_PER_FRACTAL = BytesToBits(BYTE_PER_FRACTAL) / SizeOfBits<ElementSrc>::value;
 
     // Methods
 
@@ -93,6 +94,52 @@ struct TileCopyTla<Arch::AtlasA5,
 
         AscendC::LoadData(dstTensor.data(), srcTensor.data(), loadDataParams);
     }
+
+    template <class TensorDst, class TensorSrc, class TensorMxScale>
+    __aicore__ inline void operator()(
+        TensorDst const &dstTensor, TensorSrc const &srcTensor, TensorMxScale const &scaleTensor) {
+        static_assert(AscendC::Std::is_one_of_v<typename TensorSrc::Element, float8_e4m3_t, float8_e5m2_t,
+                          float4_e2m1x2_t, float4_e1m2x2_t> &&
+                AscendC::Std::is_one_of_v<typename TensorDst::Element, AscendC::mx_fp8_e4m3_t, AscendC::mx_fp8_e5m2_t,
+                    float4_e2m1x2_t, float4_e1m2x2_t> &&
+                AscendC::Std::is_one_of_v<typename TensorDst::Element, AscendC::mx_fp8_e4m3_t, AscendC::mx_fp8_e5m2_t,
+                    float4_e2m1x2_t, float4_e1m2x2_t> &&
+                std::is_same_v<typename TensorMxScale::Element, float8_e8m0_t> &&
+                tla::detail::iszN<typename TensorSrc::Element, typename TensorSrc::Layout>::value &&
+                tla::detail::iszN<typename TensorDst::Element, typename TensorDst::Layout>::value &&
+                tla::detail::isMxScaleForzZ<typename TensorMxScale::Element, typename TensorMxScale::Layout>::value &&
+                TensorSrc::position == AscendC::TPosition::A1 && TensorMxScale::position == AscendC::TPosition::A1 &&
+                TensorDst::position == AscendC::TPosition::A2,
+            "TensorSrc must be MX data in L1 zN, scale must be E8M0 L1 zZ, and TensorDst must be L0A zN");
+
+        const uint32_t dstOuterShapeRow = tla::get<0, 1>(dstTensor.shape());
+        const uint32_t dstOuterShapeCol = tla::get<1, 1>(dstTensor.shape());
+        const uint32_t srcOuterStrideCol = tla::get<1, 1>(srcTensor.stride());
+        const uint32_t dstOuterStrideCol = tla::get<1, 1>(dstTensor.stride());
+        auto srcCoord = srcTensor.coord();
+
+        AscendC::LoadData2DParamsV2 loadDataParams;
+        loadDataParams.mStartPosition = CeilDiv<C0_NUM_PER_FRACTAL>(tla::get<0>(srcCoord));
+        loadDataParams.kStartPosition = CeilDiv<ELE_NUM_PER_C0>(tla::get<1>(srcCoord));
+        loadDataParams.mStep = dstOuterShapeRow;
+        loadDataParams.kStep = dstOuterShapeCol;
+        loadDataParams.srcStride = CeilDiv<ELE_NUM_PER_FRACTAL>(srcOuterStrideCol);
+        loadDataParams.dstStride = CeilDiv<ELE_NUM_PER_FRACTAL>(dstOuterStrideCol);
+        loadDataParams.ifTranspose = false;
+
+        auto scaleCoord = scaleTensor.coord();
+        AscendC::LoadData2DMxParams loadDataMxParams;
+        loadDataMxParams.xStartPosition = CeilDiv<C0_NUM_PER_FRACTAL>(tla::get<0>(scaleCoord));
+        loadDataMxParams.yStartPosition = CeilDiv<MX_SCALE_COPY_GROUP_NUM>(tla::get<1>(scaleCoord));
+        loadDataMxParams.xStep = tla::get<0, 1>(scaleTensor.shape());
+        loadDataMxParams.yStep = tla::get<1, 1>(scaleTensor.shape());
+        loadDataMxParams.srcStride = CeilDiv<BYTE_PER_C0>(tla::get<0, 1>(scaleTensor.stride()));
+        loadDataMxParams.dstStride = tla::get<1, 1>(scaleTensor.shape());
+
+        auto dstOffset = dstTensor.layout()(dstTensor.coord());
+        AscendC::LoadData(
+            dstTensor.data()[dstOffset], srcTensor.data(), scaleTensor.data(), loadDataParams, loadDataMxParams);
+    }
 };
 
 /// Partial specialization for CopyL1ToL0A, AtlasA5, not B8, nZ in and zN out. (Transpose A)
@@ -103,8 +150,8 @@ struct TileCopyTla<Arch::AtlasA5,
     std::enable_if_t<!AscendC::Std::is_one_of_v<ElementSrc, int8_t, float8_e4m3_t, float8_e5m2_t> &&
         !AscendC::Std::is_one_of_v<ElementDst, int8_t, float8_e4m3_t, float8_e5m2_t> &&
         tla::detail::isnZ<ElementSrc, LayoutSrc>::value && tla::detail::iszN<ElementDst, LayoutDst>::value>> {
-    static constexpr uint32_t ELE_NUM_PER_C0 = BYTE_PER_C0 / sizeof(ElementSrc);
-    static constexpr uint32_t ELE_NUM_PER_FRACTAL = BYTE_PER_FRACTAL / sizeof(ElementSrc);
+    static constexpr uint32_t ELE_NUM_PER_C0 = BytesToBits(BYTE_PER_C0) / SizeOfBits<ElementSrc>::value;
+    static constexpr uint32_t ELE_NUM_PER_FRACTAL = BytesToBits(BYTE_PER_FRACTAL) / SizeOfBits<ElementSrc>::value;
 
     // Methods
 
@@ -168,6 +215,82 @@ struct TileCopyTla<Arch::AtlasA5,
                 dstTensor.data()[l0BatchIdx * L0M * L0K], srcTensor.data()[l0BatchIdx * L1M * L1K], loadDataParams);
         }
     }
+
+    template <class TensorDst, class TensorSrc, class TensorMxScale>
+    __aicore__ inline void operator()(
+        TensorDst const &dstTensor, TensorSrc const &srcTensor, TensorMxScale const &scaleTensor) {
+        static_assert(AscendC::Std::is_one_of_v<typename TensorSrc::Element, float8_e4m3_t, float8_e5m2_t,
+                          float4_e2m1x2_t, float4_e1m2x2_t> &&
+                std::is_same_v<typename TensorMxScale::Element, float8_e8m0_t> &&
+                tla::detail::isnZ<typename TensorSrc::Element, typename TensorSrc::Layout>::value &&
+                tla::detail::iszN<typename TensorDst::Element, typename TensorDst::Layout>::value &&
+                tla::detail::isMxScaleForzZ<typename TensorMxScale::Element, typename TensorMxScale::Layout>::value &&
+                TensorSrc::position == AscendC::TPosition::A1 && TensorMxScale::position == AscendC::TPosition::A1 &&
+                TensorDst::position == AscendC::TPosition::A2,
+            "The input parameters do not match. TensorSrc must be L1 and nZ, TensorMxScale must be L1 and zZ, "
+            "while TensorDst must be L0A and zN");
+
+        const uint32_t L0M = tla::get<0, 0>(dstTensor.shape()) * tla::get<0, 1>(dstTensor.shape());
+        const uint32_t L0K = tla::get<1, 0>(dstTensor.shape()) * tla::get<1, 1>(dstTensor.shape());
+        const uint32_t srcOuterStrideRow = tla::get<0, 1>(srcTensor.stride());
+        const uint32_t dstOuterStrideCol = tla::get<1, 1>(dstTensor.stride());
+        auto srcCoord = srcTensor.coord();
+        auto dstOffset = dstTensor.layout()(dstTensor.coord());
+
+        auto scaleCoord = scaleTensor.coord();
+        AscendC::LoadData2DMxParams loadDataMxParams;
+        loadDataMxParams.xStartPosition = CeilDiv<C0_NUM_PER_FRACTAL>(tla::get<0>(scaleCoord));
+        loadDataMxParams.yStartPosition = CeilDiv<MX_SCALE_COPY_GROUP_NUM>(tla::get<1>(scaleCoord));
+        loadDataMxParams.xStep = tla::get<0, 1>(scaleTensor.shape());
+        loadDataMxParams.yStep = tla::get<1, 1>(scaleTensor.shape());
+        loadDataMxParams.srcStride = CeilDiv<BYTE_PER_C0>(tla::get<0, 1>(scaleTensor.stride()));
+        loadDataMxParams.dstStride = tla::get<1, 1>(scaleTensor.shape());
+
+        AscendC::LoadData2DParamsV2 loadDataParams;
+        if (L0M % ELE_NUM_PER_C0 == 0) {
+            loadDataParams.mStartPosition = CeilDiv<C0_NUM_PER_FRACTAL>(tla::get<1>(srcCoord));
+            loadDataParams.kStartPosition = CeilDiv<ELE_NUM_PER_C0>(tla::get<0>(srcCoord));
+            loadDataParams.mStep = CeilDiv<C0_NUM_PER_FRACTAL>(L0K);
+            loadDataParams.kStep = CeilDiv<ELE_NUM_PER_C0>(L0M);
+            loadDataParams.srcStride = CeilDiv<ELE_NUM_PER_FRACTAL>(srcOuterStrideRow);
+            loadDataParams.dstStride = CeilDiv<ELE_NUM_PER_FRACTAL>(dstOuterStrideCol);
+            loadDataParams.ifTranspose = true;
+            AscendC::LoadData(
+                dstTensor.data()[dstOffset], srcTensor.data(), scaleTensor.data(), loadDataParams, loadDataMxParams);
+        } else {
+            constexpr uint32_t mStep = ELE_NUM_PER_C0 / C0_NUM_PER_FRACTAL;
+            for (uint32_t kIdx = 0; kIdx < L0K / ELE_NUM_PER_C0; kIdx++) {
+                loadDataParams.mStartPosition = CeilDiv<C0_NUM_PER_FRACTAL>(tla::get<1>(srcCoord)) + kIdx * mStep;
+                loadDataParams.kStartPosition = CeilDiv<ELE_NUM_PER_C0>(tla::get<0>(srcCoord));
+                loadDataParams.mStep = mStep;
+                loadDataParams.kStep = CeilDiv<ELE_NUM_PER_C0>(L0M);
+                loadDataParams.srcStride = CeilDiv<ELE_NUM_PER_FRACTAL>(srcOuterStrideRow);
+                loadDataParams.dstStride = CeilDiv<ELE_NUM_PER_FRACTAL>(dstOuterStrideCol);
+                loadDataParams.ifTranspose = true;
+
+                if constexpr (AscendC::Std::is_one_of_v<typename TensorSrc::Element, float8_e4m3_t, float8_e5m2_t>) {
+                    AscendC::LoadData(dstTensor.data()[dstOffset + kIdx * L0M * ELE_NUM_PER_C0]
+                                          .template ReinterpretCast<typename TensorSrc::Element>(),
+                        srcTensor.data(), loadDataParams);
+                } else {
+                    load_cbuf_to_ca_s4(
+                        (__ca__ typename TensorSrc::Element *)dstTensor.data()[dstOffset + kIdx * L0M * ELE_NUM_PER_C0]
+                            .GetPhyAddr(),
+                        (__cbuf__ typename TensorSrc::Element *)srcTensor.data().GetPhyAddr(),
+                        loadDataParams.mStartPosition, loadDataParams.kStartPosition, loadDataParams.mStep,
+                        loadDataParams.kStep, loadDataParams.srcStride, loadDataParams.dstStride, 1);
+                }
+            }
+            uint64_t mxDstAddr = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(
+                                     (__ca__ typename TensorDst::Element *)dstTensor.data()[dstOffset].GetPhyAddr())) /
+                16;
+            load_cbuf_to_ca_mx(mxDstAddr,
+                static_cast<__cbuf__ void *>(
+                    (__cbuf__ typename TensorMxScale::Element *)scaleTensor.data().GetPhyAddr()),
+                loadDataMxParams.xStartPosition, loadDataMxParams.yStartPosition, loadDataMxParams.xStep,
+                loadDataMxParams.yStep, loadDataMxParams.srcStride, loadDataMxParams.dstStride);
+        }
+    }
 };
 
 /// Partial specialization for CopyL1ToL0A, AtlasA5, B8, nZ in and zN out. (Transpose A)
@@ -178,8 +301,8 @@ struct TileCopyTla<Arch::AtlasA5,
     std::enable_if_t<AscendC::Std::is_one_of_v<ElementSrc, int8_t, float8_e4m3_t, float8_e5m2_t> &&
         AscendC::Std::is_one_of_v<ElementDst, int8_t, float8_e4m3_t, float8_e5m2_t> &&
         tla::detail::isnZ<ElementSrc, LayoutSrc>::value && tla::detail::iszN<ElementDst, LayoutDst>::value>> {
-    static constexpr uint32_t ELE_NUM_PER_C0 = BYTE_PER_C0 / sizeof(ElementSrc);
-    static constexpr uint32_t ELE_NUM_PER_FRACTAL = BYTE_PER_FRACTAL / sizeof(ElementSrc);
+    static constexpr uint32_t ELE_NUM_PER_C0 = BytesToBits(BYTE_PER_C0) / SizeOfBits<ElementSrc>::value;
+    static constexpr uint32_t ELE_NUM_PER_FRACTAL = BytesToBits(BYTE_PER_FRACTAL) / SizeOfBits<ElementSrc>::value;
 
     // Methods
 
@@ -282,8 +405,8 @@ struct TileCopyTla<Arch::AtlasA5,
     tla::Tensor<AscendC::LocalTensor<ElementSrc>, LayoutSrc, CoordSrc, AscendC::TPosition::A1>,
     tla::Tensor<AscendC::LocalTensor<ElementDst>, LayoutDst, CoordDst, AscendC::TPosition::A2>,
     std::enable_if_t<tla::detail::isVector<LayoutSrc>::value>> {
-    static constexpr uint32_t ELE_NUM_PER_C0 = BYTE_PER_C0 / sizeof(ElementSrc);
-    static constexpr uint32_t ELE_NUM_PER_FRACTAL = BYTE_PER_FRACTAL / sizeof(ElementSrc);
+    static constexpr uint32_t ELE_NUM_PER_C0 = BytesToBits(BYTE_PER_C0) / SizeOfBits<ElementSrc>::value;
+    static constexpr uint32_t ELE_NUM_PER_FRACTAL = BytesToBits(BYTE_PER_FRACTAL) / SizeOfBits<ElementSrc>::value;
 
     __aicore__ inline TileCopyTla(){};
 

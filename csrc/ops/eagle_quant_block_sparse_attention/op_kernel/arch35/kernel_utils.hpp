@@ -54,22 +54,37 @@ struct BsaKernelParamsArch35 {
     GM_ADDR query_scale;
     GM_ADDR key_scale;
     GM_ADDR value_scale;
+    GM_ADDR query_level0_scale;
+    GM_ADDR key_level0_scale;
+    GM_ADDR value_level0_scale;
     GM_ADDR actualQseqlen;
     GM_ADDR actualKvseqlen;
     GM_ADDR blockSparseMask;
     GM_ADDR o;
+    GM_ADDR softmaxLse;
     GM_ADDR workSpace;
     GM_ADDR lse;
     GM_ADDR tiling;
 
     // Methods
     __aicore__ inline BsaKernelParamsArch35() {}
+    // qmode1 (8bit) path: keeps the original 71e9da7 signature, no level-0 scales.
     __aicore__ inline BsaKernelParamsArch35(GM_ADDR q_, GM_ADDR k_, GM_ADDR v_, GM_ADDR mask_, GM_ADDR blockTables_,
         GM_ADDR query_scale_, GM_ADDR key_scale_, GM_ADDR value_scale_, GM_ADDR actualQseqlen_, GM_ADDR actualKvseqlen_,
         GM_ADDR blockSparseMask_, GM_ADDR o_, GM_ADDR workSpace_, GM_ADDR lse_, GM_ADDR tiling_)
         : q(q_), k(k_), v(v_), mask(mask_), blockTables(blockTables_), actualQseqlen(actualQseqlen_),
           query_scale(query_scale_), key_scale(key_scale_), value_scale(value_scale_), actualKvseqlen(actualKvseqlen_),
           blockSparseMask(blockSparseMask_), o(o_), workSpace(workSpace_), lse(lse_), tiling(tiling_) {}
+    // qmode2 (MXFP4 4bit) path: adds level-0 scales.
+    __aicore__ inline BsaKernelParamsArch35(GM_ADDR q_, GM_ADDR k_, GM_ADDR v_, GM_ADDR mask_, GM_ADDR blockTables_,
+        GM_ADDR query_scale_, GM_ADDR key_scale_, GM_ADDR value_scale_, GM_ADDR query_level0_scale_,
+        GM_ADDR key_level0_scale_, GM_ADDR value_level0_scale_, GM_ADDR actualQseqlen_, GM_ADDR actualKvseqlen_,
+        GM_ADDR blockSparseMask_, GM_ADDR o_, GM_ADDR softmaxLse_, GM_ADDR workSpace_, GM_ADDR tiling_)
+        : q(q_), k(k_), v(v_), mask(mask_), blockTables(blockTables_), actualQseqlen(actualQseqlen_),
+          query_scale(query_scale_), key_scale(key_scale_), value_scale(value_scale_),
+          query_level0_scale(query_level0_scale_), key_level0_scale(key_level0_scale_),
+          value_level0_scale(value_level0_scale_), actualKvseqlen(actualKvseqlen_), blockSparseMask(blockSparseMask_),
+          o(o_), softmaxLse(softmaxLse_), workSpace(workSpace_), tiling(tiling_) {}
 };
 
 constexpr uint32_t SPARSE_PATTERN_MODE_TABLE = 1;

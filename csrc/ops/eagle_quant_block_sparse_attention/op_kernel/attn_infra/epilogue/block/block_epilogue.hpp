@@ -34,7 +34,10 @@ template <class DispatchPolicy, class... Args> class BlockEpilogue {
 } // namespace NpuArch::Epilogue::Block
 #if (__CCE_AICORE__ == 310)
 #include "../../../attn_infra/epilogue/block/block_epilogue_mask2idx_arch35.hpp"
+#include "../../../attn_infra/epilogue/block/block_epilogue_mask2idx_arch35_V1.hpp"
 #include "../../../attn_infra/epilogue/block/block_epilogue_rescale_o_arch35_reg_high_prec_qmode1.hpp"
+#include "../../../attn_infra/epilogue/block/block_epilogue_rescale_o_arch35_reg_high_prec_qmode2.hpp"
 #include "../../../attn_infra/epilogue/block/block_epilogue_online_softmax_arch35_reg_low_prec_qmode1.hpp"
+#include "../../../attn_infra/epilogue/block/block_epilogue_online_softmax_arch35_reg_low_prec_qmode2.hpp"
 #endif
 #endif // EPILOGUE_BLOCK_BLOCK_EPILOGUE_HPP

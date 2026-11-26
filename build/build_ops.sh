@@ -79,6 +79,11 @@ ascend950_only_ops='quant_flash_attn;quant_flash_attn_metadata;fused_infer_atten
 # declared by any 8.5.0 header). AddConfig cannot express this, so such ops must leave
 # the op list entirely on older toolkits.
 cann_9_required_ops='eagle_block_sparse_attention;eagle_quant_batch_matmul_swiglu'
+# eagle_quant_block_sparse_attention adds 4bit (MXFP4) input support and therefore
+# uses AscendC APIs introduced in CANN 9.1.x, e.g. asc_copy_l12l0b_mx. Those APIs
+# are absent from CANN 9.0.x headers, so the op cannot be built on 9.0.x and is
+# removed from the op list instead of aborting the whole build.
+cann_91_required_ops='eagle_quant_block_sparse_attention'
 cann_version_file="${local_toolkit}/compiler/version.info"
 if [ -f "${cann_version_file}" ] && grep -Eq '^Version=([0-8])(\.|$)' "${cann_version_file}"; then
     echo "Detected CANN < 9.0 from ${cann_version_file}, disable ascend950 backend."
@@ -87,6 +92,25 @@ if [ -f "${cann_version_file}" ] && grep -Eq '^Version=([0-8])(\.|$)' "${cann_ve
     echo "Skip ascend950-only ops: ${ascend950_only_ops}"
     echo "Skip CANN 9.0+ required ops: ${cann_9_required_ops}"
     echo "Build AscendC ops after filtering: ${ascendc_ops}"
+else
+    # CANN >= 9.0 (or version.info unavailable): the minor version of CANN 9.x
+    # decides whether the 4bit op can be built. 9.1.x+ provides the required APIs.
+    cann_version_value=$(grep -m1 '^Version=' "${cann_version_file}" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]' || true)
+    IFS='.' read -r cann_major cann_minor _ <<< "${cann_version_value}"
+    cann_major=${cann_major//[^0-9]/}
+    cann_minor=${cann_minor//[^0-9]/}
+    if [ "${cann_major}" = '9' ] && [ "${cann_minor}" = '0' ]; then
+        echo "Detected CANN 9.0.x (Version=${cann_version_value}) from ${cann_version_file}."
+        ascendc_ops=$(remove_ops_from_semicolon_list "${ascendc_ops}" "${cann_91_required_ops}")
+        echo "WARNING: Removed ${cann_91_required_ops} from the operator build list."
+        echo "    Reason: to support 4bit input, this operator uses APIs that are not available"
+        echo "            in this CANN version (e.g. asc_copy_l12l0b_mx, introduced in CANN 9.1.x),"
+        echo "            so it cannot be built on CANN 9.0.x."
+        echo "    If the 4bit feature of ${cann_91_required_ops} is not needed, roll back to the"
+        echo "    previous version and install the operator that supports 8bit input."
+        echo "    To use the 4bit feature, upgrade to CANN 9.1.x or later and rebuild."
+        echo "Build AscendC ops after filtering: ${ascendc_ops}"
+    fi
 fi
 ascend_compute_unit=${ASCEND_COMPUTE_UNIT:-${default_compute_unit}}
 # OpDef files consult this variable while op_build loads the op host .so (see

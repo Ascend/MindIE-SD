@@ -34,9 +34,10 @@ const std::array<const aclTensor *, 2> EagleQuantBlockSparseAttention(const aclT
     const aclIntArray *blockShapeOptional, const aclIntArray *actualSeqLengthsOptional,
     const aclIntArray *actualSeqLengthsKvOptional, const aclTensor *blockTableOptional,
     const aclTensor *queryScaleOptional, const aclTensor *keyScaleOptional, const aclTensor *valueScaleOptional,
-    const char *qInputLayout, const char *kvInputLayout, int64_t numKeyValueHeads, int64_t maskType, double scaleValue,
-    int64_t innerPrecise, int64_t blockSize, int64_t preTokens, int64_t nextTokens, int64_t softmaxLseFlag,
-    aclOpExecutor *executor, op::DataType outDType);
+    const aclTensor *queryLevel0ScaleOptional, const aclTensor *keyLevel0ScaleOptional,
+    const aclTensor *valueLevel0ScaleOptional, const char *qInputLayout, const char *kvInputLayout,
+    int64_t numKeyValueHeads, int64_t maskType, double scaleValue, int64_t innerPrecise, int64_t blockSize,
+    int64_t preTokens, int64_t nextTokens, int64_t softmaxLseFlag, aclOpExecutor *executor, op::DataType outDType);
 
 } // namespace l0op
 

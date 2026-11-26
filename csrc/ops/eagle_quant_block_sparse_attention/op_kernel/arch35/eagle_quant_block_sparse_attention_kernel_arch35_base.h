@@ -31,6 +31,7 @@ using namespace tla;
 namespace BsaKernelArch35 {
 
 struct BsaRegularKernelArch35QMode1 {};
+struct BsaRegularKernelArch35QMode2 {};
 
 template <class DispatchPolicy, class EpilogueMask2Idx, class BlockMmadQK, class EpilogueOnlineSoftmax,
     class BlockMmadPV, class EpilogueRescaleO, Format qFormat, Format kvFormat>

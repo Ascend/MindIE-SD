@@ -61,6 +61,12 @@ constexpr int BLOCK_SHAPE_INDEX = 5;
 constexpr int ACTUAL_SEQ_LENGTHS_INDEX = 6;
 constexpr int ACTUAL_SEQ_LENGTHS_KV_INDEX = 7;
 constexpr int BLOCK_TABLE_INDEX = 8;
+constexpr int QUERY_SCALE_INDEX = 9;
+constexpr int KEY_SCALE_INDEX = 10;
+constexpr int VALUE_SCALE_INDEX = 11;
+constexpr int QUERY_LEVEL0_SCALE_INDEX = 12;
+constexpr int KEY_LEVEL0_SCALE_INDEX = 13;
+constexpr int VALUE_LEVEL0_SCALE_INDEX = 14;
 constexpr int SOFTMAX_LSE_INDEX = 10;
 constexpr int MAX_BLOCK_NUM_INDEX = 2;
 
@@ -100,6 +106,8 @@ constexpr uint32_t D_SIZE_256 = 256;
 constexpr uint32_t SOLO_BUF = 1;
 constexpr uint32_t DUO_BUF = 2;
 constexpr uint32_t TRIO_BUF = 3;
+constexpr uint32_t QUAD_BUF = 4;
+constexpr uint32_t SEXT_BUF = 6;
 
 std::unordered_map<std::string, std::string> inputLayoutMapQ2Kv = {{"TND", "TND"}, {"BNSD", "BNSD"}};
 
@@ -208,14 +216,55 @@ ge::graphStatus BSATiling::CheckQKVDtype(gert::TilingContext *bsaContext) {
     auto kDataType = kInputDesc->GetDataType();
     vDataType_ = vInputDesc->GetDataType();
 
-    // Torch bitcast callers pass FP8 value bytes in an INT8 tensor. Both storage
-    // dtypes select the same qmode1 key and are interpreted as FP8 by the kernel.
-    const bool isQMode1Value = vDataType_ == ge::DT_FLOAT8_E4M3FN || vDataType_ == ge::DT_INT8;
-    if (socVer_ != SOC_VER_950_CODE || dataType_ != ge::DT_INT8 || kDataType != ge::DT_INT8 || !isQMode1Value) {
+    const auto *queryLevel0ScaleDesc = bsaContext->GetOptionalInputDesc(QUERY_LEVEL0_SCALE_INDEX);
+    const auto *keyLevel0ScaleDesc = bsaContext->GetOptionalInputDesc(KEY_LEVEL0_SCALE_INDEX);
+    const auto *valueLevel0ScaleDesc = bsaContext->GetOptionalInputDesc(VALUE_LEVEL0_SCALE_INDEX);
+    if ((queryLevel0ScaleDesc != nullptr && queryLevel0ScaleDesc->GetDataType() != ge::DT_FLOAT) ||
+        (keyLevel0ScaleDesc != nullptr && keyLevel0ScaleDesc->GetDataType() != ge::DT_FLOAT) ||
+        (valueLevel0ScaleDesc != nullptr && valueLevel0ScaleDesc->GetDataType() != ge::DT_FLOAT)) {
+        OP_LOGE(bsaContext->GetNodeName(), "queryLevel0Scale/keyLevel0Scale/valueLevel0Scale must use float32 dtype.");
+        return ge::GRAPH_FAILED;
+    }
+
+    // 原有FP16/BF16校验保留
+    if (dataType_ != ge::DT_FLOAT16 && dataType_ != ge::DT_BF16 && dataType_ != ge::DT_INT8 &&
+        dataType_ != ge::DT_FLOAT4_E2M1) {
+        OP_LOGE(
+            bsaContext->GetNodeName(), "The supported dtype of query/key is float16, bfloat16, int8 or float4_e2m1.");
+        return ge::GRAPH_FAILED;
+    }
+
+    if (dataType_ == ge::DT_FLOAT4_E2M1) {
+        if (kDataType != ge::DT_FLOAT4_E2M1 || vDataType_ != ge::DT_FLOAT4_E2M1) {
+            OP_LOGE(bsaContext->GetNodeName(), "MXFP4 mode requires query/key/value to all use float4_e2m1.");
+            return ge::GRAPH_FAILED;
+        }
+        const auto *queryScaleDesc = bsaContext->GetOptionalInputDesc(QUERY_SCALE_INDEX);
+        const auto *keyScaleDesc = bsaContext->GetOptionalInputDesc(KEY_SCALE_INDEX);
+        const auto *valueScaleDesc = bsaContext->GetOptionalInputDesc(VALUE_SCALE_INDEX);
+        if (queryScaleDesc == nullptr || keyScaleDesc == nullptr || valueScaleDesc == nullptr ||
+            queryScaleDesc->GetDataType() != ge::DT_FLOAT8_E8M0 || keyScaleDesc->GetDataType() != ge::DT_FLOAT8_E8M0 ||
+            valueScaleDesc->GetDataType() != ge::DT_FLOAT8_E8M0) {
+            OP_LOGE(bsaContext->GetNodeName(), "MXFP4 mode requires query/key/value scales with float8_e8m0 dtype.");
+            return ge::GRAPH_FAILED;
+        }
+        auto outputDesc = bsaContext->GetOutputDesc(0);
+        OP_CHECK_NULL_WITH_CONTEXT(bsaContext, outputDesc);
+        auto outputDtype = outputDesc->GetDataType();
+        if (outputDtype != ge::DT_FLOAT16 && outputDtype != ge::DT_BF16) {
+            OP_LOGE(bsaContext->GetNodeName(), "MXFP4 mode only supports float16 or bfloat16 output.");
+            return ge::GRAPH_FAILED;
+        }
+        return ge::GRAPH_SUCCESS;
+    }
+
+    // 950 混合精度特判：Q/K=int8, V=FLOAT8_E4M3FN
+    if (socVer_ == SOC_VER_950_CODE && dataType_ == ge::DT_INT8 && kDataType == ge::DT_INT8) {
+        return ge::GRAPH_SUCCESS;
+    } else if (dataType_ != kDataType || dataType_ != vDataType_) {
+        // 非混合精度场景保持原有严格一致性校验
         OP_LOGE(bsaContext->GetNodeName(),
-            "Only 950 qmode1 (query/key int8, value float8_e4m3fn or FP8 bytes in int8 storage) is supported. "
-            "Got soc=%u, query dtype=%d, key dtype=%d, value dtype=%d.",
-            socVer_, static_cast<int>(dataType_), static_cast<int>(kDataType), static_cast<int>(vDataType_));
+            "Tensor query/key/value must have consistent dtype, or use 950 mixed prec (Q/K=int8, V=fp8).");
         return ge::GRAPH_FAILED;
     }
 
@@ -396,7 +445,7 @@ ge::graphStatus BSATiling::CheckSparsePattern(gert::TilingContext *bsaContext, c
     OP_CHECK_NULL_WITH_CONTEXT(bsaContext, blockSparseMaskDesc);
     OP_CHECK_NULL_WITH_CONTEXT(bsaContext, blockSparseMaskShape);
     auto sparsePatternDtype = blockSparseMaskDesc->GetDataType();
-    if (sparsePatternDtype == ge::DT_INT8 || sparsePatternDtype == ge::DT_BOOL) {
+    if (sparsePatternDtype == ge::DT_INT8) {
         sparsePatternMode_ = SPARSE_PATTERN_MODE_MASK;
     } else if (sparsePatternDtype == ge::DT_INT32) {
         sparsePatternMode_ = SPARSE_PATTERN_MODE_TABLE;
@@ -524,9 +573,13 @@ ge::graphStatus BSATiling::ParseAttrs(gert::TilingContext *bsaContext) {
         innerPrecise_ = *attrs->GetAttrPointer<uint32_t>(INNER_PRECISE_INDEX);
     }
     if (socVer_ == SOC_VER_950_CODE) {
-        if (innerPrecise_ != BsaInnerCalcPrec::LOW_HIGH_MIXED) {
+        const auto *qInputDesc = bsaContext->GetInputDesc(QUERY_INDEX);
+        OP_CHECK_NULL_WITH_CONTEXT(bsaContext, qInputDesc);
+        if (innerPrecise_ != BsaInnerCalcPrec::LOW_HIGH_MIXED &&
+            !(innerPrecise_ == BsaInnerCalcPrec::LOW_HIGH_MIXED_EXP &&
+                qInputDesc->GetDataType() == ge::DT_FLOAT4_E2M1)) {
             OP_LOGE(bsaContext->GetNodeName(),
-                "On chip 950, only innerPrec = 4 is supported, "
+                "On chip 950, innerPrec = 4 is supported; 5 requires MXFP4 qmode2, "
                 "but got %u.",
                 innerPrecise_);
             return ge::GRAPH_FAILED;
@@ -603,8 +656,9 @@ uint32_t BSATiling::GetCurQSTileNum950(int64_t curQSeqlen) {
 
 void BSATiling::CalcBaseTileTilingParams950() {
     qBaseTile_ = (blockShapeX_ > TILE_SIZE_128) ? TILE_SIZE_128 : blockShapeX_;
-    if (innerPrecise_ == BsaInnerCalcPrec::LOW_HIGH_MIXED && embeddingSize_ <= D_SIZE_128) {
-        kvBaseTile_ = TILE_SIZE_512;
+    if ((innerPrecise_ == BsaInnerCalcPrec::LOW_HIGH_MIXED || innerPrecise_ == BsaInnerCalcPrec::LOW_HIGH_MIXED_EXP) &&
+        embeddingSize_ <= D_SIZE_128) {
+        kvBaseTile_ = (dataType_ == ge::DT_FLOAT4_E2M1) ? TILE_SIZE_256 : TILE_SIZE_512;
     } else {
         kvBaseTile_ = TILE_SIZE_128;
     }
@@ -685,6 +739,8 @@ void BSATiling::CalcWorkspaceTilingParams950(gert::TilingContext *bsaContext) {
         ? 0
         : batch_ * numHeads_ * xBlockNumAligned_ * yBlockNumAligned_ * sizeof(int32_t);
     selectNumIdxSize_ = batch_ * numHeads_ * xBlockNumAligned_ * sizeof(int32_t);
+    const auto *blockSparseMaskShape = bsaContext->GetInputShape(BLOCK_SPARSE_MASK_INDEX);
+    maxKvBlockNum_ = blockSparseMaskShape->GetStorageShape().GetDim(3);
     workSpaceSize_ = libapiSize_ + selectIdxSize_ + selectNumIdxSize_;
     bsaContext->GetWorkspaceSizes(1)[0] = workSpaceSize_;
 }
@@ -723,39 +779,45 @@ void BSATiling::CalcMatmulPhaseL1TileInfo950() {
     uint32_t qBaseTileAligned128 = (qBaseTile_ + TILE_SIZE_128 - 1) / TILE_SIZE_128 * TILE_SIZE_128;
     uint32_t embeddingSizeAligned128 = (embeddingSize_ + TILE_SIZE_128 - 1) / TILE_SIZE_128 * TILE_SIZE_128;
     uint32_t kvBaseTileAligned128 = (kvBaseTile_ + TILE_SIZE_128 - 1) / TILE_SIZE_128 * TILE_SIZE_128;
+    const bool isQMode2 = dataType_ == ge::DT_FLOAT4_E2M1;
 
     // 基本原则，Q的基块常驻在L1
     mm1L1TileM_ = qBaseTileAligned128;
     mm1L1TileKLeft_ = embeddingSizeAligned128;
     qL1BufNum_ = SOLO_BUF;
     if (embeddingSizeAligned128 == D_SIZE_256) {
-        // K矩阵开启2buf，D按256分割，S2按128分割
+        // K defaults to 2 buffers; MXFP4 QMode2 uses 4 buffers.
+        // D is split by 256 and S2 is split by 128.
         // 可以证明，当Q常驻在L1时，无论D和kvBaseTile_为多少，均不会有QK的MTE2重复搬运
         mm1L1TileN_ = TILE_SIZE_128;
         mm1L1TileKRight_ = TILE_SIZE_256;
-        kL1BufNum_ = DUO_BUF;
-        // V矩阵D按256分割，kvBaseTile_不分割，指令提前于核间同步下发，是否开启db取决于kvBaseTile_的大小
+        kL1BufNum_ = isQMode2 ? QUAD_BUF : DUO_BUF;
+        // V uses 3 buffers in MXFP4 QMode2. Other modes retain the
+        // buffer count derived from kvBaseTile_.
         mm2L1TileN_ = TILE_SIZE_256;
         mm2L1TileKLeft_ = kvBaseTileAligned128;
-        vL1BufNum_ = TILE_SIZE_256 / kvBaseTileAligned128;
-        // P矩阵在950上会常驻L1，由于基块的prelaunch为2，因此最好有3 buf，以免基块间流水阻塞
+        vL1BufNum_ = isQMode2 ? TRIO_BUF : TILE_SIZE_256 / kvBaseTileAligned128;
+        // QMode2 keeps five QK tiles ahead of PV, so P needs PRE_LAUNCH + 1
+        // stages. Other quant modes retain the original triple buffer.
         mm2L1TileM_ = qBaseTileAligned128;
         mm2L1TileKRight_ = kvBaseTileAligned128;
-        pL1BufNum_ = TRIO_BUF;
+        pL1BufNum_ = isQMode2 ? SEXT_BUF : TRIO_BUF;
     } else if (embeddingSizeAligned128 == D_SIZE_128) {
-        // K矩阵开启2buf，D按128分割，S2按512分割
-        mm1L1TileN_ = TILE_SIZE_512;
+        // K defaults to 2 buffers; MXFP4 QMode2 uses 4 buffers and S2=256.
+        // Other modes retain S2=512.
+        mm1L1TileN_ = (dataType_ == ge::DT_FLOAT4_E2M1) ? TILE_SIZE_256 : TILE_SIZE_512;
         mm1L1TileKRight_ = TILE_SIZE_128;
-        kL1BufNum_ = DUO_BUF;
-        // V矩阵开启db，D按128分割，kvBaseTile_不分割，指令同样提前于核间同步下发
-        // 如果kvBaseTile_进一步增大，考虑关闭db，使得kvBaseTile_不分割
+        kL1BufNum_ = isQMode2 ? QUAD_BUF : DUO_BUF;
+        // QMode2 keeps QK three iterations ahead of PV, so V uses four buffers.
+        // Other modes retain two buffers.
         mm2L1TileN_ = TILE_SIZE_128;
         mm2L1TileKLeft_ = kvBaseTileAligned128;
-        vL1BufNum_ = DUO_BUF;
-        // P矩阵在950上会常驻L1，由于基块的prelaunch为2，因此最好有3 buf，以免基块间流水阻塞
+        vL1BufNum_ = isQMode2 ? QUAD_BUF : DUO_BUF;
+        // QMode2 uses PRE_LAUNCH=3, so P needs four stages.
+        // Other quant modes retain the original triple buffer.
         mm2L1TileM_ = qBaseTileAligned128;
         mm2L1TileKRight_ = kvBaseTileAligned128;
-        pL1BufNum_ = TRIO_BUF;
+        pL1BufNum_ = isQMode2 ? QUAD_BUF : TRIO_BUF;
     }
 }
 
@@ -794,11 +856,15 @@ ge::graphStatus BSATiling::FillTilingData(gert::TilingContext *bsaContext) {
 
     // 生成tilingKey（按照开发规范：在tiling层生成）
     uint64_t tilingKey = GenerateTilingKey(bsaContext);
-    const uint64_t baseKey = softmaxLseFlag_ ? tilingKey - 100000000ULL : tilingKey;
-    if (baseKey != 9050010030444442ULL && baseKey != 9050010050444443ULL && baseKey != 9050010030455552ULL &&
-        baseKey != 9050010050455553ULL) {
-        OP_LOGE(bsaContext->GetNodeName(), "Unsupported qmode1 tiling key: %lu.", tilingKey);
-        return ge::GRAPH_FAILED;
+    // The whitelist below only applies to the qmode1 (8bit) path inherited from 71e9da7.
+    // qmode2 / MXFP4 (float4_e2m1) uses its own tiling keys and is validated by GenerateTilingKey.
+    if (dataType_ != ge::DT_FLOAT4_E2M1) {
+        const uint64_t baseKey = softmaxLseFlag_ ? tilingKey - 100000000ULL : tilingKey;
+        if (baseKey != 9050010030444442ULL && baseKey != 9050010050444443ULL && baseKey != 9050010030455552ULL &&
+            baseKey != 9050010050455553ULL) {
+            OP_LOGE(bsaContext->GetNodeName(), "Unsupported qmode1 tiling key: %lu.", tilingKey);
+            return ge::GRAPH_FAILED;
+        }
     }
     tilingData_->set_tilingKey(tilingKey);
     bsaContext->SetTilingKey(tilingKey);
@@ -859,7 +925,11 @@ uint64_t BSATiling::GenerateTilingKey(gert::TilingContext *bsaContext) {
     }
 
     // [位14-15] Data Type（百亿位）
-    if (dataType_ == ge::DT_INT8) {
+    if (dataType_ == ge::DT_FLOAT16) {
+        tilingKey += 0; // 00 for FP16
+    } else if (dataType_ == ge::DT_BF16) {
+        tilingKey += 22220ULL; // 22 for BF16 -> 9000000030000002 + 22220 = 9000000030022222
+    } else if (dataType_ == ge::DT_INT8 || dataType_ == ge::DT_FLOAT4_E2M1) {
         auto oOutputDesc = bsaContext->GetOutputDesc(0);
         OP_CHECK_NULL_WITH_CONTEXT(bsaContext, oOutputDesc);
         auto dtypeO = oOutputDesc->GetDataType();
@@ -887,7 +957,9 @@ uint64_t BSATiling::GenerateTilingKey(gert::TilingContext *bsaContext) {
     if (innerPrecise_ == 1) {
         tilingKey += 100000ULL; // 1 for Half (FP16) Softmax
     } else if (innerPrecise_ == 4) {
-        tilingKey += 400000ULL; // 4 for low prec online softmax & high prec rescale O
+        tilingKey += 400000ULL; // qmode2 APPROX (qmode1 unchanged)
+    } else if (innerPrecise_ == BsaInnerCalcPrec::LOW_HIGH_MIXED_EXP) {
+        tilingKey += 500000ULL; // MXFP4 qmode2 EXP
     }
     // innerPrecise_ == 0: 0 for Float Softmax（默认值）
 
@@ -904,16 +976,18 @@ uint64_t BSATiling::GenerateTilingKey(gert::TilingContext *bsaContext) {
         tilingKey += 3; // 3 for BNSD
     }
 
-    // Softmax LSE（亿位）
+    // Softmax LSE（亿位）— inherited from 71e9da7. Keep identical for qmode1/qmode2.
     if (softmaxLseFlag_) {
         tilingKey += 100000000ULL; // 1 for lse out
     }
 
-    constexpr uint64_t V_DTYPE_OFFSET = 10000000000ULL; // 10^10
-    if (vDataType_ == ge::DT_FLOAT8_E4M3FN || vDataType_ == ge::DT_INT8) {
-        tilingKey += V_DTYPE_OFFSET * 1ULL;
+    constexpr uint64_t QUANT_MODE_OFFSET = 10000000000ULL; // 10^10
+    if (dataType_ == ge::DT_FLOAT4_E2M1) {
+        tilingKey += QUANT_MODE_OFFSET * 2ULL;
+    } else if (vDataType_ == ge::DT_FLOAT8_E4M3FN || vDataType_ == ge::DT_INT8) {
+        tilingKey += QUANT_MODE_OFFSET * 1ULL;
     } else if (vDataType_ == ge::DT_FLOAT8_E5M2) {
-        tilingKey += V_DTYPE_OFFSET * 2ULL;
+        tilingKey += QUANT_MODE_OFFSET * 2ULL;
     }
     // vDataType 与 Q/K 相同时，加 0，保持兼容
 
@@ -943,6 +1017,15 @@ ge::graphStatus BSATiling::GetBsaTiling(
 
     if (socVer_ == SOC_VER_950_CODE) {
         CalcSplitCoreTilingParams950();
+        if (sparsePatternMode_ == SPARSE_PATTERN_MODE_TABLE) {
+            const auto *blockSparseMaskShape = bsaContext->GetInputShape(BLOCK_SPARSE_MASK_INDEX);
+            const int64_t tableShapeY = blockSparseMaskShape->GetStorageShape().GetDim(3);
+            if (tableShapeY > yBlockNumAligned_) {
+                OP_LOGE(bsaContext->GetNodeName(), "Sparse table width %ld must not exceed KV block count %u.",
+                    tableShapeY, yBlockNumAligned_);
+                return ge::GRAPH_FAILED;
+            }
+        }
         CalcMatmulPhaseL1TileInfo950();
         CalcWorkspaceTilingParams950(bsaContext);
     } else {

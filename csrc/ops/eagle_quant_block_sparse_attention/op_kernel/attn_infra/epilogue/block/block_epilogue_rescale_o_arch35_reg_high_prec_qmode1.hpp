@@ -38,7 +38,7 @@ template <LseMode Mode, class ElementS> struct QMode1RescaleOLseBuffers {};
 
 template <class ElementS> struct QMode1RescaleOLseBuffers<LseMode::OUT_ONLY, ElementS> {
     AscendC::LocalTensor<float> lseUbTensor32;
-    AscendC::LocalTensor<ElementS> gmUbTensor16;
+    AscendC::LocalTensor<ElementS> lseGmUbTensor16;
 };
 
 template <class ElementO_, class ElementOTmp_, class ElementS_, class TileCopy_, class OTmpSrcPos_, LseMode LSE_MODE_,
@@ -86,7 +86,13 @@ class BlockEpilogue<EpilogueAtlasA5BsaQMode1RescaleO<LSE_MODE_, LSE_FORMAT_, Q_I
             static_assert(LSE_UB_TENSOR_OFFSET + RESCALE_ROW_MAX_ELEM_NUM * LSE_UB_ROW_STRIDE * sizeof(float) <=
                 ArchTag::UB_SIZE);
             this->lseUbTensor32 = resource.ubBuf.template GetBufferByByte<float>(LSE_UB_TENSOR_OFFSET);
-            this->gmUbTensor16 = resource.ubBuf.template GetBufferByByte<SMDtype>(GM_UB_TENSOR_OFFSET);
+            if constexpr (DispatchPolicy::LSE_FORMAT == LseFormat::BNS1) {
+                constexpr uint32_t LSE_GM_OFFSET = LSE_UB_TENSOR_OFFSET + RESCALE_ROW_MAX_ELEM_NUM * sizeof(float);
+                static_assert(LSE_GM_OFFSET + RESCALE_ROW_MAX_ELEM_NUM * sizeof(SMDtype) <= ArchTag::UB_SIZE);
+                this->lseGmUbTensor16 = resource.ubBuf.template GetBufferByByte<SMDtype>(LSE_GM_OFFSET);
+            } else {
+                this->lseGmUbTensor16 = resource.ubBuf.template GetBufferByByte<SMDtype>(GM_UB_TENSOR_OFFSET);
+            }
         }
         for (uint32_t i = 0; i < UB_OTMP_BUF_STAGES; i++) {
             loUbTensor[i] =
@@ -101,6 +107,11 @@ class BlockEpilogue<EpilogueAtlasA5BsaQMode1RescaleO<LSE_MODE_, LSE_FORMAT_, Q_I
     }
 
     __aicore__ inline ~BlockEpilogue() {}
+
+    __aicore__ inline __ubuf__ SMDtype *GetBnsdLseGmUb() {
+        static_assert(DispatchPolicy::LSE_MODE == LseMode::OUT_ONLY && DispatchPolicy::LSE_FORMAT == LseFormat::BNS1);
+        return (__ubuf__ SMDtype *)this->lseGmUbTensor16.GetPhyAddr();
+    }
 
     template <class TensorO>
     __aicore__ inline void CopyUbToGmOutput(
@@ -250,7 +261,7 @@ class BlockEpilogue<EpilogueAtlasA5BsaQMode1RescaleO<LSE_MODE_, LSE_FORMAT_, Q_I
         SetCrossCoreSync<4, PIPE_V>(mm2ToReFlag);
         if (isLastKvSTile) {
             if constexpr (DispatchPolicy::LSE_MODE == LseMode::OUT_ONLY) {
-                __ubuf__ SMDtype *gmUb = (__ubuf__ SMDtype *)this->gmUbTensor16.GetPhyAddr();
+                __ubuf__ SMDtype *gmUb = (__ubuf__ SMDtype *)this->lseGmUbTensor16.GetPhyAddr();
                 __ubuf__ float *lseUb = (__ubuf__ float *)this->lseUbTensor32.GetPhyAddr();
                 uint32_t colNumLseUb = 0;
                 uint32_t colStrideLseUb = 0;
@@ -517,19 +528,18 @@ class BlockEpilogue<EpilogueAtlasA5BsaQMode1RescaleO<LSE_MODE_, LSE_FORMAT_, Q_I
         }
     }
 
-    // BNS1: gm has four FP16 copies per Query row, gl has two FP32 copies.
+    // BNS1: compact FP16 maxima and two identical FP32 sums per Query row.
     static __simd_vf__ inline void LogSumExpFuncQSAxisContinuous(
-        __ubuf__ SMDtype *gmUb, __ubuf__ float *glUb, __ubuf__ float *lseUb, uint32_t row) {
+        __ubuf__ SMDtype *lseGmUb, __ubuf__ float *glUb, __ubuf__ float *lseUb, uint32_t row) {
         if constexpr (DispatchPolicy::LSE_MODE == LseMode::OUT_ONLY && DispatchPolicy::LSE_FORMAT == LseFormat::BNS1) {
             using namespace AscendC::Reg;
-            RegTensor<SMDtype> gmVreg16, gmOddVreg16;
+            RegTensor<SMDtype> gmVreg16;
             RegTensor<float> gmVreg, glVreg, glOddVreg, logGlVreg, lseVreg;
             MaskReg pregRows = UpdateMask<float>(row);
             static constexpr CastTrait castTrait = {
                 RegLayout::ZERO, SatMode::UNKNOWN, MaskMergeMode::ZEROING, AscendC::RoundMode::UNKNOWN};
             static constexpr LnSpecificMode mode = {MaskMergeMode::ZEROING, AscendC::LnAlgo::PRECISION_1ULP_FTZ_FALSE};
-            // DINTLV keeps gm[2*j] in gmVreg16. The ZERO cast then selects gm[4*i].
-            LoadAlign<SMDtype, LoadDist::DIST_DINTLV_B16>(gmVreg16, gmOddVreg16, gmUb);
+            LoadAlign<SMDtype, LoadDist::DIST_UNPACK_B16>(gmVreg16, lseGmUb);
             Cast<float, SMDtype, castTrait>(gmVreg, gmVreg16, pregRows);
             LoadAlign<float, LoadDist::DIST_DINTLV_B32>(glVreg, glOddVreg, glUb);
             Ln<float, &mode>(logGlVreg, glVreg, pregRows);

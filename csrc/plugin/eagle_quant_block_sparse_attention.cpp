@@ -20,51 +20,82 @@
 using namespace at;
 
 namespace {
-// V2 kernel supports BF16/FP16/FP8 natively.
+// V2 kernel supports BF16/FP16/INT8/FP8/MXFP4.
 constexpr std::string_view EAGLE_QUANT_BLOCK_SPARSE_ATTENTION_NAME = "aclnnEagleQuantBlockSparseAttention";
 
 constexpr int64_t MASK_TYPE = 0; // no attention mask
 constexpr int64_t PRE_TOKENS = 2147483647; // full context window
 constexpr int64_t NEXT_TOKENS = 2147483647;
 
-inline at::ScalarType ResolveOutputDtype(const at::Tensor &query, const c10::optional<at::Tensor> &query_scale,
-    const c10::optional<at::ScalarType> &output_dtype)
-{
-    if (output_dtype.has_value()) {
-        return output_dtype.value();
-    }
-    // Quant path default: BF16. Non-quant: match query.
-    return query_scale.has_value() ? at::kBFloat16 : query.scalar_type();
+inline bool IsByteTensor(const at::Tensor &tensor) { return tensor.scalar_type() == at::ScalarType::Byte; }
+
+inline bool IsMxfp4Dtype(const c10::optional<int64_t> &dtype) {
+    return dtype.has_value() && dtype.value() == CANN_DTYPE_FLOAT4_E2M1;
 }
 
-// Validate optional *_dtype against tensor storage. INT8 (Char) storage is the
-// quant bitcast path (source/golden: value.view(int8) + value_dtype=fp8); the
-// logical FP8 dtype legitimately differs from int8 storage and its ScalarType
-// enum is not portable (torch_npu.float8_e4m3fn maps to different slots across
-// versions, e.g. prints as "UInt7"), so accept ANY hint on int8 tensors instead
-// of enumerating FP8 enums. *_dtype never reaches the kernel — the kernel derives
-// dtype from the tensor + tilingKey (DT_INT8 / DT_FLOAT8_E4M3FN V share one key).
-// Do NOT rewrite ACL dtype via TensorWrapper here — custom ACL_DTYPE_FLOAT8_*
-// values mismatch opdev and trigger "Key/Value datatype mismatch with query".
-inline void CheckOptionalInputDtype(const char *name, const at::Tensor &tensor,
-    const c10::optional<at::ScalarType> &dtype)
-{
-    if (!dtype.has_value() || dtype.value() == tensor.scalar_type() || tensor.scalar_type() == at::kChar) {
+inline void CheckQkvDtype(const char *name, const at::Tensor &tensor, const c10::optional<int64_t> &dtype) {
+    if (!IsByteTensor(tensor)) {
+        // Preserve dev's dtype hints for native storage and INT8 bitcast callers.
+        TORCH_CHECK(!IsMxfp4Dtype(dtype), name, " must be torch.uint8 for MXFP4.");
+        TORCH_CHECK(!dtype.has_value() || tensor.scalar_type() == at::kChar ||
+                dtype.value() == static_cast<int64_t>(tensor.scalar_type()),
+            "eagle_quant_block_sparse_attention: ", name, "_dtype is incompatible with tensor dtype.");
         return;
     }
-    TORCH_CHECK(false, "eagle_quant_block_sparse_attention: ", name, "_dtype (", dtype.value(),
-        ") is incompatible with tensor dtype (", tensor.scalar_type(), ")");
+    TORCH_CHECK(dtype.has_value(), name, "_dtype can not be None when ", name, " is torch.uint8.");
+    TORCH_CHECK(IsByteTensor(tensor), name, " must be torch.uint8 when ", name, "_dtype is specified.");
+    TORCH_CHECK(dtype.value() == CANN_DTYPE_FLOAT4_E2M1, name, "_dtype only supports torch_npu.float4_e2m1fn_x2.");
+}
+
+inline void CheckDequantScaleDtype(const char *name, const c10::optional<at::Tensor> &scale) {
+    if (!scale.has_value()) {
+        return;
+    }
+    TORCH_CHECK(
+        scale->scalar_type() == at::kFloat, "eagle_quant_block_sparse_attention: ", name, " must be torch.float32.");
+}
+
+static TensorWrapper MakeScaleWrapper(const at::Tensor &scale) {
+    if (scale.defined()) {
+        TORCH_CHECK(
+            scale.itemsize() == 1, "eagle_quant_block_sparse_attention: dtype scale must use one-byte E8M0 storage.");
+    }
+    return TensorWrapper{scale, ACL_DTYPE_FLOAT8_E8M0};
+}
+
+inline at::SmallVector<int64_t, 4> GetAttentionOutSize(
+    const at::Tensor &query, const c10::optional<int64_t> &queryDtype) {
+    at::SmallVector<int64_t, 4> outputSize;
+    for (const int64_t size : query.sizes()) {
+        outputSize.push_back(size);
+    }
+    if (IsMxfp4Dtype(queryDtype)) {
+        outputSize.back() *= FP4_IN_INT8;
+    }
+    return outputSize;
+}
+
+inline at::ScalarType GetAttentionOutDtype(const at::Tensor &query, const c10::optional<at::Tensor> &qDequantScale,
+    const c10::optional<at::ScalarType> &outputDtype) {
+    if (outputDtype.has_value()) {
+        TORCH_CHECK(outputDtype.value() == at::kHalf || outputDtype.value() == at::kBFloat16,
+            "output_dtype only supports torch.float16 or torch.bfloat16.");
+        return outputDtype.value();
+    }
+    return qDequantScale.has_value() ? at::kBFloat16 : query.scalar_type();
 }
 } // namespace
 
-std::tuple<at::Tensor, at::Tensor> eagle_quant_block_sparse_attention_impl_npu(const at::Tensor &query, const at::Tensor &key,
-    const at::Tensor &value, const c10::optional<at::Tensor> &block_sparse_mask, at::IntArrayRef block_shape,
-    std::string q_input_layout, std::string kv_input_layout, int64_t num_key_value_heads, double scale_value,
-    int64_t inner_precise, c10::OptionalIntArrayRef actual_seq_lengths, c10::OptionalIntArrayRef actual_seq_lengths_kv,
-    int64_t softmax_lse_flag, const c10::optional<at::Tensor> &query_scale,
-    const c10::optional<at::Tensor> &key_scale, const c10::optional<at::Tensor> &value_scale,
-    const c10::optional<at::ScalarType> &query_dtype, const c10::optional<at::ScalarType> &key_dtype,
-    const c10::optional<at::ScalarType> &value_dtype, const c10::optional<at::ScalarType> &output_dtype) {
+std::tuple<at::Tensor, at::Tensor> eagle_quant_block_sparse_attention_impl_npu(const at::Tensor &query,
+    const at::Tensor &key, const at::Tensor &value, const c10::optional<at::Tensor> &block_sparse_mask,
+    at::IntArrayRef block_shape, std::string q_input_layout, std::string kv_input_layout, int64_t num_key_value_heads,
+    double scale_value, int64_t inner_precise, c10::OptionalIntArrayRef actual_seq_lengths,
+    c10::OptionalIntArrayRef actual_seq_lengths_kv, int64_t softmax_lse_flag,
+    const c10::optional<at::Tensor> &query_scale, const c10::optional<at::Tensor> &key_scale,
+    const c10::optional<at::Tensor> &value_scale, const c10::optional<int64_t> &query_dtype,
+    const c10::optional<int64_t> &key_dtype, const c10::optional<int64_t> &value_dtype,
+    const c10::optional<at::ScalarType> &output_dtype, const c10::optional<at::Tensor> &query_dtype_scale,
+    const c10::optional<at::Tensor> &key_dtype_scale, const c10::optional<at::Tensor> &value_dtype_scale) {
     TORCH_CHECK(q_input_layout == "TND" || q_input_layout == "BNSD",
         "eagle_quant_block_sparse_attention: q_input_layout only supports 'TND' and 'BNSD', got ", q_input_layout);
     TORCH_CHECK(kv_input_layout == "TND" || kv_input_layout == "BNSD",
@@ -72,7 +103,24 @@ std::tuple<at::Tensor, at::Tensor> eagle_quant_block_sparse_attention_impl_npu(c
     TORCH_CHECK(q_input_layout == kv_input_layout,
         "eagle_quant_block_sparse_attention: q_input_layout and kv_input_layout must be consistent.");
     TORCH_CHECK(q_input_layout != "TND" || (actual_seq_lengths.has_value() && actual_seq_lengths_kv.has_value()),
-        "eagle_quant_block_sparse_attention: actual_seq_lengths and actual_seq_lengths_kv are required for TND layout.");
+        "eagle_quant_block_sparse_attention: actual_seq_lengths and actual_seq_lengths_kv are required for TND "
+        "layout.");
+    CheckQkvDtype("query", query, query_dtype);
+    CheckQkvDtype("key", key, key_dtype);
+    CheckQkvDtype("value", value, value_dtype);
+    const bool isMxfp4 = IsMxfp4Dtype(query_dtype) || IsMxfp4Dtype(key_dtype) || IsMxfp4Dtype(value_dtype);
+    TORCH_CHECK(!isMxfp4 || (IsMxfp4Dtype(query_dtype) && IsMxfp4Dtype(key_dtype) && IsMxfp4Dtype(value_dtype)),
+        "eagle_quant_block_sparse_attention: MXFP4 requires query/key/value dtype to all be "
+        "torch_npu.float4_e2m1fn_x2.");
+    TORCH_CHECK(
+        !isMxfp4 || (query_dtype_scale.has_value() && key_dtype_scale.has_value() && value_dtype_scale.has_value()),
+        "eagle_quant_block_sparse_attention: MXFP4 requires query/key/value dtype scales.");
+    TORCH_CHECK(!isMxfp4 || value_scale.has_value(), "eagle_quant_block_sparse_attention: MXFP4 requires value_scale.");
+    if (isMxfp4) {
+        CheckDequantScaleDtype("query_scale", query_scale);
+        CheckDequantScaleDtype("key_scale", key_scale);
+        CheckDequantScaleDtype("value_scale", value_scale);
+    }
 
     const char *qLayoutPtr = q_input_layout.c_str();
     const char *kvLayoutPtr = kv_input_layout.c_str();
@@ -93,9 +141,11 @@ std::tuple<at::Tensor, at::Tensor> eagle_quant_block_sparse_attention_impl_npu(c
     // blockSize=0: PagedAttention not supported.
     constexpr int64_t blockSize = 0;
 
-    auto outOptions = query.options().dtype(ResolveOutputDtype(query, query_scale, output_dtype));
-    at::Tensor attentionOut =
-        at_npu::native::empty_with_format(query.sizes(), outOptions, at_npu::native::get_npu_format(query));
+    // Quantized input defaults to BF16 for compatibility; callers may request FP16 or BF16 explicitly.
+    const auto &effectiveQueryScale = isMxfp4 ? query_dtype_scale : query_scale;
+    auto outOptions = query.options().dtype(GetAttentionOutDtype(query, effectiveQueryScale, output_dtype));
+    at::Tensor attentionOut = at_npu::native::empty_with_format(
+        GetAttentionOutSize(query, query_dtype), outOptions, at_npu::native::get_npu_format(query));
 
     // TND: [T, N, 1], BNSD: [B, N, S, 1]
     at::Tensor softmaxLse;
@@ -110,25 +160,46 @@ std::tuple<at::Tensor, at::Tensor> eagle_quant_block_sparse_attention_impl_npu(c
     c10::optional<at::Tensor> softmaxLseOpt =
         (softmax_lse_flag != 0) ? c10::optional<at::Tensor>(softmaxLse) : c10::nullopt;
 
-    CheckOptionalInputDtype("query", query, query_dtype);
-    CheckOptionalInputDtype("key", key, key_dtype);
-    CheckOptionalInputDtype("value", value, value_dtype);
+    const c10::optional<int64_t> noOverrideDtype = c10::nullopt;
+    // Only MXFP4 changes the ACL dtype; qmode1 keeps dev's native/INT8 storage.
+    auto queryWrapper = MakeTensorWrapper(query, isMxfp4 ? query_dtype : noOverrideDtype);
+    auto keyWrapper = MakeTensorWrapper(key, isMxfp4 ? key_dtype : noOverrideDtype);
+    auto valueWrapper = MakeTensorWrapper(value, isMxfp4 ? value_dtype : noOverrideDtype);
+    const at::Tensor queryScaleTensor =
+        isMxfp4 ? query_dtype_scale.value_or(at::Tensor()) : query_scale.value_or(at::Tensor());
+    const at::Tensor keyScaleTensor =
+        isMxfp4 ? key_dtype_scale.value_or(at::Tensor()) : key_scale.value_or(at::Tensor());
+    const at::Tensor valueScaleTensor =
+        isMxfp4 ? value_dtype_scale.value_or(at::Tensor()) : value_scale.value_or(at::Tensor());
+    auto queryScaleWrapper =
+        isMxfp4 ? MakeScaleWrapper(queryScaleTensor) : MakeTensorWrapper(queryScaleTensor, noOverrideDtype);
+    auto keyScaleWrapper =
+        isMxfp4 ? MakeScaleWrapper(keyScaleTensor) : MakeTensorWrapper(keyScaleTensor, noOverrideDtype);
+    auto valueScaleWrapper =
+        isMxfp4 ? MakeScaleWrapper(valueScaleTensor) : MakeTensorWrapper(valueScaleTensor, noOverrideDtype);
 
-    // Pass storage tensors as-is (same as pre-interface-fix path that passed
-    // CheckDataType). query/key/value_dtype are API-compatible validators for
-    // bitcast callers; output_dtype selects attentionOut allocation dtype.
-    // query/key/value_scale inserted after blockTableOptional.
+    const at::Tensor qLevel0ScaleTensor = isMxfp4 ? query_scale.value_or(at::Tensor()) : at::Tensor();
+    const at::Tensor kLevel0ScaleTensor = isMxfp4 ? key_scale.value_or(at::Tensor()) : at::Tensor();
+    const at::Tensor vLevel0ScaleTensor = isMxfp4 ? value_scale.value_or(at::Tensor()) : at::Tensor();
+    auto qLevel0ScaleWrapper = MakeTensorWrapper(qLevel0ScaleTensor, noOverrideDtype);
+    auto kLevel0ScaleWrapper = MakeTensorWrapper(kLevel0ScaleTensor, noOverrideDtype);
+    auto vLevel0ScaleWrapper = MakeTensorWrapper(vLevel0ScaleTensor, noOverrideDtype);
+
+    // V2 API: query/key/value_scale inserted after blockTableOptional.
     // BF16/FP16 path: pass nulltensor (nullptr) for all three scales.
-    // Quant path: pass FLOAT32 scale tensors for Q/K/V (OpDef valueScale is DT_FLOAT).
-    EXEC_NPU_CMD<EAGLE_QUANT_BLOCK_SPARSE_ATTENTION_NAME>(query, key, value, block_sparse_mask,
+    // Quantized paths pass their scale tensors; MXFP4 dtype scales are wrapped as FLOAT8_E8M0.
+    EXEC_NPU_CMD<EAGLE_QUANT_BLOCK_SPARSE_ATTENTION_NAME>(queryWrapper, keyWrapper, valueWrapper, block_sparse_mask,
         nulltensor, // attenMaskOptional (nullptr)
         block_shape,
         optSeqLen, // nullptr when not set
         optSeqLenKv, // nullptr when not set
         nulltensor, // blockTableOptional (nullptr)
-        query_scale, // nullptr for BF16/FP16, FLOAT32 for quant
-        key_scale, // nullptr for BF16/FP16, FLOAT32 for quant
-        value_scale, // nullptr for BF16/FP16, FLOAT32 for quant
+        queryScaleWrapper, // qmode1 dequant scale or MXFP4 dtype scale
+        keyScaleWrapper, // qmode1 dequant scale or MXFP4 dtype scale
+        valueScaleWrapper, // qmode1 dequant scale or MXFP4 dtype scale
+        qLevel0ScaleWrapper, // nullptr or FLOAT32 level0 scale
+        kLevel0ScaleWrapper, // nullptr or FLOAT32 level0 scale
+        vLevel0ScaleWrapper, // nullptr or FLOAT32 level0 scale
         qLayoutPtr, kvLayoutPtr, num_key_value_heads, MASK_TYPE, scale_value, inner_precise, blockSize, PRE_TOKENS,
         NEXT_TOKENS, softmax_lse_flag, attentionOut,
         softmaxLseOpt); // nullptr when flag=0

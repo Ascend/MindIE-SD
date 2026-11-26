@@ -1,12 +1,12 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
- * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
- * CANN Open Software License Agreement Version 2.0 (the "License").
- * Please refer to the License for details. You may not use this file except in compliance with the License.
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
- * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
- * See LICENSE in the root of the software repository for the full text of the License.
- */
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
 
 /**
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
@@ -28,6 +28,7 @@
 #include "../../../attn_infra/epilogue/dispatch_policy.hpp"
 #include "../../../attn_infra/gemm_coord.hpp"
 #include "../../../attn_infra/matrix_coord.hpp"
+#include "./vf/vf_mask2idx.h"
 
 namespace NpuArch::Epilogue::Block {
 
@@ -41,32 +42,31 @@ class BlockEpilogue<EpilogueBsaMask2Idx, ElementSparseMask_, ElementSparseIdx_, 
     using ElementSparseCount = ElementSparseCount_;
 
     static constexpr uint32_t IO_STAGES = DispatchPolicy::IO_STAGES;
-    static constexpr uint32_t PRE_ROW_TILE = 128;
-    static constexpr uint32_t PRE_COL_TILE = 64;
-    static constexpr uint32_t PRE_ELEM_NUM_PER_LOOP = PRE_ROW_TILE * PRE_COL_TILE;
+    static constexpr uint32_t MAX_Y_BLOCK_NUM_ALIGNED = 16384;
+    static constexpr uint32_t VL_U32 = Mask2IdxApi::VL_U32;
+    static constexpr uint32_t SEG_COUNT_UB_BLOCK = 128U;
+    static constexpr uint32_t ACCUM_COUNT_UB_BLOCK = 128U;
+    static_assert(IO_STAGES == 2, "mask2idx requires two pipeline buffers");
 
     __aicore__ inline BlockEpilogue(Arch::Resource<ArchTag> &resource) {
-        constexpr uint32_t MASK_PAT_IN_UINT8 = 0;
-        constexpr uint32_t MASK_PAT_IN_FP16 = 2 * PRE_ELEM_NUM_PER_LOOP;
-        constexpr uint32_t MASK_PAT_IN_FP32 = 4 * PRE_ELEM_NUM_PER_LOOP; // 2(db)+2
-        constexpr uint32_t MASK_PAT_IN_BIT = 8 * PRE_ELEM_NUM_PER_LOOP; // 1+2+4
-        constexpr uint32_t MASK_IDX = 9 * PRE_ELEM_NUM_PER_LOOP; // 1+2+4+1
-        constexpr uint32_t RSVD_SPARSE_IDX = 13 * PRE_ELEM_NUM_PER_LOOP; // 1+2+4+1+4
-        constexpr uint32_t RSVD_SPARSE_COUNT = 21 * PRE_ELEM_NUM_PER_LOOP; // 1+2+4+1+4+8(db)
+        constexpr uint32_t MASK_UB_OFF = 0;
+        constexpr uint32_t IDX_I32_UB_OFF = MASK_UB_OFF + 2U * MAX_Y_BLOCK_NUM_ALIGNED;
+        constexpr uint32_t SEG_CNT_UB_OFF = IDX_I32_UB_OFF + 2U * 4U * MAX_Y_BLOCK_NUM_ALIGNED;
+        constexpr uint32_t ACCUM_CNT_UB_OFF = SEG_CNT_UB_OFF + 2U * SEG_COUNT_UB_BLOCK;
+
+        static_assert(
+            ACCUM_CNT_UB_OFF + IO_STAGES * ACCUM_COUNT_UB_BLOCK <= ArchTag::UB_SIZE, "mask2idx buffers must fit in UB");
 
         for (uint32_t i = 0; i < IO_STAGES; i++) {
-            maskPatUb8[i] = resource.ubBuf.template GetBufferByByte<ElementSparseMask>(
-                MASK_PAT_IN_UINT8 + i * PRE_ELEM_NUM_PER_LOOP * sizeof(ElementSparseMask));
-            sparseIdxUb[i] = resource.ubBuf.template GetBufferByByte<ElementSparseIdx>(
-                RSVD_SPARSE_IDX + i * PRE_ELEM_NUM_PER_LOOP * sizeof(ElementSparseIdx));
-            sparseCountUb[i] = resource.ubBuf.template GetBufferByByte<ElementSparseCount>(
-                RSVD_SPARSE_COUNT + i * PRE_ROW_TILE * sizeof(ElementSparseCount));
+            maskUb8[i] =
+                resource.ubBuf.template GetBufferByByte<ElementSparseMask>(MASK_UB_OFF + i * MAX_Y_BLOCK_NUM_ALIGNED);
+            idxUbI32[i] = resource.ubBuf.template GetBufferByByte<ElementSparseIdx>(
+                IDX_I32_UB_OFF + i * 4U * MAX_Y_BLOCK_NUM_ALIGNED);
+            segCountUb[i] =
+                resource.ubBuf.template GetBufferByByte<ElementSparseCount>(SEG_CNT_UB_OFF + i * SEG_COUNT_UB_BLOCK);
+            countAccumUb[i] = resource.ubBuf.template GetBufferByByte<ElementSparseCount>(
+                ACCUM_CNT_UB_OFF + i * ACCUM_COUNT_UB_BLOCK);
         }
-        maskPatUb16 = resource.ubBuf.template GetBufferByByte<half>(MASK_PAT_IN_FP16);
-        maskPatUb32 = resource.ubBuf.template GetBufferByByte<float>(MASK_PAT_IN_FP32);
-        maskPatInBitUb8 = resource.ubBuf.template GetBufferByByte<uint8_t>(MASK_PAT_IN_BIT);
-        maskPatInBitUb32 = resource.ubBuf.template GetBufferByByte<uint32_t>(MASK_PAT_IN_BIT);
-        maskIdxUb = resource.ubBuf.template GetBufferByByte<ElementSparseIdx>(MASK_IDX);
     }
 
     __aicore__ inline void operator()(AscendC::GlobalTensor<ElementSparseMask> gSparseMask,
@@ -78,102 +78,143 @@ class BlockEpilogue<EpilogueBsaMask2Idx, ElementSparseMask_, ElementSparseIdx_, 
         uint32_t actDealtRow =
             (subCoreIdx == preActiveSubCoreNum - 1) ? (totalRowNumBlockMask - curSubCoreRowOffset) : avgRowPerSubCore;
 
-        if (subCoreIdx < preActiveSubCoreNum) {
-            uint32_t rowLoop = CeilDiv(actDealtRow, PRE_ROW_TILE);
-            uint32_t colLoop = CeilDiv(yBlockNumAligned, PRE_COL_TILE);
-            uint32_t IdxPingPongFlag = 0;
-            uint32_t CountPingPongFlag = 0;
-            for (uint32_t i = 0; i < rowLoop; i++) {
-                uint32_t curLoopRowOffset = i * PRE_ROW_TILE;
-                uint32_t globalRowOffset = curSubCoreRowOffset + curLoopRowOffset;
-                uint32_t actDealtRowCurLoop = (i == rowLoop - 1) ? (actDealtRow - curLoopRowOffset) : PRE_ROW_TILE;
-
-                uint64_t rsvdCountPerRow[PRE_ROW_TILE] = {0};
-                uint64_t rsvdCountPerRowCurColLoop[PRE_ROW_TILE] = {0};
-                for (uint32_t j = 0; j < colLoop; j++) {
-                    uint32_t curLoopColOffset = j * PRE_COL_TILE;
-                    uint32_t actDealtColCurLoop =
-                        (j == colLoop - 1) ? (yBlockNumAligned - curLoopColOffset) : PRE_COL_TILE;
-                    uint32_t actDealtColCurLoop32 = CeilDiv(actDealtColCurLoop, 32) * 32;
-                    AscendC::CreateVecIndex(maskIdxUb, static_cast<int32_t>(curLoopColOffset), actDealtColCurLoop);
-                    AscendC::PipeBarrier<PIPE_V>();
-                    AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(IdxPingPongFlag);
-                    AscendC::DataCopyPad(maskPatUb8[IdxPingPongFlag],
-                        gSparseMask[globalRowOffset * yBlockNumAligned + curLoopColOffset],
-                        AscendC::DataCopyExtParams(actDealtRowCurLoop, actDealtColCurLoop * sizeof(ElementSparseMask),
-                            (yBlockNumAligned - actDealtColCurLoop) * sizeof(ElementSparseMask), 0, 0),
-                        AscendC::DataCopyPadExtParams<ElementSparseMask>(
-                            true, 0, (actDealtColCurLoop32 - actDealtColCurLoop), 0));
-                    AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(0);
-                    AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(0);
-                    AscendC::Cast(maskPatUb16, maskPatUb8[IdxPingPongFlag], AscendC::RoundMode::CAST_NONE,
-                        actDealtRowCurLoop * actDealtColCurLoop32);
-                    AscendC::PipeBarrier<PIPE_V>();
-                    AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(IdxPingPongFlag);
-
-                    AscendC::Cast(maskPatUb32, maskPatUb16, AscendC::RoundMode::CAST_NONE,
-                        actDealtRowCurLoop * actDealtColCurLoop32);
-                    AscendC::PipeBarrier<PIPE_V>();
-                    for (uint32_t k = 0; k < actDealtRowCurLoop; k++) {
-                        AscendC::CompareScalar(maskPatInBitUb8[k * PRE_COL_TILE], maskPatUb32[k * actDealtColCurLoop32],
-                            static_cast<float>(1.0), AscendC::CMPMODE::GE, actDealtColCurLoop);
-                        AscendC::PipeBarrier<PIPE_V>();
-                        if (k == 0) {
-                            AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(IdxPingPongFlag);
-                        }
-                        AscendC::GatherMask(sparseIdxUb[IdxPingPongFlag][k * PRE_COL_TILE], maskIdxUb,
-                            maskPatInBitUb32[k * PRE_COL_TILE / 4], true, actDealtColCurLoop, {1, 1, 0, 0},
-                            rsvdCountPerRowCurColLoop[k]);
-                        AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(0);
-
-                        AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(0);
-                        if (k == 0) {
-                            AscendC::WaitFlag<AscendC::HardEvent::S_MTE3>(0);
-                        }
-                        AscendC::DataCopyPad(
-                            gSparseIdx[globalRowOffset * yBlockNumAligned + k * yBlockNumAligned + rsvdCountPerRow[k]],
-                            sparseIdxUb[IdxPingPongFlag][k * PRE_COL_TILE],
-                            AscendC::DataCopyExtParams(
-                                1, rsvdCountPerRowCurColLoop[k] * sizeof(ElementSparseIdx), 0, 0, 0));
-                        if (k == actDealtRowCurLoop - 1) {
-                            AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(IdxPingPongFlag);
-                        }
-                        AscendC::SetFlag<AscendC::HardEvent::MTE3_S>(0);
-
-                        AscendC::WaitFlag<AscendC::HardEvent::MTE3_S>(0);
-                        rsvdCountPerRow[k] += rsvdCountPerRowCurColLoop[k];
-                        if (k == actDealtRowCurLoop - 1) {
-                            AscendC::SetFlag<AscendC::HardEvent::S_MTE3>(0);
-                        }
-                    }
-                    IdxPingPongFlag = 1 - IdxPingPongFlag;
-                }
-                AscendC::WaitFlag<AscendC::HardEvent::MTE3_S>(CountPingPongFlag);
-                for (uint32_t k = 0; k < actDealtRowCurLoop; k++) {
-                    sparseCountUb[CountPingPongFlag].SetValue(k, static_cast<int32_t>(rsvdCountPerRow[k]));
-                }
-                AscendC::SetFlag<AscendC::HardEvent::S_MTE3>(CountPingPongFlag + 2);
-                AscendC::WaitFlag<AscendC::HardEvent::S_MTE3>(CountPingPongFlag + 2);
-                AscendC::DataCopyPad(gSparseCount[globalRowOffset], sparseCountUb[CountPingPongFlag],
-                    AscendC::DataCopyExtParams(1, actDealtRowCurLoop * sizeof(ElementSparseCount), 0, 0, 0));
-                AscendC::SetFlag<AscendC::HardEvent::MTE3_S>(CountPingPongFlag);
-
-                CountPingPongFlag = 1 - CountPingPongFlag;
-            }
+        if (subCoreIdx >= preActiveSubCoreNum) {
+            return;
         }
+
+        uint32_t segmentSize = MAX_Y_BLOCK_NUM_ALIGNED;
+        uint32_t segmentLoop = CeilDiv(yBlockNumAligned, segmentSize);
+        uint32_t rowStrideU8 = CeilDiv(segmentSize, VL_U32) * VL_U32;
+        uint32_t R = 1;
+        if (segmentSize <= 128U) {
+            R = 32;
+        } else if (segmentSize <= 256U) {
+            R = 16;
+        } else if (segmentSize <= 512U) {
+            R = 8;
+        } else {
+            R = 4;
+        }
+        while (R > 1 && R * rowStrideU8 > MAX_Y_BLOCK_NUM_ALIGNED) {
+            R >>= 1;
+        }
+
+        uint32_t batchLoop = CeilDiv(actDealtRow, R);
+        uint32_t totalTasks = batchLoop * segmentLoop;
+
+        if (totalTasks == 0) {
+            return;
+        }
+
+        // 1. Prologue: 提前预取第 0 个任务数据到 buffer 0
+        {
+            uint32_t actRowCur0 = (batchLoop == 1) ? actDealtRow : R;
+            uint32_t globalRowOffset0 = curSubCoreRowOffset;
+            uint32_t segStart0 = 0;
+            uint32_t segCols0 = (yBlockNumAligned < segmentSize) ? yBlockNumAligned : segmentSize;
+            uint32_t segRowStrideU8_0 = CeilDiv(segCols0, VL_U32) * VL_U32;
+
+            AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(0);
+            AscendC::DataCopyPad(maskUb8[0], gSparseMask[globalRowOffset0 * yBlockNumAligned + segStart0],
+                AscendC::DataCopyExtParams(actRowCur0, segCols0 * sizeof(ElementSparseMask),
+                    (yBlockNumAligned - segCols0) * sizeof(ElementSparseMask), 0, 0),
+                AscendC::DataCopyPadExtParams<ElementSparseMask>(true, 0,
+                    static_cast<uint8_t>((segRowStrideU8_0 - segCols0 > 32U) ? 32U : (segRowStrideU8_0 - segCols0)),
+                    0));
+            AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(0);
+        }
+
+        // 2. 主流水循环：当前任务计算/写回与下一任务数据搬入异步重叠
+        for (uint32_t task = 0; task < totalTasks; task++) {
+            uint32_t pp = task % 2;
+            uint32_t next_pp = 1 - pp;
+
+            uint32_t b = task / segmentLoop;
+            uint32_t seg = task % segmentLoop;
+            uint32_t curBatchRowOffset = b * R;
+            uint32_t actRowCur = (b == batchLoop - 1) ? (actDealtRow - curBatchRowOffset) : R;
+            uint32_t globalRowOffset = curSubCoreRowOffset + curBatchRowOffset;
+            uint32_t segStart = seg * segmentSize;
+            uint32_t segCols =
+                (yBlockNumAligned - segStart < segmentSize) ? (yBlockNumAligned - segStart) : segmentSize;
+            uint32_t segRowStrideU8 = CeilDiv(segCols, VL_U32) * VL_U32;
+            uint32_t segRowStrideI32Elems = segRowStrideU8;
+
+            // 预取下一轮任务 (task + 1) 到 next_pp buffer
+            if (task + 1 < totalTasks) {
+                uint32_t next_task = task + 1;
+                uint32_t next_b = next_task / segmentLoop;
+                uint32_t next_seg = next_task % segmentLoop;
+                uint32_t next_curBatchRowOffset = next_b * R;
+                uint32_t next_actRowCur = (next_b == batchLoop - 1) ? (actDealtRow - next_curBatchRowOffset) : R;
+                uint32_t next_globalRowOffset = curSubCoreRowOffset + next_curBatchRowOffset;
+                uint32_t next_segStart = next_seg * segmentSize;
+                uint32_t next_segCols =
+                    (yBlockNumAligned - next_segStart < segmentSize) ? (yBlockNumAligned - next_segStart) : segmentSize;
+                uint32_t next_segRowStrideU8 = CeilDiv(next_segCols, VL_U32) * VL_U32;
+
+                AscendC::WaitFlag<AscendC::HardEvent::V_MTE2>(next_pp);
+                AscendC::DataCopyPad(maskUb8[next_pp],
+                    gSparseMask[next_globalRowOffset * yBlockNumAligned + next_segStart],
+                    AscendC::DataCopyExtParams(next_actRowCur, next_segCols * sizeof(ElementSparseMask),
+                        (yBlockNumAligned - next_segCols) * sizeof(ElementSparseMask), 0, 0),
+                    AscendC::DataCopyPadExtParams<ElementSparseMask>(true, 0,
+                        static_cast<uint8_t>(
+                            (next_segRowStrideU8 - next_segCols > 32U) ? 32U : (next_segRowStrideU8 - next_segCols)),
+                        0));
+                AscendC::SetFlag<AscendC::HardEvent::MTE2_V>(next_pp);
+            }
+
+            // 当前任务在 buffer pp 上执行计算
+            AscendC::WaitFlag<AscendC::HardEvent::MTE2_V>(pp);
+            AscendC::WaitFlag<AscendC::HardEvent::MTE3_V>(pp);
+
+            Mask2IdxApi::Mask2IdxRowVF<int32_t>((__ubuf__ int32_t *)idxUbI32[pp].GetPhyAddr(),
+                (__ubuf__ int32_t *)((segmentLoop == 1) ? countAccumUb[pp].GetPhyAddr() : segCountUb[pp].GetPhyAddr()),
+                (__ubuf__ uint8_t *)maskUb8[pp].GetPhyAddr(), (__ubuf__ int32_t *)countAccumUb[pp].GetPhyAddr(),
+                (__ubuf__ int32_t *)countAccumUb[1 - pp].GetPhyAddr(), segCols, segStart, actRowCur,
+                segRowStrideI32Elems, segRowStrideU8, segmentLoop, seg);
+
+            AscendC::SetFlag<AscendC::HardEvent::V_MTE2>(pp);
+            AscendC::SetFlag<AscendC::HardEvent::V_MTE3>(pp);
+
+            // 当前任务在 buffer pp 上写回 GM
+            AscendC::WaitFlag<AscendC::HardEvent::V_MTE3>(pp);
+
+            if (segmentLoop == 1) {
+                AscendC::DataCopyPad(gSparseIdx[globalRowOffset * yBlockNumAligned], idxUbI32[pp],
+                    AscendC::DataCopyExtParams(static_cast<uint16_t>(actRowCur),
+                        yBlockNumAligned * sizeof(ElementSparseIdx), (segRowStrideI32Elems - yBlockNumAligned) / 8U, 0,
+                        0));
+                AscendC::DataCopyPad(gSparseCount[globalRowOffset], countAccumUb[pp],
+                    AscendC::DataCopyExtParams(1, actRowCur * sizeof(ElementSparseCount), 0, 0, 0));
+            } else {
+                AscendC::SetFlag<AscendC::HardEvent::V_S>(pp);
+                AscendC::WaitFlag<AscendC::HardEvent::V_S>(pp);
+                uint32_t segCount = static_cast<uint32_t>(segCountUb[pp].GetValue(0));
+                uint32_t accumAfter = static_cast<uint32_t>(countAccumUb[pp].GetValue(0));
+                uint32_t gmOffset = accumAfter - segCount;
+                if (segCount > 0) {
+                    AscendC::DataCopyPad(gSparseIdx[globalRowOffset * yBlockNumAligned + gmOffset], idxUbI32[pp],
+                        AscendC::DataCopyExtParams(1, segCount * sizeof(ElementSparseIdx), 0, 0, 0));
+                }
+
+                if (seg == segmentLoop - 1) {
+                    AscendC::DataCopyPad(gSparseCount[globalRowOffset], countAccumUb[pp],
+                        AscendC::DataCopyExtParams(1, sizeof(ElementSparseCount), 0, 0, 0));
+                }
+            }
+            AscendC::SetFlag<AscendC::HardEvent::MTE3_V>(pp);
+        }
+
+        // 3. 收尾同步
     }
 
   private:
-    AscendC::LocalTensor<uint8_t> maskPatUb8[IO_STAGES];
-    AscendC::LocalTensor<int32_t> sparseCountUb[IO_STAGES];
-    AscendC::LocalTensor<uint8_t> maskPatInBitUb8;
-    AscendC::LocalTensor<uint32_t> maskPatInBitUb32;
-
-    AscendC::LocalTensor<int32_t> maskIdxUb;
-    AscendC::LocalTensor<int32_t> sparseIdxUb[IO_STAGES];
-    AscendC::LocalTensor<half> maskPatUb16;
-    AscendC::LocalTensor<float> maskPatUb32;
+    AscendC::LocalTensor<ElementSparseMask> maskUb8[IO_STAGES];
+    AscendC::LocalTensor<ElementSparseIdx> idxUbI32[IO_STAGES];
+    AscendC::LocalTensor<ElementSparseCount> segCountUb[IO_STAGES];
+    AscendC::LocalTensor<ElementSparseCount> countAccumUb[IO_STAGES];
 };
-
 } // namespace NpuArch::Epilogue::Block
-#endif
+#endif // EPILOGUE_BLOCK_BLOCK_EPILOGUE_MASK2IDX_ARCH35
