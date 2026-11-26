@@ -142,7 +142,7 @@ def _patch_dynamo_triton_device_probes() -> None:
             target()
         except Exception:  # noqa: BLE001
             setattr(module, name, lambda: False)
-            logger.info(
+            logger.debug(
                 "[MindIE-SD/compilation] patched %s.%s to False on this NPU env. "
                 "issue=device capability probe raised (cuda properties unavailable); "
                 "impact=disables triton/TMA host-side paths only, compilation unaffected.",
@@ -222,7 +222,7 @@ def _restore_native_getenv() -> None:
         restored = os.environ.get
 
     os.getenv = restored
-    logger.info(
+    logger.debug(
         "[MindIE-SD/compilation] restored native os.getenv (was torch_npu patch_getenv wrapper). "
         "issue=patched getenv logs every env read and Dynamo graph-breaks on the logger call in "
         "traced code; impact=env reads inside traced regions no longer fragment the graph."
