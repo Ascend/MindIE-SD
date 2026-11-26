@@ -130,7 +130,9 @@ def producer(monkeypatch):
             spans=[{"start": 4, "latent_shape": [1, 8, 16]}],
         )
         mapping = loaded["attention_reorder_mapping"].get_attention_reorder_mapping(config, torch.device("cpu"))
-        state = loaded["state"].ParallelState(group=group, optimize_attention_pipeline=optimize, bsa_backend=backend)
+        state = loaded["state"].ParallelState(
+            quantized_comm=True, group=group, optimize_attention_pipeline=optimize, bsa_backend=backend
+        )
         chain_type = loaded["pipeline"].Chain if "pipeline" in loaded else loaded["mixed_producer"].MixedProducer
         return chain_type(
             mapping,

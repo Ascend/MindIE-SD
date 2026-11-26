@@ -7,22 +7,32 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
+"""Distributed attention with caller-owned state and lazy compatibility imports."""
 
-"""Distributed attention with caller-owned process state."""
-
-# pylint: disable=cyclic-import  # public package exports the entry that imports private pipeline modules
+# pylint: disable=cyclic-import  # public package exports entries that import private pipeline modules
 
 from .distributed_flex_attention import distributed_flex_attention
 from .distributed_sparse_attention import distributed_sparse_attention
-from .qkv_layout import QKVLayoutPlan, plan_qkv_layout
 from .state import ParallelState
 
 __all__ = [
     "distributed_flex_attention",
     "distributed_sparse_attention",
     "ParallelState",
-    "QKVLayoutPlan",
-    "plan_qkv_layout",
 ]
-
 __version__ = "0.2.0"
+
+
+def __getattr__(name):
+    # Preserve existing direct imports without expanding the public API.
+    modules = {
+        "QKVLayoutPlan": "qkv_layout",
+        "plan_qkv_layout": "qkv_layout",
+        "create_ulysses_kv_gather_groups": "hybrid_sparse_attention",
+        "create_sparse_parallel_groups": "hybrid_sparse_attention",
+    }
+    if name not in modules:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    from importlib import import_module
+
+    return getattr(import_module(f"{__name__}.{modules[name]}"), name)

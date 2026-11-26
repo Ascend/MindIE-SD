@@ -23,7 +23,12 @@ from . import distributed_quant as _q
 class BF16Primitives:
     """Mixin that owns BF16 RF buffers, masks and native operator calls."""
 
-    def _init_bf16(self):
+    __slots__ = ()
+
+    # The concrete Chain supplies this diagnostic field through MixedProducer.
+    last_separate_qk_pool_calls: int
+
+    def _init_bf16(self, *, cache_protected_mask=True):
         mapping = self.reorder_mapping
         _q.check_sendable(
             (mapping.bs, mapping.s_local, mapping.hc, mapping.hs),
@@ -34,7 +39,7 @@ class BF16Primitives:
             return
         parameters = inspect.signature(_layers.get_multi_span_blockwise_mask).parameters
         accepts_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters.values())
-        required = {"retained_idx"}
+        required = {"retained_idx", "pool_parts"}
         if self.sparse_type == "rf_v3":
             required.update(("retained_mask", "pool_parts"))
         if not required.issubset(parameters) and not accepts_kwargs:
@@ -48,7 +53,7 @@ class BF16Primitives:
             dtype=torch.long,
             device=mapping.reordered_position_to_token.device,
         )
-        if self.sparse_type == "rf_v3":
+        if self.sparse_type == "rf_v3" and cache_protected_mask:
             # The complete cached protection mask replaces retained row/column index writes.
             cells = (mapping.used_len + _q.POOL_BLOCK - 1) // _q.POOL_BLOCK
             protected = torch.zeros(
@@ -70,37 +75,30 @@ class BF16Primitives:
     def _prepare_bf16_tensors(self, tensors):
         """Apply the same RF reorder/pool contract to serial-wide and ready-head inputs."""
         mapping = self.reorder_mapping
-        if self.sparse_type == "rf_v3":
+        if self.optimize_attention_pipeline:
             return self._prepare_bf16_v3(tensors)
-        tensors = [tensor.index_select(1, mapping.reordered_position_to_token) for tensor in tensors]
+        if not getattr(self, "pre_rearranged", False):
+            tensors = [tensor.index_select(1, mapping.reordered_position_to_token) for tensor in tensors]
         pooled = _layers.avgpool(torch.cat(tensors, dim=0), _q.POOL_BLOCK, "BSND")
         return tensors, pooled
 
     def _prepare_bf16_v3(self, tensors):
         """Gather Q/K/V together and pool only the Q/K batches used for ranking."""
         mapping = self.reorder_mapping
-        if not self.optimize_attention_pipeline:
-            if not getattr(self, "pre_rearranged", False):
-                tensors = [value.index_select(1, mapping.reordered_position_to_token) for value in tensors]
-            return tensors, _layers.avgpool(torch.cat(tensors, dim=0), _q.POOL_BLOCK, "BSND")
-        if getattr(self, "pre_rearranged", False):
-            if tensors[0].device.type == "npu":
-                pooled = _layers.pool_qk_separately(tensors[0], tensors[1], _q.POOL_BLOCK, "BSND")
-                self.last_separate_qk_pool_calls += 1
-            else:
-                pooled = _layers.avgpool(torch.cat(tensors[:2], dim=0), _q.POOL_BLOCK, "BSND")
-            return tensors, pooled
-        reordered = torch.cat(tensors, dim=0).index_select(1, mapping.reordered_position_to_token)
-        pooled = _layers.avgpool(reordered[: 2 * mapping.bs], _q.POOL_BLOCK, "BSND")
-        return torch.chunk(reordered, 3, dim=0), pooled
+        if not getattr(self, "pre_rearranged", False):
+            reordered = torch.cat(tensors, dim=0).index_select(1, mapping.reordered_position_to_token)
+            tensors = torch.chunk(reordered, 3, dim=0)
+        pooled = _layers.pool_qk_separately(tensors[0], tensors[1], _q.POOL_BLOCK, "BSND")
+        self.last_separate_qk_pool_calls += 1
+        return tensors, pooled
 
     def _make_bf16_sparse_mask(self, pooled, *, scale, sparsity):
         """Build the selected backend's mask from the same RF ranking."""
         mapping = self.reorder_mapping
         if self.optimize_attention_pipeline:
-            kwargs = {"retained_idx": self.retained_blocks["bf16_indices"]}
+            kwargs = {"retained_idx": self.retained_blocks["bf16_indices"], "pool_parts": 2}
             if self.sparse_type == "rf_v3":
-                kwargs.update(retained_mask=self.retained_blocks["bf16_protected_mask"], pool_parts=2)
+                kwargs["retained_mask"] = self.retained_blocks["bf16_protected_mask"]
         else:
             kwargs = {"async_index_transfer": False}
         return _layers.get_multi_span_blockwise_mask(
@@ -125,19 +123,24 @@ class BF16Primitives:
         )
 
     def _compute_bf16_head(self, tensors, mask, out_dst, *, scale, inner_precise):
-        """Run BF16 and write the caller's sequence order into the reverse buffer."""
+        """Run the selected BSA and write the caller's sequence order into the reverse buffer."""
         mapping = self.reorder_mapping
-        if self.sparse_type == "rf_v3":
+        options = dict(
+            block_sparse_mask=mask,
+            scale_value=scale,
+            inner_precise=inner_precise,
+            actual_seq_lengths=[mapping.used_len] * mapping.bs,
+            actual_seq_lengths_kv=[mapping.used_len] * mapping.bs,
+        )
+        if self.precision in ("mix", "mxfp8"):
+            output = _layers.run_bf16_bsa(self.precision, tensors, options)
+        elif self.sparse_type == "rf_v3":
             output = _layers.bf16_block_sparse_attention(
-                bsa_backend=self.state.bsa_backend,
+                bsa_backend=self.state.bsa_backend or "eagle",
                 query=tensors[0],
                 key=tensors[1],
                 value=tensors[2],
-                block_sparse_mask=mask,
-                scale_value=scale,
-                inner_precise=inner_precise,
-                actual_seq_lengths=[mapping.used_len] * mapping.bs,
-                actual_seq_lengths_kv=[mapping.used_len] * mapping.bs,
+                **options,
             )
         else:
             indices, selected_counts = mask

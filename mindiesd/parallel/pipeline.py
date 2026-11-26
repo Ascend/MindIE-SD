@@ -98,15 +98,16 @@ def _can_use_head_major_qkv(
 class Chain(MixedProducer, BF16Primitives):
     """Combine producer, native BF16 primitives and collective scheduling."""
 
-    __slots__ = ()
+    __slots__ = ("_kv_gather_buffer_cache",)
 
     def __init__(self, reorder_mapping, *, state, precision="mix", sparse_type="rf_v3", pre_rearranged=False):
         # Initialize common state directly, then select the precision-specific buffers.
         # pylint: disable=super-init-not-called
         _validate_attention_mode(precision, sparse_type, pre_rearranged)
         self._init_common(reorder_mapping, state, precision, sparse_type, pre_rearranged)
-        if precision == "bf16":
-            self._init_bf16()
+        self._kv_gather_buffer_cache = None
+        if precision != "mix" or not state.quantized_comm or getattr(state, "cp_group", None) is not None:
+            self._init_bf16(cache_protected_mask=getattr(state, "cp_group", None) is None)
         else:
             self._init_mixed()
 
@@ -120,7 +121,7 @@ class Chain(MixedProducer, BF16Primitives):
         dist.all_to_all_single(recv, send, group=self.group)
         counts["a2a_calls"] += 1
 
-    def run(self, q, k, v, *, scale, sparsity, inner_precise):
+    def run(self, q, k, v, *, scale, sparsity, inner_precise, cp_group=None, kv_gather_rank=None):
         """Manage execution state and dispatch precision; return output and per-call counts."""
         counts = {"allreduce": 0, "a2a_calls": 0, "fused_stages": 0}
         self._reset_call_stats()
@@ -135,8 +136,24 @@ class Chain(MixedProducer, BF16Primitives):
             compute = torch.npu.current_stream(q.device)
             self.state._begin_serial_execution(compute)
         try:
-            execute = self._run_mix if self.precision == "mix" else self._run_bf16
-            result = execute(q, k, v, scale=scale, sparsity=sparsity, inner_precise=inner_precise, counts=counts)
+            if cp_group is not None or (self.precision == "mxfp8" and self.state.quantized_comm):
+                from .hybrid_sparse_attention import run_ulysses_kv_gather
+
+                result = run_ulysses_kv_gather(
+                    self,
+                    q,
+                    k,
+                    v,
+                    kv_group=cp_group,
+                    kv_rank=kv_gather_rank,
+                    scale=scale,
+                    sparsity=sparsity,
+                    inner_precise=inner_precise,
+                    counts=counts,
+                )
+            else:
+                execute = self._run_mix if self.precision == "mix" and self.state.quantized_comm else self._run_bf16
+                result = execute(q, k, v, scale=scale, sparsity=sparsity, inner_precise=inner_precise, counts=counts)
             if tracked_execution:
                 tail = torch.npu.Event()
                 tail.record(compute)
@@ -145,7 +162,7 @@ class Chain(MixedProducer, BF16Primitives):
             return result
         except Exception as error:
             error.parallel_call_counts = dict(counts)
-            if tracked_execution:
+            if tracked_execution or cp_group is not None or self.precision == "mxfp8":
                 self.state._fail_execution()  # pylint: disable=no-member  # Caller supplies ParallelState.
             raise
 
@@ -276,6 +293,12 @@ class Chain(MixedProducer, BF16Primitives):
         sparse_inputs = []
         sparse_mask = []
 
+        def run_head(tensors, mask, out_dst):
+            output = self._compute_bf16_head(tensors, mask, out_dst, scale=scale, inner_precise=inner_precise)
+            if self.precision in ("mix", "mxfp8"):
+                counts["quantized_bsa_after_comm_calls"] = counts.get("quantized_bsa_after_comm_calls", 0) + 1
+            return output
+
         def prepare_all(inputs):
             tensors = [
                 torch.cat([_q.from_send(received[i])[:, : mapping.used_len] for received in inputs], dim=2)
@@ -289,13 +312,7 @@ class Chain(MixedProducer, BF16Primitives):
             start = chunk * width
             values = [tensor[:, :, start : start + width].contiguous() for tensor in sparse_inputs]
             mask = self._slice_bf16_sparse_mask(sparse_mask[0], start, width)
-            return self._compute_bf16_head(
-                values,
-                mask,
-                out_dst,
-                scale=scale,
-                inner_precise=inner_precise,
-            )
+            return run_head(values, mask, out_dst)
 
         result = torch.empty(bs, local, mapping.hc, dim, dtype=q.dtype, device=q.device)
         result_view = result.view(bs, local, world, mapping.head_groups, dim)
@@ -304,7 +321,7 @@ class Chain(MixedProducer, BF16Primitives):
             def compute_ready_head(chunk, rq, rk, rv, out_dst):
                 tensors, pooled = self._prepare_bf16_head(rq, rk, rv)
                 mask = self._make_bf16_sparse_mask(pooled, scale=scale, sparsity=sparsity)
-                return self._compute_bf16_head(tensors, mask, out_dst, scale=scale, inner_precise=inner_precise)
+                return run_head(tensors, mask, out_dst)
 
             self._run_overlap(sends, result_view, compute_ready_head, counts)
         else:

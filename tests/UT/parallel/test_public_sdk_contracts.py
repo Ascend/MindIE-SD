@@ -32,7 +32,6 @@ def call(producer, state):
         query * 0.5,
         [{"start": 4, "latent_shape": [1, 8, 16]}],
         chunking=2,
-        group=producer.group,
         used_len=132,
         state=state,
         return_stats=True,
@@ -118,10 +117,10 @@ def test_parallel_public_package_and_root_exports_are_explicit(producer, monkeyp
         "distributed_flex_attention",
         "distributed_sparse_attention",
         "ParallelState",
-        "QKVLayoutPlan",
-        "plan_qkv_layout",
     ]
     assert callable(public.distributed_flex_attention)
+    assert public.QKVLayoutPlan is producer.modules["qkv_layout"].QKVLayoutPlan
+    assert callable(public.plan_qkv_layout)
     assert public.distributed_sparse_attention is producer.entry
     assert public.ParallelState is producer.modules["state"].ParallelState
     root = ast.parse((REPO_ROOT / "mindiesd/__init__.py").read_text(encoding="utf-8"))
@@ -138,7 +137,7 @@ def test_parallel_public_package_and_root_exports_are_explicit(producer, monkeyp
 
 
 def test_requested_head_major_mixed_fallback_is_reported(producer):
-    state = producer.modules["state"].ParallelState(group=producer.group, head_major_qkv=True)
+    state = producer.modules["state"].ParallelState(quantized_comm=True, group=producer.group, head_major_qkv=True)
     _output, stats = call(producer, state)
     assert stats["tally"]["consumer"] == "quantized"
     assert state.last_call_stats["actual"]["head_major_qkv"] is False
@@ -169,3 +168,12 @@ def test_public_precision_backend_order_matrix(public_sparse, precision, options
     else:
         assert sparse(query, query, query, **kwargs) is query
         assert calls[-1]["precision"] == precision and calls[-1]["pre_rearranged"] == pre_rearranged
+
+
+def test_foundation_rejects_cp_before_any_collective(producer):
+    if "resolve_cp_rank" in producer.entry.__code__.co_names:
+        pytest.skip("CP consumer is enabled; its topology tests apply")
+    state = producer.modules["state"].ParallelState(quantized_comm=True, group=producer.group, cp_group=object())
+    with pytest.raises(ValueError, match="CP routing requires"):
+        call(producer, state)
+    assert not producer.events and state._last_chain is None

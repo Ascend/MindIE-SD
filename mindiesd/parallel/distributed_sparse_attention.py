@@ -37,7 +37,6 @@ def distributed_sparse_attention(
     chunking: int | None = None,
     head_groups: int | None = None,
     *,
-    group=None,
     world: int | None = None,
     rank: int | None = None,
     scale: float | None = None,
@@ -46,7 +45,7 @@ def distributed_sparse_attention(
     block_size_kv: int = 128,
     used_len: int | None = None,
     bs: int | None = None,
-    state: ParallelState | None = None,
+    state: ParallelState,
     return_stats: bool = False,
     precision: str = "mix",
     sparse_type: str = "rf_v3",
@@ -55,12 +54,17 @@ def distributed_sparse_attention(
     """Process one local ``[B,S_local,H,D]`` BF16 shard and preserve its shape.
 
     ``mix`` uses Q/K INT8 plus V FP8 on A5; ``bf16`` sends native values. RF-v2 and RF-v3 share
-    the communication flow. ``pre_rearranged`` is restricted to BF16 RF-v3 and preserves RF row order.
+    the communication flow. BF16 RF-v3 and mix with BF16 communication accept RF row order.
     ``used_len`` excludes the global padding tail. Set ``return_stats`` for per-call diagnostics.
     """
-    if isinstance(state, ParallelState):
-        state._last_call_stats = None
+    if not isinstance(state, ParallelState):
+        raise TypeError("state must be a ParallelState owning the process group")
+    state._last_call_stats = None
+    if state.cp_group is not None:
+        raise ValueError("CP routing requires the CP consumer integration")
     _validate_attention_mode(precision, sparse_type, pre_rearranged)
+    if precision == "mix" and state.quantized_comm and pre_rearranged:
+        raise ValueError("quantized mix communication requires original token order in this foundation PR")
     a5 = _layers.is_a5_device()
     if a5 and sparse_type == "rf_v2":
         raise ValueError("A5 devices require sparse_type='rf_v3'")
@@ -79,6 +83,7 @@ def distributed_sparse_attention(
     bs = bs_q if bs is None else int(bs)
     if bs != bs_q:
         raise ValueError("bs=%d but q.shape[0]=%d" % (bs, bs_q))
+    group = state.group
     world, rank = topology.resolve_world_rank(group, world, rank)
     if precision == "mix":
         if not a5:
@@ -112,7 +117,7 @@ def distributed_sparse_attention(
     )
     scale = float(hs) ** -0.5 if scale is None else float(scale)
 
-    pstate = state if state is not None else ParallelState(group=group)
+    pstate = state
     pstate.bind_or_check(group=group, world=int(world), rank=int(rank), device=q.device)
     if pstate.overlap_comm:
         pstate._check_execution()
@@ -151,7 +156,7 @@ def distributed_sparse_attention(
     )
 
     try:
-        _require_collective_counts(call_counts, precision, config.chunking)
+        _require_collective_counts(call_counts, precision, config.chunking, quantized_comm=pstate.quantized_comm)
     except RuntimeError:
         pstate._last_chain = None
         if pstate.overlap_comm or q.device.type == "npu":
@@ -177,18 +182,19 @@ def distributed_sparse_attention(
     return (out, stats) if return_stats else out
 
 
-def _require_collective_counts(counts, precision, chunks):
-    """Accept the complete wire protocol before committing successful-call diagnostics."""
+def _require_collective_counts(counts, precision, chunks, quantized_comm=True):
+    """Accept every head's complete protocol before committing success."""
     allreduce, a2a = counts["allreduce"], counts["a2a_calls"]
-    if allreduce != (1 if precision == "mix" else 0):
+    if allreduce != int(precision == "mix" and quantized_comm):
         message = (
-            "exactly ONE all_reduce must be issued per call (the globally assembled per-block "
-            "amax, which also carries V's inf-norm partials); issued %d"
-            if precision == "mix"
+            "exactly ONE all_reduce must be issued; issued %d"
+            if precision == "mix" and quantized_comm
             else "bf16 must not issue a scale all_reduce; issued %d"
         ) % allreduce
     elif a2a != 4 * chunks:
         message = "exactly %d all_to_all_single must be issued per call; issued %d" % (4 * chunks, a2a)
+    elif precision == "mix" and not quantized_comm and counts.get("quantized_bsa_after_comm_calls") != chunks:
+        message = "BF16 communication requires every QBSA head after exchange"
     else:
         return
     error = RuntimeError(message)
@@ -218,6 +224,7 @@ def _build_stats(
         },
         "plan": {
             "pre_rearranged": pre_rearranged,
+            "quantized_comm": pstate.quantized_comm,
             "optimize_attention_pipeline": pstate.optimize_attention_pipeline,
             "bsa_backend": pstate.bsa_backend,
             **{name: getattr(config, name) for name in _CONFIG_STATS_FIELDS},
@@ -244,10 +251,9 @@ def _build_actual_stats(pstate, precision, sparse_type):
     shared = pstate.qkv_layout_plan
     if precision == "mix" and (shared.requested if shared is not None else pstate.head_major_qkv):
         fallback_reason = "attention_mode_unsupported"
+    backend = pstate.bsa_backend or "eagle"
     return {
-        "bsa_backend": (
-            "eagle_quant" if precision == "mix" else "rain_fusion" if sparse_type == "rf_v2" else pstate.bsa_backend
-        ),
+        "bsa_backend": "eagle_quant" if precision == "mix" else "rain_fusion" if sparse_type == "rf_v2" else backend,
         "head_major_qkv": bool(getattr(chain, "_head_major_qkv_active", False)),
         "head_major_qkv_calls": getattr(chain, "last_head_major_qkv_calls", 0),
         "head_major_qkv_view_calls": getattr(chain, "last_head_major_qkv_view_calls", 0),

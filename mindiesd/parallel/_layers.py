@@ -16,7 +16,12 @@ from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v2 import (  # noqa: F401
     is_a5_device,
     rain_fusion_attention,
 )
-from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import rain_fusion_attention_v3
+from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3 import (
+    rain_fusion_attention_v3,
+    _eagle_qbsa_quant_qkv as quantize_qbsa,
+)
+
+from .config import QUANT_BLOCK
 
 __all__ = [
     "avgpool",
@@ -59,7 +64,7 @@ def bf16_block_sparse_attention(
     actual_seq_lengths_kv,
     bsa_backend="cann",
 ):
-    """Run the stock RF-v3 BF16 BSA consumer while preserving BSND layout."""
+    """Run the stock RF-v3 BF16/FP16 BSA consumer while preserving BSND layout."""
     return rain_fusion_attention_v3(
         query,
         key,
@@ -110,3 +115,23 @@ def eagle_quant_block_sparse_attention(
         **_DEVICE_OP_DEFAULTS,
     )
     return out
+
+
+def run_bf16_bsa(precision, tensors, options):
+    """Quantize received RF-ordered BF16 rows at the BSA consumer boundary."""
+    query, key, value = tensors
+    if precision == "mix":
+        query, key, value, qs, ks, vs = quantize_qbsa(query, key, value, block_size_q=QUANT_BLOCK, layout="BSND")
+        return eagle_quant_block_sparse_attention(
+            query=query,
+            key=key,
+            value=value,
+            query_scale=qs,
+            key_scale=ks,
+            value_scale=vs,
+            **options,
+        ).transpose(1, 2)
+
+    from ._native_mxfp8 import bf16_mxfp8_bsa  # pylint: disable=import-error,no-name-in-module
+
+    return bf16_mxfp8_bsa(tensors, options)

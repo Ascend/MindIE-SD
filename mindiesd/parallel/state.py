@@ -7,7 +7,6 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-
 """Caller-owned chains, caches, stream state and validated distributed context."""
 
 from __future__ import annotations
@@ -35,10 +34,14 @@ class ParallelState:
     def __init__(
         self,
         *,
+        # Communicators are supplied by the framework.
         group=None,
+        cp_group=None,
+        # Consumer selection and execution optimizations.
+        bsa_backend="cann",
         overlap_comm=False,
         optimize_attention_pipeline=True,
-        bsa_backend="cann",
+        quantized_comm: bool = False,
         head_major_qkv: bool = False,
         qkv_layout_plan: QKVLayoutPlan | None = None,
     ):
@@ -46,12 +49,15 @@ class ParallelState:
             raise ValueError("overlap_comm must be a bool and agree across ranks")
         if not isinstance(optimize_attention_pipeline, bool):
             raise ValueError("optimize_attention_pipeline must be a bool and agree across ranks")
-        if bsa_backend not in ("cann", "eagle"):
-            raise ValueError("bsa_backend must be 'cann' or 'eagle'")
+        if not isinstance(quantized_comm, bool):
+            raise ValueError("quantized_comm must be a bool and agree across ranks")
+        if bsa_backend not in (None, "cann", "eagle"):
+            raise ValueError("bsa_backend must be None, 'cann' or 'eagle'")
         if not isinstance(head_major_qkv, bool):
             raise ValueError("head_major_qkv must be a bool and agree across ranks")
         self._overlap_comm = overlap_comm
         self._optimize_attention_pipeline = optimize_attention_pipeline
+        self._quantized_comm = quantized_comm
         self._bsa_backend = bsa_backend
         self._head_major_qkv = head_major_qkv
         self.qkv_layout_plan = qkv_layout_plan
@@ -61,6 +67,8 @@ class ParallelState:
         self._execution_failed = False
         self._last_execution_event = None
         self.group = group
+        self._cp_group = cp_group
+        self._kv_gather_context = None
         self.marker_printed = False
         self.allreduce_total = 0
         self.a2a_total = 0
@@ -109,16 +117,22 @@ class ParallelState:
         key = (reorder_mapping.config.key, precision, sparse_type)
         if pre_rearranged:
             key += (True,)
-        # Independent mix baseline retains only the current geometry.
-        if not self.optimize_attention_pipeline and precision == "mix" and key not in self.chains:
-            self._check_execution()
-            if self._last_execution_event is not None:
-                self._last_execution_event.synchronize()
-            self.chains.clear()
-            self.token_block_mapping_cache.clear()
-            self.reorder_mapping_cache.clear()
+            if self.cp_group is not None:
+                # CP1 can have the same geometry as pure Ulysses but uses different preparation.
+                key += ("cp",)
         chain = self.chains.get(key)
         if chain is None:
+            single_geometry = not self.optimize_attention_pipeline and precision in ("mix", "mxfp8")
+            if single_geometry or len(self.chains) >= 4:
+                self._check_execution()
+                if self._last_execution_event is not None:
+                    self._last_execution_event.synchronize()
+                if single_geometry:
+                    self.chains.clear()
+                else:
+                    self.chains.pop(next(iter(self.chains)))
+                self.token_block_mapping_cache.clear()
+                self.reorder_mapping_cache.clear()
             order_kwargs = {"pre_rearranged": True} if pre_rearranged else {}
             chain = build(
                 reorder_mapping,
@@ -129,6 +143,21 @@ class ParallelState:
             )
             self.chains[key] = chain
         return chain
+
+    @property
+    def cp_group(self):
+        """Optional context-parallel group used to gather K/V along the sequence."""
+        return self._cp_group
+
+    def bind_cp_group(self, group, rank):
+        """Keep paired-head group and global sequence phase fixed for this state."""
+        if self._cp_group is not None and self._cp_group is not group:
+            raise RuntimeError('ParallelState belongs to a different CP group')
+        context = (id(group), rank)
+        if self._kv_gather_context is not None and self._kv_gather_context != context:
+            raise RuntimeError('CP sequence ownership changed; construct a new ParallelState')
+        self._cp_group = group
+        self._kv_gather_context = context
 
     def _record_call(self, config_key, precision, sparse_type, counts):
         """Commit one successful call; keep legacy per-chain diagnostics here too."""
@@ -158,7 +187,11 @@ class ParallelState:
         snapshot is committed only after the full collective protocol succeeds;
         reading it never synchronizes streams or reads tensor values.
         """
-        return None if self._last_call_stats is None else _copy_stats(self._last_call_stats)
+        snapshot = self._last_call_stats
+        if callable(snapshot):
+            snapshot = snapshot()
+            self._last_call_stats = snapshot
+        return None if snapshot is None else _copy_stats(snapshot)
 
     @property
     def qkv_layout_plan(self):
@@ -178,13 +211,18 @@ class ParallelState:
 
     @property
     def optimize_attention_pipeline(self):
-        """Whether this state's chains reuse buffers, indices and preparation work."""
+        """Enable optional packing/pooling optimizations; baseline geometry reuse is unconditional."""
         return self._optimize_attention_pipeline
 
     @property
     def bsa_backend(self):
-        """The RF-v3 BF16 operator used by this state's chains."""
+        """Explicit backend, or None to select the backend for each sparse path."""
         return self._bsa_backend
+
+    @property
+    def quantized_comm(self):
+        """Quantize mix/MXFP8 payloads before communication; otherwise send BF16."""
+        return self._quantized_comm
 
     @property
     def head_major_qkv(self):

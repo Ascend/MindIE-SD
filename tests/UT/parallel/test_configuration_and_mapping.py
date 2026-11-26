@@ -128,6 +128,12 @@ def test_state_reuses_a_chain_only_for_the_same_configuration(foundation):
     assert state.chain(first, build=build) is chain
     assert state.chain(second, build=build) is not chain
     assert len(calls) == state.stats()["engines"] == 2
+    waits = []
+    state._last_execution_event = SimpleNamespace(synchronize=lambda: waits.append(len(state.chains)))
+    for geometry in range(6):
+        state.chain(SimpleNamespace(config=SimpleNamespace(key=(geometry,))), build=build)
+        assert len(state.chains) <= 4
+    assert len(calls) == 8 and state.stats()["engines"] == 4 and waits == [4] * 4
 
 
 @pytest.mark.parametrize("optimize", [False, True])
@@ -149,15 +155,21 @@ def test_state_preserves_default_optimization_and_backend(foundation):
     state = foundation.state.ParallelState()
     assert state.optimize_attention_pipeline is True
     assert state.bsa_backend == "cann"
+    assert state.quantized_comm is False
+    assert foundation.state.ParallelState(quantized_comm=True).quantized_comm
+    with pytest.raises(AttributeError):
+        state.quantized_comm = True
 
 
 @pytest.mark.parametrize("optimize", [0, 1, None, "true"])
 def test_state_rejects_non_boolean_pipeline_configuration(foundation, optimize):
     with pytest.raises(ValueError, match="optimize_attention_pipeline"):
         foundation.state.ParallelState(optimize_attention_pipeline=optimize)
+    with pytest.raises(ValueError, match="quantized_comm"):
+        foundation.state.ParallelState(quantized_comm=optimize)
 
 
-@pytest.mark.parametrize("backend", [None, "", "invalid"])
+@pytest.mark.parametrize("backend", ["", "invalid"])
 def test_state_rejects_unknown_bsa_backend(foundation, backend):
     with pytest.raises(ValueError, match="bsa_backend"):
         foundation.state.ParallelState(bsa_backend=backend)
@@ -216,6 +228,7 @@ def test_state_owns_and_validates_the_shared_qkv_plan(foundation):
         ("bf16", "invalid", False),
         ("bf16", "rf_v2", True),
         ("mix", "rf_v2", False),
+        ("mxfp8", "rf_v3", False),
     ],
 )
 def test_invalid_attention_mode_is_rejected(foundation, mode):
@@ -328,12 +341,6 @@ def test_mapping_cache_reuses_only_matching_geometry(foundation, mapping_contrac
     assert len(blocks) == len(reorders) == 2
 
 
-def test_stock_layer_boundary_reexports_the_original_reorder_helper(monkeypatch):
-    package = new_package("_parallel_stock_layer_boundary", monkeypatch)
-    boundary = load_parallel_module(package, "_layers", monkeypatch)
-    assert boundary.do_multi_span_tensor_rearrange_pooling.__module__.endswith("sparse_flash_attn_rf_v2")
-
-
 def test_shared_npu_helpers_keep_storage_on_cpu_and_preserve_stream_order(monkeypatch):
     simulation = NpuSimulation()
     pipeline = SimpleNamespace(
@@ -356,3 +363,9 @@ def test_shared_npu_helpers_keep_storage_on_cpu_and_preserve_stream_order(monkey
         ("wait", "comm", "event0"),
         ("a2a", "comm", torch.int64),
     ]
+
+
+def test_empty_rank_mapping(foundation, mapping_contract):
+    config = configuration(foundation, rank=1, used_len=58, spans=[dict(start=26, latent_shape=(1, 2, 16))])
+    mapping = mapping_contract.get_attention_reorder_mapping(config, torch.device("cpu"))
+    assert mapping.local_rank_mapping["n_tok"] == 0

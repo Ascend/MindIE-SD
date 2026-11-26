@@ -52,6 +52,7 @@ def layer_boundary(monkeypatch):
     rf_v2.pool_qk_separately = lambda q, k, *args: torch.cat((q, k))
     rf_v2.do_multi_span_tensor_rearrange_pooling = lambda *args: args
     rf_v2.get_multi_span_blockwise_mask = lambda *args, **kwargs: None
+    rf_v2.get_mask_index = lambda mask: (torch.zeros_like(mask, dtype=torch.long), None)
     rf_v2.is_a5_device = lambda: True
     rf_v2.rain_fusion_attention = lambda q, *args, **kwargs: q
     rf_v3 = types.ModuleType("mindiesd.layers.flash_attn.sparse_flash_attn_rf_v3")
@@ -62,11 +63,14 @@ def layer_boundary(monkeypatch):
         return q
 
     rf_v3.rain_fusion_attention_v3 = attention_v3
+    rf_v3._eagle_qbsa_quant_qkv = lambda *a, **kw: pytest.fail("native quantization requires its explicit fixture")
     torch_npu = types.ModuleType("torch_npu")
     torch_npu.float8_e4m3fn = torch.float8_e4m3fn
+    torch_npu.npu = types.SimpleNamespace(device_count=lambda: 0)
     for module in (sparse, rf_v2, rf_v3, torch_npu):
         monkeypatch.setitem(sys.modules, module.__name__, module)
-    boundary = load_module("_parallel_layers_boundary", PARALLEL_DIR / "_layers.py", monkeypatch)
+    package = new_package("_parallel_layers_boundary", monkeypatch)
+    boundary = load_module(package.__name__ + "._layers", PARALLEL_DIR / "_layers.py", monkeypatch)
     return types.SimpleNamespace(module=boundary, calls=calls)
 
 
@@ -149,6 +153,17 @@ def test_layer_boundary_forwards_bf16_and_quantized_operator_contracts(layer_bou
     assert kwargs["input_layout"] == "BSND" and kwargs["bsa_backend"] == "eagle"
     assert kwargs["block_size_q"] == kwargs["block_size_kv"] == 128
 
+    options = dict(
+        query=query,
+        key=query,
+        value=query,
+        block_sparse_mask=mask,
+        scale_value=0.25,
+        inner_precise=4,
+        actual_seq_lengths=[4],
+        actual_seq_lengths_kv=[4],
+    )
+
     native_calls = []
 
     def quantized(**native_kwargs):
@@ -173,6 +188,17 @@ def test_layer_boundary_forwards_bf16_and_quantized_operator_contracts(layer_bou
             value_scale=torch.ones(1),
         )
         is query
+    )
+    fields = ("query", "key", "value", "query_scale", "key_scale", "value_scale")
+    quantized_inputs = tuple(native_calls[0][field] for field in fields)
+
+    def quantize(*args, **kwargs):
+        return quantized_inputs
+
+    monkeypatch.setattr(boundary, "quantize_qbsa", quantize)
+    native_calls.clear()
+    boundary.run_bf16_bsa(
+        "mix", (query, query, query), {k: v for k, v in options.items() if k not in ("query", "key", "value")}
     )
     assert native_calls[0]["q_input_layout"] == "BNSD"
     assert native_calls[0]["block_shape"] == [128, 128]
@@ -222,7 +248,7 @@ def test_bf16_compute_restores_token_order_and_prearranged_copy(producer, sparse
     assert torch.equal(direct_output, tensors[0])
 
 
-@pytest.mark.parametrize("backend", ["cann", "eagle"])
+@pytest.mark.parametrize("backend", [None, "cann", "eagle"])
 @pytest.mark.parametrize("optimize", [False, True])
 def test_distributed_mix_reaches_real_adapter(producer, layer_boundary, monkeypatch, backend, optimize):
     calls = []
@@ -242,11 +268,11 @@ def test_distributed_mix_reaches_real_adapter(producer, layer_boundary, monkeypa
         producer.layers, "eagle_quant_block_sparse_attention", layer_boundary.module.eagle_quant_block_sparse_attention
     )
     state = producer.modules["state"].ParallelState(
-        group=producer.group, bsa_backend=backend, optimize_attention_pipeline=optimize
+        quantized_comm=True, group=producer.group, bsa_backend=backend, optimize_attention_pipeline=optimize
     )
     query = torch.ones(1, 68, 4, 2, dtype=torch.bfloat16)
     spans = [{"start": 4, "latent_shape": [1, 8, 16]}]
-    options = dict(group=producer.group, state=state, used_len=132, chunking=2, return_stats=True)
+    options = dict(state=state, used_len=132, chunking=2, return_stats=True)
     output, stats = producer.entry(query, query, query, spans, **options)
     assert output.shape == query.shape and len(calls) == 2
     assert stats["tally"]["allreduce"] == 1 and stats["tally"]["a2a_calls"] == 8
@@ -316,7 +342,7 @@ def test_serial_rf_order_cache_and_backend(rf_plan, monkeypatch, precision, layo
 def test_cached_bf16_mask_keeps_protection_without_index_rewrites(producer, monkeypatch, sparsity):
     mask_helper = native_rf_functions()["get_multi_span_blockwise_mask"]
     monkeypatch.setattr(producer.layers, "get_multi_span_blockwise_mask", mask_helper)
-    primitive = producer.modules["bf16_primitives"].BF16Primitives()
+    primitive = type("Primitive", (producer.modules["bf16_primitives"].BF16Primitives,), {})()
     primitive.reorder_mapping = types.SimpleNamespace(
         bs=1,
         s_local=256,
