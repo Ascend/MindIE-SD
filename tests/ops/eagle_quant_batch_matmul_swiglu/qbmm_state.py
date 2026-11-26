@@ -134,7 +134,7 @@ class Batch:
                     small_mixed="hard",
                     production_mixed="soft",
                     stress="bitwise",
-                    input="INT8 ND; FP32 scale and pertoken_scale",
+                    input="INT8 x1 ND, x2 ND or FRACTAL_NZ [N,K] with transpose_x2=true; FP32 scales",
                     output="BF16 production",
                 ),
             )

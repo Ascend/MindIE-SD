@@ -289,25 +289,23 @@ def test_fake_swiglu_output(n, device):
         assert out.dtype == torch.bfloat16
 
 
-@pytest.mark.parametrize("trans", range(4))
+@pytest.mark.parametrize("transpose_x1", [False, True])
 @pytest.mark.parametrize("output_dtype", ["bf16", "fp16"])
 @pytest.mark.parametrize(
-    "m,k,n,batch_kind", [(1, 128, 576, "none"), (129, 257, 640, "both"), (65, 33, 192, "b"), (23, 64, 4096, "a")]
+    "m,k,n,batch_kind", [(1, 128, 576, "none"), (129, 257, 640, "both"), (65, 33, 96, "b"), (23, 64, 4096, "a")]
 )
-def test_nz_weight_cpu_golden(trans, output_dtype, m, k, n, batch_kind, device, request):
+def test_nz_weight_cpu_golden(transpose_x1, output_dtype, m, k, n, batch_kind, device, request):
     import torch
     import torch_npu
 
-    if n == 192 and trans & 1:
-        n = 96  # Transposed NZ accepts half-N=48, aligned to 16 but not 32.
     s = scenario(
         m=m,
         k=k,
         n=n,
         output_dtype=output_dtype,
-        transpose_x1=bool(trans & 2),
-        transpose_x2=bool(trans & 1),
-        seed=20261500 + trans,
+        transpose_x1=transpose_x1,
+        transpose_x2=True,
+        seed=20261500 + int(transpose_x1),
     )
     cpu, parameters = make_inputs(s)
     cpu["scale"] *= 0.01
@@ -340,13 +338,36 @@ def test_nz_weight_cpu_golden(trans, output_dtype, m, k, n, batch_kind, device, 
     assert format_metrics["passed"]
 
 
-@pytest.mark.parametrize("transpose_x2", [False, True])
-def test_reject_nz_half_inside_fractal(transpose_x2, device):
+def test_reject_nz_half_inside_fractal(device):
     import torch_npu
 
-    s = scenario(m=23, k=33, n=66, transpose_x2=transpose_x2)
+    s = scenario(m=23, k=33, n=66, transpose_x2=True)
     cpu, _ = make_inputs(s)
     inputs = to_device(cpu, device)
     inputs["x2"] = torch_npu.npu_format_cast(inputs["x2"], 29)
     with pytest.raises(RuntimeError, match="NZ weights require"):
         dut(inputs, s)
+
+
+def test_reject_nz_weight_stored_as_kn(device, capfd):
+    import torch
+    import torch_npu
+
+    s = scenario(m=23, k=64, n=128)
+    cpu, _ = make_inputs(s)
+    inputs = to_device(cpu, device)
+    # Tiling must reject this descriptor before any weight data is read.
+    inputs["x2"] = torch_npu.empty_with_format(
+        (s["k"], s["n"]), dtype=torch.int8, device=inputs["x1"].device, acl_format=29
+    )
+    assert torch_npu.get_npu_format(inputs["x2"]) == 29
+    torch.npu.synchronize()
+    with pytest.raises(RuntimeError, match="FRACTAL_NZ x2 requires transpose_x2=true") as exc:
+        dut(inputs, s)
+        torch.npu.synchronize()
+    pack_call = "torch_npu.npu_format_cast(W.transpose(-2, -1).contiguous(), 29)"
+    assert pack_call in str(exc.value)
+    assert any(
+        line.startswith("[EagleQuantBatchMatmulSwiglu] FRACTAL_NZ x2 requires transpose_x2=true") and pack_call in line
+        for line in capfd.readouterr().err.splitlines()
+    )

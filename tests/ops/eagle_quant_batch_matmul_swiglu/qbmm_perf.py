@@ -13,7 +13,7 @@ import sys
 import traceback
 
 from tests.ops.eagle_quant_batch_matmul_swiglu.qbmm_state import Batch, ROOT, digest, read, save
-from tests.ops.eagle_quant_batch_matmul_swiglu.qbmm_common import preview, scenario
+from tests.ops.eagle_quant_batch_matmul_swiglu.qbmm_common import preview, production_scenario
 
 MODULE = "tests.ops.eagle_quant_batch_matmul_swiglu.profile_eagle_quant_batch_matmul_swiglu_prod"
 KERNEL = "EagleQuantBatchMatmulSwiglu"
@@ -45,7 +45,7 @@ def layer_artifacts(folder, plan, layout, device):
     )
     if any(data.get(key) != value for key, value in expected.items()):
         raise RuntimeError("layer timing metadata differs from capture plan")
-    if data.get("scenario") != scenario(**{key: plan[key] for key in ("m", "k", "n", "seed")}):
+    if data.get("scenario") != production_scenario(layout, **{key: plan[key] for key in ("m", "k", "n", "seed")}):
         raise RuntimeError("layer scenario differs from capture plan")
     samples = data["event_samples_us"]
     if len(samples) != plan["iterations"] or not all(math.isfinite(v) and v > 0 for v in samples):
@@ -200,9 +200,9 @@ def main():
     p = argparse.ArgumentParser(
         allow_abbrev=False,
         description="Fused QBMM/SwiGLU and native two-op baseline: ND/NZ weights, INT8 inputs, FP32 scales, BF16 output",
-        epilog="Defaults: M=5672 K=5376 N=28672; x1=[M,K], x2=[K,N], scale=[N], token=[M], y=[M,N/2]. "
-        "Positive M/K/N, N must be even (NZ: divisible by 64). No transpose/bias; seed=20261030. "
-        "Default paths=qbmm,torch_npu; formats=ND,NZ; runs=20; layer iterations=10, fixed warmup=5. "
+        epilog="Defaults: M=5672 K=5376 N=28672; x1=[M,K], x2 NZ=[N,K] or ND=[K,N], y=[M,N/2]. "
+        "Positive M/K/N, N must be even (NZ: divisible by 32). No bias; seed=20261030. "
+        "Default paths=qbmm,torch_npu; formats=NZ,ND; runs=20; layer iterations=10, fixed warmup=5. "
         "New runs auto-select one card; resume keeps its physical identity. "
         "Output: repo/log/eagle_quant_batch_matmul_swiglu/perf_TIMESTAMP/final_summary.txt. "
         "Fused --warm-up defaults to 20 and permits 0; NZ packing is outside timing.",
@@ -233,7 +233,7 @@ def main():
             warm_up=20,
             iterations=10,
             paths=["qbmm", "torch_npu"],
-            formats=["ND", "NZ"],
+            formats=["NZ", "ND"],
             no_msprof=False,
         )
     )
@@ -249,8 +249,8 @@ def main():
         p.error("dimensions, runs and iterations must be positive; warm-up nonnegative")
     if plan["n"] % 2:
         p.error("N must be even")
-    if "NZ" in plan["formats"] and plan["n"] % 64:
-        p.error("NZ requires N/2 aligned to 32")
+    if "NZ" in plan["formats"] and plan["n"] % 32:
+        p.error("NZ weights require N/2 aligned to 16")
     if plan["no_msprof"] and plan["paths"] != ["torch_npu"]:
         p.error("--no-msprof requires only --path torch_npu")
     if args.device_id is not None and args.device_id < 0:
@@ -269,11 +269,8 @@ def main():
         for layout in plan["formats"]
     ]
     if args.dry_run:
-        selected = scenario(m=plan["m"], k=plan["k"], n=plan["n"], seed=plan["seed"])
-        inputs = [
-            dict(preview(selected), layout=dict(x1="ND", x2=layout, scale="ND", pertoken_scale="ND"))
-            for layout in plan["formats"]
-        ]
+        dimensions = {key: plan[key] for key in ("m", "k", "n", "seed")}
+        inputs = [preview(production_scenario(layout, **dimensions)) for layout in plan["formats"]]
         print(
             json.dumps(
                 dict(

@@ -119,9 +119,8 @@ ge::graphStatus EagleQuantBatchMatmulSwigluBasicTiling::GetShapeAttrsInfo() {
             token->GetStorageShape().GetDim(0) != inputParams_.mSize || inputParams_.nSize % 2 != 0,
         ge::GRAPH_FAILED, inputParams_.opName,
         "SwiGLU requires group_size=0, FP32 scale[N], token[M], and positive even N.");
-    OP_LOGE_IF(inputParams_.bFormat == ge::FORMAT_FRACTAL_NZ &&
-            (inputParams_.nSize / 2) % (inputParams_.transB ? 16 : 32) != 0,
-        ge::GRAPH_FAILED, inputParams_.opName, "NZ weights require N/2 aligned to 16 when transposed, otherwise 32.");
+    OP_LOGE_IF(inputParams_.bFormat == ge::FORMAT_FRACTAL_NZ && (inputParams_.nSize / 2) % 16 != 0, ge::GRAPH_FAILED,
+        inputParams_.opName, "NZ weights require N/2 aligned to 16.");
     const auto &output = context_->GetOutputShape(0)->GetStorageShape();
     OP_LOGE_IF(output.GetDimNum() < 2 || output.GetDim(output.GetDimNum() - 1) != inputParams_.nSize / 2 ||
             output.GetDim(output.GetDimNum() - 2) != inputParams_.mSize,

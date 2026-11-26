@@ -65,9 +65,8 @@ at::Tensor eagle_quant_batch_matmul_swiglu_impl_npu(const at::Tensor &x1, const 
     const auto n = x2.size(transpose_x2 ? -2 : -1);
     TORCH_CHECK(m > 0 && k > 0, "M and K must be positive");
     TORCH_CHECK(n > 0 && n % 2 == 0, "SwiGLU requires positive even N");
-    if (at_npu::native::get_npu_format(x2) == ACL_FORMAT_FRACTAL_NZ) {
-        TORCH_CHECK((n / 2) % (transpose_x2 ? 16 : 32) == 0,
-            "NZ weights require N/2 aligned to 16 when transposed, otherwise 32");
+    if (transpose_x2 && at_npu::native::get_npu_format(x2) == ACL_FORMAT_FRACTAL_NZ) {
+        TORCH_CHECK((n / 2) % 16 == 0, "NZ weights require N/2 aligned to 16");
     }
     TORCH_CHECK(scale.dim() == 1 && scale.numel() == n, "scale must have shape [N]");
     TORCH_CHECK(pertoken_scale->dim() == 1 && pertoken_scale->numel() == m, "pertoken_scale must have shape [M]");

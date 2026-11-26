@@ -23,7 +23,7 @@ from tests.ops.eagle_quant_batch_matmul_swiglu.qbmm_common import (
     metadata,
     npu_golden,
     preview,
-    scenario,
+    production_scenario,
     to_device,
 )
 from tests.ops.eagle_quant_batch_matmul_swiglu.qbmm_state import Batch, ROOT, digest, read, save, tee_log
@@ -31,9 +31,9 @@ from tests.ops.eagle_quant_batch_matmul_swiglu.qbmm_state import Batch, ROOT, di
 
 def parser():
     p = argparse.ArgumentParser(
-        description="910B INT8 ND QBMM + FP32 SwiGLU, BF16 output",
-        epilog="Defaults: M=5672 K=5376 N=28672; x1=[M,K], x2=[K,N], scale=[N], token=[M], y=[M,N/2]. "
-        "Positive M/K/N, N must be even. No transpose/bias. Both uniform and normal; seed=20261030; "
+        description="910B INT8 QBMM + FP32 SwiGLU, NZ weight, BF16 output",
+        epilog="Defaults: M=5672 K=5376 N=28672; x1=[M,K], x2=[N,K], scale=[N], token=[M], y=[M,N/2]. "
+        "Positive M/K/N, NZ requires N divisible by 32, transpose_x2=true. Both uniform and normal; seed=20261030; "
         "mode=all (all accuracy before stress); stress-runs=1000. Omitted device auto-selects one card; "
         "resume restores last devices. Output: repo/log/eagle_quant_batch_matmul_swiglu/accuracy_TIMESTAMP.",
     )
@@ -60,8 +60,8 @@ def resolve(args, saved=None):
             values[key] = value
     if min(values[k] for k in ("m", "k", "n", "stress_runs")) <= 0:
         raise ValueError("M, K, N and stress-runs must be positive")
-    if values["n"] % 2:
-        raise ValueError("N must be even")
+    if values["n"] % 32:
+        raise ValueError("NZ weights require N/2 aligned to 16")
     if args.device_id is not None and (min(args.device_id) < 0 or len(set(args.device_id)) != len(args.device_id)):
         raise ValueError("device-id must contain distinct nonnegative physical IDs")
     if args.resume and args.output_dir:
@@ -71,7 +71,7 @@ def resolve(args, saved=None):
 
 def cases(plan):
     return [
-        scenario(m=plan["m"], k=plan["k"], n=plan["n"], seed=plan["seed"], distribution=d)
+        production_scenario(m=plan["m"], k=plan["k"], n=plan["n"], seed=plan["seed"], distribution=d)
         for d in ([plan["distribution"]] if plan["distribution"] else ["uniform", "normal"])
     ]
 
@@ -111,7 +111,7 @@ def worker_run(batch, phase, s, device, key, attempt):
         print("START CPU input generation", flush=True)
         cpu, params = make_inputs(s)
         original = input_hashes(cpu)
-        inputs = to_device(cpu, device)
+        inputs = to_device(cpu, device, s["weight_format"])
         del cpu
         torch.npu.synchronize()
         print(json.dumps(metadata(inputs, s, params)), flush=True)
@@ -255,7 +255,7 @@ def summary(batch, reason):
     lines = [
         reason,
         "Resolved plan: " + json.dumps(batch.plan["parameters"]),
-        "x1 INT8 ND [M,K]; x2 INT8 ND [K,N]; scale FP32 [N]; token FP32 [M]; output BF16 [M,N]",
+        "x1 INT8 ND [M,K]; x2 INT8 NZ [N,K], transpose_x2=true; scale FP32 [N]; token FP32 [M]; output BF16 [M,N/2]",
     ]
     for phase, s in units(batch.plan["parameters"]):
         key = phase + "/" + s["distribution"]

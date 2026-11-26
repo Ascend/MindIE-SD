@@ -12,7 +12,19 @@ $$
 
 在 Linux Ascend 910B 环境使用与所迁移源码兼容的 CANN 9 系列 SDK、torch、torch_npu 和已编译安装的 MindIE-SD。当前只完成本地静态检查，具体 SDK 版本的编译兼容性及上板数值、性能待验证。构建过滤排除 CANN 8.x，不代表所有 9.x 版本均已验证。
 
-plugin 接受 INT8 x1、x2，维数为 2～6；x1 使用 ND，x2 可使用 ND 或 FRACTAL_NZ，逻辑张量须连续。支持两侧转置、相同 batch 或整矩阵广播；交错 batch 广播不支持。output_dtype 省略时为 BF16，也接受 FP16。scale 必须为 FP32 [N]，pertoken_scale 必须为 FP32 [M]，跨 batch 共用。ND 权重要求 N 为正偶数；NZ 权重还要求 N/2 在 transpose_x2=True 时对齐 16，否则对齐 32，以保证左右半边均从分形边界开始。group_size 为 0，offset 和 bias 必须为 None；非 None bias 在 plugin 和统一 host tiling 入口报错。
+plugin 接受 INT8 x1、x2，维数为 2～6；x1 使用 ND，x2 可使用 ND 或 FRACTAL_NZ，逻辑张量须连续。ND 权重支持两侧转置，NZ 权重支持 x1 转置。两种权重均支持相同 batch 或整矩阵广播；交错 batch 广播不支持。output_dtype 省略时为 BF16，也接受 FP16。scale 必须为 FP32 [N]，pertoken_scale 必须为 FP32 [M]，跨 batch 共用。ND 权重要求 N 为正偶数。NZ 权重按 W 的转置连续存成 [N,K]，物理分形为 [ceil(K/32),ceil(N/16),16,32]，前面保留 batch 维。调用时传 transpose_x2=True，且 N/2 须对齐 16。传入按 [K,N] 存储的 NZ 权重并设置 transpose_x2=False 时，Host tiling 直接向标准错误（stderr）打印权重预转换方法，再返回错误。即使调用方捕获异常，默认日志配置下也能看到这条提示。group_size 为 0，offset 和 bias 必须为 None；非 None bias 在 plugin 和统一 host tiling 入口报错。
+
+固定权重可在模型加载时预转一次。以下示例从目标 NPU 上已量化的 INT8 ND 权重 W 开始，其末两维为 [K,N]。若 checkpoint 中的 ND 权重已按 [N,K] 保存，直接对连续的权重调用 `torch_npu.npu_format_cast(W.contiguous(), 29)`。两种情况下，逐输出通道的 scale 都沿用原来的 [N] 顺序。
+
+```python
+# 模型加载时，从 [...,K,N] 的 ND 权重生成 NZ 权重
+x2_nz = torch_npu.npu_format_cast(W.transpose(-2, -1).contiguous(), 29)
+
+# 每次推理直接复用 x2_nz
+y = torch.ops.mindiesd.eagle_quant_batch_matmul_swiglu(
+    x1, x2_nz, scale, pertoken_scale=pertoken_scale, transpose_x2=True
+)
+```
 
 Cube 根据 shape、转置及权重格式自动选择 baseM/baseN。UB 列跨度为 baseN 向上对齐 16，行数取 5632 除以列跨度的整数部分，上限为 255；256 列对应 22 行，512 列对应 11 行。两个 AIV 按 UB 行块分配 Cube 输出行；左右反量化结果和 SwiGLU 暂存均保持 FP32，列尾块使用对齐后的行跨度，仅将有效列写出。ND/NZ 的 UB 反量化路径均使用 L2 容量的 45/192 作为切分阈值，该阈值不代表实际缓存占用比例。
 
@@ -34,10 +46,10 @@ python -m pip install --force-reinstall dist/mindiesd-*.whl
 | 层级 | 场景 | 对照和判据 |
 | --- | --- | --- |
 | 小 shape | 无 bias，交叉覆盖转置、FP16/BF16 输出和整矩阵 batch 广播；左右不同 channel scale 的配对用例覆盖 22/44/66/128 行附近及 M=1/2049、N=4096/8192，检查分行边界、空闲 AIV 和多个列块 | CPU INT32 累加、FP32 反量化与 SwiGLU、最后舍入到输出 dtype；混合容差、cosine、模长比均为硬门禁 |
-| 列尾块与 NZ | ND 半 N 覆盖 1/7/8/9/15/16/17/63/65/80/96/129/193/257/513；NZ 覆盖四种转置组合、短 M、带 K padding 的 batch 和两种输出 dtype | CPU golden 检查 UB 行跨度、部分向量 mask、NZ 物理 batch 步长及左右分支地址 |
-| 接口 | 非法输入和 FakeTensor 用例；INT32/FP32/BF16/FP16 bias 拒绝用例先执行 bias=None，再传入非空 bias | 检查 dtype、K、group_size、连续性、batch、offset、bias、缺少 token scale、奇数 N 及 NZ 半边未对齐的拒绝，以及 FakeTensor 的 N/2 输出 |
+| 列尾块与 NZ | ND 半 N 覆盖 1/7/8/9/15/16/17/63/65/80/96/129/193/257/513；NZ 覆盖两种 x1 转置设置、短 M、带 K padding 的 batch 和两种输出 dtype | CPU golden 检查 UB 行跨度、部分向量 mask、NZ 物理 batch 步长及左右分支地址 |
+| 接口 | 非法输入和 FakeTensor 用例；INT32/FP32/BF16/FP16 bias 拒绝用例先执行 bias=None，再传入非空 bias | 检查 dtype、K、group_size、连续性、batch、offset、bias、缺少 token scale、奇数 N、NZ 半边未对齐及 NZ 权重按 [K,N] 存储时的拒绝，以及 FakeTensor 的 N/2 输出 |
 | 中间精度 | 构造正负 A 与不同 B；另用小 shape 比较 NPU INT32 基准与 CPU 基准 | 融合输出相对 FP32 基准的平方误差必须小于提前转为 BF16/FP16 后计算的误差的 10% |
-| 大 shape 精度 | x1 [5672,5376]、x2 [5376,28672] 均为 INT8；scale [28672]、pertoken_scale [5672] 为 FP32；无 bias/offset/转置；输出 [5672,14336] BF16；uniform、normal 共 2 条 | 同一份输入调用 torch_npu.npu_quant_matmul 获取 INT32 累加结果，再以 FP32 反量化与计算 SwiGLU；cosine、模长比为硬门禁，混合容差只报告软约束 |
+| 大 shape 精度 | x1 [5672,5376]、NZ 权重 x2 [28672,5376] 均为 INT8；scale [28672]、pertoken_scale [5672] 为 FP32；无 bias/offset，transpose_x2=True；输出 [5672,14336] BF16；uniform、normal 共 2 条 | 同一份输入调用 torch_npu.npu_quant_matmul 获取 INT32 累加结果，再以 FP32 反量化与计算 SwiGLU；cosine、模长比为硬门禁，混合容差只报告软约束 |
 | 稳定性 | 复用上述 2 条，每条默认 1000 轮 | 首次独立 CPU baseline，随后输出逐位相同（含正负零），每轮核对输入未改变 |
 | 融合性能 | 上述生产尺寸，仅 normal，权重 ND 和预转换 NZ 各一组 | 每组 20 次独立 msprof op 采集，每次 warm-up=20、launch-count=1；报告 Task Duration(us) |
 | 原生组合性能 | 同一生产尺寸和输入，torch_npu.npu_quant_matmul 接 torch_npu.npu_swiglu，权重 ND 和预转换 NZ 各一组 | 每组 20 次独立 msprof 采集；固定预热 5 次，再独立记录 10 次完整调用的 Event，报告最小 Layer Duration(us) |
@@ -50,7 +62,7 @@ BF16 输出按 BFLOAT16 档使用 atol=rtol=2^-7，FP16 输出按 FLOAT16 档使
 
 ## 执行
 
-以下命令从仓根运行。shell 入口也可从其他目录用绝对路径启动，会自行定位仓根。算子脚本的 --help 和 --dry-run 不初始化设备、不创建批次。M/K/N 可覆盖为正整数，N 必须为偶数；逻辑输入 shape 为 [M,K]、[K,N]、[N]、[M]，输出为 [M,N/2]；默认值固定为上述生产尺寸。性能选用 NZ 时 N 必须是 64 的倍数。大 shape 精度仍只测 ND，NZ 功能由小 shape 用例覆盖。
+以下命令从仓根运行。shell 入口也可从其他目录用绝对路径启动，会自行定位仓根。算子脚本的 --help 和 --dry-run 不初始化设备、不创建批次。M/K/N 可覆盖为正整数，ND 权重要求 N 为偶数，NZ 权重要求 N 是 32 的倍数。大 shape 精度与压测使用 NZ 权重 [N,K]，性能另保留 ND 权重 [K,N] 对照。输出均为 [M,N/2]。
 
 ```bash
 unset ASCEND_RT_VISIBLE_DEVICES
@@ -64,7 +76,7 @@ bash tests/ops/eagle_quant_batch_matmul_swiglu/run_eagle_quant_batch_matmul_swig
 
 小 shape 默认物理 NPU 0，可通过 MINDIE_TEST_DEVICE_ID 指定，并按 OpDef 注册限制在 910B 执行。检查点要求取消 ASCEND_RT_VISIBLE_DEVICES，续跑保持设备身份。大 shape 未指定卡时使用仓内 select_npu_device.py 自动选择一张卡；多卡按完整场景分配，各场景独立造数和判定。all 模式先完成全部精度场景，再执行压测；也可选择 accuracy 或 stress。单独 stress 通过只说明重复执行稳定，不证明相对 golden 的精度。
 
-测试通过 tests/scripts/run_suites.py 统一调度，CPU 和 NPU 分别在独立子进程中运行。精度、接口和通过真实注册 torch.ops 调用的 FakeTensor 用例保留在 test_eagle_quant_batch_matmul_swiglu.py，参数化静态展开合计 256 条，归入 NPU 套件。2 条独立检查点回归位于 tests/UT/tools/test_qbmm_state.py，归入 CPU 套件，两套合计 258 条。名称含 cpu_golden 的精度用例仍需 NPU，因为被测对象是真实算子。直接 pytest 默认 CPU 模式，运行算子主文件必须显式选择 NPU。
+测试通过 tests/scripts/run_suites.py 统一调度，CPU 和 NPU 分别在独立子进程中运行。精度、接口和通过真实注册 torch.ops 调用的 FakeTensor 用例保留在 test_eagle_quant_batch_matmul_swiglu.py，参数化静态展开合计 240 条，归入 NPU 套件。2 条独立检查点回归位于 tests/UT/tools/test_qbmm_state.py，归入 CPU 套件，两套合计 242 条。名称含 cpu_golden 的精度用例仍需 NPU，因为被测对象是真实算子。直接 pytest 默认 CPU 模式，运行算子主文件必须显式选择 NPU。
 
 ```bash
 export MINDIE_TEST_RESULTS="$PWD/log/tests"
@@ -75,7 +87,7 @@ python tests/scripts/run_suites.py --cpu_only tests/UT/tools/test_qbmm_state.py
 
 全量 CPU 选择通过后执行逐文件分支覆盖率门禁，默认阈值 80%；局部选测不执行这项全仓门禁。--incremental 根据相对 --base-branch（默认 dev）的变更选择测试，可加 --dry-run 只查看选择。统一入口支持完整目录或文件选择，生成 CPU/NPU 独立 JUnit XML 和合并覆盖率报告。
 
-性能入口只接受一张卡；未指定时运行一次设备选择器并保存报告。默认按 qbmm/ND、qbmm/NZ、torch_npu/ND、torch_npu/NZ 顺序各采集 20 轮，共 80 轮。--path 单选 qbmm 或 torch_npu，--weight-format 单选 ND 或 NZ；省略则运行对应全部选项。--runs 控制各组独立进程数，--iterations 控制原生组合每轮 Event 样本数，--warm-up 只控制融合路径。输入造数、传输与 NZ 权重转换均在计时之外，正式调用复用同一输入，属于热缓存测量。
+性能入口只接受一张卡；未指定时运行一次设备选择器并保存报告。默认按 qbmm/NZ、qbmm/ND、torch_npu/NZ、torch_npu/ND 顺序各采集 20 轮，共 80 轮。--path 单选 qbmm 或 torch_npu，--weight-format 单选 ND 或 NZ；省略则运行对应全部选项。--runs 控制各组独立进程数，--iterations 控制原生组合每轮 Event 样本数，--warm-up 只控制融合路径。输入造数、传输与 NZ 权重转换均在计时之外，正式调用复用同一输入，属于热缓存测量。
 
 启动时 PLAN 列出全部所选组及总采集数；默认显示 4 组、80 次。四组顺序执行，完成融合 ND/NZ 的 40 次采集后才开始原生组合。汇总列出每组已完成/计划数量，未运行组标为 PENDING，未跑满组标为 PARTIAL；只有全部所选采集成功才显示 COMPLETE。续跑恢复原批次的路径和格式，单路径旧批次不会因省略 --path 而扩成四组。
 

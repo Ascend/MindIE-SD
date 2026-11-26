@@ -11,7 +11,7 @@ from tests.ops.eagle_quant_batch_matmul_swiglu.qbmm_common import (
     initialize,
     make_inputs,
     metadata,
-    scenario,
+    production_scenario,
     to_device,
 )
 from tests.ops.eagle_quant_batch_matmul_swiglu.qbmm_state import save
@@ -22,7 +22,7 @@ def main():
         description=__doc__,
         epilog=(
             "Defaults: M=5672 K=5376 N=28672, INT8 inputs, FP32 channel/token scales, "
-            "BF16 intermediate and output, no bias or transpose. NZ packing is outside timing. "
+            "BF16 intermediate and output, no bias. NZ packs W.T[N,K] before timing. "
             "Fixed 5 warmups; 10 individual Event samples by default; hot-cache inputs."
         ),
     )
@@ -36,29 +36,29 @@ def main():
     args = parser.parse_args()
     if min(args.m, args.k, args.n, args.iterations) <= 0 or args.device_id < 0 or args.n % 2:
         parser.error("positive dimensions/iterations, even N and nonnegative physical device required")
-    if args.weight_format == "NZ" and args.n % 64:
-        parser.error("NZ weights without transpose require N/2 aligned to 32")
+    s = production_scenario(args.weight_format, m=args.m, k=args.k, n=args.n, seed=args.seed)
     if not args.output.is_absolute() or args.output.exists():
         parser.error("output must be a new absolute file path")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     torch, torch_npu = initialize(args.device_id)
-    s = scenario(m=args.m, k=args.k, n=args.n, seed=args.seed)
     cpu, parameters = make_inputs(s)
-    inputs = to_device(cpu, args.device_id)
+    inputs = to_device(cpu, args.device_id, args.weight_format)
     del cpu
-    if args.weight_format == "NZ":
-        inputs["x2"] = torch_npu.npu_format_cast(inputs["x2"], 29)
-        if torch_npu.get_npu_format(inputs["x2"]) != 29:
-            raise RuntimeError("weight preparation did not produce FRACTAL_NZ")
+    # Native QBMM infers the transpose from a strided view of the packed weight.
+    weight = inputs["x2"].t() if s["transpose_x2"] else inputs["x2"]
+    if s["transpose_x2"] and (weight.data_ptr() != inputs["x2"].data_ptr() or torch_npu.get_npu_format(weight) != 29):
+        raise RuntimeError("native QBMM requires a transposed view sharing the NZ weight storage")
     details = metadata(inputs, s, parameters)
     details["dut"] = "torch_npu.npu_quant_matmul(BF16-out) -> torch_npu.npu_swiglu(dim=-1)"
-    details["inputs"]["x2"]["layout"] = args.weight_format
+    details["inputs"]["x2"].update(
+        shape=list(weight.shape), stride=list(weight.stride()), contiguous=weight.is_contiguous()
+    )
     print(json.dumps(details), flush=True)
 
     def function():
         intermediate = torch_npu.npu_quant_matmul(
             inputs["x1"],
-            inputs["x2"],
+            weight,
             inputs["scale"],
             pertoken_scale=inputs["pertoken_scale"],
             output_dtype=torch.bfloat16,

@@ -36,13 +36,20 @@ def scenario(
     )
 
 
+def production_scenario(weight_format="NZ", **kwargs):
+    s = scenario(transpose_x2=weight_format == "NZ", **kwargs)
+    if weight_format == "NZ" and s["n"] % 32:
+        raise ValueError("NZ weights require N/2 aligned to 16")
+    return dict(s, weight_format=weight_format)
+
+
 def preview(s):
     m, k, n = s["m"], s["k"], s["n"]
     return dict(
         scenario=s,
-        layout="ND",
+        layout=dict(x1="ND", x2=s["weight_format"], scale="ND", pertoken_scale="ND"),
         x1=dict(shape=[m, k], dtype="INT8"),
-        x2=dict(shape=[k, n], dtype="INT8"),
+        x2=dict(shape=[n, k] if s["transpose_x2"] else [k, n], dtype="INT8"),
         scale=dict(shape=[n], dtype="FP32"),
         pertoken_scale=dict(shape=[m], dtype="FP32"),
         output=dict(shape=[m, n // 2], dtype="BF16"),
@@ -84,14 +91,18 @@ def make_inputs(s):
     m, k, n = s["m"], s["k"], s["n"]
     # Generate the physical contiguous layouts accepted by the operator.
     a = sample("x1", (*s["batch"], k, m) if s["transpose_x1"] else (*s["batch"], m, k))
-    b = sample("x2", (n, k) if s["transpose_x2"] else (k, n))
+    # Production ND and NZ use identical quantized weights and channel scales.
+    sample_transposed = s["transpose_x2"] and s.get("weight_format") != "NZ"
+    b = sample("x2", (n, k) if sample_transposed else (k, n))
     a_axis = -2 if s["transpose_x1"] else -1
-    b_axis = -1 if s["transpose_x2"] else -2
+    b_axis = -1 if sample_transposed else -2
     a_scale = (a.abs().amax(dim=a_axis, keepdim=True) if s["token"] else a.abs().max()) / 127
     b_scale = b.abs().amax(dim=b_axis, keepdim=True) / 127
     a_scale = a_scale.clamp_min(torch.finfo(torch.float32).tiny)
     b_scale = b_scale.clamp_min(torch.finfo(torch.float32).tiny)
     x1, x2 = (a / a_scale).round().to(torch.int8), (b / b_scale).round().to(torch.int8)
+    if s.get("weight_format") == "NZ":
+        x2 = x2.t().contiguous()
     scale = b_scale.reshape(n).contiguous()
     pertoken = a_scale.reshape(*s["batch"], m).contiguous() if s["token"] else None
     if not s["token"]:
@@ -123,8 +134,15 @@ def resolve_output_dtype(s):
     return {"bf16": torch.bfloat16, "fp16": torch.float16}[s["output_dtype"]]
 
 
-def to_device(data, device):
-    return {k: v.to(f"npu:{device}") if v is not None else None for k, v in data.items()}
+def to_device(data, device, weight_format="ND"):
+    inputs = {k: v.to(f"npu:{device}") if v is not None else None for k, v in data.items()}
+    if weight_format == "NZ":
+        import torch_npu
+
+        inputs["x2"] = torch_npu.npu_format_cast(inputs["x2"], 29)
+        if torch_npu.get_npu_format(inputs["x2"]) != 29:
+            raise RuntimeError("weight preparation did not produce FRACTAL_NZ")
+    return inputs
 
 
 def metadata(data, s, parameters):
@@ -141,7 +159,7 @@ def metadata(data, s, parameters):
                 device=str(v.device),
                 stride=list(v.stride()),
                 contiguous=v.is_contiguous(),
-                layout="ND",
+                layout=s.get("weight_format", "ND") if k == "x2" else "ND",
             )
             for k, v in data.items()
         },

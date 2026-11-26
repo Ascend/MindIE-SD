@@ -27,6 +27,7 @@
 
 #include "eagle_quant_batch_matmul_swiglu_tiling.h"
 #include "../deps/common/inc/op_host/op_cache_tiling.h"
+#include <cstdio>
 #include <map>
 #include <numeric>
 
@@ -64,6 +65,7 @@ constexpr uint32_t SCALE_INDEX = 2;
 constexpr uint32_t OFFSET_INDEX = 3;
 constexpr uint32_t BIAS_INDEX = 4;
 constexpr uint32_t PERTOKEN_SCALE_INDEX = 5;
+constexpr size_t TRANSPOSE_X2_ATTR_INDEX = 2;
 
 constexpr uint64_t BIAS_TABLE_NUM = 256;
 constexpr uint64_t DATA_SIZE_FP32 = 4;
@@ -1493,6 +1495,23 @@ static ge::graphStatus EagleQuantBatchMatmulSwigluTilingFunc(gert::TilingContext
     auto tokenDesc = context->GetOptionalInputDesc(PERTOKEN_SCALE_INDEX);
     OP_LOGE_IF(tokenDesc == nullptr || tokenDesc->GetDataType() != ge::DT_FLOAT, ge::GRAPH_FAILED,
         context->GetNodeName(), "FP32 pertoken_scale is required.");
+    const auto *weight = context->GetInputDesc(X2_INDEX);
+    OP_LOGE_IF(weight == nullptr, ge::GRAPH_FAILED, context->GetNodeName(), "x2 descriptor is required.");
+    if (ge::GetPrimaryFormat(weight->GetStorageFormat()) == ge::FORMAT_FRACTAL_NZ) {
+        const auto *attrs = context->GetAttrs();
+        const auto *transB = attrs == nullptr ? nullptr : attrs->GetAttrPointer<bool>(TRANSPOSE_X2_ATTR_INDEX);
+        if (transB == nullptr || !*transB) {
+            static constexpr char guidance[] =
+                "FRACTAL_NZ x2 requires transpose_x2=true. For efficient NZ weight access, pack the INT8 ND weight "
+                "W[...,K,N] once at model load on the target NPU with "
+                "torch_npu.npu_format_cast(W.transpose(-2, -1).contiguous(), 29). "
+                "Reuse the resulting NZ weight with transpose_x2=True for inference.";
+            std::fprintf(stderr, "[EagleQuantBatchMatmulSwiglu] %s\n", guidance);
+            std::fflush(stderr);
+            OPS_LOG_E(context->GetNodeName(), "%s", guidance);
+            return ge::GRAPH_FAILED;
+        }
+    }
     std::vector<int32_t> registerList = {0};
     return TilingRegistry::GetInstance().DoTilingImpl(context, registerList);
 }
