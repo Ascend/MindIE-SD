@@ -102,13 +102,10 @@ VLLM_OMNI_TARGET_DEVICE=npu pip install -e . --no-build-isolation -i https://mir
 
 #### 安装 MindIE SD【可选】
 
-官方镜像中如未安装 mindiesd，可源码编译安装，参考如下指导：
+官方镜像中如未安装 mindiesd，可通过 pip 安装，参考如下指导：
 
 ```bash
-git clone https://gitcode.com/Ascend/MindIE-SD.git
-cd MindIE-SD
-python setup.py bdist_wheel
-pip install dist/mindiesd-*.whl
+pip install mindiesd
 ```
 
 ## 启动服务
