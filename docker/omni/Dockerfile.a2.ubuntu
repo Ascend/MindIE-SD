@@ -22,7 +22,6 @@
 #
 # Run:
 #   docker run -it --rm --name=mindiesd \
-#       --privileged \
 #       --shm-size=1g \
 #       --device /dev/davinci0 \
 #       --device /dev/davinci1 \
@@ -39,6 +38,8 @@
 #       -v /root/.cache:/root/.cache \
 #       mindiesd:v3.2.0-cann9.1.0-torch_npu2.10.0.post4-910b-ubuntu22.04-py3.12 \
 #       bash
+#
+# Note: Add the `--privileged=true` flag to the `docker run` command above for NPU access.
 # ============================================================================
 
 FROM quay.io/ascend/vllm-omni:v0.32.0

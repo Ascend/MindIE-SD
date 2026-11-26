@@ -41,7 +41,6 @@ export IMAGE=quay.io/ascend/vllm-omni:v0.28.0-a3
 export CONTAINER_NAME=h3
 
 docker run -it -u root --name ${CONTAINER_NAME} \
-  --privileged=true \
   --shm-size=2000g \
   --net=host \
   --device /dev/davinci0 \
@@ -65,6 +64,10 @@ docker run -it -u root --name ${CONTAINER_NAME} \
   ${IMAGE} \
   /bin/bash
 ```
+
+>[!NOTE] 说明
+>
+> 启动容器时需添加 `--privileged=true` 参数以获取 NPU 访问权限。
 
 Ascend 950 场景下，创建容器时需增加 `-v /usr/local/Ascend/driver/topo:/usr/local/Ascend/driver/topo`，将宿主机的驱动拓扑目录挂载到容器内的相同路径。
 

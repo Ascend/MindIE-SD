@@ -60,7 +60,6 @@ export IMAGE=quay.io/ascend/vllm-omni:v0.33.0rc1-a3
 export CONTAINER_NAME=h3-image
 
 docker run -it -u root --name ${CONTAINER_NAME} \
-  --privileged=true \
   --shm-size=2000g \
   --net=host \
   --device /dev/davinci0 \
@@ -86,8 +85,10 @@ docker run -it -u root --name ${CONTAINER_NAME} \
 ```
 
 > [!NOTE]说明
-> Atlas 350（A5）不存在 `/dev/devmm_svm` 设备，创建容器时请删除该映射；`/dev/davinciN` 按实际可见卡数保留。
-> Atlas 350（A5）场景还需增加 `-v /usr/local/Ascend/driver/topo:/usr/local/Ascend/driver/topo`。
+>
+> - 启动容器时需添加 `--privileged=true` 参数以获取 NPU 访问权限。
+> - Atlas 350（A5）不存在 `/dev/devmm_svm` 设备，创建容器时请删除该映射；`/dev/davinciN` 按实际可见卡数保留。
+> - Atlas 350（A5）场景还需增加 `-v /usr/local/Ascend/driver/topo:/usr/local/Ascend/driver/topo`。
 
 #### 安装最新 vLLM-Omni【可选】
 

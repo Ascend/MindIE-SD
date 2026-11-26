@@ -73,7 +73,6 @@ docker pull "${IMAGE}"
 
 docker run -it -u root --name "${CONTAINER_NAME}" \
   -e MODEL="${MODEL}" \
-  --privileged=true \
   --shm-size=200g \
   --net=host \
   --device /dev/davinci0 \
@@ -92,6 +91,9 @@ docker run -it -u root --name "${CONTAINER_NAME}" \
   -w /outputs \
   "${IMAGE}" /bin/bash
 ```
+
+>[!NOTE] 说明
+> 启动容器时需添加 `--privileged=true` 参数以获取 NPU 访问权限。
 
 使用 Ascend 950PR / 950DT 芯片时，创建容器需将宿主机的驱动拓扑目录 `/usr/local/Ascend/driver/topo` 挂载到容器内的相同路径。Atlas 800I A2推理服务器 / Atlas 800I A3超节点服务器使用对应镜像，按实际驱动目录调整挂载。
 

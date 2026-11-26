@@ -114,7 +114,6 @@ Atlas 800I A2 inference server:
 
 ```bash
 docker run -it --rm --name=mindiesd \
-    --privileged \
     --shm-size=1g \
     --device /dev/davinci0 \
     --device /dev/davinci1 \
@@ -139,7 +138,6 @@ Atlas 800I A3 SuperPoD Server:
 
 ```bash
 docker run -it --rm --name=mindiesd \
-    --privileged \
     --shm-size=1g \
     --device /dev/davinci0 \
     --device /dev/davinci1 \
@@ -164,7 +162,6 @@ docker run -it --rm --name=mindiesd \
 
 ```bash
 docker run -it --rm --name=mindiesd \
-    --privileged \
     --shm-size=1g \
     --device /dev/davinci0 \
     --device /dev/davinci1 \
@@ -183,7 +180,9 @@ docker run -it --rm --name=mindiesd \
 ```
 <!-- end id6 -->
 
-> **Note:** The `--privileged` flag and device mappings are required for NPU access. The host must mount driver libraries (`/usr/local/Ascend/driver/lib64`), driver version info, DCMI, `npu-smi`, and Atlas install info into the container.
+>[!NOTE] Note
+>
+> Add the `--privileged=true` flag to the `docker run` commands above for NPU access, device mappings are also required. The host must mount driver libraries (`/usr/local/Ascend/driver/lib64`), driver version info, DCMI, `npu-smi`, and Atlas install info into the container.
 
 ### Build Locally
 
