@@ -634,6 +634,54 @@ curl --fail-with-body -sS "${API_URL}" \
 | `lora.scale` | `1.0` | 按原始强度应用 LoRA |
 | `flow_shift` / `audio_flow_shift` | 可省略 | 音视频调度由 LoRA 元数据提供 |
 
+### T2VA RTF<1
+
+在 8 卡 Ascend 950PR 上验证 FlashGen 4 步 T2VA 的 `RTF < 1`。使用原始浮点 `FL2VA/` 权重、提供 `mindiesd.quant_attention` 的 MindIE-SD。
+
+#### 启动低时延 T2VA 服务
+
+将 `MODEL_ROOT` 设为 MiniMax-H3 根目录，并按前文准备 T2VA 专用的 `FLASHGEN_LORA`。此配置让 DiT 和 VAE 权重常驻 NPU，RainFusion 从第 0 步启用。
+
+```bash
+export MODEL_ROOT=/path/to/MiniMax-H3
+export PORT=9098
+export VLLM_WORKER_MULTIPROC_METHOD=spawn VLLM_OMNI_VIDEO_SYNC_TIMEOUT=1800
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True HCCL_NPU_SOCKET_PORT_RANGE=auto
+unset VLLM_OMNI_MINIMAX_H3_DISABLED_AUDIO_TCONV_CONV1D
+
+vllm serve "${MODEL_ROOT}/FL2VA" --omni --host 0.0.0.0 --port "${PORT}" \
+  --trust-remote-code --task-type fl2va \
+  --num-gpus 8 --usp 8 --ring 1 --text-encoder-tp-size 8 \
+  --vae-parallel-mode tile --vae-use-tiling --vae-patch-parallel-size 8 \
+  --lora-backend peft --lora-application startup-merge \
+  --lora-path "${FLASHGEN_LORA}" --lora-scale 1.0 \
+  --diffusion-attention-config '{"default":{"backend":"RAINFUSION_ATTN","block_sparse":{"sparsity":0.8,"precision":"mix","start_step":0}}}' \
+  --diffusion-quantization-config '{"transformer":{"method":"mxfp8"},"video_vae":{"method":"mxfp8"}}' \
+  --additional-config '{"video_vae_fused_ops":true}'
+```
+
+#### 发送 4 步 T2VA 请求并测量 RTF
+
+LoRA 已在服务启动时固定，请求省略 `lora` 字段。新增流式掩盖配置`preencode_mp4`。服务就绪后先发送一次预热，再用相同请求测量。端到端 RTF 为 HTTP 请求总耗时除以生成的 MP4 实际时长。
+
+```bash
+export API_URL="http://127.0.0.1:${PORT}/v1/videos/sync"
+export PROMPT=""
+
+HDR_FILE=$(mktemp)
+curl -sS -D "$HDR_FILE" -X POST "${API_URL}" \
+  -F "prompt=${PROMPT}" \
+  -F 'width=1344' \
+  -F 'height=768' \
+  -F 'aspect_ratio=16:9' \
+  -F 'fps=24' \
+  -F 'num_inference_steps=4' \
+  -F "seed=1101" \
+  -F 'extra_params={"task":"t2va","duration":15.0,"preencode_mp4":true}' \
+  -o "t2va_4step_rtf1.mp4"
+```
+
 ## SLA 与 QAT 推理
 
 本节面向 Ascend 950（A5），介绍四步模型、原生 C7 W4A4 与 FP8 SLA 的组合推理。SLA 与 QAT 可分别启用：SLA 选择注意力后端，QAT 配置线性层的权重和激活量化。
