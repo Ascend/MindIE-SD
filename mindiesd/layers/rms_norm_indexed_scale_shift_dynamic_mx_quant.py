@@ -98,13 +98,25 @@ _DST_TYPE_ALIASES = {
     "float4_e1m2": "float4_e1m2fn_x2",
     "float4_e1m2fn": "float4_e1m2fn_x2",
 }
+
+
+def _resolve_npu_dst_type(name):
+    """Return the destination dtype from torch_npu, falling back to torch."""
+    if hasattr(torch_npu, name):
+        return getattr(torch_npu, name)
+    return getattr(torch, name, None)
+
+
 # The torch dtypes of the CANN quantizer, one per output type.
-_NPU_DST_TYPES = {
-    "float8_e4m3fn": torch_npu.float8_e4m3fn,
-    "float8_e5m2": torch_npu.float8_e5m2,
-    "float4_e2m1fn_x2": torch_npu.float4_e2m1fn_x2,
-    "float4_e1m2fn_x2": torch_npu.float4_e1m2fn_x2,
-}
+_NPU_DST_TYPES = {name: _resolve_npu_dst_type(name) for name in sorted(_SUPPORTED_DST_TYPES)}
+
+
+def _get_npu_dst_type(dst_type):
+    """Return the resolved dtype, or fail clearly when it is unavailable."""
+    resolved = _NPU_DST_TYPES.get(dst_type)
+    if resolved is None:
+        raise RuntimeError(f"dst_type {dst_type} is not supported by the current torch/torch_npu")
+    return resolved
 
 
 def _use_hybrid(rows: int, hidden: int) -> bool:
@@ -769,7 +781,7 @@ if _HAS_TRITON:
             )
         y, exponent = torch_npu.npu_dynamic_mx_quant(
             modulated,
-            dst_type=_NPU_DST_TYPES[dst_type],
+            dst_type=_get_npu_dst_type(dst_type),
             axis=-1,
             block_size=32,
             round_mode="rint",
