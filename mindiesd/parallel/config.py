@@ -7,7 +7,6 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-
 """Derive and validate the complete parallel split before device work."""
 
 from __future__ import annotations
@@ -34,14 +33,12 @@ def _validate_attention_mode(precision, sparse_type, pre_rearranged):
     """Share legal wire/consumer/order combinations across entry and cached construction."""
     if not isinstance(pre_rearranged, bool):
         raise ValueError("pre_rearranged must be a bool and agree across ranks")
-    if precision not in ("mix", "bf16"):
-        raise ValueError("precision must be 'mix' or 'bf16', got %r" % precision)
+    if precision not in ("bf16", "fp16", "mix", "mxfp8"):
+        raise ValueError(f"precision must be 'bf16', 'fp16', 'mix' or 'mxfp8', got {precision!r}")
     if sparse_type not in ("rf_v2", "rf_v3"):
         raise ValueError("sparse_type must be 'rf_v2' or 'rf_v3', got %r" % sparse_type)
-    if pre_rearranged and (precision not in ("bf16", "mix") or sparse_type != "rf_v3"):
-        raise ValueError("pre_rearranged=True requires BF16/mix RF-v3")
-    if precision == "mix" and sparse_type != "rf_v3":
-        raise ValueError("precision='mix' requires sparse_type='rf_v3'")
+    if precision in ("mix", "mxfp8") and sparse_type != "rf_v3":
+        raise ValueError("precision=%r requires sparse_type='rf_v3'" % precision)
 
 
 @dataclass(frozen=True)

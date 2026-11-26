@@ -38,7 +38,7 @@ class ParallelState:
         group=None,
         cp_group=None,
         # Consumer selection and execution optimizations.
-        bsa_backend="cann",
+        bsa_backend=None,
         overlap_comm=False,
         optimize_attention_pipeline=True,
         quantized_comm: bool = False,

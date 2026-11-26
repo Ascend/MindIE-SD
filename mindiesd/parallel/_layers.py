@@ -13,6 +13,7 @@ from mindiesd.layers.flash_attn.sparse_flash_attn_rf_v2 import (  # noqa: F401
     pool_qk_separately,
     do_multi_span_tensor_rearrange_pooling,
     get_multi_span_blockwise_mask,
+    get_mask_index,
     is_a5_device,
     rain_fusion_attention,
 )
@@ -83,6 +84,12 @@ def bf16_block_sparse_attention(
     )
 
 
+def is_a2_or_a3_device():
+    from mindiesd.utils.get_platform import NPUDevice, get_npu_device
+
+    return get_npu_device() in (NPUDevice.A2, NPUDevice.A3)
+
+
 def eagle_quant_block_sparse_attention(
     *,
     query,
@@ -135,3 +142,40 @@ def run_bf16_bsa(precision, tensors, options):
     from ._native_mxfp8 import bf16_mxfp8_bsa  # pylint: disable=import-error,no-name-in-module
 
     return bf16_mxfp8_bsa(tensors, options)
+
+
+def cp_mix_wire(chain, query, key, value, scales, geometry, local):
+    if not chain.optimize_attention_pipeline or not chain.pre_rearranged or query.device.type != "npu":
+        return None
+    from ._quantized_payload_kernels import cp_mix_wire as write
+
+    return write(chain, query, key, value, scales, geometry, local, is_a5=is_a5_device)
+
+
+def rf_v2_block_sparse_attention(
+    *,
+    query,
+    key,
+    value,
+    block_sparse_mask,
+    scale_value,
+    inner_precise,
+    actual_seq_lengths,
+    actual_seq_lengths_kv,
+):
+    """Pass one RF query window and global KV to the indexed RF-v2 operator."""
+    keep = block_sparse_mask.bool()
+    return rain_fusion_attention(
+        query.flatten(0, 1),
+        key.flatten(0, 1),
+        value.flatten(0, 1),
+        scale=scale_value,
+        head_num=query.shape[2],
+        input_layout="TND",
+        select_idx=get_mask_index(keep)[0].transpose(0, 1).contiguous(),
+        select_num_idx=keep[0].transpose(0, 1).sum(dim=-1).contiguous(),
+        blockshape=DEVICE_OP_BLOCK_SHAPE,
+        actual_seq_lengths=actual_seq_lengths,
+        actual_seq_lengths_kv=actual_seq_lengths_kv,
+        inner_precise=inner_precise,
+    ).reshape(1, query.shape[1], query.shape[2], query.shape[3])

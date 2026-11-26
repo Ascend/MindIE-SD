@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines  # Existing RF-v3 operator module shares float and quantized consumers.
 #!/usr/bin/env python
 # pylint: disable=duplicate-code
 # coding=utf-8
@@ -12,6 +13,7 @@
 # See the Mulan PSL v2 for more details.
 
 from ...rf_attention import build_rf_attention_plan
+from ...utils.get_platform import is_a5_device
 import math
 from typing import Optional
 import threading
@@ -146,6 +148,41 @@ def _fp8_quant_qkv(q, k, v, q_rot, k_rot, block_size_q=128, block_size_kv=256, l
     )
 
     return q_fp8, k_fp8, v_fp8, q_scale, k_scale, v_scale
+
+
+@torch.no_grad()
+def eagle_qbsa_quant_qkv(q, k, v, block_size_q=64, layout="BSND"):
+    """Public quantization boundary shared by distributed EagleQBSA consumers."""
+    return _eagle_qbsa_quant_qkv(q, k, v, block_size_q=block_size_q, layout=layout)
+
+
+def _mxfp8_block_quant(tensor, block_size, layout="BSND"):
+    """Quantize sequence blocks to E4M3 using exact power-of-two FP32 scales."""
+    if layout == "BSND":
+        tensor = tensor.transpose(1, 2).contiguous()
+    batch, heads, sequence, width = tensor.shape
+    padded_sequence = math.ceil(sequence / block_size) * block_size
+    if padded_sequence != sequence:
+        tensor = F.pad(tensor, (0, 0, 0, padded_sequence - sequence))
+    blocks = tensor.float().reshape(batch, heads, padded_sequence // block_size, block_size, width)
+    scales = blocks.abs().amax(dim=(-2, -1)).clamp_min(torch.finfo(torch.float32).tiny) / 448.0
+    scales = torch.pow(2.0, torch.ceil(torch.log2(scales))).unsqueeze(-1)
+    payload = (blocks / scales.unsqueeze(-1)).clamp(-448.0, 448.0).to(torch.float8_e4m3fn)
+    return payload.reshape(batch, heads, padded_sequence, width), scales.contiguous(), sequence
+
+
+def mxfp8_quant_qkv(q, k, v, block_size_q=128, block_size_kv=128, layout="BSND", q_rot=None, k_rot=None):
+    """Prepare legacy block-scaled FP8; this API name does not imply native MXFP8."""
+    if q_rot is not None:
+        q = torch.matmul(q, q_rot)
+    if k_rot is not None:
+        k = torch.matmul(k, k_rot)
+    q8, q_scale, q_length = _mxfp8_block_quant(q, block_size_q, layout)
+    k8, k_scale, k_length = _mxfp8_block_quant(k, block_size_kv, layout)
+    v8, v_scale, v_length = _mxfp8_block_quant(v, block_size_kv, layout)
+    if k_length != v_length:
+        raise ValueError("MXFP8 BSA key and value sequence lengths must match")
+    return q8, k8, v8, q_scale, k_scale, v_scale, q_length, k_length
 
 
 @torch.no_grad()
@@ -543,6 +580,8 @@ def _bsa_dispatch(kwargs, bsa_backend):
     if bsa_backend == "cann":
         return torch.ops.mindiesd.block_sparse_attention(**kwargs)
     if bsa_backend == "eagle":
+        if kwargs.get("q_dequant_scale") is not None or kwargs.get("quant_mode", 0) > 0:
+            raise ValueError("quantized BSA requires bsa_backend='cann'; Eagle BSA has no dequant-scale interface")
         return torch.ops.mindiesd.eagle_block_sparse_attention(**kwargs)
     raise ValueError(f"bsa_backend must be cann or eagle, got {bsa_backend!r}")
 
@@ -656,8 +695,8 @@ def bsa_sparse_attention_v3(
         raise ParametersInvalid("image_spans requires an explicit video_spans layout.")
     if bsa_backend not in ("cann", "eagle"):
         raise ValueError("bsa_backend must be cann or eagle")
-    if bsa_backend == "eagle" and precision not in ("bf16", "mix"):
-        raise ValueError("bsa_backend='eagle' requires precision='bf16' or 'mix'")
+    if bsa_backend == "eagle" and precision not in ("bf16", "fp16", "mix"):
+        raise ValueError("bsa_backend='eagle' requires precision='bf16', 'fp16' or 'mix'")
     if input_layout not in ("BSND", "BNSD"):
         raise ValueError("input_layout must be BSND or BNSD")
     if video_spans is not None and (txt_len != 0 or latent_shape_q is not None or latent_shape_k is not None):
@@ -682,22 +721,25 @@ def bsa_sparse_attention_v3(
     # rotate Q/K with a Hadamard matrix before quantization. If the caller did
     # not provide rotation matrices, generate them once per (device, dtype,
     # head_dim) and reuse across steps.
-    if precision not in ("mix", "fp8", "mxfp4", "bf16"):
-        raise ValueError(f"precision must be one of 'bf16', 'fp8', 'mxfp4', 'mix'; got {precision!r}.")
-    if precision in ("fp8", "mxfp4") and (q_rot is None or k_rot is None):
+    if precision not in ("mix", "fp8", "mxfp8", "mxfp4", "bf16", "fp16"):
+        raise ValueError(f"precision must be one of 'bf16', 'fp16', 'fp8', 'mxfp8', 'mxfp4', 'mix'; got {precision!r}.")
+    if precision == "mxfp8" and not is_a5_device():
+        raise ValueError("precision='mxfp8' BSA requires Ascend 950PR/950DT (A5)")
+    if precision in ("fp8", "mxfp8", "mxfp4") and (q_rot is None or k_rot is None):
         q_rot, k_rot = _get_rot_matrices(q.device, q.dtype, q.shape[-1])
 
     # S dimension index: dim 2 for BNSD, dim 1 for BSND
     s_dim = 2 if input_layout == "BNSD" else 1
 
     fp8_mode = precision == "fp8"
+    mxfp8_mode = precision == "mxfp8"
     mxfp4_mode = precision == "mxfp4"
 
     # Resolve effective KV block size for the CANN operator.
-    # FP8: blockShapeY must be a multiple of 256; MXFP4: a multiple of 64
+    # FP8/MXFP8 mode1: blockShapeY is a multiple of 256; MXFP4: a multiple of 64
     # (CANN tiling constraint; 256 also satisfies MXFP4 and is the default).
     # BF16: blockShapeY = block_size (no extra constraint; block_size_kv is ignored).
-    if fp8_mode or mxfp4_mode:
+    if fp8_mode or mxfp8_mode or mxfp4_mode:
         effective_block_size_kv = block_size_kv if block_size_kv is not None else 256
     else:
         effective_block_size_kv = block_size
@@ -900,6 +942,18 @@ def bsa_sparse_attention_v3(
             # Packed FP4 data / E8M0 scales are UINT8 storage: carry CANN dtype codes.
             q_dtype = k_dtype = v_dtype = torch_npu.float4_e2m1fn_x2
             q_scale_dtype = k_scale_dtype = v_scale_dtype = torch_npu.float8_e8m0fnu
+        elif mxfp8_mode:
+            q_, k_, v_, q_scale, k_scale, v_scale, _, _ = mxfp8_quant_qkv(
+                q_,
+                k_,
+                v_,
+                block_size_q=block_size,
+                block_size_kv=effective_block_size_kv,
+                layout=input_layout,
+                q_rot=q_rot,
+                k_rot=k_rot,
+            )
+            quant_mode = 1
         elif fp8_mode:
             q_, k_, v_, q_scale, k_scale, v_scale = _fp8_quant_qkv(
                 q_,
@@ -913,7 +967,7 @@ def bsa_sparse_attention_v3(
             )
 
         # BSA kernel (V3: BF16/FP8/MXFP4; V2: BF16/FP8)
-        bsa_layout = "BNSD" if (fp8_mode or mxfp4_mode) else input_layout
+        bsa_layout = "BNSD" if (fp8_mode or mxfp8_mode or mxfp4_mode) else input_layout
         out = rain_fusion_attention_v3(
             q_,
             k_,
@@ -943,12 +997,12 @@ def bsa_sparse_attention_v3(
         )
 
         # FP8/MXFP4 output is BNSD; convert back for inv-rearrange.
-        if (fp8_mode or mxfp4_mode) and input_layout == "BSND":
+        if (fp8_mode or mxfp8_mode or mxfp4_mode) and input_layout == "BSND":
             out = out.permute(0, 2, 1, 3).contiguous()
 
         # MXFP4 pads S to a 64 base before quantization (kernel skips the padded
         # tail via the original actual_seq_lengths); crop the output back.
-        if mxfp4_mode and out.shape[s_dim] != seqlen:
+        if (mxfp8_mode or mxfp4_mode) and out.shape[s_dim] != seqlen:
             out = out.narrow(s_dim, 0, seqlen).contiguous()
 
     # inverse rearrange to restore (t, h, w) order

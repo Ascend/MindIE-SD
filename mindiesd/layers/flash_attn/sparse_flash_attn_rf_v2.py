@@ -80,20 +80,20 @@ def avgpool(input_tensor, pool_size=128, input_layout='BNSD'):  # BSND in,  BSND
 
 
 def get_mask_index(mask):
-    b, n, s, _ = mask.shape
+    b, n, q_blocks, kv_blocks = mask.shape
     device = mask.device
 
-    mask_reshaped = mask.reshape(-1, s, s)
+    mask_reshaped = mask.reshape(-1, q_blocks, kv_blocks)
     batch_size = mask_reshaped.shape[0]
 
-    row_indices = torch.arange(s, device=device).expand(batch_size, s, -1)
+    row_indices = torch.arange(kv_blocks, device=device).expand(batch_size, q_blocks, -1)
     sorted_vals = torch.where(mask_reshaped, row_indices, 1e9).to(torch.float32)
     sorted_vals, _ = torch.sort(sorted_vals, dim=-1)
     valid_count = mask_reshaped.sum(dim=-1, keepdim=True)
     keep_mask = row_indices < valid_count
     result = torch.where(keep_mask, sorted_vals, -1)
 
-    pos_matrix = result.reshape(b, n, s, s).to(torch.int64)
+    pos_matrix = result.reshape(b, n, q_blocks, kv_blocks).to(torch.int64)
     return pos_matrix
 
 
@@ -554,13 +554,13 @@ def pool_qk_separately(query, key, pool_size=128, input_layout="BSND"):
 
     The single-batch/single-head BSND path retains the native Mean reduction
     and tail divisor while avoiding the large concat and strided full-block
-    reduction input. Other layouts/geometries retain the stock implementation.
+    reduction input. Other layouts/geometries pool Q/K independently as well.
     No input is modified; output batch order remains Q followed by K.
     """
     if query.shape != key.shape or query.dtype != key.dtype or query.device != key.device:
         raise ValueError("query/key pooling requires equal shapes, dtypes and devices")
     if input_layout != "BSND" or query.ndim != 4 or query.shape[0] != 1 or query.shape[2] != 1:
-        return avgpool(torch.cat((query, key), dim=0), pool_size, input_layout)
+        return torch.cat((avgpool(query, pool_size, input_layout), avgpool(key, pool_size, input_layout)), dim=0)
     if pool_size <= 0 or query.shape[1] <= 0:
         raise ValueError("pool_size and sequence length must be positive")
     _, length, heads, dim = query.shape
@@ -573,8 +573,8 @@ def pool_qk_separately(query, key, pool_size=128, input_layout="BSND"):
         ]
         pooled.append(torch.cat(full, dim=0))
     if tail_size:
-        tail = torch.cat((query[:, -tail_size:], key[:, -tail_size:]), dim=0)
-        pooled.append(tail.view(2, 1, tail_size, heads, dim).mean(dim=2))
+        tail = [tensor[:, -tail_size:].view(1, 1, tail_size, heads, dim).mean(dim=2) for tensor in (query, key)]
+        pooled.append(torch.cat(tail, dim=0))
     return torch.cat(pooled, dim=1) if len(pooled) == 2 else pooled[0]
 
 
@@ -617,22 +617,23 @@ def get_multi_span_blockwise_mask(
             raise ValueError("retained_mask requires return_binary=True")
         mask.logical_or_(retained_mask.to(torch.bool))
     if retained_idx is None:
+        protected_blocks = sorted(set(dense_blocks) | set(first_frame_blocks))
         if return_binary:
             # Pageable host memory still makes an NPU async copy wait for the
             # stream. Pin these small indices; the parallel path skips the copy.
             retained_idx = torch.tensor(
-                sorted(dense_blocks | first_frame_blocks),
+                protected_blocks,
                 dtype=torch.long,
                 pin_memory=mask.device.type == "npu" and async_index_transfer,
             ).to(device=mask.device, non_blocking=async_index_transfer)
         else:
-            retained_idx = torch.tensor(sorted(dense_blocks | first_frame_blocks), device=mask.device, dtype=torch.long)
+            retained_idx = torch.tensor(protected_blocks, device=mask.device, dtype=torch.long)
     if retained_idx.numel():
         mask[:, :, retained_idx, :] = True
         mask[:, :, :, retained_idx] = True
     image_groups, target_blocks = reference_plan
-    rows = sorted(set(target_blocks) - dense_blocks - first_frame_blocks)
-    if image_groups and image_sparsity > 0 and rows:
+    rows = sorted(set(target_blocks).difference(dense_blocks, first_frame_blocks)) if image_groups else []
+    if rows and image_sparsity > 0:
         row_idx = torch.tensor(rows, device=mask.device, dtype=torch.long)
         for group in image_groups:
             if not group:

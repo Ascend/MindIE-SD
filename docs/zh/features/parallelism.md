@@ -154,6 +154,12 @@ for step in range(1, world_size):
 
 核心采用 AlltoAll 集体通信。每个设备在注意力计算前将自己的序列分块发送给所有其他设备，同时接收其他设备的序列分块，在注意力头维度完成数据重组。计算完成后再次通过 AlltoAll 将结果按序列维度收集回来。当序列长度和设备数同比例增加时，单设备通信量保持恒定（理论分析见 DeepSpeed Ulysses 论文）。
 
+在 `rf_v2` / `rf_v3` 的 BF16/FP16 纯 Ulysses 单流执行中，关闭
+`overlap_comm` 和 `optimize_attention_pipeline` 后仍保留 token/block 与重排映射缓存。
+缓存仅包含不可变几何信息，按形状、布局和设备匹配，最多保留四组；执行链仍逐次重建。
+这不会开启双流、RF 重排前移、通信预打包、Q/K 独立池化或反向 A2A 公共缓冲区优化。
+CP 组合及 `mix` / `mxfp8` 的缓存策略不变。
+
 ### 适用场景
 
 适合注意力头数较多、AlltoAll 带宽充裕的场景。相比 RSP，Ulysses 在短序列多头场景下效率更高，特别适用于序列长度与 hidden_size 均较大的情况。

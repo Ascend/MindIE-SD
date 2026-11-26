@@ -7,10 +7,6 @@
 # EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
 # MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 # See the Mulan PSL v2 for more details.
-"""A5 RNE INT8 scatter and FP8 send kernels using producer-reduced FP32 divisors.
-
-The kernels preserve the one-head packet ownership map.
-"""
 
 import torch
 import triton
@@ -20,7 +16,6 @@ from triton.language.extra.cann import libdevice
 
 @triton.jit
 def corrected_divide(x, y):
-    """Correct reciprocal division using its FMA residual; preserve overflow."""
     initial = x / y
     residual = tl.fma(-initial, y, x)
     refined = initial + residual / y
@@ -53,7 +48,6 @@ def tiled_int8(
     D: tl.constexpr,
     OUT_HEAD: tl.constexpr = 0,
 ):
-    """Quantize four heads per tile and scatter into destination-major packets."""
     rowtiles = tl.cdiv(OWNED, R)
     headtiles = tl.cdiv(HEADS, H)
     for tile in range(tl.program_id(0).to(tl.int32), rowtiles * headtiles, tl.num_programs(0).to(tl.int32)):
@@ -96,7 +90,6 @@ def fp8_kernel(
     D: tl.constexpr,
     OUT_HEAD: tl.constexpr = 0,
 ):
-    """Write FP8 bytes directly in chunk/destination order using source strides."""
     tiles = tl.cdiv(TOKENS, ROWS)
     for tile in range(tl.program_id(0).to(tl.int32), tiles * HEADS, tl.num_programs(0).to(tl.int32)):
         head = tile // tiles
@@ -122,14 +115,11 @@ def cores(device):
 
 
 def quantize(st):
-    """Write the exact INT8 payload into the producer-owned buffer."""
     from .config import QUANT_BLOCK
 
     if QUANT_BLOCK != 64:
         raise ValueError("native INT8 payload ABI requires QUANT_BLOCK=64")
     c = cores(st.payload.device.index)
-    # Valid full-coverage maps overwrite every head/token byte.
-    # Partial/padded maps retain the existing zero-fill contract.
     if st.maps.n_owned != st.payload.shape[1]:
         if st.payload.is_contiguous():
             zero_kernel[c,](st.payload, st.payload.numel(), 4096)
@@ -157,7 +147,6 @@ def quantize(st):
 
 
 def v_send(value, divisor, chunks, world, out=None):
-    """Allocate a contiguous one-head FP8 communication packet."""
     bs, tokens, heads, dim = value.shape
     assert bs == 1 and heads == chunks * world
     if out is None:
@@ -189,3 +178,122 @@ def v_send(value, divisor, chunks, world, out=None):
         out.stride(1),
     )
     return out.view(torch.int8)
+
+
+@triton.jit
+def cp_int8_send(
+    value,
+    scales,
+    blocks,
+    out,
+    TOKENS: tl.constexpr,
+    HEADS: tl.constexpr,
+    DIM: tl.constexpr,
+    CHUNKS: tl.constexpr,
+    WORLD: tl.constexpr,
+    ST: tl.constexpr,
+    SH: tl.constexpr,
+    SD: tl.constexpr,
+    SB: tl.constexpr,
+    SC: tl.constexpr,
+    LOCAL: tl.constexpr,
+    R: tl.constexpr,
+    H: tl.constexpr,
+    D: tl.constexpr,
+):
+    rowtiles = tl.cdiv(TOKENS, R)
+    headtiles = tl.cdiv(HEADS, H)
+    for tile in range(tl.program_id(0).to(tl.int32), rowtiles * headtiles, tl.num_programs(0).to(tl.int32)):
+        row = tile // headtiles * R + tl.arange(0, R)
+        head = tile % headtiles * H + tl.arange(0, H)
+        dim = tl.arange(0, D)
+        block = tl.load(blocks + row, row < TOKENS, other=0).to(tl.int32)
+        sc = tl.load(
+            scales + block[:, None] * SB + head[None, :] * SC,
+            (row < TOKENS)[:, None] & (head < HEADS)[None, :],
+            other=1,
+        )
+        sc = tl.where(sc == 0, 1.0, sc)
+        mask = (row < TOKENS)[:, None, None] & (head < HEADS)[None, :, None] & (dim < DIM)[None, None, :]
+        x = tl.load(
+            value + row[:, None, None] * ST + head[None, :, None] * SH + dim[None, None, :] * SD, mask, other=0
+        ).to(tl.float32)
+        rounded = libdevice.rint(corrected_divide(x, sc[:, :, None]))
+        clipped = tl.minimum(tl.maximum(rounded, -127.0), 127.0)
+        result = tl.where(
+            rounded != rounded,  # pylint: disable=comparison-with-itself
+            rounded,
+            clipped,
+        ).to(tl.int8)
+        destination = (head % CHUNKS) * WORLD + head // CHUNKS
+        tl.store(
+            out + (destination[None, :, None] * LOCAL + row[:, None, None]) * DIM + dim[None, None, :], result, mask
+        )
+
+
+def cp_mix_send(query, key, value, blocks, scales, outputs):
+    chunks, world, local, _, _, dim = outputs[0].shape
+    tokens, heads, width = query.shape
+    if width != dim or heads != chunks * world or tokens > local:
+        raise ValueError('CP mixed payload geometry does not match its send buffers')
+    qs, ks, vs = scales
+    c = cores(query.device.index)
+    for tensor, divisor, out in zip((query, key), (qs, ks), outputs[:2]):
+        cp_int8_send[c,](
+            tensor,
+            divisor,
+            blocks,
+            out,
+            tokens,
+            heads,
+            dim,
+            chunks,
+            world,
+            tensor.stride(0),
+            tensor.stride(1),
+            tensor.stride(2),
+            divisor.stride(0),
+            divisor.stride(1),
+            local,
+            2,
+            32,
+            triton.next_power_of_2(dim),
+        )
+    fp8_kernel[c,](
+        value,
+        vs,
+        outputs[2].view(torch.float8_e4m3fn),
+        tokens,
+        heads,
+        dim,
+        chunks,
+        world,
+        value.stride(0),
+        value.stride(1),
+        value.stride(2),
+        32,
+        triton.next_power_of_2(dim),
+        local * dim,
+    )
+    return outputs
+
+
+def cp_mix_wire(chain, q, k, v, scales, geometry, local, *, is_a5):
+    mapping = chain.reorder_mapping
+    if not (
+        chain.precision == "mix"
+        and chain.optimize_attention_pipeline
+        and chain.pre_rearranged
+        and q.device.type == "npu"
+        and q.dtype == torch.bfloat16
+        and q.shape[-1] == 128
+        and q.shape[1] == mapping.world * mapping.chunking
+        and is_a5()
+    ):
+        return None
+    if "payloads" not in geometry:
+        geometry["payloads"] = tuple(
+            torch.zeros(mapping.chunking, mapping.world, local, 1, 1, q.shape[-1], dtype=torch.int8, device=q.device)
+            for _ in range(3)
+        )
+    return cp_mix_send(q, k, v, geometry["blocks"], scales, geometry["payloads"])

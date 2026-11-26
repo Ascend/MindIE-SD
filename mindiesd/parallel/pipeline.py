@@ -100,6 +100,8 @@ class Chain(MixedProducer, BF16Primitives):
 
     __slots__ = ("_kv_gather_buffer_cache",)
 
+    # Common initialization selects float/mixed buffers without calling the mix-only constructor.
+    # pylint: disable=super-init-not-called
     def __init__(self, reorder_mapping, *, state, precision="mix", sparse_type="rf_v3", pre_rearranged=False):
         # Initialize common state directly, then select the precision-specific buffers.
         # pylint: disable=super-init-not-called

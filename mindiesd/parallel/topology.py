@@ -28,8 +28,8 @@ def resolve_world_rank(group, world=None, rank=None):
 
     if group is None:
         raise RuntimeError(
-            "no process group was given: the chain issues collectives at any world size "
-            "(exactly one all_reduce plus 4*chunking all_to_all_single), so the caller's own SP "
+            "no process group was given: the executor issues collectives at any world size, "
+            "so the caller's own SP "
             "group is required even at world=1 -- initialize torch.distributed (e.g. torchrun "
             "--nproc_per_node=1) and pass its group",
         )
@@ -95,9 +95,7 @@ def merge_ranks(raw):
 def merge_reverse_receive_chunks(raw):
     """View common reverse storage in final ``[B,S,W,chunks*w,D]`` order."""
     chunks, world, width, shard, batch, dim = raw.shape
-    if batch != 1 or width != 1:
-        raise ValueError("reverse receive chunk merge requires batch=1 and width=1")
-    return raw.permute(4, 3, 1, 0, 2, 5).view(batch, shard, world, chunks * width, dim)
+    return raw.permute(4, 3, 1, 0, 2, 5).reshape(batch, shard, world, chunks * width, dim)
 
 
 def _head_major_qkv_geometry_supported(chunks, world, width, batch, dim):

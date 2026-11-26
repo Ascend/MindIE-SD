@@ -158,6 +158,14 @@ The core uses AlltoAll collective communication. Before attention computation, e
 
 Suitable for scenarios with many attention heads and ample AlltoAll bandwidth. Compared to RSP, Ulysses is more efficient in short-sequence multi-head scenarios, especially when both sequence length and hidden_size are large.
 
+For BF16/FP16 `rf_v2` / `rf_v3` pure Ulysses execution, disabling both
+`overlap_comm` and `optimize_attention_pipeline` retains the token/block and
+reorder mapping caches. They contain immutable geometry matched by layout,
+shape and device, with at most four entries; execution chains are rebuilt on
+each call. This does not enable communication overlap, RF reorder hoisting,
+packet prepacking, separate Q/K pooling or shared reverse-A2A buffers.
+CP combinations and `mix` / `mxfp8` cache policies are unchanged.
+
 - Example without Ulysses Sequence Parallel:
 
     ```python

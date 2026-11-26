@@ -66,7 +66,7 @@ def layer_boundary(monkeypatch):
     rf_v3._eagle_qbsa_quant_qkv = lambda *a, **kw: pytest.fail("native quantization requires its explicit fixture")
     torch_npu = types.ModuleType("torch_npu")
     torch_npu.float8_e4m3fn = torch.float8_e4m3fn
-    torch_npu.npu = types.SimpleNamespace(device_count=lambda: 0)
+    torch_npu.npu = types.SimpleNamespace(device_count=lambda: 0, is_available=lambda: False)
     for module in (sparse, rf_v2, rf_v3, torch_npu):
         monkeypatch.setitem(sys.modules, module.__name__, module)
     package = new_package("_parallel_layers_boundary", monkeypatch)
@@ -133,7 +133,7 @@ def test_public_rf_plan_preserves_stock_permutation_and_validates_inputs(rf_plan
 
 def test_layer_boundary_forwards_bf16_and_quantized_operator_contracts(layer_boundary, monkeypatch):
     boundary = layer_boundary.module
-    query = torch.ones(1, 4, 1, 2, dtype=torch.bfloat16)
+    query = torch.ones(1, 4, 1, 2, dtype=torch.float16)
     mask = torch.ones(1, 1, 1, 1, dtype=torch.int8)
     assert (
         boundary.bf16_block_sparse_attention(
@@ -151,7 +151,9 @@ def test_layer_boundary_forwards_bf16_and_quantized_operator_contracts(layer_bou
     )
     kwargs = layer_boundary.calls[0][3]
     assert kwargs["input_layout"] == "BSND" and kwargs["bsa_backend"] == "eagle"
-    assert kwargs["block_size_q"] == kwargs["block_size_kv"] == 128
+    assert (
+        kwargs["block_size_q"] == kwargs["block_size_kv"] == 128 and layer_boundary.calls[0][0].dtype == torch.float16
+    )
 
     options = dict(
         query=query,
@@ -273,6 +275,10 @@ def test_distributed_mix_reaches_real_adapter(producer, layer_boundary, monkeypa
     query = torch.ones(1, 68, 4, 2, dtype=torch.bfloat16)
     spans = [{"start": 4, "latent_shape": [1, 8, 16]}]
     options = dict(state=state, used_len=132, chunking=2, return_stats=True)
+    if backend == "cann":
+        with pytest.raises(ValueError, match="requires bsa_backend"):
+            producer.entry(query, query, query, spans, **options)
+        return
     output, stats = producer.entry(query, query, query, spans, **options)
     assert output.shape == query.shape and len(calls) == 2
     assert stats["tally"]["allreduce"] == 1 and stats["tally"]["a2a_calls"] == 8
@@ -282,7 +288,7 @@ def test_distributed_mix_reaches_real_adapter(producer, layer_boundary, monkeypa
         layer_boundary.module.eagle_quant_block_sparse_attention(**{**arguments, "key": torch.ones(1, 2, 132, 2)})
 
     events = len(producer.events)
-    for mode in ({"precision": "bf16", "inner_precise": 0}, {"precision": "bf16", "sparse_type": "rf_v2"}):
+    for mode in ({"precision": "bf16", "inner_precise": 4}, {"precision": "bf16", "sparse_type": "rf_v2"}):
         with pytest.raises(ValueError):
             producer.entry(query, query, query, spans, **options, **mode)
         assert len(producer.events) == events and state.last_call_stats is None
@@ -338,6 +344,8 @@ def test_serial_rf_order_cache_and_backend(rf_plan, monkeypatch, precision, layo
         namespace["get_multi_span_blockwise_mask"](torch.ones(3, 2, 1, 2), 0.5, 1, set(), set(), "BSND", pool_parts=2)
 
 
+# Test doubles supply mixin fields without running the NPU constructor.
+# pylint: disable=attribute-defined-outside-init
 @pytest.mark.parametrize("sparsity", [0.0, 0.8, 1.0])
 def test_cached_bf16_mask_keeps_protection_without_index_rewrites(producer, monkeypatch, sparsity):
     mask_helper = native_rf_functions()["get_multi_span_blockwise_mask"]
@@ -371,3 +379,32 @@ def test_cached_bf16_mask_keeps_protection_without_index_rewrites(producer, monk
     monkeypatch.setattr(torch.Tensor, "__setitem__", tracked)
     actual = primitive._make_bf16_sparse_mask(pool, scale=0.25, sparsity=sparsity)
     assert torch.equal(actual, expected) and not writes
+
+
+def test_cp_wire_writer_skips_cpu_and_unoptimized_inputs(layer_boundary, monkeypatch):
+    boundary = layer_boundary.module
+    query = torch.ones(1, 4, 1, 2, dtype=torch.bfloat16)
+    monkeypatch.setitem(sys.modules, boundary.__package__ + "._quantized_payload_kernels", None)
+    chain = types.SimpleNamespace(optimize_attention_pipeline=False, pre_rearranged=True)
+    assert boundary.cp_mix_wire(chain, query, query, query, None, None, 4) is None
+    chain.optimize_attention_pipeline = True
+    assert boundary.cp_mix_wire(chain, query, query, query, None, None, 4) is None
+
+
+def test_rf_v2_rectangular_consumer_preserves_query_window(layer_boundary):
+    layer = layer_boundary.module
+    q = torch.ones(1, 131, 1, 128, dtype=torch.bfloat16)
+    kv = torch.ones(1, 257, 1, 128, dtype=q.dtype)
+    mask = torch.ones(1, 1, 2, 3, dtype=torch.int8)
+    result = layer.rf_v2_block_sparse_attention(
+        query=q,
+        key=kv,
+        value=kv,
+        block_sparse_mask=mask,
+        scale_value=0.125,
+        inner_precise=0,
+        actual_seq_lengths=[131],
+        actual_seq_lengths_kv=[257],
+    )
+    assert torch.equal(result, q) and result.shape == q.shape
+    assert layer.cp_mix_wire(types.SimpleNamespace(optimize_attention_pipeline=False), q, kv, kv, None, None, 0) is None

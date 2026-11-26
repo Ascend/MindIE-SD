@@ -84,3 +84,24 @@ def test_fp8_send_preserves_source_strides_and_bytes(kernels, reuse, strided):
     assert torch.equal(result.contiguous().view(torch.uint8), expected.view(torch.uint8))
     with pytest.raises(ValueError, match="fixed one-head"):
         kernels.v_send(value, divisor, 2, 2, out=torch.empty(1, dtype=torch.int8))
+
+
+def test_cp_fused_packets_match_reference_and_reject_geometry(kernels):
+    tokens, heads, dim = 5, 4, 128
+    value = ((torch.arange(tokens * heads * dim).reshape(tokens, heads, dim).float() % 800 - 400) / 2).bfloat16()
+    blocks = torch.tensor([0, 0, 1, 1, 1])
+    scales = torch.tensor([[1.0, 2.0, 0.0, 4.0], [2.0, 1.0, 4.0, 0.0]])
+    vs = torch.full((heads, dim), 2.0)
+    outputs = tuple(torch.zeros(2, 2, 7, 1, 1, dim, dtype=torch.int8) for _ in range(3))
+    assert kernels.cp_mix_send(value, value, value, blocks, (scales, scales, vs), outputs) is outputs
+    row_scales = scales[blocks].unsqueeze(-1)
+    reference = (value.float() / torch.where(row_scales == 0, 1, row_scales)).round().clamp(-127, 127).to(torch.int8)
+    fp8 = (value.float() / vs).clamp(-448, 448).to(torch.float8_e4m3fn).view(torch.int8)
+    for head in range(heads):
+        chunk, rank = head % 2, head // 2
+        for output in outputs[:2]:
+            assert torch.equal(output[chunk, rank, :tokens, 0, 0], reference[:, head])
+        assert torch.equal(outputs[2][chunk, rank, :tokens, 0, 0], fp8[:, head])
+        assert not outputs[0][chunk, rank, tokens:].any()
+    with pytest.raises(ValueError, match="geometry"):
+        kernels.cp_mix_send(value[..., :64], value, value, blocks, (scales, scales, vs), outputs)

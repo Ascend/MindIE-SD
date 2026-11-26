@@ -141,7 +141,9 @@ def test_state_reuses_a_chain_only_for_the_same_configuration(foundation):
 def test_state_configuration_is_explicit_and_independent(foundation, monkeypatch, optimize, backend):
     monkeypatch.setenv("MINDIESD_MINIMAX_H3_FEATURES", "unknown_feature")
     monkeypatch.setenv("H3_BSA_OP", "invalid")
-    state = foundation.state.ParallelState(optimize_attention_pipeline=optimize, bsa_backend=backend)
+    state = foundation.state.ParallelState(
+        overlap_comm=False, optimize_attention_pipeline=optimize, bsa_backend=backend
+    )
     assert state.optimize_attention_pipeline is optimize
     assert state.bsa_backend == backend
     assert state.overlap_comm is False
@@ -154,7 +156,7 @@ def test_state_configuration_is_explicit_and_independent(foundation, monkeypatch
 def test_state_preserves_default_optimization_and_backend(foundation):
     state = foundation.state.ParallelState()
     assert state.optimize_attention_pipeline is True
-    assert state.bsa_backend == "cann"
+    assert state.bsa_backend is None
     assert state.quantized_comm is False
     assert foundation.state.ParallelState(quantized_comm=True).quantized_comm
     with pytest.raises(AttributeError):
@@ -226,9 +228,8 @@ def test_state_owns_and_validates_the_shared_qkv_plan(foundation):
         ("bf16", "rf_v3", 1),
         ("fp32", "rf_v3", False),
         ("bf16", "invalid", False),
-        ("bf16", "rf_v2", True),
         ("mix", "rf_v2", False),
-        ("mxfp8", "rf_v3", False),
+        ("mxfp8", "rf_v2", False),
     ],
 )
 def test_invalid_attention_mode_is_rejected(foundation, mode):
@@ -369,3 +370,17 @@ def test_empty_rank_mapping(foundation, mapping_contract):
     config = configuration(foundation, rank=1, used_len=58, spans=[dict(start=26, latent_shape=(1, 2, 16))])
     mapping = mapping_contract.get_attention_reorder_mapping(config, torch.device("cpu"))
     assert mapping.local_rank_mapping["n_tok"] == 0
+
+
+def test_cp_binding_does_not_reuse_a_pure_ulysses_chain(foundation):
+    state = foundation.state.ParallelState()
+    mapping = SimpleNamespace(config=SimpleNamespace(key=("same geometry",)))
+
+    def build(*args, **kwargs):
+        return object()
+
+    before = state.chain(mapping, build=build, precision="bf16", pre_rearranged=True)
+    state.bind_cp_group(SimpleNamespace(world=2, rank=0), 0)
+    after = state.chain(mapping, build=build, precision="bf16", pre_rearranged=True)
+    assert after is not before and len(state.chains) == 2
+    assert state.chain(mapping, build=build, precision="bf16", pre_rearranged=True) is after

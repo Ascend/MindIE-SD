@@ -14,11 +14,33 @@
 
 import importlib
 import logging
+import sys
 from types import SimpleNamespace
 
 import pytest
 
 torch = pytest.importorskip("torch")
+
+
+@pytest.mark.parametrize("dependency_missing", [False, True])
+def test_native_mxfp8_runtime_errors_precede_collectives(producer, monkeypatch, dependency_missing):
+    name = producer.package.__name__ + "._native_mxfp8"
+    if dependency_missing:
+
+        def require_runtime():
+            raise ModuleNotFoundError("missing runtime dependency", name="runtime_dependency")
+
+        monkeypatch.setitem(sys.modules, name, SimpleNamespace(require_native_mxfp8_runtime=require_runtime))
+        error, message = ModuleNotFoundError, "missing runtime dependency"
+    else:
+        monkeypatch.setitem(sys.modules, name, None)
+        error, message = ValueError, "supplied by the native consumer PR"
+    monkeypatch.setattr(producer.layers, "is_a5_device", lambda: True)
+    q = torch.ones(1, 68, 4, 128, dtype=torch.bfloat16)
+    state = producer.modules["state"].ParallelState(group=producer.group)
+    with pytest.raises(error, match=message):
+        producer.entry(q, q, q, [], state=state, precision="mxfp8")
+    assert not producer.events and state.last_call_stats is None
 
 
 def make_inputs():
@@ -29,6 +51,8 @@ def make_inputs():
 
 def call(producer, state, *, precision="mix", sparse_type="rf_v3", return_stats=True):
     query, key, value = make_inputs()
+    if precision == "fp16":
+        query, key, value = (t.to(torch.float16) for t in (query, key, value))
     return producer.entry(
         query,
         key,
@@ -68,15 +92,16 @@ def test_serial_mix_commits_exact_collectives_stats_and_chain_reuse(producer, mo
     assert len(records) == 1 and records[0].levelno == logging.DEBUG and records[0].args
 
 
+@pytest.mark.parametrize("precision", ["bf16", "fp16"])
 @pytest.mark.parametrize("sparse_type", ["rf_v2", "rf_v3"])
-def test_serial_bf16_uses_no_scale_reduce_and_routes_consumer(producer, monkeypatch, sparse_type):
+def test_serial_bf16_uses_no_scale_reduce_and_routes_consumer(producer, monkeypatch, sparse_type, precision):
     monkeypatch.setattr(producer.layers, "is_a5_device", lambda: sparse_type == "rf_v3")
     state = producer.modules["state"].ParallelState(quantized_comm=True, group=producer.group)
-    output, stats = call(producer, state, precision="bf16", sparse_type=sparse_type)
+    output, stats = call(producer, state, precision=precision, sparse_type=sparse_type)
     assert tuple(output.shape) == (1, 68, 4, 2)
     assert stats["tally"]["allreduce"] == 0 and stats["tally"]["a2a_calls"] == 8
     assert stats["tally"]["consumer"] == sparse_type
-    expected = "rain_fusion" if sparse_type == "rf_v2" else "cann"
+    expected = "rain_fusion" if sparse_type == "rf_v2" else "eagle"
     assert state.last_call_stats["actual"]["bsa_backend"] == expected
     if sparse_type == "rf_v3":
         assert producer.layers.calls[-1][1]["bsa_backend"] == expected
@@ -103,6 +128,68 @@ def test_overlap_stream_protocol_matches_serial_counts_and_finishes_state(produc
     assert any(event[0] == "wait" for event in fake_npu.timeline)
 
 
+@pytest.mark.parametrize(
+    "case", ["state", "tensor", "shape", "dtype", "batch", "a5", "inner", "block", "mx_shape", "mx_device"]
+)
+def test_entry_rejects_invalid_contract_before_exchange(producer, monkeypatch, case):
+    q = torch.ones(1, 68, 4, 128, dtype=torch.bfloat16)
+    state = producer.modules["state"].ParallelState(group=producer.group)
+    args = [q, q, q, [{"start": 4, "latent_shape": [1, 8, 16]}]]
+    options = dict(state=state, used_len=132, chunking=2)
+    if case == "state":
+        options["state"] = object()
+    elif case == "tensor":
+        args[0] = None
+    elif case == "shape":
+        args[1] = q[:, :1]
+    elif case == "dtype":
+        args[:3] = [q.float()] * 3
+    elif case == "batch":
+        options["bs"] = 2
+    elif case == "a5":
+        monkeypatch.setattr(producer.layers, "is_a5_device", lambda: False)
+    elif case == "inner":
+        options.update(precision="bf16", inner_precise=4)
+    elif case == "block":
+        options["block_size_kv"] = 64
+    elif case == "mx_shape":
+        args[:3] = [q[..., :64]] * 3
+        options["precision"] = "mxfp8"
+    else:
+        options["precision"] = "mxfp8"
+        monkeypatch.setattr(producer.layers, "is_a5_device", lambda: False)
+    with pytest.raises((TypeError, ValueError, RuntimeError)):
+        producer.entry(*args, **options)
+    assert not producer.events and state.last_call_stats is None
+
+
+def test_cp_entry_commits_lazy_diagnostics_and_rejects_incomplete_protocol(producer, monkeypatch):
+    hybrid = importlib.import_module(producer.package.__name__ + ".hybrid_sparse_attention")
+    monkeypatch.setattr(hybrid, "resolve_cp_rank", lambda *args: 0)
+    state = producer.modules["state"].ParallelState(group=producer.group, cp_group=producer.group)
+    q = torch.ones(1, 68, 4, 128, dtype=torch.bfloat16)
+    counts = dict(allreduce=0, a2a_calls=8, fused_stages=0, kv_gather_calls=4, query_boundary_gather_calls=2)
+    monkeypatch.setattr(producer.modules["pipeline"].Chain, "run", lambda self, q, *a, **kw: (q, counts))
+    options = dict(state=state, used_len=264, chunking=2, pre_rearranged=True)
+    spans = [{"start": 8, "latent_shape": [1, 8, 32]}]
+    with pytest.raises(ValueError, match="pre-rearranged"):
+        producer.entry(q, q, q, spans, **{**options, "pre_rearranged": False})
+    with pytest.raises(ValueError, match="head_dim"):
+        producer.entry(q[..., :64], q[..., :64], q[..., :64], spans, **options)
+    assert producer.entry(q, q, q, spans, **options) is q
+    stats = state.last_call_stats
+    assert stats["plan"]["sequence_world"] == 4 and stats["hybrid"]["kv_gather_calls"] == 4
+    assert stats["hybrid"]["forward_precision"] == "bf16"
+    for field, message in [("kv_gather_calls", "KV gather"), ("query_boundary_gather_calls", "query-block boundary")]:
+        fresh = producer.modules["state"].ParallelState(group=producer.group, cp_group=producer.group)
+        original = counts[field]
+        counts[field] = 0
+        with pytest.raises(RuntimeError, match=message):
+            producer.entry(q, q, q, spans, **{**options, "state": fresh})
+        assert fresh._execution_failed and fresh.last_call_stats is None
+        counts[field] = original
+
+
 def test_collective_count_rejection_never_publishes_success(producer, monkeypatch):
     entry_module = producer.modules["distributed_sparse_attention"]
     pipeline = producer.modules["pipeline"]
@@ -113,11 +200,11 @@ def test_collective_count_rejection_never_publishes_success(producer, monkeypatc
         return q, {"allreduce": 0, "a2a_calls": 0, "fused_stages": 0}
 
     monkeypatch.setattr(pipeline.Chain, "run", wrong_run)
-    with pytest.raises(RuntimeError, match="exactly ONE all_reduce") as error:
+    with pytest.raises(RuntimeError, match="mix requires 1 all_reduce") as error:
         call(producer, state)
     assert error.value.parallel_call_counts["allreduce"] == 0
     assert state.last_call_stats is None and state._last_chain is None
-    with pytest.raises(RuntimeError, match="bf16 must not issue"):
+    with pytest.raises(RuntimeError, match="bf16 requires 0 all_reduce"):
         entry_module._require_collective_counts({"allreduce": 1, "a2a_calls": 8}, "bf16", 2)
     with pytest.raises(RuntimeError, match="exactly 8 all_to_all"):
         entry_module._require_collective_counts({"allreduce": 1, "a2a_calls": 7}, "mix", 2)
@@ -197,18 +284,6 @@ def test_independent_mix_baseline_cache_is_bounded(producer):
         assert len(state.chains) == 1 and len(waits) == index + 1
         assert len(state.token_block_mapping_cache) <= 1 and len(state.reorder_mapping_cache) <= 1
     assert waits == [0, 1, 1, 1, 1, 1]
-
-
-def test_default_bf16_wire_consumes_after_exchange(producer, monkeypatch):
-    def consume(precision, tensors, options):
-        assert all(t.dtype == torch.bfloat16 for t in tensors)
-        assert any(e[0] == "a2a" for e in producer.events)
-        return tensors[0]
-
-    monkeypatch.setattr(producer.layers, "run_bf16_bsa", consume, raising=False)
-    state = producer.modules["state"].ParallelState(group=producer.group)
-    _output, stats = call(producer, state)
-    assert stats["tally"]["allreduce"] == 0 and stats["tally"]["a2a_calls"] == 8
 
 
 @pytest.mark.parametrize(
@@ -296,3 +371,21 @@ def test_global_mix_packets_refresh_values_and_reuse_geometry(producer, phase, r
         if pointer is not None:
             assert positions.data_ptr() == pointer
         pointer = positions.data_ptr()
+
+
+def test_default_bf16_wire_consumes_after_four_transfers_per_chunk(producer, monkeypatch):
+    calls = []
+
+    def consume(precision, tensors, options):
+        assert precision == "mix" and all(t.dtype == torch.bfloat16 for t in tensors)
+        assert any(event[0] == "a2a" for event in producer.events)
+        calls.append(tensors[0].shape)
+        return tensors[0]
+
+    monkeypatch.setattr(producer.layers, "run_bf16_bsa", consume, raising=False)
+    state = producer.modules["state"].ParallelState(group=producer.group, overlap_comm=False)
+    assert state.quantized_comm is False
+    output, stats = call(producer, state)
+    assert output.shape == (1, 68, 4, 2) and len(calls) == 2
+    assert stats["tally"]["allreduce"] == 0 and stats["tally"]["a2a_calls"] == 8
+    assert all(event[1].dtype == torch.bfloat16 for event in producer.events)
