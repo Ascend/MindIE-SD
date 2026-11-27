@@ -10,6 +10,7 @@ FA（Flash Attention）系列接口提供昇腾亲和的注意力计算能力，
 | 接口名 | 类型 | 功能描述 |
 |--------|------|----------|
 | `attention_forward` | 函数 | 标准注意力前向计算，支持自动算子寻优 |
+| `block_causal_attention` | 函数 | 在因果序列中对指定区间计算双向自注意力 |
 | `attention_forward_varlen` | 函数 | 变长序列注意力前向计算 |
 | `sparse_attention` | 函数 | 稀疏注意力前向计算，支持 rf_v2 / ada_bsa 稀疏策略 |
 
@@ -71,6 +72,30 @@ out = attention_forward(query, key, value)
 - 从 `torch.nn.functional.scaled_dot_product_attention` 迁移时，输入布局需从 `[B,N,S,D]` 调整为 `[B,S,N,D]`，并去掉 `transpose` 操作。
 - 从 `flash_attn.flash_attn_func` 迁移时，输入布局已为 `[B,S,N,D]`，可直接替换。
 - 本接口仅提供前向推理，不支持反向梯度计算，迁移时需去掉 `dropout` 并将输入张量的 `requires_grad` 设为 `False`。
+
+### block_causal_attention
+
+适用于单卡上无 padding 且 Q/K/V 形状相同的自注意力 Prefill。每个 token 可以看见自身、此前的所有 token 和所在 span 的全部 token。`spans` 是整个 batch 共用、按升序排列且互不重叠的左闭右开区间。传入 `spans=[]` 表示纯因果注意力。
+
+```python
+from mindiesd import block_causal_attention
+
+block_causal_attention(
+    query, key, value, *, spans, backend="piecewise", scale=None, fused=True, head_first=False
+) -> torch.Tensor
+```
+
+输入和输出默认使用 BSND 布局，BNSD 布局请指定 `head_first=True`。缩放因子默认取 `head_dim ** -0.5`。默认后端 `"piecewise"` 使用分段 FA Score，也可以在该后端设置 `fused=False` 使用 PyTorch 运算。
+
+```python
+spans = [(8, 72), (80, 144)]
+with torch.inference_mode():
+    out = block_causal_attention(query, key, value, spans=spans)
+    out = block_causal_attention(query, key, value, spans=spans, backend="auto")
+    out = block_causal_attention(query, key, value, spans=spans, backend="flex")
+```
+
+在 A5 eager 推理中，auto 在**序列长度至少 28,000 且分段调用至少 8 次**时尝试 Flex。每个 span 和每个非空因果间隔各算一次，包括首尾间隔。该阈值由 950PR 的 BF16 数据标定。Flex 支持头维 128 的 FP16 和 BF16，auto 在条件不满足或缺少匹配的包内执行器时走 piecewise。显式指定 flex 会跳过性能阈值，输入不支持或缺少执行器时报错。推理时只加载预编译内核，算子执行错误会传给调用方。
 
 ### attention_forward_varlen
 

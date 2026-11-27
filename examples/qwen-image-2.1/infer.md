@@ -536,7 +536,6 @@ I2I 的参考图尺寸和数量会影响编码及 prefill 的计算量；`size` 
 | 优化项 | 作用 | 配置与版本说明 |
 | --- | --- | --- |
 | 昇腾注意力后端 | 加速 DiT Attention 计算 | 推荐命令使用 `--diffusion-attention-backend FLASH_ATTN`，相关算子见 [核心层](../../docs/zh/features/core_layers.md) |
-| `flex_attention` | 通过结构化 mask 处理 prefill 中的条件与目标序列注意力 | 对应发布版本及启用方式待补充 |
 
 ### 在线量化：INT8、MXFP8、MXFP4
 

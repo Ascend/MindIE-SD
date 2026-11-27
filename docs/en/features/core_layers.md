@@ -10,6 +10,7 @@ The FA (Flash Attention) series interfaces provide Ascend-optimized attention co
 | Interface Name | Type | Description |
 |--------|------|----------|
 | `attention_forward` | Function | Standard attention forward computation, supports automatic operator tuning |
+| `block_causal_attention` | Function | Self-attention with bidirectional spans in a causal sequence |
 | `attention_forward_varlen` | Function | Variable-length sequence attention forward computation |
 | `sparse_attention` | Function | Sparse attention forward computation, supports rf_v2 / ada_bsa sparse strategies |
 
@@ -71,6 +72,30 @@ out = attention_forward(query, key, value)
 - When migrating from `torch.nn.functional.scaled_dot_product_attention`, the input layout needs to be adjusted from `[B,N,S,D]` to `[B,S,N,D]`, and the `transpose` operation should be removed.
 - When migrating from `flash_attn.flash_attn_func`, the input layout is already `[B,S,N,D]` and can be directly replaced.
 - This interface only provides forward inference and does not support backward gradient computation. When migrating, remove `dropout` and set the input tensor's `requires_grad` to `False`.
+
+### block_causal_attention
+
+Compute unpadded self-attention on a single device with matching Q/K/V shapes. Each token can attend to itself, earlier tokens and every token within its own span. Pass sorted, disjoint half-open token intervals shared across the batch. Use `spans=[]` for ordinary causal order.
+
+```python
+from mindiesd import block_causal_attention
+
+block_causal_attention(
+    query, key, value, *, spans, backend="piecewise", scale=None, fused=True, head_first=False
+) -> torch.Tensor
+```
+
+Input and output use BSND by default or BNSD with `head_first=True`. The default scale is `head_dim ** -0.5`. The default backend, `"piecewise"`, runs segmented FA Score. Set `fused=False` with this backend to use PyTorch operations.
+
+```python
+spans = [(8, 72), (80, 144)]
+with torch.inference_mode():
+    out = block_causal_attention(query, key, value, spans=spans)
+    out = block_causal_attention(query, key, value, spans=spans, backend="auto")
+    out = block_causal_attention(query, key, value, spans=spans, backend="flex")
+```
+
+In eager inference on A5, auto considers Flex at **28,000 tokens or more and at least eight piecewise calls**. Each span and each nonempty causal gap counts as one call, including the leading and trailing gaps. The thresholds were calibrated on 950PR with BF16. Flex supports FP16 and BF16 with head dimension 128. Auto uses piecewise when these conditions are unmet or a matching packaged executor is unavailable. Forcing Flex bypasses the performance thresholds and raises for unsupported inputs or a missing executor. Flex loads precompiled kernels during inference. Kernel execution errors propagate to the caller.
 
 ### attention_forward_varlen
 
