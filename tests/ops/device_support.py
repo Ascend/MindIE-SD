@@ -23,6 +23,7 @@ REGISTRATIONS = {
     "norm_rope_concat": ("ascend910b", "ascend910_93", "ascend950"),
     "sparse_block_estimate": ("ascend910b", "ascend910_93", "ascend950"),
     "eagle_ffn": ("ascend950",),
+    "eagle_hadamard_quant": ("ascend950",),
     "quant_four_over_six_a5": ("ascend950",),
     "sigmoid_mul_dynamic_mx_quant": ("ascend950",),
     "quant_flash_attn": ("ascend950",),

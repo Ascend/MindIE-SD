@@ -32,6 +32,7 @@
 #include "norm_rope_concat.h"
 #include "eagle_split_norm_rope_concat.h"
 #include "eagle_ffn_linear.h"
+#include "eagle_hadamard_quant.h"
 #include "eagle_quant_batch_matmul_swiglu.h"
 #include "quant_four_over_six_a5.h"
 #include "sigmoid_mul_dynamic_mx_quant.h"
@@ -39,6 +40,8 @@
 TORCH_LIBRARY(mindiesd, m) {
     m.def("sigmoid_mul_dynamic_mx_quant(Tensor x, Tensor gate, int precision_mode=0, int scale_alg=0) -> "
           "(Tensor, Tensor)");
+    m.def("eagle_hadamard_quant(Tensor x, Tensor sign_h, int block_size, str dst_type='mxfp4', "
+          "bool is_sign_h_nz=True) -> (Tensor y, Tensor scale)");
     m.def("eagle_quant_batch_matmul_swiglu(Tensor x1, Tensor x2, Tensor scale, "
           "Tensor? offset=None, Tensor? bias=None, Tensor? pertoken_scale=None, "
           "ScalarType? output_dtype=None, bool transpose_x1=False, bool transpose_x2=False, "
@@ -176,7 +179,10 @@ TORCH_LIBRARY(mindiesd, m) {
         -> (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor)");
 }
 
+TORCH_LIBRARY_IMPL(mindiesd, Meta, m) { m.impl("eagle_hadamard_quant", &eagle_hadamard_quant_impl_meta); }
+
 TORCH_LIBRARY_IMPL(mindiesd, PrivateUse1, m) {
+    m.impl("eagle_hadamard_quant", &eagle_hadamard_quant_impl_npu);
     m.impl("eagle_quant_batch_matmul_swiglu", &eagle_quant_batch_matmul_swiglu_impl_npu);
     m.impl("la", &la_mindie_sd_impl_npu);
     m.impl("adaln", &adaln_mindie_sd_impl_npu);
