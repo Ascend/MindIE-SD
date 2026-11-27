@@ -212,6 +212,38 @@ vllm serve "${MODEL}" \
   --enable-cache-dit-summary \
   --cache-config '{"Fn_compute_blocks":2,"Bn_compute_blocks":1,"max_warmup_steps":4,"residual_diff_threshold":0.4,"max_continuous_cached_steps":4,"enable_taylorseer":true,"taylorseer_order":2}'
 ```
+
+#### A3 Lite（16 die）YAML 部署
+
+请使用 vLLM-Omni `quay.io/ascend/vllm-omni:v0.34.0-a3` 或更高版本的 `-a3` 镜像。从此版本起，vLLM-Omni 提供本节所用的三阶段部署 YAML。将下方命令中的 `DEPLOY_CONFIG` 设置为容器内的 YAML 文件路径。
+[部署 YAML](https://github.com/vllm-project/vllm-omni/blob/v0.34.0/vllm_omni/deploy/minimax_h3_disaggregated_16card_agkv2.yaml)
+
+以下命令启动 T2VA / FL2VA 服务，并将 Stage 0 的显存预算覆盖为 `0.4`。
+
+```bash
+export MODEL=/path/to/MiniMax-H3
+export DEPLOY_CONFIG=/path/to/minimax_h3_disaggregated_16card_agkv2.yaml
+export PORT=9098
+export VLLM_WORKER_MULTIPROC_METHOD=spawn
+export VLLM_OMNI_VIDEO_SYNC_TIMEOUT=80000
+export VLLM_OMNI_DLO_DP_WAVE_TIMEOUT=36000
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+export MINDIE_SD_FA_TYPE=ascend_laser_attention
+export HCCL_NPU_SOCKET_PORT_RANGE=auto
+export MIMALLOC_PURGE_DELAY=0
+
+vllm serve "${MODEL}" \
+  --omni --host 127.0.0.1 --port "${PORT}" \
+  --task-type fl2va \
+  --deploy-config "${DEPLOY_CONFIG}" \
+  --stage-overrides '{"0":{"gpu_memory_utilization":0.4}}' \
+  --stage-init-timeout 1800 --init-timeout 1800
+```
+
+启动 Ref2VA 服务时，将 `--task-type fl2va` 改为 `--task-type ref2va`。服务就绪后，按[发送请求](#发送请求)中的对应示例调用服务。
+此 YAML 使用 AllGather-KV 2，请勿叠加前文的 `RAINFUSION_ATTN` 配置。
+
 <!-- end id1 -->
 
 <!-- npu="950" id2 -->
