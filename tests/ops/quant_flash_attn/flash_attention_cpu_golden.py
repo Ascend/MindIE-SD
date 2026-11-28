@@ -557,6 +557,7 @@ def _flash_attn_single_batch_kernel(
             f"quantize_p_mode must be 'global' / 'blockwise' / 'blockwise_snap_local', got '{quantize_p_mode}'"
         )
     s_torch_dtype = _resolve_s_dtype(s_dtype)
+    prescale_qk = quantize_p and quantize_p_mode == "blockwise_snap_local" and s_torch_dtype == torch.float16
     H, sq, _ = Q.shape
     sk = K.shape[1]
     d_v = V.shape[-1]
@@ -596,13 +597,16 @@ def _flash_attn_single_batch_kernel(
                 else:
                     S_ij = K_j @ Q_i.t()  # FP32 [bkv, bq]
 
-                # ★ S 转入 s_dtype, 后续 max/exp/P 都在 s_dtype 算
+                # MXFP4 Fixpipe scales the FP32 accumulator before writing FP16.
+                if prescale_qk:
+                    S_ij = S_ij * softmax_scale
                 S_ij = S_ij.to(s_torch_dtype)
 
                 S_ij.numpy().tofile('dump_data/mm1Res.bin')
                 print(f'mm1Res.shape={S_ij.shape} mm1Res.dtype={S_ij.dtype}')
 
-                S_ij = S_ij * softmax_scale
+                if not prescale_qk:
+                    S_ij = S_ij * softmax_scale
 
                 # (2) causal mask
                 if causal:

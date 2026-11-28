@@ -21,7 +21,7 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 import torch
 import torch_npu
-from mindiesd import quant_attention
+from mindiesd import prepare_mxfp4_attention_metadata, quant_attention
 from mindiesd.quantization.mode import FP8FAMode
 from mindiesd.utils.exception import ParametersInvalid
 from mindiesd.utils.get_platform import is_a5_device
@@ -470,10 +470,11 @@ class TestQuantAttentionMxfp4(unittest.TestCase):
                 with (
                     patch.object(torch_npu, "npu_dynamic_mx_quant", side_effect=quantize, create=True),
                     patch.object(mxfp4, "_reshape_mxfp4_v_scale_for_fa", side_effect=lambda s, layout: s),
+                    patch.object(torch.ops.mindiesd, "quant_flash_attn_metadata", create=True),
                     patch.object(torch.ops.mindiesd, "quant_flash_attn", create=True) as execute,
                 ):
                     execute.side_effect = lambda q, *args, **kwargs: (torch.zeros_like(q), None)
-                    quant_attention(query, query, query, precision="mxfp4", layout=layout, metadata=object())
+                    quant_attention(query, query, query, precision="mxfp4", layout=layout)
                     expected = scales[0].transpose(1, 2).contiguous() if layout == "BSND" else scales[0]
                     torch.testing.assert_close(execute.call_args.args[3], expected)
                     self.assertTrue(execute.call_args.args[3].is_contiguous())
@@ -506,7 +507,7 @@ class TestQuantAttentionMxfp4(unittest.TestCase):
             self.assertTrue(callable(module._mxfp4_attention_forward))
 
     def test_mxfp4_padding_axes_metadata_and_output_layout(self):
-        metadata = object()
+        metadata, regenerated = object(), object()
         kv = torch.randn(1, 23, 1, 64)
         recorded = []
 
@@ -517,6 +518,9 @@ class TestQuantAttentionMxfp4(unittest.TestCase):
         with (
             patch.object(torch_npu, "npu_dynamic_mx_quant", side_effect=quantize, create=True),
             patch.object(mxfp4, "_reshape_mxfp4_v_scale_for_fa", side_effect=lambda scale, layout: scale),
+            patch.object(
+                torch.ops.mindiesd, "quant_flash_attn_metadata", create=True, return_value=regenerated
+            ) as build,
             patch.object(torch.ops.mindiesd, "quant_flash_attn", create=True) as execute,
         ):
             execute.return_value = (torch.zeros(1, 512, 2, 64), None)
@@ -539,11 +543,58 @@ class TestQuantAttentionMxfp4(unittest.TestCase):
             self.assertEqual([item[1]["axis"] for item in recorded], [-1, -1, 1])
             self.assertEqual(recorded[0][0], (1, 2, 512, 64))
             self.assertEqual(recorded[1][0], (1, 512, 1, 64))
+            self.assertEqual(execute.call_args.kwargs["seqused_q"].tolist(), [17])
+            self.assertEqual(execute.call_args.kwargs["seqused_kv"].tolist(), [23])
             self.assertTrue(all(item[1]["dst_type_max"] == 7.25 for item in recorded))
-            self.assertIs(execute.call_args.kwargs["metadata"], metadata)
+            build.assert_called_once()
+            for length in ("seqused_q", "seqused_kv"):
+                self.assertIs(build.call_args.kwargs[length], execute.call_args.kwargs[length])
+            self.assertIs(execute.call_args.kwargs["metadata"], regenerated)
             self.assertEqual(execute.call_args.kwargs["return_softmax_lse"], 1)
             self.assertEqual(execute.call_args.kwargs["softmax_scale"], 0.0)
             self.assertEqual((execute.call_args.kwargs["win_left"], execute.call_args.kwargs["win_right"]), (0, 7))
+
+    def test_mxfp4_prepared_metadata_checks_lengths_and_windows(self):
+        query = torch.ones(1, 2, 130, 64)
+        key = torch.ones(1, 1, 257, 64)
+        first, second, third, rebuilt = object(), object(), object(), object()
+        with (
+            patch.object(
+                torch_npu, "npu_dynamic_mx_quant", create=True, side_effect=lambda t, **kw: (t, torch.ones(1))
+            ),
+            patch.object(mxfp4, "_reshape_mxfp4_v_scale_for_fa", side_effect=lambda s, layout: s),
+            patch.object(
+                torch.ops.mindiesd,
+                "quant_flash_attn_metadata",
+                create=True,
+                side_effect=(first, second, third, rebuilt, rebuilt),
+            ) as build,
+            patch.object(
+                torch.ops.mindiesd, "quant_flash_attn", create=True, side_effect=lambda q, *args, **kw: (q, None)
+            ) as execute,
+        ):
+            cached = prepare_mxfp4_attention_metadata(query, key, win_left=13)
+            self.assertEqual(build.call_args.kwargs["seqused_q"].tolist(), [130])
+            self.assertEqual(build.call_args.kwargs["seqused_kv"].tolist(), [257])
+            quant_attention(query, key, key, precision="mxfp4", metadata=cached, pre_tokens=13)
+            build.assert_called_once()
+            self.assertIs(execute.call_args.kwargs["metadata"], first)
+
+            quant_attention(query, key, key, precision="mxfp4", metadata=cached, win_left=14)
+            self.assertIs(execute.call_args.kwargs["metadata"], second)
+            quant_attention(query[:, :, :129], key, key, precision="mxfp4", metadata=cached, win_left=13)
+            self.assertIs(execute.call_args.kwargs["metadata"], third)
+            self.assertEqual(build.call_count, 3)
+
+            aligned = torch.ones(1, 1, 512, 64)
+            quant_attention(aligned, aligned, aligned, precision="mxfp4", metadata=first)
+            self.assertIs(execute.call_args.kwargs["metadata"], first)
+            self.assertEqual(build.call_count, 3)
+
+            for q, k in ((query, aligned), (aligned, key)):
+                quant_attention(q, k, k, precision="mxfp4", metadata=first)
+                self.assertIs(execute.call_args.kwargs["metadata"], rebuilt)
+            self.assertEqual(build.call_count, 5)
 
     def test_rotation_scale_packing_and_metadata_contract(self):
         # pylint: disable=cell-var-from-loop
@@ -589,7 +640,9 @@ class TestQuantAttentionMxfp4(unittest.TestCase):
                     self.assertEqual((opts["win_left"], opts["win_right"]), (13, 0))
                     for name in ("layout_q", "layout_kv", "layout_out", "mask_mode", "win_left", "win_right"):
                         self.assertEqual(opts[name], metadata.call_args.kwargs[name])
-                    self.assertIs(opts["seqused_q"], metadata.call_args.kwargs["seqused_q"])
+                    for name in ("seqused_q", "seqused_kv"):
+                        self.assertEqual(opts[name].tolist(), [17, 17])
+                        self.assertIs(opts[name], metadata.call_args.kwargs[name])
                     v_scale = execute.call_args.args[5]
                     expected = (2, 2, 8, 64, 2) if layout == "BNSD" else (2, 8, 2, 64, 2)
                     self.assertEqual(v_scale.shape, expected)
@@ -628,6 +681,7 @@ class TestQuantAttentionMxfp4(unittest.TestCase):
                 torch_npu, "npu_dynamic_mx_quant", create=True, side_effect=lambda t, **kw: (t, torch.ones(1))
             ),
             patch.object(mxfp4, "_reshape_mxfp4_v_scale_for_fa", side_effect=lambda s, layout: s),
+            patch.object(torch.ops.mindiesd, "quant_flash_attn_metadata", create=True),
             patch.object(
                 torch.ops.mindiesd, "quant_flash_attn", create=True, side_effect=RuntimeError("native failure")
             ) as execute,

@@ -93,5 +93,62 @@ constexpr half NEG_TWO_VALE = static_cast<half>(-2.0f);
 constexpr half TWO_VALE = static_cast<half>(2.0f);
 constexpr half MIN_VALUE = static_cast<half>(-65504.0f);
 
+constexpr float LN2_F32 = 0.6931471805599453f;
+constexpr float INV_LN2_F32 = 1.4426950408889634f;
+
+template <const CastTrait &Lane>
+__simd_callee__ inline void LogitExponent(RegTensor<float> &exponent, RegTensor<half> &logit) {
+    MaskReg all16 = CreateMask<uint16_t, MaskPattern::ALL>();
+    MaskReg all32 = CreateMask<float, MaskPattern::ALL>();
+    Cast<float, half, Lane>(exponent, logit, all16);
+    Muls(exponent, exponent, INV_LN2_F32, all32);
+    Truncate<float, RoundMode::CAST_FLOOR>(exponent, exponent, all32);
+}
+
+__simd_callee__ inline void PackHalfLanes(RegTensor<half> &packed, RegTensor<float> &even, RegTensor<float> &odd) {
+    MaskReg all16 = CreateMask<uint16_t, MaskPattern::ALL>();
+    MaskReg all32 = CreateMask<float, MaskPattern::ALL>();
+    RegTensor<half> oddPacked;
+    Cast<half, float, castTraitZero>(packed, even, all32);
+    Cast<half, float, castTraitOne>(oddPacked, odd, all32);
+    Or((RegTensor<uint16_t> &)packed, (RegTensor<uint16_t> &)packed, (RegTensor<uint16_t> &)oddPacked, all16);
+}
+
+template <const CastTrait &Lane>
+__simd_callee__ inline void LogitRemainder(RegTensor<float> &remainder, RegTensor<half> &maximum) {
+    MaskReg all16 = CreateMask<uint16_t, MaskPattern::ALL>();
+    MaskReg all32 = CreateMask<float, MaskPattern::ALL>();
+    RegTensor<float> exponent;
+    LogitExponent<Lane>(exponent, maximum);
+    Cast<float, half, Lane>(remainder, maximum, all16);
+    Muls(exponent, exponent, LN2_F32, all32);
+    Sub(remainder, remainder, exponent, all32);
+    Adds(remainder, remainder, 2.0f * LN2_F32, all32);
+}
+
+__simd_callee__ inline void GroupLogitOffset(RegTensor<half> &offset, RegTensor<half> &maximum) {
+    RegTensor<float> even, odd;
+    LogitRemainder<castTraitZero>(even, maximum);
+    LogitRemainder<castTraitOne>(odd, maximum);
+    PackHalfLanes(offset, even, odd);
+}
+
+// Keep absolute maxima in the existing half buffers. The integer exponent
+// difference fits the packed format after clamping, even at large logits.
+__simd_callee__ inline void PackBiasedExponentDelta(RegTensor<half> &packed, RegTensor<half> &localMax,
+    RegTensor<float> &globalEven, RegTensor<float> &globalOdd, float bias) {
+    MaskReg all32 = CreateMask<float, MaskPattern::ALL>();
+    RegTensor<float> even, odd;
+    LogitExponent<castTraitZero>(even, localMax);
+    LogitExponent<castTraitOne>(odd, localMax);
+    Sub(even, even, globalEven, all32);
+    Sub(odd, odd, globalOdd, all32);
+    Adds(even, even, bias, all32);
+    Adds(odd, odd, bias, all32);
+    Maxs(even, even, 0.0f, all32);
+    Maxs(odd, odd, 0.0f, all32);
+    PackHalfLanes(packed, even, odd);
+}
+
 }
 #endif // VF_COMMON_DEF_H_

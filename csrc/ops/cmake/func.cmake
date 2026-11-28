@@ -44,6 +44,14 @@ function(op_add_subdirectory OP_LIST OP_DIR_LIST)
     set(_OP_LIST)
     set(_OP_DIR_LIST)
 
+    set(_cann_version "")
+    set(_cann_version_file "${ASCEND_CANN_PACKAGE_PATH}/compiler/version.info")
+    if(EXISTS "${_cann_version_file}")
+        file(STRINGS "${_cann_version_file}" _cann_version
+            REGEX "^Version=[0-9]+[.][0-9]+" LIMIT_COUNT 1)
+        string(REGEX MATCH "[0-9]+[.][0-9]+" _cann_version "${_cann_version}")
+    endif()
+
     file(GLOB OP_HOST_CMAKE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/**/op_host/CMakeLists.txt")
 
     foreach(OP_CMAKE_FILE ${OP_HOST_CMAKE_FILES})
@@ -64,6 +72,11 @@ function(op_add_subdirectory OP_LIST OP_DIR_LIST)
                 endif ()
             endif ()
         endif ()
+
+        if(OP_NAME STREQUAL "eagle_hadamard_quant" AND _cann_version AND _cann_version VERSION_LESS "9.2")
+            message(STATUS "Skipping eagle_hadamard_quant because its Blaze Tensor API requires CANN 9.2 or later")
+            continue()
+        endif()
 
         list(APPEND _OP_LIST ${OP_NAME})
         list(APPEND _OP_DIR_LIST ${OP_DIR})

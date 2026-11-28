@@ -12,7 +12,7 @@
 
 # pylint: disable=redefined-outer-name
 
-"""Small physical shapes: direct NPU QFA against CPU kernel-stage simulation."""
+"""Accuracy and regression tests for direct and public dense MXFP4 QFA."""
 
 import pytest
 
@@ -91,3 +91,80 @@ def test_qfa_small_accuracy(qfa_device, layout, q_seq, kv_seq, q_valid, kv_valid
             compare(actual, golden, BUDGET, small=True)
             assert torch.count_nonzero(padding).item() == 0, f"Nonzero query padding in batch {batch}"
         compare(output[0], reference, BUDGET, small=True)
+
+
+def test_qfa_prescales_qk_before_fp16_cast(qfa_device):
+    from mindiesd import quant_attention
+
+    torch, _, device = qfa_device
+    with torch.inference_mode():
+        query = torch.full((1, 130, 14, 128), 24, dtype=torch.bfloat16, device=device)
+        key = query.new_full((1, 64, 14, 128), 24)
+        key[:, 32:, :, 0] = 16
+        value = torch.ones_like(key)
+        value[:, 32:] = -1
+
+        # The two groups have raw logits 73728 and 73536, scaled to 288 and 287.25.
+        actual = quant_attention(query, key, value, precision="mxfp4", layout="BSND", scale=1 / 256)
+        control = quant_attention(query / 2, key, value, precision="mxfp4", layout="BSND", scale=1 / 128)
+
+        # Both groups round to the same FP4 probability with E8M0 scales in a 2:1 ratio.
+        expected = torch.full_like(actual, 1 / 3)
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+        torch.testing.assert_close(actual, control, rtol=0, atol=0)
+
+
+def test_qfa_regenerates_legacy_padded_metadata(qfa_device):
+    from mindiesd import prepare_mxfp4_attention_metadata, quant_attention
+
+    torch, _, device = qfa_device
+    padded_query = torch.ones((1, 1, 512, 128), dtype=torch.bfloat16, device=device)
+    padded_key = padded_query.neg()
+    with torch.inference_mode():
+        old_metadata = prepare_mxfp4_attention_metadata(padded_query, padded_key).tensor
+        query = padded_query[:, :, :17]
+        key = padded_key[:, :, :23]
+        value = torch.ones_like(key)
+        actual = quant_attention(query, key, value, precision="mxfp4", metadata=old_metadata)
+        torch.testing.assert_close(actual, torch.ones_like(actual), atol=0, rtol=0)
+
+
+@pytest.mark.parametrize("layout", ("BNSD", "BSND"))
+def test_qfa_partial_group_with_reused_metadata(qfa_device, layout):
+    from mindiesd import prepare_mxfp4_attention_metadata, quant_attention
+
+    torch, _, device = qfa_device
+    query = torch.ones((1, 130, 2, 128), dtype=torch.bfloat16, device=device)
+    query[:, 1::2] *= -1
+    query[:, :, 1] *= -1
+    key = query.new_ones((1, 33, 1, 128))
+    key[:, -1] = -1
+    if layout == "BNSD":
+        query, key = (tensor.transpose(1, 2).contiguous() for tensor in (query, key))
+    with torch.inference_mode():
+        cached = prepare_mxfp4_attention_metadata(query, key, layout=layout)
+        kwargs = {"precision": "mxfp4", "layout": layout, "scale": 1 / 128}
+        automatic = quant_attention(query, key, key, **kwargs)
+        reused = quant_attention(query, key, key, metadata=cached, **kwargs)
+        # The logits are +1/-1. Both groups quantize to 6 and differ in E8M0 scale by 8x.
+        expected = torch.where(query > 0, query.new_tensor(255 / 257), query.new_tensor(3 / 5))
+        torch.testing.assert_close(automatic, expected, atol=0, rtol=0)
+        torch.testing.assert_close(reused, automatic, atol=0, rtol=0)
+
+
+def test_qfa_rescales_history_after_4096_keys(qfa_device):
+    from mindiesd import quant_attention
+
+    torch, _, device = qfa_device
+    query = torch.full((1, 130, 14, 128), 16, dtype=torch.bfloat16, device=device)
+    query[..., 0] = 8
+    query[..., 1] = 24
+    key = query.new_full((1, 4352, 14, 128), 16)
+    key[:, :4096, :, 0] = 12
+    value = torch.ones_like(key)
+    value[:, 4096:] = -1
+    with torch.inference_mode():
+        actual = quant_attention(query, key, value, precision="mxfp4", layout="BSND", scale=1 / 16)
+        # Scaled scores 2046/2048 quantize to equal FP4 mantissas. A -3 exponent
+        # delta gives old:new weight 2:1, while the old -2 result gives 4:1.
+        torch.testing.assert_close(actual, torch.full_like(actual, 1 / 3), atol=0, rtol=0)

@@ -51,9 +51,10 @@ __simd_vf__ inline void computeOnlyScaleVF(
         Max(vreg_gmax, vreg_gmax, vreg_gmax_old, preg_all16);
         StoreAlign(ugmax_old, vreg_gmax, preg_all16);
 
-        Sub(vreg_rs16, vreg_gmax_old, vreg_gmax, preg_all16);
-        Adds(vreg_rs16, vreg_rs16, NUM_127, preg_all16);
-        Maxs(vreg_rs16, vreg_rs16, ZERO_VALUE, preg_all16);
+        RegTensor<float> newEven, newOdd;
+        LogitExponent<castTraitZero>(newEven, vreg_gmax);
+        LogitExponent<castTraitOne>(newOdd, vreg_gmax);
+        PackBiasedExponentDelta(vreg_rs16, vreg_gmax_old, newEven, newOdd, 127.0f);
         Cast<int32_t, T, h2iZero>((RegTensor<int32_t> &)vreg_rs1, vreg_rs16, preg_all16);
         Cast<int32_t, T, h2iOne>((RegTensor<int32_t> &)vreg_rs2, vreg_rs16, preg_all16);
         ShiftLefts((RegTensor<int32_t> &)vreg_rs1, (RegTensor<int32_t> &)vreg_rs1, SHIFT_VALUE, preg_all16);

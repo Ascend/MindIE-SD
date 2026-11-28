@@ -288,7 +288,7 @@ template <typename QFAT> class EagleQuantFlashAttnBlockVectorDn {
                 Mxfp4Api::softmaxWithGroupMaxQs128Kvs256CallVF<true, half, uint8_t, false, s2BaseSize, s1BaseSize>(
                     vec1ResUB[buffIdx * ve1ResOffset], mm1ResUB[buffIdx * mm1ResOffset],
                     GetLocalGrpMaxUbByLoopIdx(runInfo.loop), GetLocalGlobalMaxUbByCurIdx(runInfo.tileMaxIdx),
-                    nd2nzIndexUB, static_cast<half>(constInfo.scaleValue));
+                    nd2nzIndexUB);
             } else {
                 // s2 padding 32 multi
                 if (runInfo.actSingleLoopS2Size != runInfo.actSingleLoopS2SizeAlign) {
@@ -302,13 +302,12 @@ template <typename QFAT> class EagleQuantFlashAttnBlockVectorDn {
                     Mxfp4Api::SoftmaxWithGroupMaxAlignQs128Kvs32CallVF<true, half, uint8_t, false>(
                         vec1ResUB[buffIdx * ve1ResOffset], mm1ResUB[buffIdx * mm1ResOffset],
                         GetLocalGrpMaxUbByLoopIdx(runInfo.loop), GetLocalGlobalMaxUbByCurIdx(runInfo.tileMaxIdx),
-                        nd2nzIndexUB, static_cast<half>(constInfo.scaleValue));
+                        nd2nzIndexUB);
                 } else { // softmax_padding_32_multi >= 64
                     Mxfp4Api::SoftmaxWithGroupMaxAlignQs128Kvs32MultiCallVF<true, half, uint8_t, false>(
                         vec1ResUB[buffIdx * ve1ResOffset], mm1ResUB[buffIdx * mm1ResOffset],
                         GetLocalGrpMaxUbByLoopIdx(runInfo.loop), GetLocalGlobalMaxUbByCurIdx(runInfo.tileMaxIdx),
-                        nd2nzIndexUB, static_cast<half>(constInfo.scaleValue),
-                        static_cast<uint16_t>(runInfo.actSingleLoopS2SizeAlign),
+                        nd2nzIndexUB, static_cast<uint16_t>(runInfo.actSingleLoopS2SizeAlign),
                         static_cast<uint16_t>(runInfo.actSingleLoopS2SizeAlign64));
                 }
             }
@@ -318,7 +317,7 @@ template <typename QFAT> class EagleQuantFlashAttnBlockVectorDn {
                 Mxfp4Api::softmaxWithGroupMaxQs128Kvs256CallVF<false, half, uint8_t, false, s2BaseSize, s1BaseSize>(
                     vec1ResUB[buffIdx * ve1ResOffset], mm1ResUB[buffIdx * mm1ResOffset],
                     GetLocalGrpMaxUbByLoopIdx(runInfo.loop), GetLocalGlobalMaxUbByCurIdx(runInfo.tileMaxIdx),
-                    nd2nzIndexUB, static_cast<half>(constInfo.scaleValue));
+                    nd2nzIndexUB);
             } else {
                 // s2 padding 32 multi
                 if (runInfo.actSingleLoopS2Size != runInfo.actSingleLoopS2SizeAlign) {
@@ -332,13 +331,12 @@ template <typename QFAT> class EagleQuantFlashAttnBlockVectorDn {
                     Mxfp4Api::SoftmaxWithGroupMaxAlignQs128Kvs32CallVF<false, half, uint8_t, false>(
                         vec1ResUB[buffIdx * ve1ResOffset], mm1ResUB[buffIdx * mm1ResOffset],
                         GetLocalGrpMaxUbByLoopIdx(runInfo.loop), GetLocalGlobalMaxUbByCurIdx(runInfo.tileMaxIdx),
-                        nd2nzIndexUB, static_cast<half>(constInfo.scaleValue));
+                        nd2nzIndexUB);
                 } else { // softmax_padding_32_multi >= 64
                     Mxfp4Api::SoftmaxWithGroupMaxAlignQs128Kvs32MultiCallVF<false, half, uint8_t, false>(
                         vec1ResUB[buffIdx * ve1ResOffset], mm1ResUB[buffIdx * mm1ResOffset],
                         GetLocalGrpMaxUbByLoopIdx(runInfo.loop), GetLocalGlobalMaxUbByCurIdx(runInfo.tileMaxIdx),
-                        nd2nzIndexUB, static_cast<half>(constInfo.scaleValue),
-                        static_cast<uint16_t>(runInfo.actSingleLoopS2SizeAlign),
+                        nd2nzIndexUB, static_cast<uint16_t>(runInfo.actSingleLoopS2SizeAlign),
                         static_cast<uint16_t>(runInfo.actSingleLoopS2SizeAlign64));
                 }
             }

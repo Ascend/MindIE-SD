@@ -48,17 +48,17 @@ __simd_vf__ inline void mm1_res_pre_padding_align_kvs32_nulti_vf(
     }
     uint16_t s2Idx = 0;
     // uint16_t idx2 = 0;
-    RegTensor<T> padding_tensor1;
-    RegTensor<T> padding_tensor2;
-    Duplicate(padding_tensor1, MIN_VALUE, mask_reg);
-    // Duplicate(padding_tensor2, MIN_VALUE, mask_reg);
+    // Scores are already scaled. Padding then maps to zero packed probability.
+    RegTensor<T> padding;
+    constexpr uint16_t NEGATIVE_INFINITY_F16 = 0xfc00;
+    Duplicate(padding, __builtin_bit_cast(half, NEGATIVE_INFINITY_F16), mask_reg);
     for (s2Idx = actSingleLoopS2Size; s2Idx < actSingleLoopS2SizeAlign32 - 1; s2Idx += 2) {
-        StoreAlign(s + (s2Idx * S1Base) * 2, padding_tensor1, mask_reg);
-        StoreAlign(s + (s2Idx * S1Base + 1 * S1Base) * 2, padding_tensor2, mask_reg);
+        StoreAlign(s + (s2Idx * S1Base) * 2, padding, mask_reg);
+        StoreAlign(s + (s2Idx * S1Base + 1 * S1Base) * 2, padding, mask_reg);
     }
 
     for (uint16_t idx = s2Idx; idx < actSingleLoopS2SizeAlign32; ++idx) {
-        StoreAlign(s + (idx * S1Base) * 2, padding_tensor1, mask_reg);
+        StoreAlign(s + (idx * S1Base) * 2, padding, mask_reg);
     }
 }
 

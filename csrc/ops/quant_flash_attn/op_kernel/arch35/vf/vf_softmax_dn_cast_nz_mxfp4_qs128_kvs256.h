@@ -36,11 +36,11 @@ using namespace MicroAPI;
 
 template <bool clear_gmax, typename T, typename T2, bool hasAtten = false, uint16_t S2Base = 256, uint16_t S1Base = 128>
 __simd_vf__ inline void softmax_with_group_max_qs128_kvs256_vf(__ubuf__ T2 *pDest, __ubuf__ T *s,
-    __ubuf__ T *local_group_max, __ubuf__ T *global_max, __ubuf__ uint8_t *indexesUb, const T dScale) {
+    __ubuf__ T *local_group_max, __ubuf__ T *global_max, __ubuf__ uint8_t *indexesUb) {
     // ====================== 寄存器定义 ======================
     RegTensor<half> src_c0, src_c1, src_c2, src_c3;
     RegTensor<half> src_n0, src_n1, src_n2, src_n3;
-    RegTensor<half> curr_group_max;
+    RegTensor<half> curr_group_max, group_offset;
     RegTensor<half> next_group_max;
     RegTensor<half> group_gmax;
     RegTensor<half> min_val_reg;
@@ -89,13 +89,9 @@ __simd_vf__ inline void softmax_with_group_max_qs128_kvs256_vf(__ubuf__ T2 *pDes
         Max(curr_group_max, curr_group_max, src_c2, preg_all_16bit);
     }
 
-    Muls(curr_group_max, curr_group_max, dScale, preg_all_16bit);
-    Muls(curr_group_max, curr_group_max, INV_LN2, preg_all_16bit);
-    Truncate<T, RoundMode::CAST_FLOOR>(curr_group_max, curr_group_max, preg_all_16bit);
     Max(group_gmax, group_gmax, curr_group_max, preg_all_16bit);
     StoreAlign<T, MicroAPI::StoreDist::DIST_NORM_B16>(local_group_max, curr_group_max, preg_all_16bit);
-    Adds(curr_group_max, curr_group_max, NEG_TWO_VALE, preg_all_16bit);
-    Muls(curr_group_max, curr_group_max, LN2, preg_all_16bit);
+    GroupLogitOffset(group_offset, curr_group_max);
 
     // ====================== 核心：双块流水分组循环 ======================
     for (uint16_t i = 0; i < GROUP_COUNT; i++) {
@@ -124,15 +120,14 @@ __simd_vf__ inline void softmax_with_group_max_qs128_kvs256_vf(__ubuf__ T2 *pDes
             LoadAlign(src_c2, s + (rowOffset_cur * S1Base + 2 * S1Base) * 2);
             LoadAlign(src_c3, s + (rowOffset_cur * S1Base + 3 * S1Base) * 2);
 
-            Muls(src_c0, src_c0, dScale, preg_all_16bit);
-            Muls(src_c1, src_c1, dScale, preg_all_16bit);
-            Muls(src_c2, src_c2, dScale, preg_all_16bit);
-            Muls(src_c3, src_c3, dScale, preg_all_16bit);
-
             Sub(src_c0, src_c0, curr_group_max, preg_all_16bit);
+            Add(src_c0, src_c0, group_offset, preg_all_16bit);
             Sub(src_c1, src_c1, curr_group_max, preg_all_16bit);
+            Add(src_c1, src_c1, group_offset, preg_all_16bit);
             Sub(src_c2, src_c2, curr_group_max, preg_all_16bit);
+            Add(src_c2, src_c2, group_offset, preg_all_16bit);
             Sub(src_c3, src_c3, curr_group_max, preg_all_16bit);
+            Add(src_c3, src_c3, group_offset, preg_all_16bit);
 
             Exp(src_c0, src_c0, preg_all_16bit);
             Exp(src_c1, src_c1, preg_all_16bit);
@@ -190,15 +185,14 @@ __simd_vf__ inline void softmax_with_group_max_qs128_kvs256_vf(__ubuf__ T2 *pDes
             LoadAlign(src_c2, s + (rowOffset_cur * S1Base + 2 * S1Base) * 2);
             LoadAlign(src_c3, s + (rowOffset_cur * S1Base + 3 * S1Base) * 2);
 
-            Muls(src_c0, src_c0, dScale, preg_all_16bit);
-            Muls(src_c1, src_c1, dScale, preg_all_16bit);
-            Muls(src_c2, src_c2, dScale, preg_all_16bit);
-            Muls(src_c3, src_c3, dScale, preg_all_16bit);
-
             Sub(src_c0, src_c0, curr_group_max, preg_all_16bit);
+            Add(src_c0, src_c0, group_offset, preg_all_16bit);
             Sub(src_c1, src_c1, curr_group_max, preg_all_16bit);
+            Add(src_c1, src_c1, group_offset, preg_all_16bit);
             Sub(src_c2, src_c2, curr_group_max, preg_all_16bit);
+            Add(src_c2, src_c2, group_offset, preg_all_16bit);
             Sub(src_c3, src_c3, curr_group_max, preg_all_16bit);
+            Add(src_c3, src_c3, group_offset, preg_all_16bit);
 
             Exp(src_c0, src_c0, preg_all_16bit);
             Exp(src_c1, src_c1, preg_all_16bit);
@@ -237,10 +231,7 @@ __simd_vf__ inline void softmax_with_group_max_qs128_kvs256_vf(__ubuf__ T2 *pDes
         // ====================== 全局/局部最大值更新 ======================
         StoreAlign<T, MicroAPI::StoreDist::DIST_NORM_B16>(global_max, group_gmax, preg_invalid_max);
 
-        // 下一块最大值归一化
-        Muls(next_group_max, next_group_max, dScale, preg_valid_max);
-        Muls(next_group_max, next_group_max, INV_LN2, preg_valid_max);
-        Truncate<T, RoundMode::CAST_FLOOR>(next_group_max, next_group_max, preg_valid_max);
+        // Merge the next group's maximum into the running global maximum.
         Max(group_gmax, group_gmax, next_group_max, preg_valid_max);
 
         // 存储下一块最大值到 ulmax (i+1)*128 偏移
@@ -248,15 +239,15 @@ __simd_vf__ inline void softmax_with_group_max_qs128_kvs256_vf(__ubuf__ T2 *pDes
             local_group_max + ((i + 1) * S1Base), next_group_max, preg_valid_max);
 
         // 更新当前块最大值，用于下一次循环
-        Adds(next_group_max, next_group_max, NEG_TWO_VALE, preg_all_16bit);
-        Muls(curr_group_max, next_group_max, LN2, preg_valid_max);
+        curr_group_max = next_group_max;
+        GroupLogitOffset(group_offset, curr_group_max);
     }
 }
 
 template <bool clear_gmax, typename T, typename T2, bool hasAtten = false, uint16_t S2Base = 256, uint16_t S1Base = 128>
 __aicore__ inline void softmaxWithGroupMaxQs128Kvs256CallVF(const LocalTensor<T2> &dstTensor,
     const LocalTensor<T> &srcTensor, const LocalTensor<T> &local_group_max, const LocalTensor<T> &global_max,
-    const LocalTensor<uint8_t> &indexesBuf, const T scale) {
+    const LocalTensor<uint8_t> &indexesBuf) {
     __ubuf__ T2 *pDest = (__ubuf__ T2 *)dstTensor.GetPhyAddr();
     __ubuf__ T *input_x_local_UB = (__ubuf__ T *)srcTensor.GetPhyAddr();
     __ubuf__ T *localGroupMax = (__ubuf__ T *)local_group_max.GetPhyAddr();
@@ -264,7 +255,7 @@ __aicore__ inline void softmaxWithGroupMaxQs128Kvs256CallVF(const LocalTensor<T2
     __ubuf__ uint8_t *indexesUb = (__ubuf__ uint8_t *)indexesBuf.GetPhyAddr();
 
     softmax_with_group_max_qs128_kvs256_vf<clear_gmax, T, T2, hasAtten, S2Base, S1Base>(
-        pDest, input_x_local_UB, localGroupMax, globalMax, indexesUb, scale);
+        pDest, input_x_local_UB, localGroupMax, globalMax, indexesUb);
 }
 
 }

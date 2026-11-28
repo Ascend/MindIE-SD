@@ -861,7 +861,9 @@ template <typename QFAT> class EagleQuantFlashAttnBlockCubeDn : public EagleQuan
         // 源NZ矩阵中相邻Z排布的起始地址偏移
         fixpipeParams.srcStride = ((actS2Size + 15) / 16) * 16;
         fixpipeParams.dstStride = 512 / sizeof(half); // mmResUb上两行之间的间隔，单位：element
-        fixpipeParams.quantPre = QuantMode_t::F322F16;
+        // Scale the FP32 QK accumulator before narrowing to FP16.
+        fixpipeParams.quantPre = QuantMode_t::QF322F16_PRE;
+        fixpipeParams.deqScalar = __builtin_bit_cast(uint32_t, constInfo.scaleValue);
         fixpipeParams.dualDstCtl = 0; // 双目标模式，按M维度拆分， M / 2 * N写入每个UB，M必须为2的倍数
         fixpipeParams.subBlockId = info.loop % 2;
 

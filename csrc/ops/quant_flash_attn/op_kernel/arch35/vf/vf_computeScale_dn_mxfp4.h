@@ -55,9 +55,10 @@ __simd_vf__ inline void computePscaleVF(__ubuf__ uint8_t *mxscale1, __ubuf__ uin
         Max(vreg_gmax, vreg_gmax, vreg_gmax_old, preg_all16);
         StoreAlign(ugmax_old, vreg_gmax, preg_all16);
 
-        Sub(vreg_rs16, vreg_gmax_old, vreg_gmax, preg_all16);
-        Adds(vreg_rs16, vreg_rs16, NUM_127, preg_all16);
-        Maxs(vreg_rs16, vreg_rs16, ZERO_VALUE, preg_all16);
+        RegTensor<float> newEven, newOdd;
+        LogitExponent<castTraitZero>(newEven, vreg_gmax);
+        LogitExponent<castTraitOne>(newOdd, vreg_gmax);
+        PackBiasedExponentDelta(vreg_rs16, vreg_gmax_old, newEven, newOdd, 127.0f);
         Cast<int32_t, T, h2iZero>((RegTensor<int32_t> &)vreg_rs1, vreg_rs16, preg_all16);
         Cast<int32_t, T, h2iOne>((RegTensor<int32_t> &)vreg_rs2, vreg_rs16, preg_all16);
         ShiftLefts((RegTensor<int32_t> &)vreg_rs1, (RegTensor<int32_t> &)vreg_rs1, SHIFT_VALUE, preg_all16);
@@ -76,7 +77,9 @@ __simd_vf__ inline void computePscaleVF(__ubuf__ uint8_t *mxscale1, __ubuf__ uin
 
     Duplicate(vreg_max1, MIN_VALUE);
     StoreAlign(umax1, vreg_max1, preg_all16);
-    Adds(vreg_gmax, vreg_gmax, NUM_NEG_125, preg_all16);
+    RegTensor<float> globalEven, globalOdd;
+    LogitExponent<castTraitZero>(globalEven, vreg_gmax);
+    LogitExponent<castTraitOne>(globalOdd, vreg_gmax);
 
     for (uint16_t i = 0; i < firstLoop; i++) {
         RegTensor<half> vreg_scale1, vreg_scale2, vreg_scale3, vreg_scale4, vreg_scale5, vreg_scale6, vreg_scale7,
@@ -90,14 +93,14 @@ __simd_vf__ inline void computePscaleVF(__ubuf__ uint8_t *mxscale1, __ubuf__ uin
         LoadAlign(vreg_scale7, ulmax1 + (i * ulmaxLoopRow + 6 * m));
         LoadAlign(vreg_scale8, ulmax1 + (i * ulmaxLoopRow + 7 * m));
 
-        Sub(vreg_scale1, vreg_scale1, vreg_gmax, preg_all16);
-        Sub(vreg_scale2, vreg_scale2, vreg_gmax, preg_all16);
-        Sub(vreg_scale3, vreg_scale3, vreg_gmax, preg_all16);
-        Sub(vreg_scale4, vreg_scale4, vreg_gmax, preg_all16);
-        Sub(vreg_scale5, vreg_scale5, vreg_gmax, preg_all16);
-        Sub(vreg_scale6, vreg_scale6, vreg_gmax, preg_all16);
-        Sub(vreg_scale7, vreg_scale7, vreg_gmax, preg_all16);
-        Sub(vreg_scale8, vreg_scale8, vreg_gmax, preg_all16);
+        PackBiasedExponentDelta(vreg_scale1, vreg_scale1, globalEven, globalOdd, 125.0f);
+        PackBiasedExponentDelta(vreg_scale2, vreg_scale2, globalEven, globalOdd, 125.0f);
+        PackBiasedExponentDelta(vreg_scale3, vreg_scale3, globalEven, globalOdd, 125.0f);
+        PackBiasedExponentDelta(vreg_scale4, vreg_scale4, globalEven, globalOdd, 125.0f);
+        PackBiasedExponentDelta(vreg_scale5, vreg_scale5, globalEven, globalOdd, 125.0f);
+        PackBiasedExponentDelta(vreg_scale6, vreg_scale6, globalEven, globalOdd, 125.0f);
+        PackBiasedExponentDelta(vreg_scale7, vreg_scale7, globalEven, globalOdd, 125.0f);
+        PackBiasedExponentDelta(vreg_scale8, vreg_scale8, globalEven, globalOdd, 125.0f);
 
         // SAT Mode, if < 0, then = 0
         RegTensor<uint8_t> vreg_mxscale1, vreg_mxscale2, vreg_mxscale3, vreg_mxscale4, vreg_mxscale5, vreg_mxscale6,
@@ -141,14 +144,14 @@ __simd_vf__ inline void computePscaleVF(__ubuf__ uint8_t *mxscale1, __ubuf__ uin
         LoadAlign(vreg_scale7, ulmax2 + (i * ulmaxLoopRow + m * 6));
         LoadAlign(vreg_scale8, ulmax2 + (i * ulmaxLoopRow + m * 7));
 
-        Sub(vreg_scale1, vreg_scale1, vreg_gmax, preg_all16);
-        Sub(vreg_scale2, vreg_scale2, vreg_gmax, preg_all16);
-        Sub(vreg_scale3, vreg_scale3, vreg_gmax, preg_all16);
-        Sub(vreg_scale4, vreg_scale4, vreg_gmax, preg_all16);
-        Sub(vreg_scale5, vreg_scale5, vreg_gmax, preg_all16);
-        Sub(vreg_scale6, vreg_scale6, vreg_gmax, preg_all16);
-        Sub(vreg_scale7, vreg_scale7, vreg_gmax, preg_all16);
-        Sub(vreg_scale8, vreg_scale8, vreg_gmax, preg_all16);
+        PackBiasedExponentDelta(vreg_scale1, vreg_scale1, globalEven, globalOdd, 125.0f);
+        PackBiasedExponentDelta(vreg_scale2, vreg_scale2, globalEven, globalOdd, 125.0f);
+        PackBiasedExponentDelta(vreg_scale3, vreg_scale3, globalEven, globalOdd, 125.0f);
+        PackBiasedExponentDelta(vreg_scale4, vreg_scale4, globalEven, globalOdd, 125.0f);
+        PackBiasedExponentDelta(vreg_scale5, vreg_scale5, globalEven, globalOdd, 125.0f);
+        PackBiasedExponentDelta(vreg_scale6, vreg_scale6, globalEven, globalOdd, 125.0f);
+        PackBiasedExponentDelta(vreg_scale7, vreg_scale7, globalEven, globalOdd, 125.0f);
+        PackBiasedExponentDelta(vreg_scale8, vreg_scale8, globalEven, globalOdd, 125.0f);
 
         // SAT Mode, if < 0, then = 0
         RegTensor<uint8_t> vreg_mxscale1, vreg_mxscale2, vreg_mxscale3, vreg_mxscale4, vreg_mxscale5, vreg_mxscale6,

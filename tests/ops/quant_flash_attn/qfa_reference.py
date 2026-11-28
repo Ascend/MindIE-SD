@@ -3,9 +3,10 @@
 
 """Portable NumPy MXFP4 codecs and independent, bounded-memory CPU references.
 
-The MXFP4 attention mode models the kernel's FP16 scores, log2 group maxima,
-BF16-to-FP4 probabilities and E8M0 scaling. It is NOT a bit-exact device simulator:
-hardware Exp, reduction order, FlashDecode partitioning and rounding may differ.
+The MXFP4 attention model scales FP32 scores before narrowing to FP16 and
+computes group exponents and remainders in FP32. It models BF16-to-FP4
+probabilities and E8M0 scaling. Hardware Exp, reduction order, FlashDecode
+partitioning and rounding may differ.
 """
 
 from dataclasses import dataclass
@@ -87,31 +88,35 @@ def decode_mxfp4(encoded):
 
 
 def _snap_probabilities(raw, scale):
-    """Model one KV tile; return FP4 values and per-row/per-group log2 maxima."""
-    raw = raw.astype(np.float16)
-    if not np.isfinite(raw).all():
-        raise ValueError("CPU model FP16 QK overflow; lower input scale or inspect this case")
-    grouped = np.pad(raw, ((0, 0), (0, (-raw.shape[1]) % 32)), constant_values=-np.inf)
-    grouped = grouped.reshape(raw.shape[0], -1, 32)
-    scale = np.float16(scale)
-    maxima = (grouped.max(axis=-1) * scale).astype(np.float16)
-    exponent = np.floor((maxima * np.float16(1 / np.log(2))).astype(np.float16)).astype(np.float32)
-    shift = ((exponent.astype(np.float16) - np.float16(2)) * np.float16(np.log(2))).astype(np.float16)
-    logits = (grouped * scale).astype(np.float16)
-    shifted = (logits - shift[..., None]).astype(np.float16)
+    """Return FP4 probabilities and group exponents for a KV span."""
+    with np.errstate(over="ignore", invalid="ignore"):
+        scores = np.multiply(raw, scale, dtype=np.float32).astype(np.float16)
+    if not np.isfinite(scores).all():
+        raise ValueError("CPU model scaled QK exceeds finite FP16 range")
+    padding = ((0, 0), (0, (-scores.shape[1]) % 32))
+    groups = np.pad(scores, padding, constant_values=-np.inf).reshape(scores.shape[0], -1, 32)
+    maxima = groups.max(axis=-1)
+    maxima_f32 = maxima.astype(np.float32)
+    ln2 = np.float32(np.log(2))
+    exponent = np.floor(maxima_f32 * np.float32(1 / np.log(2)))
+    offset = (maxima_f32 - exponent * ln2 + 2 * ln2).astype(np.float16)
+    with np.errstate(over="ignore"):
+        shifted = (groups - maxima[..., None]) + offset[..., None]
     local = np.exp(shifted.astype(np.float32)).astype(np.float16)
     p = LEVELS[fp4_codes(bf16_round(local)) & 7]
     return p, exponent
 
 
-def attention_rows(case, arrays, rows, kv_chunk=256, q_chunk=32):
+def attention_rows(case, arrays, rows, q_chunk=32):
     """Noncausal attention for explicit (batch, query-head, query-token) rows.
 
     Algorithm-aware P quantization on decoded Q/K/V, BF16 output model.
     Physical padding is excluded by case.q_used / case.kv_used.
     """
-    if kv_chunk <= 0 or q_chunk <= 0 or kv_chunk % 32:
-        raise ValueError("Invalid chunk size (KV chunk must be a multiple of 32)")
+    if q_chunk <= 0:
+        raise ValueError("Q chunk size must be positive")
+    # A row update covers 16 score tiles of 256 keys each.
+    kv_group_size = 16 * 256
     q, k, v = (arrays[name] for name in ("q", "k", "v"))
     expected = [
         (case.batch, case.q_heads, case.physical_q, case.dim),
@@ -136,12 +141,14 @@ def attention_rows(case, arrays, rows, kv_chunk=256, q_chunk=32):
             maximum = np.full(len(selected), -np.inf, dtype=dtype)
             denom = np.zeros(len(selected), dtype=dtype)
             acc = np.zeros((len(selected), case.dim), dtype=dtype)
-            for ks in range(0, case.kv_used[b], kv_chunk):
-                ke = min(ks + kv_chunk, case.kv_used[b])
+            for ks in range(0, case.kv_used[b], kv_group_size):
+                ke = min(ks + kv_group_size, case.kv_used[b])
                 raw = qq @ k[b, kh, ks:ke].astype(dtype).T
                 p4, exponents = _snap_probabilities(raw, case.scale)
                 new_max = np.maximum(maximum, exponents.max(axis=-1))
-                alpha = np.exp2(maximum - new_max)
+                delta = maximum - new_max
+                # The row rescale uses FP32 exponent bits. A zero exponent field gives 0.
+                alpha = np.exp2(np.where(delta >= -126, delta, -np.inf))
                 # E8M0 scale byte saturates at zero (2^-127), not at float zero.
                 corr = np.exp2(np.maximum(exponents - new_max[:, None] - 2, -127))
                 p = (p4 * corr[..., None]).reshape(len(selected), -1)[:, : ke - ks]

@@ -35,6 +35,7 @@ __all__ = [
     'layernorm_scale_shift_indexed',
     'norm_rope_concat',
     'qbmm_swiglu_mxquant',
+    'prepare_mxfp4_attention_metadata',
     'quant_attention',
     'quantize',
     'rotary_position_embedding',
@@ -91,6 +92,7 @@ from .layers import (  # noqa: E402
     flex_attention,
     make_block_causal_mask,
 )
+from .layers.flash_attn.quant_flash_attn import prepare_mxfp4_attention_metadata  # noqa: E402
 from .layers.norm_rope_concat import norm_rope_concat  # noqa: E402
 from .layers.index_modulation import rms_norm_indexed_scale_shift  # noqa: E402
 from .rf_attention import RFMultiSpanPlan, build_rf_attention_plan, rf_multi_span_permutation  # noqa: E402

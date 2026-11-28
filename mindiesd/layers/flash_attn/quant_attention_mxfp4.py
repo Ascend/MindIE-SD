@@ -14,15 +14,53 @@
 """MXFP4 preparation, QuantFlashAttn execution and output restoration."""
 
 import functools
+from typing import NamedTuple
 
 import torch
 import torch.nn.functional as F  # noqa: N812
 import torch_npu
 
+from .common import _get_bnsd_shape
+
 MXFP4_FA_SEQ_PAD_BASE = 512
 MXFP4_Q_QUANT_MODE = 3
 MXFP4_K_QUANT_MODE = 3
 MXFP4_V_QUANT_MODE = 3
+
+
+class _Mxfp4Metadata(NamedTuple):
+    tensor: torch.Tensor
+    signature: tuple
+
+
+def _mxfp4_metadata_args(
+    query, key, *, layout, layout_kv, layout_out, max_seqlen_q, max_seqlen_kv, mask_mode, win_left, win_right
+):
+    batch, heads, q_len, head_dim = _get_bnsd_shape(query, layout)
+    _, kv_heads, kv_len, _ = _get_bnsd_shape(key, layout_kv)
+    kernel_options = {
+        "q_quant_mode": MXFP4_Q_QUANT_MODE,
+        "k_quant_mode": MXFP4_K_QUANT_MODE,
+        "v_quant_mode": MXFP4_V_QUANT_MODE,
+        "cu_seqlens_q": None,
+        "cu_seqlens_kv": None,
+        "q_dtype": torch_npu.float4_e2m1fn_x2,
+        "k_dtype": torch_npu.float4_e2m1fn_x2,
+        "v_dtype": torch_npu.float4_e2m1fn_x2,
+        "max_seqlen_q": max_seqlen_q,
+        "max_seqlen_kv": max_seqlen_kv,
+        "mask_mode": mask_mode,
+        "win_left": win_left,
+        "win_right": win_right,
+        "layout_q": layout,
+        "layout_kv": layout_kv,
+        "layout_out": layout_out,
+    }
+    # Derive provenance before adding device tensors to the shared arguments.
+    signature = (query.device, query.shape, key.shape, tuple(kernel_options.items()))
+    kernel_options["seqused_q"], kernel_options["seqused_kv"] = _get_qfa_seqused(batch, q_len, kv_len, query.device)
+    dimensions = {"num_heads_q": heads, "num_heads_kv": kv_heads, "head_dim": head_dim, "batch_size": batch}
+    return (q_len, kv_len), signature, dimensions, kernel_options
 
 
 def _mxfp4_attention_forward(
@@ -51,12 +89,20 @@ def _mxfp4_attention_forward(
     attn_mask=None,
     return_softmax_lse=0,
 ):
-    """Pack MXFP4 and pass the padded sequence lengths, as in the legacy class."""
+    """Pack padded MXFP4 tensors and pass the original sequence lengths."""
     # Layouts, Q/K/V and rotations have already been validated by quant_attention.
-    if layout == "BNSD":
-        batch, heads, q_len, head_dim = query.shape
-    else:
-        batch, q_len, heads, head_dim = query.shape
+    (q_len, kv_len), signature, dimensions, kernel_options = _mxfp4_metadata_args(
+        query,
+        key,
+        layout=layout,
+        layout_kv=layout_kv,
+        layout_out=layout_out,
+        max_seqlen_q=max_seqlen_q,
+        max_seqlen_kv=max_seqlen_kv,
+        mask_mode=mask_mode,
+        win_left=win_left,
+        win_right=win_right,
+    )
     if q_rot is not None:
         query = torch.matmul(query, q_rot)
     if k_rot is not None:
@@ -69,15 +115,6 @@ def _mxfp4_attention_forward(
     query = _pad_fa_seq_before_quant(query, MXFP4_FA_SEQ_PAD_BASE, layout)
     key = _pad_fa_seq_before_quant(key, MXFP4_FA_SEQ_PAD_BASE, layout_kv)
     value = _pad_fa_seq_before_quant(value, MXFP4_FA_SEQ_PAD_BASE, layout_kv)
-    if layout == "BNSD":
-        _, _, padded_q_len, _ = query.shape
-    else:
-        _, padded_q_len, _, _ = query.shape
-    if layout_kv == "BNSD":
-        _, kv_heads, padded_kv_len, _ = key.shape
-    else:
-        _, padded_kv_len, kv_heads, _ = key.shape
-    seqused_q, seqused_kv = _get_qfa_seqused(batch, padded_q_len, padded_kv_len, query.device)
 
     # Quantization hooks let callers swap the Q/K tail-axis and V seq-axis MXFP4
     # quantizers (e.g. quant_four_over_six_a5) while keeping padding, descale
@@ -96,35 +133,13 @@ def _mxfp4_attention_forward(
     v, v_scale = v_quant(value, 2 if layout_kv == "BNSD" else 1)
     v_scale = _reshape_mxfp4_v_scale_for_fa(v_scale, layout_kv)
 
-    # Metadata and execution must agree on layouts, lengths, quant modes and windows.
-    kernel_options = {
-        "q_quant_mode": MXFP4_Q_QUANT_MODE,
-        "k_quant_mode": MXFP4_K_QUANT_MODE,
-        "v_quant_mode": MXFP4_V_QUANT_MODE,
-        "cu_seqlens_q": None,
-        "cu_seqlens_kv": None,
-        "seqused_q": seqused_q,
-        "seqused_kv": seqused_kv,
-        "q_dtype": torch_npu.float4_e2m1fn_x2,
-        "k_dtype": torch_npu.float4_e2m1fn_x2,
-        "v_dtype": torch_npu.float4_e2m1fn_x2,
-        "max_seqlen_q": max_seqlen_q,
-        "max_seqlen_kv": max_seqlen_kv,
-        "mask_mode": mask_mode,
-        "win_left": win_left,
-        "win_right": win_right,
-        "layout_q": layout,
-        "layout_kv": layout_kv,
-        "layout_out": layout_out,
-    }
+    if isinstance(metadata, _Mxfp4Metadata):
+        metadata = metadata.tensor if metadata.signature == signature else None
+    elif q_len % MXFP4_FA_SEQ_PAD_BASE or kv_len % MXFP4_FA_SEQ_PAD_BASE:
+        # A bare tensor may contain the previous padded-length schedule.
+        metadata = None
     if metadata is None:
-        metadata = torch.ops.mindiesd.quant_flash_attn_metadata(
-            num_heads_q=heads,
-            num_heads_kv=kv_heads,
-            head_dim=head_dim,
-            batch_size=batch,
-            **kernel_options,
-        )
+        metadata = torch.ops.mindiesd.quant_flash_attn_metadata(**dimensions, **kernel_options)
     output, _ = torch.ops.mindiesd.quant_flash_attn(
         q,
         k,

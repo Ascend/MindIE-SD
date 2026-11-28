@@ -16,13 +16,55 @@
 import torch
 
 from .common import _get_bnsd_shape
-from .quant_attention_mxfp4 import _mxfp4_attention_forward
+from .quant_attention_mxfp4 import _Mxfp4Metadata, _mxfp4_attention_forward, _mxfp4_metadata_args
 from .fused_infer_attention_score import _fp8_attention_forward, _mxfp8_attention_forward
 
 
 _SUPPORTED_PRECISIONS = ("fp8", "mxfp8", "mxfp4")
 _SUPPORTED_ROTATION_MODES = ("hadamard",)
 _FA_ROTATION_CACHE = {}
+
+
+def prepare_mxfp4_attention_metadata(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    *,
+    layout: str = "BNSD",
+    layout_kv: str | None = None,
+    layout_out: str | None = None,
+    max_seqlen_q: int = -1,
+    max_seqlen_kv: int = -1,
+    mask_mode: int = 0,
+    win_left: int = 2147483647,
+    win_right: int = 2147483647,
+) -> _Mxfp4Metadata:
+    """Prepare reusable metadata from unpadded MXFP4 inputs.
+
+    Pass the result as `metadata` to `quant_attention` with the same logical
+    shapes, input device, layouts and effective scheduling options.
+    Select the input's NPU as the current device before preparing metadata.
+    Follow PyTorch stream synchronization and tensor-lifetime rules when
+    reusing metadata on a different stream.
+    """
+    layout_kv = layout if layout_kv is None else layout_kv
+    layout_out = layout if layout_out is None else layout_out
+    if layout_out not in ("BNSD", "BSND"):
+        raise ValueError("layout_out must be BNSD or BSND.")
+    _validate_quant_attention_inputs(query, key, key, layout=layout, layout_kv=layout_kv)
+    _, signature, dimensions, kernel_options = _mxfp4_metadata_args(
+        query,
+        key,
+        layout=layout,
+        layout_kv=layout_kv,
+        layout_out=layout_out,
+        max_seqlen_q=max_seqlen_q,
+        max_seqlen_kv=max_seqlen_kv,
+        mask_mode=mask_mode,
+        win_left=win_left,
+        win_right=win_right,
+    )
+    tensor = torch.ops.mindiesd.quant_flash_attn_metadata(**dimensions, **kernel_options)
+    return _Mxfp4Metadata(tensor, signature)
 
 
 def quant_attention(
@@ -99,8 +141,8 @@ def quant_attention(
 
             MXFP4 options (only with precision="mxfp4"):
                 Q/K/V sequence lengths are padded to multiples of 512 before
-                    quantization. Native seqused_q/seqused_kv use these padded
-                    lengths, including zero-padded KV positions in softmax.
+                    quantization. Native seqused_q/seqused_kv retain the
+                    original lengths to exclude padded positions.
                     The returned output is cropped to the original Q length.
                 layout_kv/layout_out: BNSD or BSND; None uses layout.
                 mxfp4_scale_alg/mxfp4_dst_type_max: explicit MX quantization
@@ -109,7 +151,10 @@ def quant_attention(
                     tail-axis and V seq-axis MXFP4 quantizers; None quantizes
                     with npu_dynamic_mx_quant. qk_quant_fn takes the padded
                     tensor; v_quant_fn takes the padded tensor and its seq axis.
-                metadata: precomputed QFA metadata; None generates it.
+                metadata: reusable metadata from prepare_mxfp4_attention_metadata.
+                    None or a mismatched cache entry generates a logical-length
+                    schedule. Legacy metadata tensors are reused for 512-aligned
+                    inputs and regenerated for unaligned inputs.
                 num_key_value_heads: must match K/V heads if provided.
                 max_seqlen_q/max_seqlen_kv: native length bounds, default -1.
                 mask_mode: native mask mode, default 0.
