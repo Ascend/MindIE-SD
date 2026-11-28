@@ -24,7 +24,7 @@ def normalize_version(value):
     return str(Version(value))
 
 
-__version__ = normalize_version(os.environ.get("MINDIE_SD_VERSION_OVERRIDE", "3.1.0"))
+__version__ = normalize_version(os.environ.get("MINDIE_SD_VERSION_OVERRIDE", "3.3.1"))
 
 if __name__ == "__main__":
     print(__version__)

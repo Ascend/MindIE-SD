@@ -23,11 +23,13 @@ MINDIE_NS = "mindiesd"  # 固定命名空间，与 torch.ops.mindiesd 对应
 PLUGIN_LIBRARY_NAME = "libPTAExtensionOPS.so"
 PLUGIN_VARIANT_ENV = "MINDIESD_PLUGIN_VARIANT"
 SUPPORTED_TORCH_PLUGIN_VARIANTS = {
-    "2.6": "torch26",
     "2.7": "torch27",
     "2.8": "torch28",
     "2.9": "torch29",
     "2.10": "torch210",
+    "2.11": "torch211",
+    "2.12": "torch212",
+    "2.13": "torch213",
 }
 
 

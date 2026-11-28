@@ -34,7 +34,15 @@ SKIP_OPS_BUILD_ENV = "MINDIESD_SKIP_OPS_BUILD"
 SKIP_ALL_OPS_PLUGIN_BUILD_ENV = "SKIP_ALL_OPS_PLUGIN_BUILD"
 FIXED_WHEEL_MODE = "fixed"
 MULTI_TORCH_WHEEL_MODE = "multi_torch"
-SUPPORTED_TORCH_PLUGIN_VARIANTS = ("torch26", "torch27", "torch28", "torch29", "torch210")
+SUPPORTED_TORCH_PLUGIN_VARIANTS = (
+    "torch27",
+    "torch28",
+    "torch29",
+    "torch210",
+    "torch211",
+    "torch212",
+    "torch213",
+)
 
 
 def get_mindiesd_version():

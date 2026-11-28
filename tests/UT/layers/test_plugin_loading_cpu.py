@@ -22,26 +22,39 @@ def test_unparseable_version_is_explicit_error():
         registry._get_torch_major_minor('broken')
 
 
-@pytest.mark.parametrize('variant', ['torch26', 'torch29', 'torch210'])
+@pytest.mark.parametrize('variant', ['torch27', 'torch29', 'torch210', 'torch213'])
 def test_forced_plugin_variant_is_selected_without_loading(monkeypatch, tmp_path, variant):
     monkeypatch.setenv(registry.PLUGIN_VARIANT_ENV, ' ' + variant + ' ')
     assert registry._select_mindie_ops_file(str(tmp_path)) == str(tmp_path / variant / registry.PLUGIN_LIBRARY_NAME)
 
 
-def test_invalid_forced_variant_is_rejected(monkeypatch, tmp_path):
-    monkeypatch.setenv(registry.PLUGIN_VARIANT_ENV, 'unknown')
+@pytest.mark.parametrize('variant', ['unknown', 'torch26'])
+def test_invalid_forced_variant_is_rejected(monkeypatch, tmp_path, variant):
+    monkeypatch.setenv(registry.PLUGIN_VARIANT_ENV, variant)
     with pytest.raises(RuntimeError, match='Unsupported'):
         registry._select_mindie_ops_file(str(tmp_path))
 
 
-def test_auto_variant_and_legacy_fallback(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    ('version', 'variant'),
+    [
+        ('2.7.1+cpu', 'torch27'),
+        ('2.8.0', 'torch28'),
+        ('2.9.0+cpu', 'torch29'),
+        ('2.10.0', 'torch210'),
+        ('2.11.0', 'torch211'),
+        ('2.12.0', 'torch212'),
+        ('2.13.0', 'torch213'),
+    ],
+)
+def test_auto_variant_and_legacy_fallback(monkeypatch, tmp_path, version, variant):
     monkeypatch.delenv(registry.PLUGIN_VARIANT_ENV, raising=False)
-    monkeypatch.setattr(torch, '__version__', '2.9.0+cpu')
+    monkeypatch.setattr(torch, '__version__', version)
     assert registry._select_mindie_ops_file(str(tmp_path)) == str(tmp_path / registry.PLUGIN_LIBRARY_NAME)
-    (tmp_path / 'torch29').mkdir()
-    (tmp_path / 'torch29' / registry.PLUGIN_LIBRARY_NAME).write_bytes(b'variant plugin')
+    (tmp_path / variant).mkdir()
+    (tmp_path / variant / registry.PLUGIN_LIBRARY_NAME).write_bytes(b'variant plugin')
     assert registry._has_plugin_variants(str(tmp_path))
-    assert registry._select_mindie_ops_file(str(tmp_path)) == str(tmp_path / 'torch29' / registry.PLUGIN_LIBRARY_NAME)
+    assert registry._select_mindie_ops_file(str(tmp_path)) == str(tmp_path / variant / registry.PLUGIN_LIBRARY_NAME)
     monkeypatch.setattr(torch, '__version__', '3.0.0')
     with pytest.raises(RuntimeError, match='Unsupported torch version'):
         registry._select_mindie_ops_file(str(tmp_path))

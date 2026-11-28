@@ -8,16 +8,18 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "${SCRIPT_DIR}/.." && pwd)
 VARIANT_ROOT=${MINDIESD_MULTI_TORCH_PLUGIN_DIR:-"${REPO_ROOT}/build/torch_plugin_variants"}
 PYTHON_BIN=${PYTHON_BIN:-python3}
-WHEEL_CONTAINER=${MINDIESD_WHEEL_CONTAINER:-mindiesd_torch26}
+WHEEL_CONTAINER=${MINDIESD_WHEEL_CONTAINER:-mindiesd_torch27}
 ASCEND_COMPUTE_UNIT=${ASCEND_COMPUTE_UNIT:-"ascend910;ascend910b;ascend910_93"}
 MINDIESD_SKIP_OPS_BUILD=${MINDIESD_SKIP_OPS_BUILD:-0}
 
 VARIANTS=(
-    "torch26:mindiesd_torch26"
     "torch27:mindiesd_torch27"
     "torch28:mindiesd_torch28"
     "torch29:mindiesd_torch29"
     "torch210:mindiesd_torch210"
+    "torch211:mindiesd_torch211"
+    "torch212:mindiesd_torch212"
+    "torch213:mindiesd_torch213"
 )
 
 mkdir -p "${VARIANT_ROOT}"
