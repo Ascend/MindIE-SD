@@ -1,0 +1,163 @@
+name: nightly_cpu_coverage
+
+on:
+  workflow_dispatch:
+  schedule:
+    # GitCode cron uses UTC: 22:00 UTC is 06:00 Asia/Shanghai the next day.
+    # Scheduled workflows take effect on the repository default branch.
+    - cron: '0 22 * * *'
+
+permissions:
+  project: read
+  repository: read
+  id-token: write
+
+env:
+  BASELINE_BRANCH: dev
+  # Keep the adapter consistent with precise_select.yml.
+  PRECISION_REPO: mindiesd
+  OBS_BUCKET: mindie-pr
+  OBS_ENDPOINT: https://obs.cn-north-4.myhuaweicloud.com
+  OBS_PREFIX: monitor/ascend/MindIE-SD/coverage/cpu/dev
+
+# Serialize publication so an older concurrent run cannot replace latest.
+concurrency:
+  enable: true
+  max: 1
+  exceed-action: QUEUE
+
+jobs:
+  collect_and_publish:
+    runs-on: [self-hosted, default, arm, cpu=32]
+    timeout-minutes: 120
+    container:
+      image: swr.cn-north-4.myhuaweicloud.com/inference/ascend_mindie_ubuntu_aarch64:20260908_ubuntu24_3.2.0_cann9.1.0_torch2.9.0_py311
+      options: --user root
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Report missing precision adapter configuration
+        if: ${{ env.PRECISION_REPO == '' }}
+        run: |
+          echo 'Set PRECISION_REPO in workflow env to enable CPU coverage publication.' | tee -a "$ATOMGIT_STEP_SUMMARY"
+
+      - name: Checkout baseline
+        if: ${{ env.PRECISION_REPO != '' }}
+        uses: checkout
+        with:
+          ref: ${{ env.BASELINE_BRANCH }}
+
+      - name: Prepare test dependencies
+        if: ${{ env.PRECISION_REPO != '' }}
+        run: |
+          set -eo pipefail
+          mkdir -p coverage-work release
+          exec > >(tee coverage-work/dependencies.log) 2>&1
+          source /usr/local/Ascend/ascend-toolkit/set_env.sh
+          export PYTHONPATH="/opt/buildtools/python-3.11.4/lib/python3.11/site-packages:${PYTHONPATH:-}"
+          TRITON_ASCEND_VER=$(grep -oP '^triton-ascend\s*==\s*\K[0-9][^\s;]*' requirements.txt || true)
+          if [ -z "$TRITON_ASCEND_VER" ]; then
+            echo 'ERROR: cannot find triton-ascend==x.y.z in requirements.txt'
+            exit 1
+          fi
+          WHL_NAME="triton_ascend-${TRITON_ASCEND_VER}-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl"
+          WHL_URL="https://repo.huaweicloud.com/ascend/repos/pypi/triton-ascend/${WHL_NAME}"
+          # Resolve the wheel and all requirements together, including its pytest constraint.
+          python3 -m pip install --report coverage-work/install-report.json \
+            "$WHL_URL" -r requirements.txt -r requirements-test.txt 'coverage==7.17.5'
+          python3 -m pip list --format=json > coverage-work/installed-packages.json
+
+      - name: Collect configured CPU UT files
+        if: ${{ env.PRECISION_REPO != '' }}
+        id: collect
+        run: |
+          set -eo pipefail
+          source /usr/local/Ascend/ascend-toolkit/set_env.sh
+          export PYTHONPATH="/opt/buildtools/python-3.11.4/lib/python3.11/site-packages:${PYTHONPATH:-}"
+          output_root=$(mktemp -d "$PWD/coverage-work/run.XXXXXX")
+          python3 .gitcode/workflows/collect_cpu_coverage.py --repo "$PWD" --output "$output_root"
+          export CPU_COVERAGE_OUTPUT="$output_root"
+          python3 - <<'PY'
+          import json, os, shutil
+          from pathlib import Path
+          paths = list(Path(os.environ['CPU_COVERAGE_OUTPUT']).glob('*/evidence/metadata.json'))
+          assert len(paths) == 1, paths
+          result = paths[0].parent.parent
+          metadata = json.loads(paths[0].read_text())
+          assert metadata['test_exit_code'] == 0
+          assert metadata['combine_exit_code'] == 0 and metadata['report_exit_code'] == 0
+          assert metadata['targets'] and metadata['executed_tests'] > 0
+          assert not metadata['sources_changed_during_run']
+          assert all(t['target'].endswith('.py') and '::' not in t['target'] for t in metadata['targets'])
+          metadata['baseline_branch'] = os.environ['BASELINE_BRANCH']
+          metadata['precision_repo'] = os.environ['PRECISION_REPO']
+          shutil.copy2(result / 'coverage.tar', 'release/coverage.tar')
+          Path('release/metadata.json').write_text(json.dumps(metadata, indent=2))
+          with open(os.environ['ATOMGIT_OUTPUT'], 'a') as out:
+              out.write(f"coverage_dir={result / metadata['coverage_dir']}\n")
+              out.write(f"source_dir={result / metadata['source_dir']}\n")
+          PY
+
+      - name: Build test case map
+        if: ${{ env.PRECISION_REPO != '' }}
+        uses: openlibing/test-action/precision-test@v1.0.14
+        with:
+          repo: ${{ env.PRECISION_REPO }}
+          build-map: 'true'
+          source-dir: ${{ steps.collect.outputs.source_dir }}
+          coverage-dir: ${{ steps.collect.outputs.coverage_dir }}
+          map-file: release/test_case_map.json
+
+      - name: Validate and package baseline
+        if: ${{ env.PRECISION_REPO != '' }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.metadata, json
+          from pathlib import Path
+          p = Path('release/metadata.json')
+          metadata = json.loads(p.read_text())
+          mapping = json.loads(Path('release/test_case_map.json').read_text())
+          expected = {t['target'] for t in metadata['targets']}
+          assert expected and set(mapping) == expected, 'Map target inventory mismatch'
+          metadata['selector_action'] = 'openlibing/test-action/precision-test@v1.0.14'
+          try:
+              metadata['selector_version'] = importlib.metadata.version('test-selector')
+          except importlib.metadata.PackageNotFoundError:
+              metadata['selector_version'] = None
+          metadata['nonempty_mappings'] = sum(bool(v['files']) for v in mapping.values())
+          assert metadata['nonempty_mappings'] > 0, 'Map contains no product coverage'
+          p.write_text(json.dumps(metadata, indent=2))
+          print(f"Validated {len(mapping)} file targets")
+          PY
+          tar -C release -czf release.tar.gz coverage.tar test_case_map.json metadata.json
+          sha256sum release.tar.gz
+
+      - name: Authenticate OBS upload
+        if: ${{ env.PRECISION_REPO != '' }}
+        uses: huaweicloud-oidc-auth
+        with:
+          audience: mindie_pr_trust
+          region: cn-north-4
+          agency_urn: iam::0d335fcedd00f3140f8ac01eaca892e0:agency:mindie_pr_trust
+          provider_urn: iam::0d335fcedd00f3140f8ac01eaca892e0:oidcProvider:mindie_pr_trust
+
+      - name: Publish latest baseline
+        if: ${{ env.PRECISION_REPO != '' }}
+        uses: obs-upload
+        with:
+          endpoint: ${{ env.OBS_ENDPOINT }}
+          bucket: ${{ env.OBS_BUCKET }}
+          artifact-path: release.tar.gz
+          object-prefix: ${{ env.OBS_PREFIX }}/latest/
+
+      - name: Preserve collection evidence
+        if: ${{ always() && env.PRECISION_REPO != '' }}
+        uses: upload-artifact
+        with:
+          name: cpu-coverage-evidence
+          path: |
+            coverage-work/
+            release/
+          overwrite: true

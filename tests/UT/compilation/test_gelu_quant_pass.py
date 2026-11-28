@@ -43,6 +43,10 @@ def _load_real_module(name: str, rel_path: str):
     与 test_backend_mode.py 的策略 2 同思路：绕开 ``mindiesd/__init__.py``
     （依赖 torch/torch_npu），仅执行目标文件本身。
     """
+    # With real torch, preserve package identity for the shared CPU fixtures.
+    # The file loader below is only for standalone torch-free execution.
+    if getattr(sys.modules.get("torch"), "__file__", None):
+        return importlib.import_module(name)
     parts = name.split(".")
     for i in range(1, len(parts)):
         parent = ".".join(parts[:i])

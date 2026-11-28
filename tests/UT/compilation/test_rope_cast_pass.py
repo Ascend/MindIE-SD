@@ -36,6 +36,10 @@ def _install_fake_torch():
 
 
 def _load_real_module(name: str, rel_path: str):
+    # With real torch, preserve package identity for the shared CPU fixtures.
+    # The file loader below is only for standalone torch-free execution.
+    if getattr(sys.modules.get("torch"), "__file__", None):
+        return importlib.import_module(name)
     parts = name.split(".")
     for i in range(1, len(parts)):
         parent = ".".join(parts[:i])

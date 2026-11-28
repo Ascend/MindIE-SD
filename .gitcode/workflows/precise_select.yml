@@ -1,0 +1,140 @@
+name: precise_select
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        required: true
+        type: string
+      base_branch:
+        required: true
+        type: string
+
+env:
+  # Keep the adapter consistent with nightly_cpu_coverage.yml.
+  PRECISION_REPO: mindiesd
+  BASELINE_URL: https://mindie-pr.obs.cn-north-4.myhuaweicloud.com/monitor/ascend/MindIE-SD/coverage/cpu/dev/latest/release.tar.gz
+
+jobs:
+  recommend_only:
+    name: CPU precision shadow recommendation
+    select: always
+    continue-on-error: true
+    runs-on: [self-hosted, default, x86, cpu=2]
+    timeout-minutes: 30
+    container:
+      image: swr.cn-north-4.myhuaweicloud.com/atlas-ci/common:latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout PR merge revision
+        if: ${{ env.PRECISION_REPO != '' }}
+        id: checkout
+        continue-on-error: true
+        uses: checkout
+        with:
+          ref: refs/merge-requests/${{ inputs.pr_number }}/merge
+
+      - name: Download matching baseline
+        id: baseline
+        if: ${{ steps.checkout.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          BASE_BRANCH: ${{ inputs.base_branch }}
+        run: |
+          set -euo pipefail
+          rm -f recommended_pytest_paths.txt
+          mkdir -p precision-baseline
+          curl -fSL --retry 3 --max-time 180 "$BASELINE_URL" -o precision-baseline/release.tar.gz
+          tar -xzf precision-baseline/release.tar.gz -C precision-baseline
+          tar -xf precision-baseline/coverage.tar -C precision-baseline
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path('precision-baseline').resolve()
+          metadata = json.loads((root / 'metadata.json').read_text())
+          assert metadata['baseline_branch'] == os.environ['BASE_BRANCH'], 'Baseline branch mismatch'
+          assert metadata['precision_repo'] == os.environ['PRECISION_REPO'], 'Adapter mismatch'
+          mapping = root / 'test_case_map.json'
+          assert mapping.is_file()
+          source = (root / metadata['source_dir']).resolve()
+          coverage = (root / metadata['coverage_dir']).resolve()
+          assert source.is_relative_to(root) and source.is_dir()
+          assert coverage.is_relative_to(root) and coverage.is_dir()
+          with open(os.environ['ATOMGIT_OUTPUT'], 'a') as out:
+              out.write(f'source_dir={source}\ncoverage_dir={coverage}\nmap_file={mapping}\n')
+          PY
+
+      - name: Recommend CPU test files
+        id: select
+        if: ${{ steps.baseline.outcome == 'success' }}
+        continue-on-error: true
+        uses: openlibing/test-action/precision-test@v1.0.14
+        with:
+          repo: ${{ env.PRECISION_REPO }}
+          gitcode-pr: ${{ atomgit.repository }}#${{ inputs.pr_number }}
+          source-dir: ${{ steps.baseline.outputs.source_dir }}
+          coverage-dir: ${{ steps.baseline.outputs.coverage_dir }}
+          map-file: ${{ steps.baseline.outputs.map_file }}
+          dedup: 'false'
+        env:
+          GITCODE_TOKEN: ${{ atomgit.token }}
+          PYTHON_EXEC_TIMEOUT_SECONDS: '900'
+
+      - name: Save shadow recommendation
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          SELECT_OUTCOME: ${{ steps.select.outcome }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          BASE_BRANCH: ${{ inputs.base_branch }}
+        run: |
+          python3 - <<'PY'
+          import importlib.metadata, json, os, shutil, subprocess
+          from pathlib import Path
+          out = Path('precise')
+          out.mkdir(exist_ok=True)
+          recommended = Path('recommended_pytest_paths.txt')
+          success = os.environ['SELECT_OUTCOME'] == 'success' and recommended.is_file()
+          paths = recommended.read_text().splitlines() if success else []
+          paths = sorted({p.strip() for p in paths if p.strip()})
+          root = Path.cwd().resolve()
+          invalid = [p for p in paths if not (
+              p.startswith('tests/UT/') and p.endswith('.py') and
+              (root / p).resolve().is_relative_to(root / 'tests/UT') and (root / p).is_file())]
+          status = ('not_configured' if not os.environ.get('PRECISION_REPO')
+                    else 'success' if success and not invalid else 'failed')
+          (out / 'status').write_text(status + '\n')
+          (out / 'test_files.txt').write_text(''.join(p + '\n' for p in paths))
+          metadata_path = Path('precision-baseline/metadata.json')
+          baseline = json.loads(metadata_path.read_text()) if metadata_path.is_file() else {}
+          if metadata_path.is_file():
+              shutil.copy2(metadata_path, out / 'baseline-metadata.json')
+          try:
+              version = importlib.metadata.version('test-selector')
+          except importlib.metadata.PackageNotFoundError:
+              version = None
+          git = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True)
+          report = {'mode': 'shadow', 'status': status, 'pr_number': os.environ['PR_NUMBER'],
+                    'base_branch': os.environ['BASE_BRANCH'], 'merge_sha': git.stdout.strip(),
+                    'precision_repo': os.environ.get('PRECISION_REPO'),
+                    'baseline_sha': baseline.get('commit'), 'selector_version': version,
+                    'recommended_count': len(paths), 'invalid_paths': invalid,
+                    'baseline_target_count': len(baseline.get('targets', []))}
+          (out / 'summary.json').write_text(json.dumps(report, indent=2))
+          with open(os.environ['ATOMGIT_STEP_SUMMARY'], 'a') as summary:
+              summary.write(f"CPU precision shadow: {status}; recommended files: {len(paths)}.\n")
+              if status == 'not_configured':
+                  summary.write('Set PRECISION_REPO in workflow env to enable recommendations.\n')
+              summary.write('Recommendation only; the existing CPU full-suite job remains unchanged.\n')
+          PY
+
+      - name: Upload shadow recommendation
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: upload-artifact
+        with:
+          name: precise-selection
+          path: precise/
+          overwrite: true

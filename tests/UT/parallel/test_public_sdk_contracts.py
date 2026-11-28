@@ -14,6 +14,7 @@
 # pylint: disable=cyclic-import,no-name-in-module,redefined-outer-name
 
 import ast
+import importlib
 from typing import Optional
 
 import pytest
@@ -107,7 +108,10 @@ def test_sparse_public_options_validate_and_forward_without_renaming(public_spar
             sparse(query, query, query, **{"sparse_type": "rf_v3", "precision": "bf16", **options})
 
 
-def test_parallel_public_package_and_root_exports_are_explicit(producer, monkeypatch):
+def test_parallel_public_package_and_root_exports_are_explicit(monkeypatch, request):
+    # Load the real attention package before producer replaces the RF-v2 module.
+    importlib.import_module("mindiesd.layers.flash_attn")
+    producer = request.getfixturevalue("producer")
     public = load_module(
         producer.package.__name__,
         REPO_ROOT / "mindiesd/parallel/__init__.py",

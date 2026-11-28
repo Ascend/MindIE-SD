@@ -177,6 +177,15 @@ stages:
 
 post:
   jobs:
+    Precision_shadow:
+      name: CPU precision shadow
+      select: always
+      if: ${{ atomgit.event.pull_request.base.ref == 'dev' }}
+      uses: .gitcode/workflows/precise_select.yml
+      with:
+        pr_number: "${{ atomgit.event.pull_request.number }}"
+        base_branch: "${{ atomgit.event.pull_request.base.ref }}"
+
     query_pipeline:
       name: associate_pr_comment
       select: selected_by_default
