@@ -11,12 +11,10 @@
 
 # pylint: disable=cyclic-import  # public package exports entries that import private pipeline modules
 
-from .distributed_flex_attention import distributed_flex_attention
 from .distributed_sparse_attention import distributed_sparse_attention
 from .state import ParallelState
 
 __all__ = [
-    "distributed_flex_attention",
     "distributed_sparse_attention",
     "ParallelState",
 ]

@@ -11,6 +11,7 @@
 # See the Mulan PSL v2 for more details.
 
 from .flash_attn.attention_forward import attention_forward
+from .flash_attn._block_causal import block_causal_attention
 from .flash_attn.quant_flash_attn import quant_attention
 from .flash_attn.attention_forward_varlen import attention_forward_varlen
 from .flash_attn.sparse_flash_attn import sparse_attention
@@ -39,12 +40,6 @@ from .indexed_gate_rms_norm_scale_shift_dynamic_mx_quant import (
     indexed_gate_rms_norm_scale_shift_dynamic_mx_quant,
 )
 from .qbmm_swiglu_mxquant import run as qbmm_swiglu_mxquant
-from .flash_attn import (
-    FlexAttentionMask,
-    check_flex_attention_device,
-    flex_attention,
-    make_block_causal_mask,
-)
 
 __all__ = [
     "RMSNorm",
@@ -52,6 +47,7 @@ __all__ = [
     "add_rms_norm",
     "apply_rotary_pos_emb",
     "attention_forward",
+    "block_causal_attention",
     "quant_attention",
     "attention_forward_varlen",
     "fast_layernorm",
@@ -77,8 +73,4 @@ __all__ = [
     "triton_split_qkv_norm_rope_concat",
     "validate_split_qkv_norm_rope_concat_inputs",
     "transpose_dynamic_quant",
-    "FlexAttentionMask",
-    "check_flex_attention_device",
-    "flex_attention",
-    "make_block_causal_mask",
 ]

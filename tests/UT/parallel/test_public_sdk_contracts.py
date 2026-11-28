@@ -114,11 +114,9 @@ def test_parallel_public_package_and_root_exports_are_explicit(producer, monkeyp
         monkeypatch,
     )
     assert public.__all__ == [
-        "distributed_flex_attention",
         "distributed_sparse_attention",
         "ParallelState",
     ]
-    assert callable(public.distributed_flex_attention)
     assert public.QKVLayoutPlan is producer.modules["qkv_layout"].QKVLayoutPlan
     assert callable(public.plan_qkv_layout)
     assert public.distributed_sparse_attention is producer.entry
@@ -132,8 +130,7 @@ def test_parallel_public_package_and_root_exports_are_explicit(producer, monkeyp
         if getattr(target, "id", None) == "__all__"
     )
     names = {element.value for element in exported.elts}
-    assert {"RFMultiSpanPlan", "build_rf_attention_plan", "rf_multi_span_permutation", "flex_attention"} <= names
-    assert "distributed_flex_attention" not in names
+    assert {"RFMultiSpanPlan", "build_rf_attention_plan", "rf_multi_span_permutation"} <= names
 
 
 def test_requested_head_major_mixed_fallback_is_reported(producer):

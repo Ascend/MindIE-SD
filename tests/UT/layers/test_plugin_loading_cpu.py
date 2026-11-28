@@ -39,11 +39,33 @@ def test_auto_variant_and_legacy_fallback(monkeypatch, tmp_path):
     monkeypatch.setattr(torch, '__version__', '2.9.0+cpu')
     assert registry._select_mindie_ops_file(str(tmp_path)) == str(tmp_path / registry.PLUGIN_LIBRARY_NAME)
     (tmp_path / 'torch29').mkdir()
+    (tmp_path / 'torch29' / registry.PLUGIN_LIBRARY_NAME).write_bytes(b'variant plugin')
     assert registry._has_plugin_variants(str(tmp_path))
     assert registry._select_mindie_ops_file(str(tmp_path)) == str(tmp_path / 'torch29' / registry.PLUGIN_LIBRARY_NAME)
     monkeypatch.setattr(torch, '__version__', '3.0.0')
     with pytest.raises(RuntimeError, match='Unsupported torch version'):
         registry._select_mindie_ops_file(str(tmp_path))
+
+
+@pytest.mark.parametrize('version', ['2.6.0', '2.9.0+cpu', '2.10.0+cpu'])
+def test_fa4_directories_do_not_hide_fixed_mindie_plugin(monkeypatch, tmp_path, version):
+    monkeypatch.delenv(registry.PLUGIN_VARIANT_ENV, raising=False)
+    monkeypatch.setattr(torch, '__version__', version)
+    fixed = tmp_path / registry.PLUGIN_LIBRARY_NAME
+    fixed.write_bytes(b'fixed MindIE plugin')
+    for variant in ('torch29', 'torch210'):
+        (tmp_path / variant / 'flash_attn').mkdir(parents=True)
+    assert registry._select_mindie_ops_file(str(tmp_path)) == str(fixed)
+
+
+def test_real_multi_torch_missing_current_variant_does_not_use_fixed_fallback(monkeypatch, tmp_path):
+    monkeypatch.delenv(registry.PLUGIN_VARIANT_ENV, raising=False)
+    monkeypatch.setattr(torch, '__version__', '2.9.0+cpu')
+    (tmp_path / registry.PLUGIN_LIBRARY_NAME).write_bytes(b'wrong fixed fallback')
+    other = tmp_path / 'torch210' / registry.PLUGIN_LIBRARY_NAME
+    other.parent.mkdir()
+    other.write_bytes(b'different Torch native plugin')
+    assert registry._select_mindie_ops_file(str(tmp_path)) == str(tmp_path / 'torch29' / registry.PLUGIN_LIBRARY_NAME)
 
 
 def test_library_path_and_real_file_safety_before_loader_boundary(monkeypatch, tmp_path):

@@ -40,7 +40,10 @@ def _get_torch_major_minor(version: str) -> str:
 
 
 def _has_plugin_variants(ops_path: str) -> bool:
-    return any((Path(ops_path) / variant).is_dir() for variant in SUPPORTED_TORCH_PLUGIN_VARIANTS.values())
+    return any(
+        (Path(ops_path) / variant / PLUGIN_LIBRARY_NAME).is_file()
+        for variant in SUPPORTED_TORCH_PLUGIN_VARIANTS.values()
+    )
 
 
 def _select_mindie_ops_file(ops_path: str) -> str:
